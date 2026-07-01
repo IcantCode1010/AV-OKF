@@ -28,6 +28,7 @@ date field formatting
 broken Markdown links
 reserved index/log files
 unknown frontmatter fields
+allowed typed-relation frontmatter field
 ```
 
 The AV-OKF profile is defined in:
@@ -57,6 +58,18 @@ dispatch_reference:
     - last_verified
 ```
 
+Typed relation fields are allowed in the profile:
+
+```yaml
+relations:
+  - relation: routes_to
+    target: ../manuals/mel/example.md
+    target_type: dispatch_reference
+    reason: Dispatch claims require MEL evidence.
+```
+
+If the current `okflint` release cannot enforce nested relation vocabulary, add a deterministic follow-on lint check for relation entries. Do not rely on the LLM validator to catch malformed relation names.
+
 ## CI Gate
 
 The GitHub Actions workflow runs:
@@ -76,4 +89,12 @@ It does not validate whether a generated answer is safe. Runtime answer validati
 ```text
 okflint = deterministic OKF file conformance
 Validation Agent = generated-answer claim support and source authority
+```
+
+Typed relations sit between those layers:
+
+```text
+okflint = relations field is allowed and unknown fields are blocked
+relation lint = relation names and target shape are deterministic
+Validation Agent = relation meaning affects evidence interpretation
 ```

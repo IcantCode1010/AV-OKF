@@ -30,6 +30,7 @@ profile:
       - last_verified
       optional:
       - aircraft_variant
+      - relations
       - related_topics
       - source_authority
       - revision
@@ -63,6 +64,7 @@ profile:
       - effectivity
       - source_file
       - source_pages
+      - relations
       - related_topics
       - covered_rag_chunk_ids
       - covered_topic_record_ids
@@ -90,6 +92,7 @@ profile:
       optional:
       - manual_type
       - source_authority
+      - relations
       - related_faults
       - related_topics
       - covered_rag_chunk_ids
@@ -123,6 +126,7 @@ profile:
       - last_verified
       optional:
       - aircraft_variant
+      - relations
       - related_faults
       - related_topics
       - task_numbers
@@ -157,6 +161,7 @@ profile:
       - last_verified
       optional:
       - aircraft_variant
+      - relations
       - related_faults
       - related_topics
       - task_numbers
@@ -192,6 +197,7 @@ profile:
       - aircraft_variant
       - manual_type
       - revision
+      - relations
       - related_faults
       - task_numbers
       - covered_rag_chunk_ids
@@ -226,6 +232,7 @@ profile:
       - last_verified
       optional:
       - aircraft_variant
+      - relations
       - related_faults
       - related_topics
       - covered_rag_chunk_ids
@@ -259,6 +266,7 @@ profile:
       - last_verified
       optional:
       - aircraft_variant
+      - relations
       - related_faults
       - related_topics
       - covered_rag_chunk_ids
@@ -292,6 +300,7 @@ profile:
       - last_verified
       optional:
       - aircraft_variant
+      - relations
       - related_faults
       - related_topics
       - task_numbers
@@ -326,6 +335,7 @@ profile:
       optional:
       - aircraft_variant
       - revision
+      - relations
       - related_faults
       - related_topics
       - covered_rag_chunk_ids
@@ -358,6 +368,7 @@ profile:
       - effectivity
       - source_file
       - source_pages
+      - relations
       - related_topics
       - covered_rag_chunk_ids
       - covered_topic_record_ids
@@ -389,6 +400,7 @@ profile:
       - effectivity
       - source_file
       - source_pages
+      - relations
       - related_faults
       - related_topics
       - covered_rag_chunk_ids
@@ -416,6 +428,7 @@ profile:
       - aircraft_variant
       - source_authority
       - revision
+      - relations
       - related_topics
       status_values: false
 hygiene:

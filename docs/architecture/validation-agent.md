@@ -35,6 +35,7 @@ okf_objects_used
 rag_chunks_used
 source_manifest_entries
 domain_pack_rules
+typed_relations
 conversation_context
 ```
 
@@ -245,6 +246,7 @@ Does the cited source text support the claim?
 Does the cited source page range cover the cited statement?
 Is the support direct or inferential?
 Does another approved source conflict with it?
+Do typed relations change how the candidate should be treated?
 ```
 
 Evidence match levels:
@@ -297,6 +299,20 @@ Use this evidence preference order:
 For canonical answers, the validator should compare against approved structured facts first. For open-ended RAG answers, the validator may compare against raw excerpts because a curated fact may not exist.
 
 Approved OKF concepts may link back to the RAG chunks and source pages they cover. When a RAG chunk is covered by an approved OKF concept, the validator should treat the OKF concept as the controlling source for canonical claims and the RAG chunk as supporting context only.
+
+Typed relations should guide candidate interpretation:
+
+```text
+routes_to = strong manual-path or workflow routing signal
+references = weak context signal only
+supports = possible evidence signal, still subject to authority checks
+covered_by = controlling OKF concept should be checked before raw RAG
+supersedes = older target should not support current claims
+conflicts_with = conflict must be resolved before release
+depends_on = missing target can create missing-context or missing-evidence status
+```
+
+A plain Markdown link or legacy `related_topics` entry is not enough to prove source authority. For high-risk claims, the validator should prefer typed relations over untyped links when deciding whether a retrieved object is evidence, background, a route, or a conflict.
 
 The LLM judge compares the claim against the selected evidence candidates, not against the whole corpus. It must return:
 

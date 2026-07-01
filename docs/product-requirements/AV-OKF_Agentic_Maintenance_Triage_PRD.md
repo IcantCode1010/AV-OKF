@@ -108,7 +108,7 @@ The agent layer should begin with one orchestrator and a small number of special
 - Use BM25 or keyword search for exact terms, ATA numbers, task numbers, fault messages, and acronyms.
 - Use ATA classifier rules to boost likely ATA matches.
 - Use synonym and alias indexes for cockpit messages, technician wording, abbreviations, and common fault phrases.
-- Use graph traversal over Markdown links, related_faults, related_topics, parent/child fields, and source references.
+- Use graph traversal over Markdown links, typed `relations`, related_faults, related_topics, parent/child fields, and source references.
 - Return confidence scores and explain why each candidate was selected.
 ### Navigation
 - Agent starts with triage, then retrieves candidates, then uses AV-OKF indexes and routing files to validate the path.
@@ -292,7 +292,7 @@ The moat is not AI search over PDFs. The moat is structured aviation technical k
 | ID | Requirement | Priority | Acceptance Criteria |
 | --- | --- | --- | --- |
 | MVP-01 | Create 737NG AV-OKF repository scaffold. | P0 | Repository includes AGENTS.md, root index, aircraft/737ng, routing, manuals, ATA, faults, schema, and source manifest. |
-| MVP-02 | Implement core frontmatter schema. | P0 | `okflint validate --manifest okf-base.yaml` enforces required fields by file type and runs as a CI gate. |
+| MVP-02 | Implement core frontmatter schema. | P0 | `okflint validate --manifest okf-base.yaml` enforces required fields by file type, allows the typed `relations` field, and runs as a CI gate. |
 | MVP-03 | Implement manual routing rules. | P0 | Agent can map intent to correct manual priority. |
 | MVP-04 | Implement ATA classifier. | P0 | Initial six fault routes map to ATA chapters with confidence. |
 | MVP-05 | Implement fault_route files. | P0 | Each MVP fault has manual priority, related topics, source links, and targeted questions. |
@@ -318,6 +318,7 @@ The moat is not AI search over PDFs. The moat is structured aviation technical k
 | source_file | Source document filename. |
 | source_pages | Source page list. |
 | task_numbers | Known task numbers where applicable. |
+| relations | Typed cross-links using a controlled vocabulary such as routes_to, references, supports, covered_by, supersedes, conflicts_with, or depends_on. |
 | related_faults | Linked fault route files. |
 | related_topics | Linked system/component/manual files. |
 | knowledge_version | Version of the knowledge object. |
