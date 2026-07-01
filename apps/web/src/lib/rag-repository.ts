@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 
 import { getPrisma } from "./prisma.ts";
+import {
+  assertEmbeddingBudget,
+  type EmbeddingBudgetCaps,
+} from "./rag-budget.ts";
 import type { ExtractedPageRecord } from "./document-vault.ts";
 import type { RagChunkRecord, RetrievalResult } from "./rag-types.ts";
 
@@ -86,31 +90,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     },
 
     async getTokenUsageToday(input: { workspaceId: string }) {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-
-      const [workspace, global] = await Promise.all([
-        db.ragIndexJob.aggregate({
-          _sum: { tokenEstimate: true },
-          where: {
-            completedAt: { gte: start },
-            status: "completed",
-            workspaceId: input.workspaceId,
-          },
-        }),
-        db.ragIndexJob.aggregate({
-          _sum: { tokenEstimate: true },
-          where: {
-            completedAt: { gte: start },
-            status: "completed",
-          },
-        }),
-      ]);
-
-      return {
-        globalTokensUsedToday: global._sum.tokenEstimate ?? 0,
-        workspaceTokensUsedToday: workspace._sum.tokenEstimate ?? 0,
-      };
+      return getReservedTokenUsageToday(db, input.workspaceId);
     },
 
     async markIndexJobRunning(input: {
@@ -125,6 +105,39 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           tokenEstimate: input.tokenEstimate,
         },
         where: { id: input.indexJobId },
+      });
+    },
+
+    async reserveIndexJobBudget(input: {
+      caps?: EmbeddingBudgetCaps;
+      indexJobId: string;
+      tokenEstimate: number;
+      workspaceId: string;
+    }) {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483000, 0)`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483001, hashtext(${input.workspaceId}))`;
+
+        const usage = await getReservedTokenUsageToday(tx, input.workspaceId);
+
+        assertEmbeddingBudget(
+          {
+            documentTokenEstimate: input.tokenEstimate,
+            globalTokensUsedToday: usage.globalTokensUsedToday,
+            workspaceTokensUsedToday: usage.workspaceTokensUsedToday,
+          },
+          input.caps,
+        );
+
+        await tx.ragIndexJob.update({
+          data: {
+            attempts: { increment: 1 },
+            startedAt: new Date(),
+            status: "running",
+            tokenEstimate: input.tokenEstimate,
+          },
+          where: { id: input.indexJobId },
+        });
       });
     },
 
@@ -287,6 +300,40 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         });
       });
     },
+  };
+}
+
+async function getReservedTokenUsageToday(
+  db: Prisma.TransactionClient | PrismaLike,
+  workspaceId: string,
+) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const usageWindow: Prisma.RagIndexJobWhereInput = {
+    OR: [
+      { completedAt: { gte: start }, status: "completed" },
+      { startedAt: { gte: start }, status: "running" },
+    ],
+    tokenEstimate: { gt: 0 },
+  };
+
+  const [workspace, global] = await Promise.all([
+    db.ragIndexJob.aggregate({
+      _sum: { tokenEstimate: true },
+      where: {
+        ...usageWindow,
+        workspaceId,
+      },
+    }),
+    db.ragIndexJob.aggregate({
+      _sum: { tokenEstimate: true },
+      where: usageWindow,
+    }),
+  ]);
+
+  return {
+    globalTokensUsedToday: global._sum.tokenEstimate ?? 0,
+    workspaceTokensUsedToday: workspace._sum.tokenEstimate ?? 0,
   };
 }
 

@@ -26,7 +26,14 @@ type RunRagIndexJobOptions = {
     | "getTokenUsageToday"
     | "markIndexJobRunning"
     | "storeCompletedIndex"
-  >;
+  > & {
+    reserveIndexJobBudget?: (input: {
+      caps?: EmbeddingBudgetCaps;
+      indexJobId: string;
+      tokenEstimate: number;
+      workspaceId: string;
+    }) => Promise<void>;
+  };
 };
 
 export async function runRagIndexJob(
@@ -52,23 +59,32 @@ export async function runRagIndexJob(
       (sum, chunk) => sum + chunk.tokenCount,
       0,
     );
-    const usage = await repository.getTokenUsageToday({
-      workspaceId: payload.workspaceId,
-    });
+    if (repository.reserveIndexJobBudget) {
+      await repository.reserveIndexJobBudget({
+        caps: options.budgetCaps,
+        indexJobId: payload.indexJobId,
+        tokenEstimate,
+        workspaceId: payload.workspaceId,
+      });
+    } else {
+      const usage = await repository.getTokenUsageToday({
+        workspaceId: payload.workspaceId,
+      });
 
-    assertEmbeddingBudget(
-      {
-        documentTokenEstimate: tokenEstimate,
-        globalTokensUsedToday: usage.globalTokensUsedToday,
-        workspaceTokensUsedToday: usage.workspaceTokensUsedToday,
-      },
-      options.budgetCaps,
-    );
+      assertEmbeddingBudget(
+        {
+          documentTokenEstimate: tokenEstimate,
+          globalTokensUsedToday: usage.globalTokensUsedToday,
+          workspaceTokensUsedToday: usage.workspaceTokensUsedToday,
+        },
+        options.budgetCaps,
+      );
 
-    await repository.markIndexJobRunning({
-      indexJobId: payload.indexJobId,
-      tokenEstimate,
-    });
+      await repository.markIndexJobRunning({
+        indexJobId: payload.indexJobId,
+        tokenEstimate,
+      });
+    }
 
     const embeddings =
       chunks.length > 0
