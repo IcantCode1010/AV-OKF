@@ -21,6 +21,7 @@ import {
   type ActivityEvent,
   type CustomProperty,
   type Document,
+  type DocumentMetrics,
   type DocumentStatus,
   type ExtractedPageRecord,
   type ExtractionError,
@@ -52,6 +53,7 @@ export type {
   ActivityEvent,
   CustomProperty,
   Document,
+  DocumentMetrics,
   DocumentStatus,
   ExtractedPageRecord,
   ExtractionError,
@@ -65,7 +67,7 @@ export type {
 
 export async function createUploadedDocument(
   input: Parameters<typeof createLocalUploadedDocument>[0],
-) {
+): Promise<Document> {
   if (isProductionBackend()) {
     return getProductionDocumentService().createUploadedDocument(input);
   }
@@ -73,7 +75,7 @@ export async function createUploadedDocument(
   return createLocalUploadedDocument(input);
 }
 
-export async function generateTopicRecords(id: string) {
+export async function generateTopicRecords(id: string): Promise<TopicRecord[]> {
   if (isProductionBackend()) {
     return getProductionDocumentService().generateTopicRecords(id);
   }
@@ -81,7 +83,7 @@ export async function generateTopicRecords(id: string) {
   return generateLocalTopicRecords(id);
 }
 
-export async function getActivityEvents() {
+export async function getActivityEvents(): Promise<ActivityEvent[]> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getActivityEvents();
   }
@@ -89,7 +91,9 @@ export async function getActivityEvents() {
   return getLocalActivityEvents();
 }
 
-export async function getDocumentById(id: string) {
+export async function getDocumentById(
+  id: string,
+): Promise<Document | undefined> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getDocumentById(id);
   }
@@ -97,7 +101,7 @@ export async function getDocumentById(id: string) {
   return getLocalDocumentById(id);
 }
 
-export async function getDocumentMetrics() {
+export async function getDocumentMetrics(): Promise<DocumentMetrics> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getDocumentMetrics();
   }
@@ -105,7 +109,7 @@ export async function getDocumentMetrics() {
   return getLocalDocumentMetrics();
 }
 
-export async function getDocuments() {
+export async function getDocuments(): Promise<Document[]> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getDocuments();
   }
@@ -113,7 +117,7 @@ export async function getDocuments() {
   return getLocalDocuments();
 }
 
-export async function getRecentDocuments(limit = 4) {
+export async function getRecentDocuments(limit = 4): Promise<Document[]> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getRecentDocuments(limit);
   }
@@ -121,7 +125,9 @@ export async function getRecentDocuments(limit = 4) {
   return getLocalRecentDocuments(limit);
 }
 
-export async function getTopicRecordsByDocumentId(id: string) {
+export async function getTopicRecordsByDocumentId(
+  id: string,
+): Promise<TopicRecord[]> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getTopicRecordsByDocumentId(id);
   }
@@ -129,7 +135,7 @@ export async function getTopicRecordsByDocumentId(id: string) {
   return getLocalTopicRecordsByDocumentId(id);
 }
 
-export async function requestExtraction(id: string) {
+export async function requestExtraction(id: string): Promise<void> {
   if (isProductionBackend()) {
     await getProductionDocumentService().requestExtraction(id);
     return;
@@ -141,7 +147,7 @@ export async function requestExtraction(id: string) {
 export async function updateDocumentMetadata(
   id: string,
   input: Parameters<typeof updateLocalDocumentMetadata>[1],
-) {
+): Promise<Document> {
   if (isProductionBackend()) {
     return getProductionDocumentService().updateDocumentMetadata(id, input);
   }
@@ -152,7 +158,7 @@ export async function updateDocumentMetadata(
 export async function updateTopicReviewStatus(
   topicId: string,
   reviewStatus: TopicReviewStatus,
-) {
+): Promise<TopicRecord> {
   if (isProductionBackend()) {
     return getProductionDocumentService().updateTopicReviewStatus(
       topicId,

@@ -115,6 +115,13 @@ export type Document = {
   extraction: DocumentExtraction;
 };
 
+export type DocumentMetrics = {
+  total: number;
+  processing: number;
+  ready: number;
+  review: number;
+};
+
 export type ActivityEvent = {
   id: string;
   label: string;
@@ -922,7 +929,7 @@ function pagesOverlap(left: number[], right: number[]) {
   return left.some((pageNumber) => rightPages.has(pageNumber));
 }
 
-function calculateDocumentMetrics(documents: Document[]) {
+function calculateDocumentMetrics(documents: Document[]): DocumentMetrics {
   return {
     total: documents.length,
     processing: documents.filter((document) => document.status === "processing")

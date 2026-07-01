@@ -5,8 +5,12 @@ import {
   customPropertiesToText,
   parseCustomProperties,
   parseTags,
+  type ActivityEvent,
+  type Document,
+  type DocumentMetrics,
   type DocumentStatus,
   type SourceType,
+  type TopicRecord,
   type TopicReviewStatus,
 } from "./document-vault.ts";
 import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
@@ -42,7 +46,27 @@ type UpdateMetadata = {
   customProperties: ReturnType<typeof parseCustomProperties>;
 };
 
-let cachedService: ReturnType<typeof createProductionDocumentService> | null = null;
+export type ProductionDocumentService = {
+  createUploadedDocument(input: UploadMetadata): Promise<Document>;
+  generateTopicRecords(documentId: string): Promise<TopicRecord[]>;
+  getActivityEvents(): Promise<ActivityEvent[]>;
+  getDocumentById(documentId: string): Promise<Document>;
+  getDocumentMetrics(): Promise<DocumentMetrics>;
+  getDocuments(): Promise<Document[]>;
+  getRecentDocuments(limit?: number): Promise<Document[]>;
+  getTopicRecordsByDocumentId(documentId: string): Promise<TopicRecord[]>;
+  requestExtraction(documentId: string): Promise<void>;
+  updateDocumentMetadata(
+    documentId: string,
+    input: UpdateMetadata,
+  ): Promise<Document>;
+  updateTopicReviewStatus(
+    topicId: string,
+    reviewStatus: TopicReviewStatus,
+  ): Promise<TopicRecord>;
+};
+
+let cachedService: ProductionDocumentService | null = null;
 
 export {
   MAX_UPLOAD_BYTES,
@@ -51,11 +75,11 @@ export {
   parseTags,
 };
 
-export function isProductionBackend() {
+export function isProductionBackend(): boolean {
   return process.env.AV_OKF_BACKEND === "production";
 }
 
-export function getProductionDocumentService() {
+export function getProductionDocumentService(): ProductionDocumentService {
   if (!cachedService) {
     cachedService = createProductionDocumentService();
   }
@@ -67,9 +91,9 @@ export function createProductionDocumentService(
   repository = createPostgresDocumentRepository(),
   storage = getObjectStorage(),
   queue = getExtractionQueue(),
-) {
+): ProductionDocumentService {
   return {
-    async createUploadedDocument(input: UploadMetadata) {
+    async createUploadedDocument(input: UploadMetadata): Promise<Document> {
       const context = await requireAuthWorkspaceContext();
       assertPdfUpload({
         name: input.originalFilename,
@@ -104,37 +128,39 @@ export function createProductionDocumentService(
         title: input.title,
       });
     },
-    async generateTopicRecords(documentId: string) {
+    async generateTopicRecords(documentId: string): Promise<TopicRecord[]> {
       return repository.generateTopicRecords({
         context: await requireAuthWorkspaceContext(),
         documentId,
       });
     },
-    async getActivityEvents() {
+    async getActivityEvents(): Promise<ActivityEvent[]> {
       return repository.getActivityEvents(await requireAuthWorkspaceContext());
     },
-    async getDocumentById(documentId: string) {
+    async getDocumentById(documentId: string): Promise<Document> {
       return repository.getDocumentById({
         context: await requireAuthWorkspaceContext(),
         documentId,
       });
     },
-    async getDocumentMetrics() {
+    async getDocumentMetrics(): Promise<DocumentMetrics> {
       return repository.getDocumentMetrics(await requireAuthWorkspaceContext());
     },
-    async getDocuments() {
+    async getDocuments(): Promise<Document[]> {
       return repository.getDocuments(await requireAuthWorkspaceContext());
     },
-    async getRecentDocuments(limit = 4) {
+    async getRecentDocuments(limit = 4): Promise<Document[]> {
       return (await this.getDocuments()).slice(0, limit);
     },
-    async getTopicRecordsByDocumentId(documentId: string) {
+    async getTopicRecordsByDocumentId(
+      documentId: string,
+    ): Promise<TopicRecord[]> {
       return repository.getTopicRecordsByDocumentId({
         context: await requireAuthWorkspaceContext(),
         documentId,
       });
     },
-    async requestExtraction(documentId: string) {
+    async requestExtraction(documentId: string): Promise<void> {
       const context = await requireAuthWorkspaceContext();
       const job = await repository.createExtractionJob({ context, documentId });
 
@@ -148,7 +174,10 @@ export function createProductionDocumentService(
         console.error("Extraction enqueue failed; queued job remains in Postgres.", error);
       }
     },
-    async updateDocumentMetadata(documentId: string, input: UpdateMetadata) {
+    async updateDocumentMetadata(
+      documentId: string,
+      input: UpdateMetadata,
+    ): Promise<Document> {
       return repository.updateDocumentMetadata({
         context: await requireAuthWorkspaceContext(),
         customProperties: input.customProperties,
@@ -164,7 +193,7 @@ export function createProductionDocumentService(
     async updateTopicReviewStatus(
       topicId: string,
       reviewStatus: TopicReviewStatus,
-    ) {
+    ): Promise<TopicRecord> {
       return repository.updateTopicReviewStatus({
         context: await requireAuthWorkspaceContext(),
         reviewStatus,
