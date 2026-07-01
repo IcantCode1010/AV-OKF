@@ -56,6 +56,7 @@ Deliverables:
 - Page number preservation
 - Document processing statuses
 - Extraction logs
+- Defensive handling for malformed, corrupt, and password-protected PDFs. The upload-time magic-byte check confirms file type only, not structural validity.
 
 Exit criteria:
 
