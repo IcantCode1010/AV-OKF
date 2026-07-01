@@ -12,6 +12,10 @@ type VectorSearchRepository = ReturnType<typeof createRagRepository> & {
 export async function retrieveDocuments(
   request: RetrievalRequest,
 ): Promise<RetrievalResult[]> {
+  if (process.env.AV_OKF_BACKEND !== "production") {
+    return [];
+  }
+
   const repository = createRagRepository();
 
   if (request.mode === "keyword") {

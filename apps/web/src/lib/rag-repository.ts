@@ -157,6 +157,57 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       }));
     },
 
+    async searchVector(input: {
+      embedding: number[];
+      query: string;
+      topK: number;
+      workspaceId: string;
+    }): Promise<RetrievalResult[]> {
+      void input.query;
+      const rows = await db.$queryRaw<
+        Array<{
+          chunkId: string;
+          documentId: string;
+          documentTitle: string;
+          pageEnd: number;
+          pageStart: number;
+          score: number;
+          sourcePageNumbers: number[];
+          text: string;
+        }>
+      >`
+        SELECT
+          c."id" AS "chunkId",
+          c."documentId" AS "documentId",
+          d."title" AS "documentTitle",
+          c."pageEnd" AS "pageEnd",
+          c."pageStart" AS "pageStart",
+          1 - (e."embedding" <=> ${vectorLiteral(input.embedding)}::vector) AS "score",
+          c."sourcePageNumbers" AS "sourcePageNumbers",
+          c."text" AS "text"
+        FROM "RagEmbedding" e
+        INNER JOIN "RagChunk" c ON c."id" = e."chunkId"
+        INNER JOIN "Document" d ON d."id" = c."documentId"
+        WHERE c."workspaceId" = ${input.workspaceId}
+          AND c."isActive" = true
+        ORDER BY e."embedding" <=> ${vectorLiteral(input.embedding)}::vector ASC
+        LIMIT ${input.topK}
+      `;
+
+      return rows.map((row) => ({
+        chunkId: row.chunkId,
+        coveredByOkfConceptIds: [],
+        documentId: row.documentId,
+        documentTitle: row.documentTitle,
+        pageEnd: row.pageEnd,
+        pageStart: row.pageStart,
+        retrievalMode: "vector",
+        score: row.score,
+        sourcePageNumbers: row.sourcePageNumbers,
+        text: row.text,
+      }));
+    },
+
     async storeCompletedIndex(input: {
       chunks: RagChunkRecord[];
       documentId: string;
