@@ -46,6 +46,8 @@ Stage 4 excludes:
 - Budget enforcement: inside indexer before any embedding provider call
 - Budget cap behavior: hard failure, no truncation
 - Budget failure code: `embedding_budget_exceeded`
+- Queue behavior for budget failure: throw BullMQ `UnrecoverableError`, no retry
+- Production token counting: `js-tiktoken` with `cl100k_base`; local tests may use heuristic counting
 - OKF coverage source of truth: approved OKF Markdown frontmatter
 - DB coverage table: derived query projection only
 
@@ -54,6 +56,8 @@ Stage 4 excludes:
 Create:
 
 - `apps/web/src/lib/rag-types.ts`
+- `apps/web/src/lib/rag-tokenizer.ts`
+- `apps/web/src/lib/rag-tokenizer.test.mts`
 - `apps/web/src/lib/rag-chunker.ts`
 - `apps/web/src/lib/rag-chunker.test.mts`
 - `apps/web/src/lib/embedding-provider.ts`
@@ -295,14 +299,68 @@ git add apps/web/src/lib/rag-types.ts
 git commit -m "Add RAG domain types"
 ```
 
-## Task 2: Add Page-Aware Chunker
+## Task 2: Add Token Counter And Page-Aware Chunker
 
 **Files:**
 
+- Create: `apps/web/src/lib/rag-tokenizer.ts`
+- Create: `apps/web/src/lib/rag-tokenizer.test.mts`
 - Create: `apps/web/src/lib/rag-chunker.ts`
 - Create: `apps/web/src/lib/rag-chunker.test.mts`
+- Modify: `apps/web/package.json`
+- Modify: `apps/web/pnpm-lock.yaml`
 
-- [ ] **Step 1: Write chunker tests**
+- [ ] **Step 1: Install tokenizer**
+
+Run:
+
+```bash
+pnpm --dir apps/web add js-tiktoken
+```
+
+Expected: `js-tiktoken` appears in `apps/web/package.json`.
+
+- [ ] **Step 2: Write token counter tests**
+
+Create `apps/web/src/lib/rag-tokenizer.test.mts`:
+
+```ts
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  createHeuristicTokenCounter,
+  createTiktokenTokenCounter,
+  getTokenCounter,
+} from "./rag-tokenizer.ts";
+
+test("heuristic token counter is available for deterministic local tests", () => {
+  const counter = createHeuristicTokenCounter();
+
+  assert.equal(counter.kind, "heuristic");
+  assert.equal(counter.count("ATA 24 generator-control unit"), 6);
+});
+
+test("tiktoken token counter handles technical strings without word heuristics", () => {
+  const counter = createTiktokenTokenCounter();
+  const technical = "ATA-24 GCU P/N 1159SCL402-17 GEN-OFF-BUS";
+
+  assert.equal(counter.kind, "tiktoken");
+  assert.equal(counter.count(technical) > technical.split(/\s+/).length, true);
+});
+
+test("getTokenCounter uses tiktoken in production embedding path", () => {
+  const originalBackend = process.env.AV_OKF_BACKEND;
+  process.env.AV_OKF_BACKEND = "production";
+
+  const counter = getTokenCounter();
+
+  assert.equal(counter.kind, "tiktoken");
+  process.env.AV_OKF_BACKEND = originalBackend;
+});
+```
+
+- [ ] **Step 3: Write chunker tests**
 
 Create `apps/web/src/lib/rag-chunker.test.mts`:
 
@@ -311,12 +369,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { chunkExtractedPages } from "./rag-chunker.ts";
+import { createHeuristicTokenCounter } from "./rag-tokenizer.ts";
 
 test("chunkExtractedPages preserves source page coverage", () => {
   const chunks = chunkExtractedPages({
     documentId: "doc_1",
     indexJobId: "job_1",
     indexVersion: 1,
+    tokenCounter: createHeuristicTokenCounter(),
     workspaceId: "wrk_1",
     pages: [
       {
@@ -357,6 +417,7 @@ test("chunkExtractedPages is independent from topic generation sizing", () => {
     indexJobId: "job_2",
     indexVersion: 1,
     pages,
+    tokenCounter: createHeuristicTokenCounter(),
     workspaceId: "wrk_1",
   });
 
@@ -369,6 +430,7 @@ test("chunkExtractedPages creates stable content hashes", () => {
     documentId: "doc_3",
     indexJobId: "job_3",
     indexVersion: 1,
+    tokenCounter: createHeuristicTokenCounter(),
     workspaceId: "wrk_1",
     pages: [
       {
@@ -389,7 +451,7 @@ test("chunkExtractedPages creates stable content hashes", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests and verify failure**
+- [ ] **Step 4: Run tests and verify failure**
 
 Run:
 
@@ -397,28 +459,73 @@ Run:
 pnpm --dir apps/web test
 ```
 
-Expected: fails because `rag-chunker.ts` does not exist.
+Expected: fails because `rag-tokenizer.ts` and `rag-chunker.ts` do not exist.
 
-- [ ] **Step 3: Implement chunker**
+- [ ] **Step 5: Implement token counter**
+
+Create `apps/web/src/lib/rag-tokenizer.ts`:
+
+```ts
+import { getEncoding } from "js-tiktoken";
+
+export type TokenCounter = {
+  count(text: string): number;
+  kind: "heuristic" | "tiktoken";
+};
+
+export function getTokenCounter(): TokenCounter {
+  if (process.env.AV_OKF_BACKEND === "production") {
+    return createTiktokenTokenCounter();
+  }
+
+  return createHeuristicTokenCounter();
+}
+
+export function createHeuristicTokenCounter(): TokenCounter {
+  return {
+    kind: "heuristic",
+    count(text) {
+      return Math.max(1, Math.ceil(text.trim().split(/\s+/).filter(Boolean).length * 1.35));
+    },
+  };
+}
+
+export function createTiktokenTokenCounter(): TokenCounter {
+  const encoding = getEncoding("cl100k_base");
+
+  return {
+    kind: "tiktoken",
+    count(text) {
+      return encoding.encode(text).length;
+    },
+  };
+}
+```
+
+- [ ] **Step 6: Implement chunker**
 
 Create `apps/web/src/lib/rag-chunker.ts`:
 
 ```ts
 import { createHash } from "node:crypto";
 
+import { getTokenCounter, type TokenCounter } from "./rag-tokenizer.ts";
 import type { RagChunkInput, RagChunkRecord } from "./rag-types.ts";
 
 const TARGET_TOKENS = 800;
 const MAX_TOKENS = 1200;
 const OVERLAP_TOKENS = 120;
 
-export function chunkExtractedPages(input: RagChunkInput): RagChunkRecord[] {
+export function chunkExtractedPages(
+  input: RagChunkInput & { tokenCounter?: TokenCounter },
+): RagChunkRecord[] {
+  const tokenCounter = input.tokenCounter ?? getTokenCounter();
   const pageUnits = input.pages
     .filter((page) => page.text.trim().length > 0)
     .map((page) => ({
       pageNumber: page.pageNumber,
       text: page.text.trim(),
-      tokenCount: estimateTokenCount(page.text),
+      tokenCount: tokenCounter.count(page.text),
     }));
 
   const chunks: RagChunkRecord[] = [];
@@ -427,7 +534,7 @@ export function chunkExtractedPages(input: RagChunkInput): RagChunkRecord[] {
 
   for (const unit of pageUnits) {
     if (buffer.length > 0 && bufferTokens + unit.tokenCount > TARGET_TOKENS) {
-      chunks.push(createChunk(input, chunks.length, buffer));
+      chunks.push(createChunk(input, chunks.length, buffer, tokenCounter));
       buffer = createOverlapBuffer(buffer);
       bufferTokens = buffer.reduce((sum, page) => sum + page.tokenCount, 0);
     }
@@ -436,27 +543,24 @@ export function chunkExtractedPages(input: RagChunkInput): RagChunkRecord[] {
     bufferTokens += unit.tokenCount;
 
     if (bufferTokens >= MAX_TOKENS) {
-      chunks.push(createChunk(input, chunks.length, buffer));
+      chunks.push(createChunk(input, chunks.length, buffer, tokenCounter));
       buffer = createOverlapBuffer(buffer);
       bufferTokens = buffer.reduce((sum, page) => sum + page.tokenCount, 0);
     }
   }
 
   if (buffer.length > 0) {
-    chunks.push(createChunk(input, chunks.length, buffer));
+    chunks.push(createChunk(input, chunks.length, buffer, tokenCounter));
   }
 
   return chunks;
-}
-
-export function estimateTokenCount(text: string): number {
-  return Math.max(1, Math.ceil(text.trim().split(/\s+/).filter(Boolean).length * 1.35));
 }
 
 function createChunk(
   input: RagChunkInput,
   ordinal: number,
   pages: Array<{ pageNumber: number; text: string; tokenCount: number }>,
+  tokenCounter: TokenCounter,
 ): RagChunkRecord {
   const sourcePageNumbers = [...new Set(pages.map((page) => page.pageNumber))];
   const text = pages.map((page) => page.text).join("\n\n");
@@ -477,7 +581,7 @@ function createChunk(
     reviewStatus: "raw_extracted",
     sourcePageNumbers,
     text,
-    tokenCount: estimateTokenCount(text),
+    tokenCount: tokenCounter.count(text),
     workspaceId: input.workspaceId,
   };
 }
@@ -514,7 +618,7 @@ function hashText(text: string) {
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 7: Run tests**
 
 Run:
 
@@ -524,10 +628,10 @@ pnpm --dir apps/web test
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/web/src/lib/rag-chunker.ts apps/web/src/lib/rag-chunker.test.mts
+git add apps/web/package.json apps/web/pnpm-lock.yaml apps/web/src/lib/rag-tokenizer.ts apps/web/src/lib/rag-tokenizer.test.mts apps/web/src/lib/rag-chunker.ts apps/web/src/lib/rag-chunker.test.mts
 git commit -m "Add page-aware RAG chunker"
 ```
 
@@ -775,6 +879,15 @@ Expected: fails because `rag-budget.ts` does not exist.
 Create `apps/web/src/lib/rag-budget.ts`:
 
 ```ts
+export class EmbeddingBudgetExceededError extends Error {
+  code = "embedding_budget_exceeded" as const;
+
+  constructor(message: string) {
+    super(`embedding_budget_exceeded: ${message}`);
+    this.name = "EmbeddingBudgetExceededError";
+  }
+}
+
 export type EmbeddingBudgetInput = {
   documentTokenEstimate: number;
   globalTokensUsedToday: number;
@@ -803,8 +916,8 @@ export function assertEmbeddingBudget(
   caps = getEmbeddingBudgetCaps(),
 ): void {
   if (input.documentTokenEstimate > caps.tokensPerDocument) {
-    throw new Error(
-      `embedding_budget_exceeded: Document requires ${input.documentTokenEstimate} embedding tokens, exceeding per-document cap of ${caps.tokensPerDocument}.`,
+    throw new EmbeddingBudgetExceededError(
+      `Document requires ${input.documentTokenEstimate} embedding tokens, exceeding per-document cap of ${caps.tokensPerDocument}.`,
     );
   }
 
@@ -812,13 +925,13 @@ export function assertEmbeddingBudget(
     input.workspaceTokensUsedToday + input.documentTokenEstimate >
     caps.workspaceTokensPerDay
   ) {
-    throw new Error(
-      `embedding_budget_exceeded: Workspace has ${input.workspaceTokensUsedToday} tokens indexed today; this job requires ${input.documentTokenEstimate} and would exceed daily cap of ${caps.workspaceTokensPerDay}.`,
+    throw new EmbeddingBudgetExceededError(
+      `Workspace has ${input.workspaceTokensUsedToday} tokens indexed today; this job requires ${input.documentTokenEstimate} and would exceed daily cap of ${caps.workspaceTokensPerDay}.`,
     );
   }
 
   if (input.globalTokensUsedToday + input.documentTokenEstimate > caps.globalTokensPerDay) {
-    throw new Error("embedding_budget_exceeded: Global daily embedding cap exceeded.");
+    throw new EmbeddingBudgetExceededError("Global daily embedding cap exceeded.");
   }
 }
 
@@ -1429,6 +1542,8 @@ function requiredEnv(key: string) {
 }
 ```
 
+Budget failures are excluded from these retries by `runRagIndexJob`, which throws BullMQ `UnrecoverableError` only for `EmbeddingBudgetExceededError`.
+
 - [ ] **Step 4: Run tests**
 
 Run:
@@ -1460,6 +1575,7 @@ Create `apps/web/src/lib/rag-indexer.test.mts`:
 ```ts
 import assert from "node:assert/strict";
 import test from "node:test";
+import { UnrecoverableError } from "bullmq";
 
 import { runRagIndexJob } from "./rag-indexer.ts";
 
@@ -1467,53 +1583,59 @@ test("runRagIndexJob checks budget before embedding provider call", async () => 
   let providerCalled = false;
   let failureCode = "";
 
-  await runRagIndexJob(
-    { documentId: "doc_1", indexJobId: "job_1", indexVersion: 1, workspaceId: "wrk_1" },
-    {
-      budgetCaps: {
-        globalTokensPerDay: 100,
-        tokensPerDocument: 10,
-        workspaceTokensPerDay: 100,
-      },
-      chunkPages: () => [
+  await assert.rejects(
+    () =>
+      runRagIndexJob(
+        { documentId: "doc_1", indexJobId: "job_1", indexVersion: 1, workspaceId: "wrk_1" },
         {
-          chunkOrdinal: 0,
-          contentHash: "hash",
-          documentId: "doc_1",
-          headingPath: [],
-          id: "rag_doc_1_1_0_hash",
-          indexJobId: "job_1",
-          indexVersion: 1,
-          pageEnd: 1,
-          pageStart: 1,
-          reviewStatus: "raw_extracted",
-          sourcePageNumbers: [1],
-          text: "too many tokens",
-          tokenCount: 11,
-          workspaceId: "wrk_1",
+          budgetCaps: {
+            globalTokensPerDay: 100,
+            tokensPerDocument: 10,
+            workspaceTokensPerDay: 100,
+          },
+          chunkPages: () => [
+            {
+              chunkOrdinal: 0,
+              contentHash: "hash",
+              documentId: "doc_1",
+              headingPath: [],
+              id: "rag_doc_1_1_0_hash",
+              indexJobId: "job_1",
+              indexVersion: 1,
+              pageEnd: 1,
+              pageStart: 1,
+              reviewStatus: "raw_extracted",
+              sourcePageNumbers: [1],
+              text: "too many tokens",
+              tokenCount: 11,
+              workspaceId: "wrk_1",
+            },
+          ],
+          embeddingProvider: {
+            dimensions: 1536,
+            model: "test",
+            async embedTexts() {
+              providerCalled = true;
+              return [];
+            },
+          },
+          repository: {
+            failIndexJob: async (input: { errorCode: string }) => {
+              failureCode = input.errorCode;
+            },
+            getExtractedPages: async () => [],
+            getTokenUsageToday: async () => ({
+              globalTokensUsedToday: 0,
+              workspaceTokensUsedToday: 0,
+            }),
+            markIndexJobRunning: async () => {},
+            storeCompletedIndex: async () => {},
+          },
         },
-      ],
-      embeddingProvider: {
-        dimensions: 1536,
-        model: "test",
-        async embedTexts() {
-          providerCalled = true;
-          return [];
-        },
-      },
-      repository: {
-        failIndexJob: async (input: { errorCode: string }) => {
-          failureCode = input.errorCode;
-        },
-        getExtractedPages: async () => [],
-        getTokenUsageToday: async () => ({
-          globalTokensUsedToday: 0,
-          workspaceTokensUsedToday: 0,
-        }),
-        markIndexJobRunning: async () => {},
-        storeCompletedIndex: async () => {},
-      },
-    },
+      ),
+    (error) =>
+      error instanceof UnrecoverableError &&
+      /embedding_budget_exceeded/.test(error.message),
   );
 
   assert.equal(providerCalled, false);
@@ -1568,6 +1690,59 @@ test("runRagIndexJob stores completed index when embedding succeeds", async () =
 
   assert.equal(storedChunks, 1);
 });
+
+test("runRagIndexJob rethrows transient provider failures for BullMQ retry", async () => {
+  let failureCode = "";
+
+  await assert.rejects(
+    () =>
+      runRagIndexJob(
+        { documentId: "doc_1", indexJobId: "job_1", indexVersion: 1, workspaceId: "wrk_1" },
+        {
+          chunkPages: () => [
+            {
+              chunkOrdinal: 0,
+              contentHash: "hash",
+              documentId: "doc_1",
+              headingPath: [],
+              id: "rag_doc_1_1_0_hash",
+              indexJobId: "job_1",
+              indexVersion: 1,
+              pageEnd: 1,
+              pageStart: 1,
+              reviewStatus: "raw_extracted",
+              sourcePageNumbers: [1],
+              text: "generator control",
+              tokenCount: 2,
+              workspaceId: "wrk_1",
+            },
+          ],
+          embeddingProvider: {
+            dimensions: 1536,
+            model: "test",
+            async embedTexts() {
+              throw new Error("provider timeout");
+            },
+          },
+          repository: {
+            failIndexJob: async (input: { errorCode: string }) => {
+              failureCode = input.errorCode;
+            },
+            getExtractedPages: async () => [],
+            getTokenUsageToday: async () => ({
+              globalTokensUsedToday: 0,
+              workspaceTokensUsedToday: 0,
+            }),
+            markIndexJobRunning: async () => {},
+            storeCompletedIndex: async () => {},
+          },
+        },
+      ),
+    /provider timeout/,
+  );
+
+  assert.equal(failureCode, "indexing_failed");
+});
 ```
 
 - [ ] **Step 2: Run tests and verify failure**
@@ -1585,7 +1760,13 @@ Expected: fails because `rag-indexer.ts` does not exist.
 Create `apps/web/src/lib/rag-indexer.ts`:
 
 ```ts
-import { assertEmbeddingBudget, type EmbeddingBudgetCaps } from "./rag-budget.ts";
+import { UnrecoverableError } from "bullmq";
+
+import {
+  EmbeddingBudgetExceededError,
+  assertEmbeddingBudget,
+  type EmbeddingBudgetCaps,
+} from "./rag-budget.ts";
 import { chunkExtractedPages } from "./rag-chunker.ts";
 import { getEmbeddingProvider, type EmbeddingProvider } from "./embedding-provider.ts";
 import { createRagRepository, type RagRepository } from "./rag-repository.ts";
@@ -1658,14 +1839,21 @@ export async function runRagIndexJob(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const isBudgetFailure = error instanceof EmbeddingBudgetExceededError;
     await repository.failIndexJob({
       documentId: payload.documentId,
-      errorCode: message.includes("embedding_budget_exceeded")
+      errorCode: isBudgetFailure
         ? "embedding_budget_exceeded"
         : "indexing_failed",
       errorMessage: message,
       indexJobId: payload.indexJobId,
     });
+
+    if (isBudgetFailure) {
+      throw new UnrecoverableError(message);
+    }
+
+    throw error;
   }
 }
 ```
