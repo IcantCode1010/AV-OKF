@@ -121,3 +121,79 @@ test("local vault rejects spoofed PDF uploads without PDF magic bytes", async ()
     await rm(root, { force: true, recursive: true });
   }
 });
+
+test("local vault records extraction lifecycle and page records", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-vault-"));
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    const uploaded = await vault.createUploadedDocument({
+      bytes: Buffer.from("%PDF-1.7\n"),
+      description: "Uploaded for Stage 2 test coverage.",
+      originalFilename: "manual.pdf",
+      owner: "Maintenance Control",
+      sourceType: "aviation",
+      tags: ["737NG"],
+      title: "Extractable Manual",
+      type: "application/pdf",
+    });
+
+    await vault.startExtraction(uploaded.id);
+    const running = await vault.getDocumentById(uploaded.id);
+    assert.equal(running?.status, "processing");
+    assert.equal(running?.extraction.status, "running");
+    assert.match(running?.extraction.logs.at(-1)?.message ?? "", /started/i);
+
+    await vault.completeExtraction(uploaded.id, {
+      pageRecords: [
+        {
+          pageNumber: 1,
+          text: "Generator bus procedure",
+          tables: [],
+          imageCount: 0,
+          charCount: 23,
+        },
+      ],
+    });
+
+    const completed = await vault.getDocumentById(uploaded.id);
+    assert.equal(completed?.status, "ready");
+    assert.equal(completed?.pages, 1);
+    assert.equal(completed?.extraction.status, "completed");
+    assert.equal(completed?.extraction.pageRecords[0]?.pageNumber, 1);
+    assert.equal(completed?.extraction.pageRecords[0]?.text, "Generator bus procedure");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("local vault records extraction failures without losing document metadata", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-vault-"));
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    const uploaded = await vault.createUploadedDocument({
+      bytes: Buffer.from("%PDF-1.7\n"),
+      description: "Uploaded for failure handling.",
+      originalFilename: "locked.pdf",
+      owner: "Maintenance Control",
+      sourceType: "aviation",
+      tags: ["locked"],
+      title: "Locked Manual",
+      type: "application/pdf",
+    });
+
+    await vault.failExtraction(uploaded.id, {
+      code: "password_protected_pdf",
+      message: "PDF requires a password.",
+    });
+
+    const failed = await vault.getDocumentById(uploaded.id);
+    assert.equal(failed?.title, "Locked Manual");
+    assert.equal(failed?.status, "blocked");
+    assert.equal(failed?.extraction.status, "failed");
+    assert.equal(failed?.extraction.error?.code, "password_protected_pdf");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});

@@ -33,6 +33,42 @@ export type CustomProperty = {
   value: string;
 };
 
+export type ExtractionStatus = "queued" | "running" | "completed" | "failed";
+
+export type ExtractionLog = {
+  id: string;
+  timestamp: string;
+  level: "info" | "warning" | "error";
+  message: string;
+};
+
+export type ExtractedTable = {
+  index: number;
+  rows: string[][];
+};
+
+export type ExtractedPageRecord = {
+  pageNumber: number;
+  text: string;
+  tables: ExtractedTable[];
+  imageCount: number;
+  charCount: number;
+};
+
+export type ExtractionError = {
+  code: string;
+  message: string;
+};
+
+export type DocumentExtraction = {
+  status: ExtractionStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  error: ExtractionError | null;
+  pageRecords: ExtractedPageRecord[];
+  logs: ExtractionLog[];
+};
+
 export type Document = {
   id: string;
   title: string;
@@ -50,6 +86,7 @@ export type Document = {
   originalFilename: string | null;
   mimeType: string;
   customProperties: CustomProperty[];
+  extraction: DocumentExtraction;
 };
 
 export type ActivityEvent = {
@@ -84,6 +121,10 @@ type UpdateMetadata = {
   tags: string[];
   title: string;
   customProperties: CustomProperty[];
+};
+
+type CompleteExtractionInput = {
+  pageRecords: ExtractedPageRecord[];
 };
 
 const currentUser: User = {
@@ -123,6 +164,7 @@ const seedDocuments: Document[] = [
       { key: "Manual family", value: "AMM" },
       { key: "ATA chapter", value: "24" },
     ],
+    extraction: createSeedExtraction("queued"),
   },
   {
     id: "doc-elt-training",
@@ -142,6 +184,7 @@ const seedDocuments: Document[] = [
     originalFilename: "elt-system-training-notes.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Training reference" }],
+    extraction: createSeedExtraction("queued"),
   },
   {
     id: "doc-company-policy",
@@ -161,6 +204,7 @@ const seedDocuments: Document[] = [
     originalFilename: "technical-publications-control-policy.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Quality" }],
+    extraction: createSeedExtraction("queued"),
   },
   {
     id: "doc-apu-fault-routes",
@@ -180,6 +224,7 @@ const seedDocuments: Document[] = [
     originalFilename: "apu-fault-route-reference.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Route type", value: "Fault isolation" }],
+    extraction: createSeedExtraction("completed"),
   },
   {
     id: "doc-vendor-onboarding",
@@ -199,6 +244,7 @@ const seedDocuments: Document[] = [
     originalFilename: "vendor-onboarding-handbook.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Operations" }],
+    extraction: createSeedExtraction("completed"),
   },
   {
     id: "doc-mel-dispatch",
@@ -218,6 +264,13 @@ const seedDocuments: Document[] = [
     originalFilename: "mel-dispatch-gate-examples.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Example only" }],
+    extraction: {
+      ...createSeedExtraction("failed"),
+      error: {
+        code: "incomplete_source_metadata",
+        message: "Seeded blocked item is missing authoritative source metadata.",
+      },
+    },
   },
 ];
 
@@ -416,6 +469,14 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         originalFilename: input.originalFilename,
         mimeType: "application/pdf",
         customProperties: [],
+        extraction: {
+          status: "queued",
+          startedAt: null,
+          completedAt: null,
+          error: null,
+          pageRecords: [],
+          logs: [createExtractionLog("info", "Extraction queued after upload.")],
+        },
       };
 
       store.documents.unshift(document);
@@ -460,16 +521,126 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     });
   }
 
+  async function startExtraction(id: string) {
+    return mutateStore(async (store) => {
+      const document = getStoreDocument(store, id);
+      const timestamp = formatTimestamp(new Date());
+
+      document.status = "processing";
+      document.extraction = normalizeExtraction(document.extraction);
+      document.extraction.status = "running";
+      document.extraction.startedAt = timestamp;
+      document.extraction.completedAt = null;
+      document.extraction.error = null;
+      document.extraction.logs.push(
+        createExtractionLog("info", "Extraction started."),
+      );
+      document.updatedAt = timestamp;
+
+      store.activityEvents.unshift({
+        id: `act-${randomUUID()}`,
+        label: "Extraction started",
+        documentTitle: document.title,
+        timestamp: "Just now",
+        status: document.status,
+      });
+
+      return document;
+    });
+  }
+
+  async function completeExtraction(id: string, input: CompleteExtractionInput) {
+    return mutateStore(async (store) => {
+      const document = getStoreDocument(store, id);
+      const timestamp = formatTimestamp(new Date());
+
+      document.status = "ready";
+      document.pages = input.pageRecords.length;
+      document.extraction = normalizeExtraction(document.extraction);
+      document.extraction.status = "completed";
+      document.extraction.completedAt = timestamp;
+      document.extraction.error = null;
+      document.extraction.pageRecords = input.pageRecords;
+      document.extraction.logs.push(
+        createExtractionLog(
+          "info",
+          `Extraction completed with ${input.pageRecords.length} page records.`,
+        ),
+      );
+      document.updatedAt = timestamp;
+
+      store.activityEvents.unshift({
+        id: `act-${randomUUID()}`,
+        label: "Extraction completed",
+        documentTitle: document.title,
+        timestamp: "Just now",
+        status: document.status,
+      });
+
+      return document;
+    });
+  }
+
+  async function failExtraction(id: string, error: ExtractionError) {
+    return mutateStore(async (store) => {
+      const document = getStoreDocument(store, id);
+      const timestamp = formatTimestamp(new Date());
+
+      document.status = "blocked";
+      document.extraction = normalizeExtraction(document.extraction);
+      document.extraction.status = "failed";
+      document.extraction.completedAt = timestamp;
+      document.extraction.error = error;
+      document.extraction.logs.push(createExtractionLog("error", error.message));
+      document.updatedAt = timestamp;
+
+      store.activityEvents.unshift({
+        id: `act-${randomUUID()}`,
+        label: "Extraction failed",
+        documentTitle: document.title,
+        timestamp: "Just now",
+        status: document.status,
+      });
+
+      return document;
+    });
+  }
+
+  async function getDocumentPdfBytes(id: string) {
+    const document = await (async () => {
+      const store = await readStore();
+      return getStoreDocument(store, id);
+    })();
+
+    if (!document.storageKey) {
+      throw new Error("document_has_no_stored_pdf");
+    }
+
+    const targetPath = assertSafeStorageKey(document.storageKey, root);
+    return readFile(targetPath);
+  }
+
   return {
+    completeExtraction,
     createUploadedDocument,
+    failExtraction,
     getActivityEvents: async () => (await readStore()).activityEvents,
-    getDocumentById: async (id: string) =>
-      (await readStore()).documents.find((document) => document.id === id),
+    getDocumentById: async (id: string) => {
+      const document = (await readStore()).documents.find(
+        (candidate) => candidate.id === id,
+      );
+      if (document) {
+        document.extraction = normalizeExtraction(document.extraction);
+      }
+      return document;
+    },
     getDocumentMetrics: async () =>
       calculateDocumentMetrics((await readStore()).documents),
-    getDocuments: async () => (await readStore()).documents,
+    getDocumentPdfBytes,
+    getDocuments: async () => normalizeDocuments((await readStore()).documents),
     getRecentDocuments: async (limit = 4) =>
-      (await readStore()).documents.slice(0, limit),
+      normalizeDocuments((await readStore()).documents).slice(0, limit),
+    startExtraction,
     updateDocumentMetadata,
   };
 }
@@ -504,6 +675,25 @@ export async function updateDocumentMetadata(id: string, input: UpdateMetadata) 
   return defaultVault.updateDocumentMetadata(id, input);
 }
 
+export async function startExtraction(id: string) {
+  return defaultVault.startExtraction(id);
+}
+
+export async function completeExtraction(
+  id: string,
+  input: CompleteExtractionInput,
+) {
+  return defaultVault.completeExtraction(id, input);
+}
+
+export async function failExtraction(id: string, error: ExtractionError) {
+  return defaultVault.failExtraction(id, error);
+}
+
+export async function getDocumentPdfBytes(id: string) {
+  return defaultVault.getDocumentPdfBytes(id);
+}
+
 function getDefaultDataRoot() {
   return path.resolve(process.cwd(), ".data");
 }
@@ -525,6 +715,62 @@ function formatTimestamp(date: Date) {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function getStoreDocument(store: VaultStore, id: string) {
+  const document = store.documents.find((candidate) => candidate.id === id);
+
+  if (!document) {
+    throw new Error("document_not_found");
+  }
+
+  document.extraction = normalizeExtraction(document.extraction);
+  return document;
+}
+
+function createSeedExtraction(status: ExtractionStatus): DocumentExtraction {
+  return {
+    status,
+    startedAt: null,
+    completedAt: null,
+    error: null,
+    pageRecords: [],
+    logs: [createExtractionLog("info", `Seeded extraction state: ${status}.`)],
+  };
+}
+
+function normalizeExtraction(
+  extraction: DocumentExtraction | undefined,
+): DocumentExtraction {
+  return (
+    extraction ?? {
+      status: "queued",
+      startedAt: null,
+      completedAt: null,
+      error: null,
+      pageRecords: [],
+      logs: [],
+    }
+  );
+}
+
+function createExtractionLog(
+  level: ExtractionLog["level"],
+  message: string,
+): ExtractionLog {
+  return {
+    id: `log-${randomUUID()}`,
+    timestamp: formatTimestamp(new Date()),
+    level,
+    message,
+  };
+}
+
+function normalizeDocuments(documents: Document[]) {
+  return documents.map((document) => ({
+    ...document,
+    extraction: normalizeExtraction(document.extraction),
+  }));
 }
 
 function calculateDocumentMetrics(documents: Document[]) {

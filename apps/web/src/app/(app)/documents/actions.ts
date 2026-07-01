@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { startDetachedExtraction } from "@/lib/document-extraction";
 import {
   assertPdfUpload,
   createUploadedDocument,
@@ -33,9 +34,22 @@ export async function uploadDocumentAction(formData: FormData) {
     type: file.type,
   });
 
+  startDetachedExtraction(document.id);
+
   revalidatePath("/dashboard");
   revalidatePath("/documents");
   redirect(`/documents/${document.id}`);
+}
+
+export async function runExtractionAction(formData: FormData) {
+  const id = getFormString(formData, "id");
+
+  startDetachedExtraction(id);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/documents");
+  revalidatePath(`/documents/${id}`);
+  redirect(`/documents/${id}`);
 }
 
 export async function updateDocumentMetadataAction(formData: FormData) {

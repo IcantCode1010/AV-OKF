@@ -74,11 +74,13 @@ document metadata
 tags
 document detail page
 processing status
+page extraction records
+extraction logs
 ```
 
 ## Web App
 
-The Stage 1 product shell lives in `apps/web`.
+The Stage 2 product shell lives in `apps/web`.
 
 ```bash
 pnpm --dir apps/web dev
@@ -89,6 +91,8 @@ pnpm --dir apps/web build
 The app uses mock auth plus a local Stage 1 document vault. PDFs upload through Server Actions, files are written under opaque storage keys, metadata is editable, and document state is persisted in `apps/web/.data/document-vault.json`.
 
 `apps/web/.data/` is intentionally ignored by git. This JSON file store is a temporary Stage 1 stand-in so the product flow can work before a real database and object store are selected. Do not treat it as the long-term backend.
+
+Stage 2 adds local in-process PDF extraction. Upload returns immediately, extraction runs in the same long-lived Node process, and the document detail page polls while extraction is queued or running. This is an MVP-only background job model and must be replaced with a durable queue or worker before serverless or production deployment.
 
 ## Design Principles
 

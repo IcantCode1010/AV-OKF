@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Layers, Tags } from "lucide-react";
 
+import { DocumentExtractionPoller } from "@/components/document-extraction-poller";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
   customPropertiesToText,
   getDocumentById,
 } from "@/lib/document-vault";
-import { updateDocumentMetadataAction } from "../actions";
+import { runExtractionAction, updateDocumentMetadataAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export default async function DocumentDetailPage({
 
   return (
     <>
+      <DocumentExtractionPoller status={document.extraction.status} />
       <div className="flex flex-col gap-4">
         <Button asChild variant="ghost" className="w-fit px-0">
           <Link href="/documents">
@@ -58,7 +60,16 @@ export default async function DocumentDetailPage({
               {document.description}
             </p>
           </div>
-          <Button disabled>Run extraction in Stage 2</Button>
+          {document.storageKey ? (
+            <form action={runExtractionAction}>
+              <input type="hidden" name="id" value={document.id} />
+              <PendingSubmitButton pendingLabel="Starting...">
+                Run extraction
+              </PendingSubmitButton>
+            </form>
+          ) : (
+            <Button disabled>Seed document has no stored PDF</Button>
+          )}
         </div>
       </div>
 
@@ -67,13 +78,13 @@ export default async function DocumentDetailPage({
           <CardHeader>
             <CardTitle>Document readiness</CardTitle>
             <CardDescription>
-              Shell-only panels for future extraction, topic records, and OKF
-              coverage.
+              Extraction now writes page records locally. Topic records and OKF
+              coverage arrive in later stages.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-3">
             {[
-              ["Extraction", "Waiting for Stage 2 pipeline"],
+              ["Extraction", extractionSummary(document.extraction.status)],
               ["Topic records", "Generated after structure detection"],
               ["Knowledge links", "Created after human approval"],
             ].map(([title, detail]) => (
@@ -137,10 +148,106 @@ export default async function DocumentDetailPage({
 
       <Card>
         <CardHeader>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle>Extraction</CardTitle>
+              <CardDescription>
+                Local in-process background extraction. This page polls while
+                extraction is queued or running.
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="capitalize">
+              {document.extraction.status}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {document.extraction.error ? (
+            <div className="rounded-md border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
+              <p className="font-medium">{document.extraction.error.code}</p>
+              <p className="mt-1">{document.extraction.error.message}</p>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <ExtractionMetric
+              label="Pages"
+              value={`${document.extraction.pageRecords.length}`}
+            />
+            <ExtractionMetric
+              label="Started"
+              value={document.extraction.startedAt ?? "Pending"}
+            />
+            <ExtractionMetric
+              label="Completed"
+              value={document.extraction.completedAt ?? "Pending"}
+            />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-md border border-border">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-medium">Page records</p>
+              </div>
+              <div className="max-h-96 space-y-3 overflow-auto p-4">
+                {document.extraction.pageRecords.length > 0 ? (
+                  document.extraction.pageRecords.slice(0, 8).map((page) => (
+                    <div key={page.pageNumber} className="rounded-md border border-border p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium">Page {page.pageNumber}</p>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {page.charCount} chars
+                        </span>
+                      </div>
+                      <p className="mt-2 line-clamp-4 text-sm text-muted-foreground">
+                        {page.text || "No selectable text extracted from this page."}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No page records yet.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-md border border-border">
+              <div className="border-b border-border px-4 py-3">
+                <p className="text-sm font-medium">Extraction logs</p>
+              </div>
+              <div className="max-h-96 space-y-3 overflow-auto p-4">
+                {document.extraction.logs.length > 0 ? (
+                  document.extraction.logs.slice(-10).map((log) => (
+                    <div key={log.id} className="text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <Badge variant="secondary" className="capitalize">
+                          {log.level}
+                        </Badge>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {log.timestamp}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-muted-foreground">{log.message}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No extraction logs yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Edit metadata</CardTitle>
           <CardDescription>
-            Stage 1 stores editable metadata locally. Extraction-specific fields
-            arrive in Stage 2.
+            Metadata remains editable while extraction records are stored
+            separately.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -229,10 +336,10 @@ export default async function DocumentDetailPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Future trace</CardTitle>
+          <CardTitle>Future topic trace</CardTitle>
           <CardDescription>
-            Stage 0 reserves the information architecture for later ingestion
-            evidence.
+            Stage 2 produces page records. Stage 3 will generate reviewable
+            topics from document structure.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
@@ -241,7 +348,8 @@ export default async function DocumentDetailPage({
             <div>
               <p className="font-medium">Page extraction</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Page text, tables, and image metadata will appear here.
+                Page text is available in the extraction panel. Table and image
+                metadata fields are reserved in each page record.
               </p>
             </div>
           </div>
@@ -258,6 +366,31 @@ export default async function DocumentDetailPage({
         </CardContent>
       </Card>
     </>
+  );
+}
+
+function extractionSummary(status: string) {
+  if (status === "completed") {
+    return "Page records extracted";
+  }
+
+  if (status === "failed") {
+    return "Extraction failed; check logs";
+  }
+
+  if (status === "running") {
+    return "Extraction running in background";
+  }
+
+  return "Extraction queued";
+}
+
+function ExtractionMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border p-4">
+      <p className="text-xs uppercase text-muted-foreground">{label}</p>
+      <p className="mt-2 text-sm font-medium">{value}</p>
+    </div>
   );
 }
 

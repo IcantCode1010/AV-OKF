@@ -57,6 +57,7 @@ Deliverables:
 - Document processing statuses
 - Extraction logs
 - Defensive handling for malformed, corrupt, and password-protected PDFs. The upload-time magic-byte check confirms file type only, not structural validity.
+- Stage 2 uses local in-process background extraction with client-side polling while a document is processing. This assumes a long-lived Node process and must be replaced with a durable queue or worker before serverless deployment.
 
 Exit criteria:
 
