@@ -259,6 +259,14 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return job as { id: string; documentId: string; workspaceId: string };
     },
+    async createRagIndexJobAfterExtraction(input: {
+      documentId: string;
+      extractionJobId: string;
+      workspaceId: string;
+    }) {
+      const { createRagRepository } = await import("./rag-repository.ts");
+      return createRagRepository().createIndexJob(input);
+    },
     async createUploadedDocumentRecord(input: UploadRecordInput) {
       const timestamp = formatTimestamp(new Date());
       const title =

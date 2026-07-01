@@ -15,6 +15,16 @@ type ProductionExtractionRepository = {
     pageRecords: ExtractedPageRecord[];
     workspaceId: string;
   }): Promise<void>;
+  createRagIndexJobAfterExtraction?(input: {
+    documentId: string;
+    extractionJobId: string;
+    workspaceId: string;
+  }): Promise<{
+    documentId: string;
+    id: string;
+    indexVersion: number;
+    workspaceId: string;
+  }>;
   failExtractionJob(input: {
     documentId: string;
     error: ExtractionError;
@@ -34,6 +44,14 @@ type ProductionExtractionRepository = {
 
 type RunProductionExtractionJobOptions = {
   extractPdfPages?: (bytes: Buffer) => Promise<ExtractedPageRecord[]>;
+  ragQueue?: {
+    enqueueIndexJob(input: {
+      documentId: string;
+      indexJobId: string;
+      indexVersion: number;
+      workspaceId: string;
+    }): Promise<void>;
+  };
   repository: ProductionExtractionRepository;
   storage: Pick<ObjectStorage, "getObject">;
 };
@@ -54,6 +72,24 @@ export async function runProductionExtractionJob(
       ...payload,
       pageRecords,
     });
+
+    if (options.ragQueue && options.repository.createRagIndexJobAfterExtraction) {
+      try {
+        const indexJob =
+          await options.repository.createRagIndexJobAfterExtraction(payload);
+        await options.ragQueue.enqueueIndexJob({
+          documentId: indexJob.documentId,
+          indexJobId: indexJob.id,
+          indexVersion: indexJob.indexVersion,
+          workspaceId: indexJob.workspaceId,
+        });
+      } catch (error) {
+        console.error(
+          "RAG index enqueue failed; queued job remains in Postgres.",
+          error,
+        );
+      }
+    }
   } catch (error) {
     await options.repository.failExtractionJob({
       ...payload,
