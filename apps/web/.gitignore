@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# stage 1 local document vault
+/.data/
+
 # production
 /build
 

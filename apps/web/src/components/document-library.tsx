@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FileText, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { Document, DocumentStatus } from "@/lib/mock-data";
+import type { Document, DocumentStatus } from "@/lib/document-vault";
 import { statusLabels, StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

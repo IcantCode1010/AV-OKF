@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 import {
   BarChart3,
   Bell,
@@ -14,7 +15,7 @@ import {
   Settings,
 } from "lucide-react";
 
-import type { User, Workspace } from "@/lib/mock-data";
+import type { User, Workspace } from "@/lib/document-vault";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,7 +53,7 @@ export function AppShell({
   user,
   workspace,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   user: User;
   workspace: Workspace;
 }) {

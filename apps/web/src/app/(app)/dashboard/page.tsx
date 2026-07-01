@@ -30,19 +30,21 @@ import {
   getCurrentWorkspace,
   getDocumentMetrics,
   getRecentDocuments,
-} from "@/lib/mock-data";
+} from "@/lib/document-vault";
 
-export default function DashboardPage() {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
   const workspace = getCurrentWorkspace();
-  const metrics = getDocumentMetrics();
-  const recentDocuments = getRecentDocuments();
-  const activityEvents = getActivityEvents();
+  const metrics = await getDocumentMetrics();
+  const recentDocuments = await getRecentDocuments();
+  const activityEvents = await getActivityEvents();
 
   const summaryCards = [
     {
       label: "Documents",
       value: metrics.total,
-      detail: "Seeded sources",
+      detail: "Local vault records",
       icon: Files,
     },
     {
@@ -69,13 +71,13 @@ export default function DashboardPage() {
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <Badge variant="secondary">Stage 0 product shell</Badge>
+          <Badge variant="secondary">Stage 1 document vault</Badge>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
             {workspace.name}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            A seeded document workspace showing the dashboard, navigation, and
-            review surfaces that Stage 1 upload and metadata will connect to.
+            A local document vault for PDFs, metadata, tags, and processing
+            status before extraction and retrieval are added.
           </p>
         </div>
         <Button asChild>
@@ -110,7 +112,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Recent documents</CardTitle>
             <CardDescription>
-              Seeded aviation and general documents for shell verification.
+              Uploaded and seeded documents in the Stage 1 local vault.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -157,7 +159,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Activity</CardTitle>
             <CardDescription>
-              Placeholder trace for future ingestion events.
+              Local upload and metadata activity before the extraction pipeline.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

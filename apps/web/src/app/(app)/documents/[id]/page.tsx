@@ -12,12 +12,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Separator } from "@/components/ui/separator";
-import { getDocumentById, getDocuments } from "@/lib/mock-data";
+import {
+  customPropertiesToText,
+  getDocumentById,
+} from "@/lib/document-vault";
+import { updateDocumentMetadataAction } from "../actions";
 
-export function generateStaticParams() {
-  return getDocuments().map((document) => ({ id: document.id }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function DocumentDetailPage({
   params,
@@ -25,7 +30,7 @@ export default async function DocumentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const document = getDocumentById(id);
+  const document = await getDocumentById(id);
 
   if (!document) {
     notFound();
@@ -88,8 +93,15 @@ export default async function DocumentDetailPage({
             <MetadataRow label="Owner" value={document.owner} />
             <MetadataRow label="Source type" value={document.sourceType} />
             <MetadataRow label="Size" value={document.size} />
-            <MetadataRow label="Pages" value={`${document.pages}`} />
+            <MetadataRow
+              label="Pages"
+              value={document.pages > 0 ? `${document.pages}` : "Pending"}
+            />
             <MetadataRow label="Updated" value={document.updatedAt} />
+            <MetadataRow
+              label="Stored file"
+              value={document.storageKey ? "Local PDF" : "Seed only"}
+            />
             <Separator />
             <div>
               <div className="mb-2 flex items-center gap-2 text-muted-foreground">
@@ -104,9 +116,116 @@ export default async function DocumentDetailPage({
                 ))}
               </div>
             </div>
+            {document.customProperties.length > 0 ? (
+              <>
+                <Separator />
+                <div className="space-y-2">
+                  <p className="text-muted-foreground">Custom properties</p>
+                  {document.customProperties.map((property) => (
+                    <MetadataRow
+                      key={property.key}
+                      label={property.key}
+                      value={property.value}
+                    />
+                  ))}
+                </div>
+              </>
+            ) : null}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Edit metadata</CardTitle>
+          <CardDescription>
+            Stage 1 stores editable metadata locally. Extraction-specific fields
+            arrive in Stage 2.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            action={updateDocumentMetadataAction}
+            className="grid gap-4 lg:grid-cols-2"
+          >
+            <input type="hidden" name="id" value={document.id} />
+            <div className="space-y-2">
+              <Label htmlFor="title">Title</Label>
+              <Input id="title" name="title" defaultValue={document.title} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="owner">Owner</Label>
+              <Input id="owner" name="owner" defaultValue={document.owner} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags</Label>
+              <Input
+                id="tags"
+                name="tags"
+                defaultValue={document.tags.join(", ")}
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="sourceType">Source type</Label>
+                <select
+                  id="sourceType"
+                  name="sourceType"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                  defaultValue={document.sourceType}
+                >
+                  <option value="general">General</option>
+                  <option value="aviation">Aviation</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="status">Status</Label>
+                <select
+                  id="status"
+                  name="status"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                  defaultValue={document.status}
+                >
+                  <option value="processing">Processing</option>
+                  <option value="needs_review">Needs review</option>
+                  <option value="ready">Ready</option>
+                  <option value="indexed">Indexed</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+              </div>
+            </div>
+            <div className="space-y-2 lg:col-span-2">
+              <Label htmlFor="description">Description</Label>
+              <textarea
+                id="description"
+                name="description"
+                rows={3}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                defaultValue={document.description}
+              />
+            </div>
+            <div className="space-y-2 lg:col-span-2">
+              <Label htmlFor="customProperties">Custom properties</Label>
+              <textarea
+                id="customProperties"
+                name="customProperties"
+                rows={4}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                defaultValue={customPropertiesToText(document.customProperties)}
+                placeholder="Manual family: AMM&#10;ATA chapter: 24"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use one key/value pair per line, separated by a colon.
+              </p>
+            </div>
+            <div className="lg:col-span-2">
+              <PendingSubmitButton pendingLabel="Saving...">
+                Save metadata
+              </PendingSubmitButton>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

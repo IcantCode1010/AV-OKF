@@ -1,10 +1,11 @@
 import { AppShell } from "@/components/app-shell";
-import { getCurrentUser, getCurrentWorkspace } from "@/lib/mock-data";
+import { getCurrentUser, getCurrentWorkspace } from "@/lib/document-vault";
+import type { ReactNode } from "react";
 
 export default function ProductLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <AppShell user={getCurrentUser()} workspace={getCurrentWorkspace()}>

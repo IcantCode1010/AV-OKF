@@ -1,4 +1,4 @@
-import type { DocumentStatus } from "@/lib/mock-data";
+import type { DocumentStatus } from "@/lib/document-vault";
 import { Badge } from "@/components/ui/badge";
 
 const statusLabels: Record<DocumentStatus, string> = {

@@ -78,7 +78,7 @@ processing status
 
 ## Web App
 
-The Stage 0 product shell lives in `apps/web`.
+The Stage 1 product shell lives in `apps/web`.
 
 ```bash
 pnpm --dir apps/web dev
@@ -86,7 +86,9 @@ pnpm --dir apps/web lint
 pnpm --dir apps/web build
 ```
 
-The shell uses mock auth and seeded demo documents. Stage 1 will add PDF upload, storage, editable metadata, tags, and processing state backed by real data.
+The app uses mock auth plus a local Stage 1 document vault. PDFs upload through Server Actions, files are written under opaque storage keys, metadata is editable, and document state is persisted in `apps/web/.data/document-vault.json`.
+
+`apps/web/.data/` is intentionally ignored by git. This JSON file store is a temporary Stage 1 stand-in so the product flow can work before a real database and object store are selected. Do not treat it as the long-term backend.
 
 ## Design Principles
 

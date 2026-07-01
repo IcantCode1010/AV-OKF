@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getCurrentUser, getCurrentWorkspace } from "@/lib/mock-data";
+import { getCurrentUser, getCurrentWorkspace } from "@/lib/document-vault";
 
 export default function SettingsPage() {
   const user = getCurrentUser();
