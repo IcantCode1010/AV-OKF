@@ -88,7 +88,7 @@ function createChunk(
     contentHash,
     documentId: input.documentId,
     headingPath: inferHeadingPath(text),
-    id: `rag_${input.documentId}_${pageStart}_${ordinal}_${contentHash.slice(0, 12)}`,
+    id: `rag_${input.documentId}_${input.indexVersion}_${pageStart}_${ordinal}_${contentHash.slice(0, 12)}`,
     indexJobId: input.indexJobId,
     indexVersion: input.indexVersion,
     pageEnd,

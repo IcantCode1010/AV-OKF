@@ -82,3 +82,27 @@ test("chunkExtractedPages creates stable content hashes", () => {
   assert.equal(first[0]?.contentHash, second[0]?.contentHash);
   assert.equal(first[0]?.id, second[0]?.id);
 });
+
+test("chunkExtractedPages keeps chunk ids distinct across index versions", () => {
+  const baseInput = {
+    documentId: "doc_4",
+    indexJobId: "job_4",
+    tokenCounter: createHeuristicTokenCounter(),
+    workspaceId: "wrk_1",
+    pages: [
+      {
+        charCount: 20,
+        imageCount: 0,
+        pageNumber: 1,
+        tables: [],
+        text: "Stable extracted text.",
+      },
+    ],
+  };
+
+  const first = chunkExtractedPages({ ...baseInput, indexVersion: 1 });
+  const second = chunkExtractedPages({ ...baseInput, indexVersion: 2 });
+
+  assert.equal(first[0]?.contentHash, second[0]?.contentHash);
+  assert.notEqual(first[0]?.id, second[0]?.id);
+});
