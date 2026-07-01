@@ -97,3 +97,27 @@ test("local vault stores PDF bytes under an opaque key and atomic JSON store", a
     await rm(root, { force: true, recursive: true });
   }
 });
+
+test("local vault rejects spoofed PDF uploads without PDF magic bytes", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-vault-"));
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    await assert.rejects(
+      () =>
+        vault.createUploadedDocument({
+          bytes: Buffer.from("not actually a pdf"),
+          description: "Spoofed upload.",
+          originalFilename: "manual.pdf",
+          owner: "Maintenance Control",
+          sourceType: "aviation",
+          tags: ["spoofed"],
+          title: "Spoofed PDF",
+          type: "application/pdf",
+        }),
+      /invalid_pdf_magic_bytes/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});

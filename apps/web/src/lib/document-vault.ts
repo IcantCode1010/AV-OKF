@@ -278,6 +278,12 @@ export function assertPdfUpload(file: { name: string; size: number; type: string
   }
 }
 
+export function assertPdfMagicBytes(bytes: Buffer) {
+  if (bytes.subarray(0, 5).toString("ascii") !== "%PDF-") {
+    throw new Error("invalid_pdf_magic_bytes");
+  }
+}
+
 export function assertSafeStorageKey(storageKey: string, dataRoot: string) {
   const uploadRoot = path.resolve(dataRoot, "uploads");
   const targetPath = path.resolve(uploadRoot, storageKey);
@@ -385,6 +391,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       size: input.bytes.byteLength,
       type: input.type,
     });
+    assertPdfMagicBytes(input.bytes);
 
     const storageKey = generateStorageKey(input.originalFilename);
     const targetPath = assertSafeStorageKey(storageKey, root);
