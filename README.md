@@ -62,9 +62,9 @@ docs/
 
 ## Current Status
 
-This repository currently contains planning artifacts. Implementation has not started yet.
+This repository contains planning artifacts, OKF validation tooling, and the first web application shell.
 
-The next engineering milestone is a Papra-style document vault:
+The current engineering milestone is a Papra-style document vault:
 
 ```text
 workspace shell
@@ -75,6 +75,18 @@ tags
 document detail page
 processing status
 ```
+
+## Web App
+
+The Stage 0 product shell lives in `apps/web`.
+
+```bash
+pnpm --dir apps/web dev
+pnpm --dir apps/web lint
+pnpm --dir apps/web build
+```
+
+The shell uses mock auth and seeded demo documents. Stage 1 will add PDF upload, storage, editable metadata, tags, and processing state backed by real data.
 
 ## Design Principles
 
