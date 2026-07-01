@@ -494,11 +494,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
 
   async function updateDocumentMetadata(id: string, input: UpdateMetadata) {
     return mutateStore(async (store) => {
-      const document = store.documents.find((candidate) => candidate.id === id);
-
-      if (!document) {
-        throw new Error("document_not_found");
-      }
+      const document = getStoreDocument(store, id);
 
       document.title = input.title.trim() || document.title;
       document.owner = input.owner.trim() || "Unassigned";

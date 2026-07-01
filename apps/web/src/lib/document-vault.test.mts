@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -193,6 +193,57 @@ test("local vault records extraction failures without losing document metadata",
     assert.equal(failed?.status, "blocked");
     assert.equal(failed?.extraction.status, "failed");
     assert.equal(failed?.extraction.error?.code, "password_protected_pdf");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("metadata edits persist normalized extraction state for legacy documents", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-vault-"));
+  await mkdir(path.join(root, "uploads"), { recursive: true });
+  await writeFile(
+    path.join(root, "document-vault.json"),
+    `${JSON.stringify({
+      documents: [
+        {
+          id: "legacy-doc",
+          title: "Legacy Manual",
+          fileType: "PDF",
+          size: "1 KB",
+          sizeBytes: 1024,
+          status: "processing",
+          tags: ["legacy"],
+          updatedAt: "Before Stage 2",
+          owner: "Maintenance Control",
+          sourceType: "aviation",
+          pages: 0,
+          description: "Record created before extraction fields existed.",
+          storageKey: null,
+          originalFilename: "legacy.pdf",
+          mimeType: "application/pdf",
+          customProperties: [],
+        },
+      ],
+      activityEvents: [],
+    })}\n`,
+  );
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    await vault.updateDocumentMetadata("legacy-doc", {
+      customProperties: [],
+      description: "Edited legacy record.",
+      owner: "Maintenance Control",
+      sourceType: "aviation",
+      status: "processing",
+      tags: ["legacy", "edited"],
+      title: "Edited Legacy Manual",
+    });
+
+    const rawStore = JSON.parse(
+      await readFile(path.join(root, "document-vault.json"), "utf8"),
+    );
+    assert.equal(rawStore.documents[0].extraction.status, "queued");
   } finally {
     await rm(root, { force: true, recursive: true });
   }
