@@ -260,11 +260,94 @@ conflict
 MVP matching mechanism:
 
 ```text
-1. For each claim, gather candidate evidence excerpts from the retrieved sources.
-2. Run lexical checks for exact entities, numbers, terms, and units.
-3. Run semantic similarity between claim and evidence.
-4. Use an LLM judge only after lexical/semantic candidates are selected.
-5. Require direct support for high-risk claims.
+1. For each claim, gather candidate evidence from the retrieved sources.
+2. Prefer pre-extracted structured facts when available.
+3. Fall back to raw source excerpts when no structured fact exists.
+4. Run lexical checks for exact entities, numbers, terms, units, dates, identifiers, and negations.
+5. Run semantic similarity between the claim and each evidence candidate.
+6. Use an LLM judge only after lexical/semantic candidates are selected.
+7. Require direct support for high-risk claims.
+```
+
+## What Semantic Similarity Means
+
+Semantic similarity is a candidate selection step, not the final proof that a claim is supported.
+
+It compares the normalized claim text against normalized evidence candidates using embeddings or another semantic retrieval score. The evidence candidates may be:
+
+```text
+structured facts extracted from OKF or topic records
+raw source excerpts from retrieved document pages
+table rows or normalized table facts
+warning/caution/note blocks
+source manifest entries
+domain rule entries
+```
+
+Use this evidence preference order:
+
+```text
+1. Approved structured fact from OKF
+2. Approved source manifest or domain rule
+3. Approved topic record field
+4. Raw source excerpt with page reference
+5. Unreviewed topic record or RAG chunk, discovery only
+```
+
+For canonical answers, the validator should compare against approved structured facts first. For open-ended RAG answers, the validator may compare against raw excerpts because a curated fact may not exist.
+
+The LLM judge compares the claim against the selected evidence candidates, not against the whole corpus. It must return:
+
+```json
+{
+  "claim_id": "c1",
+  "evidence_id": "src_policy_refunds_p3",
+  "match_level": "direct",
+  "supports_claim": true,
+  "exact_evidence_excerpt": "Customers may request a refund within 14 days of purchase.",
+  "reason": "The source explicitly states the same refund window as the claim."
+}
+```
+
+The LLM judge is not allowed to invent evidence. If it cannot quote or identify the exact supporting excerpt, the match level is `weak` or `none`.
+
+## Lexical, Semantic, And Judge Disagreements
+
+The validator should be conservative when checks disagree.
+
+Disagreement rules:
+
+```text
+Lexical says conflict, semantic says similar:
+  treat as conflict until the LLM judge proves direct support.
+
+Lexical says exact number/date/identifier mismatch:
+  block the claim, even if semantic similarity is high.
+
+Lexical says entity/source mismatch:
+  block or require clarification unless the judge identifies an explicit alias.
+
+Semantic says high similarity, judge says unsupported:
+  mark unsupported_weak_match.
+
+Semantic says low similarity, judge says supported:
+  allow only if the judge cites an exact excerpt and the claim is low or medium risk.
+
+Judge says supported, authority check fails:
+  block as unsupported_authority.
+
+Judge says supported, review-status check fails:
+  block as unsupported_review_status or label as unreviewed discovery for low-risk answers.
+
+Approved structured fact conflicts with raw RAG excerpt:
+  prefer approved structured fact and record unsupported_conflict for the conflicting raw evidence.
+```
+
+For high-risk or critical claims, the strictest check wins:
+
+```text
+lexical mismatch OR weak semantic match OR judge uncertainty OR authority failure OR unapproved source
+= blocked claim
 ```
 
 Evidence scoring:
@@ -543,4 +626,3 @@ silently rewriting high-risk claims without trace
 ```
 
 If validation fails because evidence is missing, the system may run a controlled follow-up retrieval in a later iteration, but MVP should first return a missing-evidence answer.
-
