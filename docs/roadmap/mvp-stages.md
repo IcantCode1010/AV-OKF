@@ -163,21 +163,32 @@ Architecture note:
 
 ## Stage 7: Validation
 
-Purpose: prevent unsupported or misleading answers.
+Purpose: prevent unsupported or misleading answers by validating generated claims against citations, source authority, review status, and domain rules.
 
 Deliverables:
 
 - Claim extraction
+- Claim typing and risk classification
 - Citation validation
+- Evidence-to-claim matching
 - Source-access validation
 - Review-status validation
 - Domain rule hooks
+- Source authority matrix
+- Confidence thresholds
 - Blocked claim reporting
+- Safe answer modes: release, rewrite with limitations, missing evidence, clarify, or refuse
 - Agent trace persistence
 
 Exit criteria:
 
 - Unsupported claims are blocked or clearly labeled, and every answer has an inspectable trace.
+- Validation reports show extracted claims, claim types, supporting sources, authority results, confidence, and blocked claims.
+- High-risk claims require direct support from approved authoritative sources.
+
+Architecture note:
+
+- [Validation Agent](../architecture/validation-agent.md)
 
 ## Stage 8: Aviation Domain Pack
 
