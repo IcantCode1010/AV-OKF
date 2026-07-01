@@ -11,7 +11,7 @@
 
 This source argues that the useful production architecture is not OKF versus RAG, but OKF plus RAG. OKF should hold the curated, structured, high-trust knowledge that agents cannot afford to get wrong. RAG should handle the messy, large, open-ended long tail that cannot realistically be curated by hand.
 
-The source frames OKF as the canonical "80%" and RAG as the long-tail "20%". The exact percentages are not literal, but the architectural split is useful: curated stable knowledge belongs in OKF, while exploratory discovery across broad archives belongs in RAG.
+The source frames OKF as the canonical "80%" and RAG as the long-tail "20%". The exact percentages are not literal, but the architectural split is useful: curated stable knowledge belongs in OKF, while exploratory discovery across broad archives belongs in RAG. The key mechanism is the router in front of retrieval, not a default decision to run both systems for every query.
 
 ## Key Ideas
 
@@ -43,7 +43,7 @@ It also validates the decision to build a generic document platform rather than 
 
 Confirms current direction with a minor roadmap emphasis.
 
-No major architecture change is needed. The note strengthens the need for an explicit query router and retrieval mode labels in the chat UI.
+No major architecture change is needed. The note strengthens the need for an explicit query router and retrieval mode labels in the chat UI. It also clarifies that Hybrid should be a deliberate route, not the default path.
 
 ## Recommended Action
 
@@ -53,7 +53,7 @@ Keep the roadmap order, but make these requirements explicit in Stage 6:
 - Label every chat answer as `OKF`, `RAG`, or `Hybrid`.
 - Prefer approved OKF when a direct canonical answer exists.
 - Fall back to RAG when the question is exploratory, broad, comparative, or not covered by approved OKF.
-- Use hybrid mode when OKF provides the governing concept and RAG provides supporting examples or raw evidence.
+- Use hybrid mode only when OKF provides the governing concept and RAG provides necessary supporting examples or raw evidence.
 - Store retrieval mode and routing rationale in the agent trace.
 
 ## Routing Model
@@ -84,16 +84,32 @@ Routing rule:
 
 ```text
 If the question asks for stable, official, reviewed knowledge:
-  use OKF first.
+  route to OKF.
 
 If the question asks for broad search, examples, similar cases, summaries, or unknown material:
-  use RAG first.
+  route to RAG.
 
 If the question is high-risk or domain-specific:
-  use hybrid retrieval plus validation.
+  route to OKF when a canonical authority exists, otherwise use RAG only for discovery.
+
+If the question needs both the governing rule and raw examples:
+  route to Hybrid.
 
 If the required source or context is missing:
   return a missing-evidence answer instead of guessing.
+```
+
+## Router Principle
+
+The router is the product-critical control point. It should avoid running both OKF and RAG by default because that increases cost, adds irrelevant context, and can weaken answer precision.
+
+Default behavior:
+
+```text
+Canonical question -> OKF
+Open-ended question -> RAG
+Mixed question -> Hybrid
+Missing or ambiguous context -> Ask a targeted question or return missing evidence
 ```
 
 ## Related Project Areas
@@ -115,4 +131,3 @@ A document intelligence platform that separates curated knowledge from raw searc
 ```
 
 This makes the product more defensible than a generic RAG interface.
-

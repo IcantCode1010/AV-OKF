@@ -122,17 +122,18 @@ Deliverables:
 
 - Chat sessions
 - Chat messages
-- Query classifier
+- Query router
+- Query classification: canonical, open-ended, comparison, source lookup, high-risk domain, or missing context
 - OKF retrieval tool
 - RAG retrieval tool
-- Hybrid retrieval mode
+- Hybrid retrieval mode only when both curated knowledge and raw evidence are needed
 - Answer builder
 - Citation renderer
 - Agent trace drawer
 
 Exit criteria:
 
-- A user can ask questions and see whether the answer came from OKF, RAG, or both.
+- A user can ask questions and see whether the router sent the query to OKF, RAG, Hybrid, or missing-context handling.
 
 ## Stage 7: Validation
 
@@ -198,6 +199,6 @@ Demo flow:
 6. Export OKF Markdown.
 7. Ask a direct question that uses OKF.
 8. Ask an open-ended question that uses RAG.
-9. Show citations, retrieval mode, and trace.
+9. Ask a mixed question that uses Hybrid only when needed.
+10. Show citations, router decision, retrieval mode, and trace.
 ```
-

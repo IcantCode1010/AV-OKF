@@ -14,10 +14,11 @@ OKF = curated, structured, stable knowledge
 Tools/APIs = live state and actions
 ```
 
-The agent should choose the right layer for each question:
+The agent should route each question before retrieval:
 
 - Use OKF for direct, stable, source-backed answers.
 - Use RAG for open-ended discovery, summaries, and cross-document search.
+- Use Hybrid only when the answer needs both a curated concept and supporting raw evidence.
 - Use tools/APIs for live or frequently changing data.
 
 ## First Domain Pack
@@ -45,7 +46,7 @@ Upload documents
 -> Review and approve structured knowledge
 -> Export approved knowledge to OKF Markdown
 -> Index raw and structured content for RAG
--> Chat with documents using OKF, RAG, or hybrid retrieval
+-> Route each chat question to OKF, RAG, Hybrid, or missing-context handling
 -> Validate claims and show citations
 ```
 
@@ -82,6 +83,7 @@ processing status
 - Preserve source page references throughout ingestion.
 - Keep raw extraction separate from approved knowledge.
 - Make review status visible.
+- Put a query router in front of OKF and RAG.
 - Require citations for agent answers.
 - Let the agent say "missing evidence" instead of guessing.
 - Store curated knowledge in Markdown so it can be reviewed in Git.
@@ -90,4 +92,3 @@ processing status
 
 - [Product Requirements Document](docs/product-requirements/AV-OKF_Agentic_Maintenance_Triage_PRD.md)
 - [MVP Stages Roadmap](docs/roadmap/mvp-stages.md)
-
