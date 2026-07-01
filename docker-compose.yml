@@ -89,7 +89,7 @@ services:
     restart: "no"
 
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     environment:
       POSTGRES_DB: av_okf
       POSTGRES_USER: av_okf

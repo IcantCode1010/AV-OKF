@@ -60,6 +60,7 @@ model Workspace {
   members         WorkspaceMember[]
   documents       Document[]
   extractionJobs  ExtractionJob[]
+  ragIndexJobs    RagIndexJob[]
   topicRecords    TopicRecord[]
   activityEvents  ActivityEvent[]
   createdAt       DateTime             @default(now())
@@ -92,12 +93,16 @@ model Document {
   sourceType       String
   pages            Int                      @default(0)
   description      String                   @default("")
+  ragStatus        String                   @default("not_indexed")
+  ragIndexVersion  Int                      @default(0)
   originalFilename String?
   mimeType         String
   workspace        Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   customProperties DocumentCustomProperty[]
   objects          DocumentObject[]
   extractionJobs   ExtractionJob[]
+  ragIndexJobs     RagIndexJob[]
+  ragChunks        RagChunk[]
   extractedPages   ExtractedPage[]
   extractionLogs   ExtractionLog[]
   topicRecords     TopicRecord[]
@@ -175,6 +180,83 @@ model ExtractionLog {
   document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, documentId, timestamp])
+}
+
+model RagIndexJob {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  documentId      String
+  extractionJobId String?
+  status          String
+  indexVersion    Int
+  tokenEstimate   Int       @default(0)
+  attempts        Int       @default(0)
+  errorCode       String?
+  errorMessage    String?
+  queuedAt        DateTime  @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document        Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  chunks          RagChunk[]
+
+  @@index([status, queuedAt])
+  @@index([workspaceId, documentId, status])
+}
+
+model RagChunk {
+  id                String        @id
+  workspaceId       String
+  documentId        String
+  indexJobId        String
+  indexVersion      Int
+  chunkOrdinal      Int
+  text              String        @db.Text
+  contentHash       String
+  tokenCount        Int
+  pageStart         Int
+  pageEnd           Int
+  sourcePageNumbers Int[]
+  headingPath       String[]
+  reviewStatus      String        @default("raw_extracted")
+  isActive          Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  document          Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  indexJob          RagIndexJob   @relation(fields: [indexJobId], references: [id], onDelete: Cascade)
+  embedding         RagEmbedding?
+
+  @@unique([documentId, indexVersion, chunkOrdinal])
+  @@index([workspaceId, documentId, isActive])
+  @@index([workspaceId, isActive])
+  @@index([contentHash])
+}
+
+model RagEmbedding {
+  id          String                  @id @default(cuid())
+  workspaceId String
+  chunkId     String                  @unique
+  model       String
+  dimensions  Int
+  tokenCount  Int
+  embedding   Unsupported("vector(1536)")
+  createdAt   DateTime                @default(now())
+  chunk       RagChunk                @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, model])
+}
+
+model OkfConceptChunkLink {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  okfConceptId String
+  chunkId      String
+  coverageType String
+  source       String   @default("okf_frontmatter")
+  syncedAt     DateTime @default(now())
+
+  @@unique([workspaceId, okfConceptId, chunkId])
+  @@index([workspaceId, chunkId])
 }
 
 model TopicRecord {
