@@ -116,7 +116,9 @@ Exit criteria:
 
 ## Stage 6: Chat Agent
 
-Purpose: let users ask questions across the document collection.
+Purpose: let users ask questions across the document collection through a router-first agent flow.
+
+The query router is the first component in Stage 6. It decides whether a question should use OKF, RAG, Hybrid, missing-context handling, or unsupported handling before any retrieval tools run.
 
 Deliverables:
 
@@ -124,6 +126,8 @@ Deliverables:
 - Chat messages
 - Query router
 - Query classification: canonical, open-ended, comparison, source lookup, high-risk domain, or missing context
+- Router outputs: `okf_only`, `rag_only`, `hybrid`, `missing_context`, or `unsupported`
+- Router confidence and rationale stored in the agent trace
 - OKF retrieval tool
 - RAG retrieval tool
 - Hybrid retrieval mode only when both curated knowledge and raw evidence are needed
@@ -131,9 +135,31 @@ Deliverables:
 - Citation renderer
 - Agent trace drawer
 
+Router rules:
+
+```text
+Canonical/direct/stable question -> OKF
+Open-ended/search/summarization question -> RAG
+Question needing an official concept plus raw examples -> Hybrid
+Question missing required context -> Missing Context
+Question requiring live data or external authority -> Unsupported or Tool/API route later
+```
+
+Implementation note:
+
+```text
+Start with a rules-first router plus an LLM fallback. Do not run OKF and RAG together unless the router selects Hybrid.
+```
+
 Exit criteria:
 
 - A user can ask questions and see whether the router sent the query to OKF, RAG, Hybrid, or missing-context handling.
+- Agent traces show the router category, route, confidence, and rationale.
+- Hybrid retrieval is demonstrably not the default path.
+
+Architecture note:
+
+- [Query Router](../architecture/query-router.md)
 
 ## Stage 7: Validation
 
