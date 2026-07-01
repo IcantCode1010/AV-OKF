@@ -296,6 +296,8 @@ Use this evidence preference order:
 
 For canonical answers, the validator should compare against approved structured facts first. For open-ended RAG answers, the validator may compare against raw excerpts because a curated fact may not exist.
 
+Approved OKF concepts may link back to the RAG chunks and source pages they cover. When a RAG chunk is covered by an approved OKF concept, the validator should treat the OKF concept as the controlling source for canonical claims and the RAG chunk as supporting context only.
+
 The LLM judge compares the claim against the selected evidence candidates, not against the whole corpus. It must return:
 
 ```json
@@ -341,6 +343,9 @@ Judge says supported, review-status check fails:
 
 Approved structured fact conflicts with raw RAG excerpt:
   prefer approved structured fact and record unsupported_conflict for the conflicting raw evidence.
+
+Approved OKF concept covers the RAG chunk:
+  trust the OKF concept for canonical claims and use the RAG chunk only as source context.
 ```
 
 For high-risk or critical claims, the strictest check wins:

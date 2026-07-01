@@ -63,11 +63,14 @@ Exit criteria:
 
 ## Stage 3: Topic Records
 
-Purpose: turn extracted pages into reviewable knowledge candidates.
+Purpose: turn extracted document structure into reviewable knowledge candidates.
+
+Topic records should come from document structure, not arbitrary RAG chunks.
 
 Deliverables:
 
 - Topic boundary detection
+- Heading, table-of-contents, and page-range analysis
 - Topic record schema
 - Topic title, type, summary, page range, and source references
 - Confidence score
@@ -82,6 +85,8 @@ Exit criteria:
 
 Purpose: support broad discovery across raw and semi-structured content.
 
+RAG indexing happens immediately after extraction and does not wait for human review. RAG is allowed to index raw and unapproved content, but that content must retain source and review-status labels.
+
 Deliverables:
 
 - Chunk generation
@@ -95,10 +100,13 @@ Deliverables:
 Exit criteria:
 
 - A user can search across uploaded documents and retrieve relevant passages with citations.
+- Newly ingested documents become searchable before OKF approval.
 
 ## Stage 5: OKF Bundle
 
-Purpose: turn approved topic records into structured agent-readable knowledge.
+Purpose: turn human-approved topic records into structured agent-readable knowledge.
+
+OKF generation is slower and review-gated. Approved OKF concepts should link back to the source pages and RAG chunks they cover.
 
 Deliverables:
 
@@ -107,12 +115,14 @@ Deliverables:
 - Markdown exporter
 - `index.md` generation
 - `source_manifest.md` generation
+- OKF-to-RAG coverage links
 - Bundle validation
 - OKF preview UI
 
 Exit criteria:
 
 - Approved topic records export into valid OKF-style Markdown files with source references.
+- Approved OKF concepts can identify the RAG chunks and source pages they govern.
 
 ## Stage 6: Chat Agent
 
@@ -185,10 +195,12 @@ Exit criteria:
 - Unsupported claims are blocked or clearly labeled, and every answer has an inspectable trace.
 - Validation reports show extracted claims, claim types, supporting sources, authority results, confidence, and blocked claims.
 - High-risk claims require direct support from approved authoritative sources.
+- When approved OKF conflicts with raw RAG evidence, the validator trusts approved OKF and records the RAG conflict.
 
 Architecture note:
 
 - [Validation Agent](../architecture/validation-agent.md)
+- [Ingestion To Knowledge Flow](../architecture/ingestion-to-knowledge-flow.md)
 
 ## Stage 8: Aviation Domain Pack
 
