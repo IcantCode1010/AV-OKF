@@ -137,6 +137,59 @@ class RelationLintTests(unittest.TestCase):
         self.assertEqual(violation["relation_index"], 0)
         self.assertEqual(violation["rule"], "target_type_mismatch")
 
+    def test_relations_frontmatter_must_be_a_list(self):
+        code, payload = self.run_lint(
+            {
+                "okf-base.yaml": """
+                    okf_version: '0.1'
+                    base:
+                      roots:
+                        - path: knowledge
+                    relations:
+                      allowed:
+                        - routes_to
+                """,
+                "knowledge/faults/elt.md": """
+                    ---
+                    type: fault_route
+                    relations:
+                      relation: routes_to
+                      target: ../manuals/mel/elt.md
+                      target_type: dispatch_reference
+                    ---
+                    # ELT
+                """,
+            }
+        )
+
+        self.assertEqual(code, 1)
+        violation = payload["violations"][0]
+        self.assertEqual(violation["file"], "knowledge/faults/elt.md")
+        self.assertIsNone(violation["relation_index"])
+        self.assertEqual(violation["rule"], "relations_not_list")
+
+    def test_manifest_missing_allowed_relations_fails_loudly(self):
+        code, payload = self.run_lint(
+            {
+                "okf-base.yaml": """
+                    okf_version: '0.1'
+                    base:
+                      roots:
+                        - path: knowledge
+                    relations:
+                      allowed: []
+                """,
+                "knowledge/index.md": """
+                    # Index
+                """,
+            }
+        )
+
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["status"], "fail")
+        self.assertEqual(payload["violation_count"], 1)
+        self.assertEqual(payload["violations"][0]["rule"], "missing_allowed_relations")
+
 
 if __name__ == "__main__":
     unittest.main()
