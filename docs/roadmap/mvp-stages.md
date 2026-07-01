@@ -78,6 +78,10 @@ Deliverables:
 - Confidence score
 - Review status
 - Topic review UI
+- Manual topic generation only. Re-extraction does not automatically regenerate topics in Stage 3.
+- Reruns delete `needs_review` and `needs_cleanup` topics, preserve `approved` and `rejected` topics, and skip new draft topics that overlap reviewed page coverage.
+- Confidence is categorical: `high` for clear heading boundaries, `low` for coarse page-range fallback, and `medium` is reserved for later mixed-boundary heuristics.
+- `sourcePageNumbers` is the page coverage field that Stage 5 OKF export will consume.
 
 Exit criteria:
 

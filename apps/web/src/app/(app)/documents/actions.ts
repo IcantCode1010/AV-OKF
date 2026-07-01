@@ -7,11 +7,14 @@ import { startDetachedExtraction } from "@/lib/document-extraction";
 import {
   assertPdfUpload,
   createUploadedDocument,
+  generateTopicRecords,
   parseCustomProperties,
   parseTags,
+  updateTopicReviewStatus,
   updateDocumentMetadata,
   type DocumentStatus,
   type SourceType,
+  type TopicReviewStatus,
 } from "@/lib/document-vault";
 
 export async function uploadDocumentAction(formData: FormData) {
@@ -50,6 +53,28 @@ export async function runExtractionAction(formData: FormData) {
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
   redirect(`/documents/${id}`);
+}
+
+export async function generateTopicsAction(formData: FormData) {
+  const id = getFormString(formData, "id");
+
+  await generateTopicRecords(id);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/documents");
+  revalidatePath(`/documents/${id}`);
+  redirect(`/documents/${id}`);
+}
+
+export async function updateTopicReviewStatusAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const reviewStatus = getTopicReviewStatus(getFormString(formData, "reviewStatus"));
+
+  await updateTopicReviewStatus(topicId, reviewStatus);
+
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}`);
 }
 
 export async function updateDocumentMetadataAction(formData: FormData) {
@@ -94,4 +119,17 @@ function getDocumentStatus(value: string): DocumentStatus {
   return statuses.includes(value as DocumentStatus)
     ? (value as DocumentStatus)
     : "processing";
+}
+
+function getTopicReviewStatus(value: string): TopicReviewStatus {
+  const statuses: TopicReviewStatus[] = [
+    "needs_review",
+    "needs_cleanup",
+    "approved",
+    "rejected",
+  ];
+
+  return statuses.includes(value as TopicReviewStatus)
+    ? (value as TopicReviewStatus)
+    : "needs_review";
 }

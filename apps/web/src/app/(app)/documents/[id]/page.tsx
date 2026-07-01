@@ -20,8 +20,15 @@ import { Separator } from "@/components/ui/separator";
 import {
   customPropertiesToText,
   getDocumentById,
+  getTopicRecordsByDocumentId,
+  type TopicRecord,
 } from "@/lib/document-vault";
-import { runExtractionAction, updateDocumentMetadataAction } from "../actions";
+import {
+  generateTopicsAction,
+  runExtractionAction,
+  updateDocumentMetadataAction,
+  updateTopicReviewStatusAction,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +38,10 @@ export default async function DocumentDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const document = await getDocumentById(id);
+  const [document, topicRecords] = await Promise.all([
+    getDocumentById(id),
+    getTopicRecordsByDocumentId(id),
+  ]);
 
   if (!document) {
     notFound();
@@ -85,7 +95,7 @@ export default async function DocumentDetailPage({
           <CardContent className="grid gap-4 md:grid-cols-3">
             {[
               ["Extraction", extractionSummary(document.extraction.status)],
-              ["Topic records", "Generated after structure detection"],
+              ["Topic records", `${topicRecords.length} review candidates`],
               ["Knowledge links", "Created after human approval"],
             ].map(([title, detail]) => (
               <div key={title} className="rounded-md border border-border p-4">
@@ -244,6 +254,48 @@ export default async function DocumentDetailPage({
 
       <Card>
         <CardHeader>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>Topic records</CardTitle>
+              <CardDescription>
+                Manual Stage 3 generation from extracted page records. Reruns
+                replace draft topics and preserve approved or rejected topics.
+              </CardDescription>
+            </div>
+            <form action={generateTopicsAction}>
+              <input type="hidden" name="id" value={document.id} />
+              <PendingSubmitButton pendingLabel="Generating...">
+                Generate topics
+              </PendingSubmitButton>
+            </form>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {document.extraction.status !== "completed" ? (
+            <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+              Complete extraction before generating topic records.
+            </div>
+          ) : null}
+          {topicRecords.length > 0 ? (
+            <div className="space-y-3">
+              {topicRecords.map((topic) => (
+                <TopicRecordCard
+                  key={topic.id}
+                  documentId={document.id}
+                  topic={topic}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+              No topic records yet.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Edit metadata</CardTitle>
           <CardDescription>
             Metadata remains editable while extraction records are stored
@@ -390,6 +442,53 @@ function ExtractionMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border border-border p-4">
       <p className="text-xs uppercase text-muted-foreground">{label}</p>
       <p className="mt-2 text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
+function TopicRecordCard({
+  documentId,
+  topic,
+}: {
+  documentId: string;
+  topic: TopicRecord;
+}) {
+  return (
+    <div className="rounded-md border border-border p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{topic.topicType}</Badge>
+            <Badge variant="outline" className="capitalize">
+              {topic.reviewStatus.replace("_", " ")}
+            </Badge>
+            <Badge variant="outline" className="capitalize">
+              {topic.confidence} confidence
+            </Badge>
+          </div>
+          <h3 className="mt-3 text-base font-medium">{topic.title}</h3>
+          <p className="mt-2 text-sm text-muted-foreground">{topic.summary}</p>
+          <p className="mt-3 font-mono text-xs text-muted-foreground">
+            Pages {topic.pageStart}-{topic.pageEnd} | sourcePageNumbers:{" "}
+            {topic.sourcePageNumbers.join(", ")}
+          </p>
+        </div>
+        <form action={updateTopicReviewStatusAction} className="flex gap-2">
+          <input type="hidden" name="documentId" value={documentId} />
+          <input type="hidden" name="topicId" value={topic.id} />
+          <select
+            name="reviewStatus"
+            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+            defaultValue={topic.reviewStatus}
+          >
+            <option value="needs_review">Needs review</option>
+            <option value="needs_cleanup">Needs cleanup</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <PendingSubmitButton pendingLabel="Saving...">Save</PendingSubmitButton>
+        </form>
+      </div>
     </div>
   );
 }

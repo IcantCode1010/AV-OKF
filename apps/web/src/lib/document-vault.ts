@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { generateTopicCandidates } from "./topic-records.ts";
+
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 export type Workspace = {
@@ -69,6 +71,29 @@ export type DocumentExtraction = {
   logs: ExtractionLog[];
 };
 
+export type TopicConfidence = "low" | "medium" | "high";
+
+export type TopicReviewStatus =
+  | "needs_review"
+  | "needs_cleanup"
+  | "approved"
+  | "rejected";
+
+export type TopicRecord = {
+  id: string;
+  documentId: string;
+  title: string;
+  topicType: string;
+  summary: string;
+  pageStart: number;
+  pageEnd: number;
+  confidence: TopicConfidence;
+  reviewStatus: TopicReviewStatus;
+  sourcePageNumbers: number[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Document = {
   id: string;
   title: string;
@@ -100,6 +125,7 @@ export type ActivityEvent = {
 type VaultStore = {
   documents: Document[];
   activityEvents: ActivityEvent[];
+  topicRecords?: TopicRecord[];
 };
 
 type UploadMetadata = {
@@ -401,6 +427,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         await writeStoreAtomic({
           documents: seedDocuments,
           activityEvents: seedActivityEvents,
+          topicRecords: [],
         });
         return;
       }
@@ -412,7 +439,9 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
   async function readStore(): Promise<VaultStore> {
     await ensureStore();
     const rawStore = await readFile(storePath, "utf8");
-    return JSON.parse(rawStore) as VaultStore;
+    const store = JSON.parse(rawStore) as VaultStore;
+    store.topicRecords ??= [];
+    return store;
   }
 
   async function writeStoreAtomic(store: VaultStore) {
@@ -616,6 +645,75 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     return readFile(targetPath);
   }
 
+  async function generateTopicRecords(id: string) {
+    return mutateStore(async (store) => {
+      const document = getStoreDocument(store, id);
+
+      if (document.extraction.status !== "completed") {
+        throw new Error("document_extraction_not_completed");
+      }
+
+      store.topicRecords ??= [];
+
+      const preservedTopics = store.topicRecords.filter(
+        (topic) =>
+          topic.documentId === id &&
+          (topic.reviewStatus === "approved" || topic.reviewStatus === "rejected"),
+      );
+      const otherDocumentsTopics = store.topicRecords.filter(
+        (topic) => topic.documentId !== id,
+      );
+      const candidates = generateTopicCandidates(
+        id,
+        document.extraction.pageRecords,
+      );
+      const timestamp = formatTimestamp(new Date());
+      const newTopics = candidates
+        .filter(
+          (candidate) =>
+            !preservedTopics.some((topic) =>
+              pagesOverlap(topic.sourcePageNumbers, candidate.sourcePageNumbers),
+            ),
+        )
+        .map((candidate): TopicRecord => ({
+          ...candidate,
+          id: `topic-${randomUUID()}`,
+          reviewStatus: "needs_review",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }));
+
+      store.topicRecords = [...otherDocumentsTopics, ...preservedTopics, ...newTopics];
+      store.activityEvents.unshift({
+        id: `act-${randomUUID()}`,
+        label: "Topic records generated",
+        documentTitle: document.title,
+        timestamp: "Just now",
+        status: document.status,
+      });
+
+      return [...preservedTopics, ...newTopics];
+    });
+  }
+
+  async function updateTopicReviewStatus(
+    topicId: string,
+    reviewStatus: TopicReviewStatus,
+  ) {
+    return mutateStore(async (store) => {
+      store.topicRecords ??= [];
+      const topic = store.topicRecords.find((candidate) => candidate.id === topicId);
+
+      if (!topic) {
+        throw new Error("topic_not_found");
+      }
+
+      topic.reviewStatus = reviewStatus;
+      topic.updatedAt = formatTimestamp(new Date());
+      return topic;
+    });
+  }
+
   return {
     completeExtraction,
     createUploadedDocument,
@@ -636,7 +734,13 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     getDocuments: async () => normalizeDocuments((await readStore()).documents),
     getRecentDocuments: async (limit = 4) =>
       normalizeDocuments((await readStore()).documents).slice(0, limit),
+    getTopicRecordsByDocumentId: async (id: string) =>
+      ((await readStore()).topicRecords ?? []).filter(
+        (topic) => topic.documentId === id,
+      ),
+    generateTopicRecords,
     startExtraction,
+    updateTopicReviewStatus,
     updateDocumentMetadata,
   };
 }
@@ -688,6 +792,21 @@ export async function failExtraction(id: string, error: ExtractionError) {
 
 export async function getDocumentPdfBytes(id: string) {
   return defaultVault.getDocumentPdfBytes(id);
+}
+
+export async function getTopicRecordsByDocumentId(id: string) {
+  return defaultVault.getTopicRecordsByDocumentId(id);
+}
+
+export async function generateTopicRecords(id: string) {
+  return defaultVault.generateTopicRecords(id);
+}
+
+export async function updateTopicReviewStatus(
+  topicId: string,
+  reviewStatus: TopicReviewStatus,
+) {
+  return defaultVault.updateTopicReviewStatus(topicId, reviewStatus);
 }
 
 function getDefaultDataRoot() {
@@ -767,6 +886,11 @@ function normalizeDocuments(documents: Document[]) {
     ...document,
     extraction: normalizeExtraction(document.extraction),
   }));
+}
+
+function pagesOverlap(left: number[], right: number[]) {
+  const rightPages = new Set(right);
+  return left.some((pageNumber) => rightPages.has(pageNumber));
 }
 
 function calculateDocumentMetrics(documents: Document[]) {

@@ -76,6 +76,8 @@ document detail page
 processing status
 page extraction records
 extraction logs
+topic records
+topic review status
 ```
 
 ## Web App
@@ -93,6 +95,8 @@ The app uses mock auth plus a local Stage 1 document vault. PDFs upload through 
 `apps/web/.data/` is intentionally ignored by git. This JSON file store is a temporary Stage 1 stand-in so the product flow can work before a real database and object store are selected. Do not treat it as the long-term backend.
 
 Stage 2 adds local in-process PDF extraction. Upload returns immediately, extraction runs in the same long-lived Node process, and the document detail page polls while extraction is queued or running. This is an MVP-only background job model and must be replaced with a durable queue or worker before serverless or production deployment.
+
+Stage 3 adds manual topic generation from extracted page records. It does not run automatically after re-extraction. Reruns replace draft topics, preserve approved or rejected topics, and skip regenerated drafts that overlap reviewed page coverage. Topic confidence is categorical, not numeric, and `sourcePageNumbers` is the page coverage field that later OKF export should consume.
 
 ## Design Principles
 
