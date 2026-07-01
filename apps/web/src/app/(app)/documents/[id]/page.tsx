@@ -22,7 +22,7 @@ import {
   getDocumentById,
   getTopicRecordsByDocumentId,
   type TopicRecord,
-} from "@/lib/document-vault";
+} from "@/lib/document-backend";
 import {
   generateTopicsAction,
   runExtractionAction,

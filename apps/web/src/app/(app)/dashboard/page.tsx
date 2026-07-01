@@ -29,7 +29,7 @@ import {
   getActivityEvents,
   getDocumentMetrics,
   getRecentDocuments,
-} from "@/lib/document-vault";
+} from "@/lib/document-backend";
 import { getCurrentWorkspace } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";

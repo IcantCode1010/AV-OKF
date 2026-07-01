@@ -3,19 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { startDetachedExtraction } from "@/lib/document-extraction";
 import {
   assertPdfUpload,
   createUploadedDocument,
   generateTopicRecords,
   parseCustomProperties,
   parseTags,
+  requestExtraction,
   updateTopicReviewStatus,
   updateDocumentMetadata,
   type DocumentStatus,
   type SourceType,
   type TopicReviewStatus,
-} from "@/lib/document-vault";
+} from "@/lib/document-backend";
 
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
@@ -37,7 +37,7 @@ export async function uploadDocumentAction(formData: FormData) {
     type: file.type,
   });
 
-  startDetachedExtraction(document.id);
+  await requestExtraction(document.id);
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");
@@ -47,7 +47,7 @@ export async function uploadDocumentAction(formData: FormData) {
 export async function runExtractionAction(formData: FormData) {
   const id = getFormString(formData, "id");
 
-  startDetachedExtraction(id);
+  await requestExtraction(id);
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");

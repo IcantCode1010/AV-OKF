@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-vault";
+import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-backend";
 import { uploadDocumentAction } from "./actions";
 
 export const dynamic = "force-dynamic";

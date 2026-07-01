@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  memberships   WorkspaceMember[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Workspace {
+  id              String               @id @default(cuid())
+  name            String
+  plan            String               @default("Production")
+  members         WorkspaceMember[]
+  documents       Document[]
+  extractionJobs  ExtractionJob[]
+  topicRecords    TopicRecord[]
+  activityEvents  ActivityEvent[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([workspaceId, userId])
+}
+
+model Document {
+  id               String                   @id @default(cuid())
+  workspaceId      String
+  title            String
+  fileType         String
+  size             String
+  sizeBytes        Int
+  status           String
+  tags             String[]
+  updatedLabel     String
+  owner            String
+  sourceType       String
+  pages            Int                      @default(0)
+  description      String                   @default("")
+  originalFilename String?
+  mimeType         String
+  workspace        Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  customProperties DocumentCustomProperty[]
+  objects          DocumentObject[]
+  extractionJobs   ExtractionJob[]
+  extractedPages   ExtractedPage[]
+  extractionLogs   ExtractionLog[]
+  topicRecords     TopicRecord[]
+  activityEvents   ActivityEvent[]
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+
+  @@index([workspaceId, updatedAt])
+}
+
+model DocumentCustomProperty {
+  id         String   @id @default(cuid())
+  documentId String
+  key        String
+  value      String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+}
+
+model DocumentObject {
+  id          String   @id @default(cuid())
+  workspaceId String
+  documentId  String
+  kind        String
+  objectKey   String   @unique
+  bucket      String
+  contentType String
+  sizeBytes   Int
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, documentId, kind])
+}
+
+model ExtractionJob {
+  id          String    @id @default(cuid())
+  workspaceId String
+  documentId  String
+  status      String
+  attempts    Int       @default(0)
+  errorCode   String?
+  errorMessage String?
+  queuedAt    DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([status, queuedAt])
+  @@index([workspaceId, documentId])
+}
+
+model ExtractedPage {
+  id          String   @id @default(cuid())
+  workspaceId String
+  documentId  String
+  pageNumber  Int
+  text        String   @db.Text
+  tables      Json
+  imageCount  Int
+  charCount   Int
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, pageNumber])
+  @@index([workspaceId, documentId])
+}
+
+model ExtractionLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  documentId  String
+  jobId       String?
+  timestamp   DateTime @default(now())
+  level       String
+  message     String
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, documentId, timestamp])
+}
+
+model TopicRecord {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  documentId        String
+  title             String
+  topicType         String
+  summary           String
+  pageStart         Int
+  pageEnd           Int
+  confidence        String
+  reviewStatus      String
+  sourcePageNumbers Int[]
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document          Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId, documentId])
+}
+
+model ActivityEvent {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  documentId    String?
+  label         String
+  documentTitle String
+  timestamp     String
+  status        String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document      Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+}

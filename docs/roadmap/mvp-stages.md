@@ -109,6 +109,83 @@ Exit criteria:
 - Uploaded PDFs, extraction records, and topic records survive container restart through the mounted volume.
 - The container binds to `0.0.0.0:3000` and reports healthy through `/api/health`.
 
+## Stage 3.6: Postgres Repository
+
+Purpose: replace the production JSON vault path with a Postgres-backed repository while preserving the current UI behavior.
+
+Deliverables:
+
+- Prisma schema and migration for users, Auth.js records, workspaces, documents, document objects, extraction jobs, extracted pages, extraction logs, topic records, custom properties, and activity events
+- Workspace-scoped document repository
+- Production backend selector behind the existing document functions
+- Local JSON vault retained only as a development/test fixture
+- No production path writes `document-vault.json`
+
+Exit criteria:
+
+- Documents, metadata, extraction state, topics, and activity persist in Postgres.
+- Document queries are scoped by workspace membership.
+- The document UI still works through the same app routes.
+
+## Stage 3.7: Object Storage
+
+Purpose: move uploaded PDFs out of local disk storage and into an S3-compatible object store.
+
+Deliverables:
+
+- `ObjectStorage` interface
+- S3-compatible adapter for MinIO, AWS S3, Cloudflare R2, or equivalent
+- Opaque scoped object keys under `workspaces/{workspaceId}/documents/{documentId}/original/{uuid}.pdf`
+- `document_objects` records for original PDFs
+- Extraction reads PDFs from object storage
+
+Exit criteria:
+
+- Uploaded PDFs are stored in MinIO for the VPS Compose stack.
+- Raw filenames are never used as storage paths.
+- Object storage can be swapped by env config without changing app code.
+
+## Stage 3.8: Durable Queue And Worker
+
+Purpose: replace in-process detached extraction with a durable Redis/BullMQ queue and a separate worker container.
+
+Deliverables:
+
+- `ExtractionQueue` interface
+- BullMQ extraction queue
+- Separate long-running worker entrypoint
+- Deterministic job IDs in the form `extract:{documentId}:{extractionJobId}`
+- Worker startup reconciliation for queued or abandoned running jobs
+- Retry/backoff for transient worker, Redis, or object-storage failures
+- Normalized extraction failures: `malformed_pdf`, `password_protected_pdf`, `missing_stored_pdf`, and `extraction_failed`
+
+Exit criteria:
+
+- Upload returns immediately after enqueue.
+- Restarting `web` does not lose jobs.
+- Restarting `worker` resumes queued work.
+- Malformed PDFs land in blocked state.
+
+## Stage 3.9: Auth And Public VPS
+
+Purpose: add real user sessions, workspace membership enforcement, and public VPS reverse proxy assumptions.
+
+Deliverables:
+
+- Auth.js OAuth with GitHub and/or Google providers
+- Prisma-backed users, accounts, sessions, and verification tokens
+- Default workspace creation on first login
+- Workspace membership checks in production Server Actions and repository queries
+- Caddy reverse proxy config
+- Backup and restore guidance for Postgres and MinIO
+
+Exit criteria:
+
+- Unauthenticated users cannot access product shell routes.
+- Users only see records in workspaces where they are members.
+- The app is reachable through Caddy and can be configured for HTTPS on a VPS.
+- Postgres, Redis, and MinIO are not exposed publicly.
+
 ## Stage 4: Search And RAG
 
 Purpose: support broad discovery across raw and semi-structured content.

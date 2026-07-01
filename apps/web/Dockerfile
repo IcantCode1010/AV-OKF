@@ -11,7 +11,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm build
+RUN pnpm db:generate && pnpm build
 
 FROM node:24-alpine AS runner
 WORKDIR /app
@@ -19,17 +19,18 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
-ENV AV_OKF_DATA_ROOT=/data
 
 RUN addgroup -S nextjs \
   && adduser -S nextjs -G nextjs \
-  && mkdir -p /data \
-  && chown -R nextjs:nextjs /data /app
+  && chown -R nextjs:nextjs /app
 
 COPY --from=builder --chown=nextjs:nextjs /app/package.json ./package.json
+COPY --from=builder --chown=nextjs:nextjs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nextjs /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder --chown=nextjs:nextjs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nextjs /app/.next ./.next
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+COPY --from=builder --chown=nextjs:nextjs /app/src ./src
 
 USER nextjs
 EXPOSE 3000

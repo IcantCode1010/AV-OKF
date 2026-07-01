@@ -62,7 +62,7 @@ docs/
 
 ## Current Status
 
-This repository contains planning artifacts, OKF validation tooling, and the first web application shell.
+This repository contains planning artifacts, OKF validation tooling, the first web application shell, and an initial production data-plane path for Docker/VPS deployment.
 
 The current engineering milestone is a Papra-style document vault:
 
@@ -90,7 +90,7 @@ pnpm --dir apps/web lint
 pnpm --dir apps/web build
 ```
 
-The app uses mock auth plus a local Stage 1 document vault. PDFs upload through Server Actions, files are written under opaque storage keys, metadata is editable, and document state is persisted in `apps/web/.data/document-vault.json`.
+By default, local development still uses mock auth plus the local Stage 1 document vault. PDFs upload through Server Actions, files are written under opaque storage keys, metadata is editable, and document state is persisted in `apps/web/.data/document-vault.json`.
 
 `apps/web/.data/` is intentionally ignored by git. This JSON file store is a temporary Stage 1 stand-in so the product flow can work before a real database and object store are selected. Do not treat it as the long-term backend.
 
@@ -100,29 +100,64 @@ Stage 3 adds manual topic generation from extracted page records. It does not ru
 
 ### Docker/VPS Deployment
 
-Stage 3.5 supports a single-node Docker deployment for demos and VPS hosting.
+Stage 3.6-3.9 moves the app toward a production VPS shape:
+
+```text
+caddy -> web
+worker -> postgres + redis + minio
+```
+
+The Compose stack includes:
+
+- `caddy` reverse proxy on host port `3000`
+- `web` Next.js application container
+- `worker` long-running extraction worker
+- `postgres` for documents, metadata, extraction state, topics, activity, workspaces, and Auth.js records
+- `redis` for BullMQ extraction jobs
+- `minio` for S3-compatible PDF object storage
+- `migrate` one-shot Prisma migration service
 
 ```bash
 docker compose build
 docker compose up -d
 ```
 
-The container listens on `0.0.0.0:3000` and exposes a health check at:
+The app is reached through Caddy:
 
 ```text
 http://localhost:3000/api/health
 ```
 
-Docker uses `AV_OKF_DATA_ROOT=/data`. The Compose file mounts the named volume `av-okf-data` at `/data`, which must persist:
+Production mode is enabled with:
 
 ```text
-/data/document-vault.json
-/data/uploads/
+AV_OKF_BACKEND=production
 ```
 
-Do not run the Docker container without a persistent `/data` mount unless the deployment is disposable. Without the volume, uploaded PDFs, extracted page records, topic records, and metadata are lost when the container is replaced.
+In production mode, no app path writes `document-vault.json`. Uploaded PDFs go to MinIO under opaque scoped object keys like:
 
-This is a single-container MVP deployment model. Do not run multiple replicas against the same JSON vault. Before serverless, multi-container, or public production deployment, replace the JSON vault with a real database/object store and replace in-process extraction with a durable queue or worker.
+```text
+workspaces/{workspaceId}/documents/{documentId}/original/{uuid}.pdf
+```
+
+Set OAuth credentials before using the production stack:
+
+```text
+AUTH_SECRET
+AUTH_URL
+NEXTAUTH_SECRET
+NEXTAUTH_URL
+AUTH_GITHUB_ID
+AUTH_GITHUB_SECRET
+AUTH_GOOGLE_ID
+AUTH_GOOGLE_SECRET
+```
+
+At least one OAuth provider must be configured for users to sign in. On a public VPS, replace the demo passwords/secrets in `docker-compose.yml`, set `AUTH_URL`, `NEXTAUTH_URL`, and `APP_BASE_URL` to the public HTTPS origin, and change `apps/web/Caddyfile` from `:80` to your domain so Caddy can manage HTTPS certificates.
+
+Postgres, Redis, and MinIO are not published to host ports by Compose. Only Caddy is public. Back up the named volumes `postgres-data` and `minio-data`; Redis persistence is enabled for durable BullMQ state but Postgres and MinIO are the primary long-term records.
+
+This is still a single-node VPS architecture. Multiple web containers are possible after this data-plane migration, but multi-worker deployments must rely on BullMQ locking and idempotent job IDs. Serverless deployment still needs a managed database, managed object store, and durable queue/worker replacement.
 
 ## Design Principles
 
@@ -140,3 +175,4 @@ This is a single-container MVP deployment model. Do not run multiple replicas ag
 
 - [Product Requirements Document](docs/product-requirements/AV-OKF_Agentic_Maintenance_Triage_PRD.md)
 - [MVP Stages Roadmap](docs/roadmap/mvp-stages.md)
+- [VPS Production Deployment](docs/deployment/vps-production.md)

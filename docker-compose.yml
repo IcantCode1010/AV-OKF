@@ -1,25 +1,151 @@
 services:
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    volumes:
+      - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
   web:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
-    image: av-okf-web:stage-3-5
-    ports:
-      - "3000:3000"
-    environment:
+    image: av-okf-web:production-data-plane
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: &app-env
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: 3000
-      AV_OKF_DATA_ROOT: /data
-    volumes:
-      - av-okf-data:/data
+      AV_OKF_BACKEND: production
+      DATABASE_URL: postgresql://av_okf:av_okf@postgres:5432/av_okf
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: av-okf
+      S3_ACCESS_KEY_ID: av_okf_minio
+      S3_SECRET_ACCESS_KEY: av_okf_minio_secret
+      S3_FORCE_PATH_STYLE: "true"
+      AUTH_SECRET: change-me-before-public-deployment
+      AUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: change-me-before-public-deployment
+      NEXTAUTH_URL: http://localhost:3000
+      APP_BASE_URL: http://localhost:3000
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+    expose:
+      - "3000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
+
+  worker:
+    image: av-okf-web:production-data-plane
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment: *app-env
+    command: ["node", "node_modules/tsx/dist/cli.mjs", "src/worker/extraction-worker.ts"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ps | grep -q '[e]xtraction-worker'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  migrate:
+    image: av-okf-web:production-data-plane
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://av_okf:av_okf@postgres:5432/av_okf
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+    restart: "no"
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: av_okf
+      POSTGRES_USER: av_okf
+      POSTGRES_PASSWORD: av_okf
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U av_okf -d av_okf"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    environment:
+      MINIO_ROOT_USER: av_okf_minio
+      MINIO_ROOT_PASSWORD: av_okf_minio_secret
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 av_okf_minio av_okf_minio_secret
+        mc mb --ignore-existing local/av-okf
+    restart: "no"
 
 volumes:
-  av-okf-data:
+  caddy-config:
+  caddy-data:
+  minio-data:
+  postgres-data:
+  redis-data:

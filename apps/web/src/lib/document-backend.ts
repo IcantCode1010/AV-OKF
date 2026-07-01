@@ -1,0 +1,164 @@
+import {
+  completeExtraction,
+  createUploadedDocument as createLocalUploadedDocument,
+  customPropertiesToText,
+  failExtraction,
+  generateTopicRecords as generateLocalTopicRecords,
+  getActivityEvents as getLocalActivityEvents,
+  getDocumentById as getLocalDocumentById,
+  getDocumentMetrics as getLocalDocumentMetrics,
+  getDocumentPdfBytes,
+  getDocuments as getLocalDocuments,
+  getRecentDocuments as getLocalRecentDocuments,
+  getTopicRecordsByDocumentId as getLocalTopicRecordsByDocumentId,
+  MAX_UPLOAD_BYTES,
+  assertPdfUpload,
+  parseCustomProperties,
+  parseTags,
+  startExtraction,
+  updateDocumentMetadata as updateLocalDocumentMetadata,
+  updateTopicReviewStatus as updateLocalTopicReviewStatus,
+  type ActivityEvent,
+  type CustomProperty,
+  type Document,
+  type DocumentStatus,
+  type ExtractedPageRecord,
+  type ExtractionError,
+  type ExtractionStatus,
+  type SourceType,
+  type TopicRecord,
+  type TopicReviewStatus,
+  type User,
+  type Workspace,
+} from "./document-vault.ts";
+import { startDetachedExtraction } from "./document-extraction.ts";
+import {
+  getProductionDocumentService,
+  isProductionBackend,
+} from "./production-document-service.ts";
+
+export {
+  completeExtraction,
+  customPropertiesToText,
+  failExtraction,
+  getDocumentPdfBytes,
+  MAX_UPLOAD_BYTES,
+  assertPdfUpload,
+  parseCustomProperties,
+  parseTags,
+  startExtraction,
+};
+export type {
+  ActivityEvent,
+  CustomProperty,
+  Document,
+  DocumentStatus,
+  ExtractedPageRecord,
+  ExtractionError,
+  ExtractionStatus,
+  SourceType,
+  TopicRecord,
+  TopicReviewStatus,
+  User,
+  Workspace,
+};
+
+export async function createUploadedDocument(
+  input: Parameters<typeof createLocalUploadedDocument>[0],
+) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().createUploadedDocument(input);
+  }
+
+  return createLocalUploadedDocument(input);
+}
+
+export async function generateTopicRecords(id: string) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().generateTopicRecords(id);
+  }
+
+  return generateLocalTopicRecords(id);
+}
+
+export async function getActivityEvents() {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getActivityEvents();
+  }
+
+  return getLocalActivityEvents();
+}
+
+export async function getDocumentById(id: string) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getDocumentById(id);
+  }
+
+  return getLocalDocumentById(id);
+}
+
+export async function getDocumentMetrics() {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getDocumentMetrics();
+  }
+
+  return getLocalDocumentMetrics();
+}
+
+export async function getDocuments() {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getDocuments();
+  }
+
+  return getLocalDocuments();
+}
+
+export async function getRecentDocuments(limit = 4) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getRecentDocuments(limit);
+  }
+
+  return getLocalRecentDocuments(limit);
+}
+
+export async function getTopicRecordsByDocumentId(id: string) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getTopicRecordsByDocumentId(id);
+  }
+
+  return getLocalTopicRecordsByDocumentId(id);
+}
+
+export async function requestExtraction(id: string) {
+  if (isProductionBackend()) {
+    await getProductionDocumentService().requestExtraction(id);
+    return;
+  }
+
+  startDetachedExtraction(id);
+}
+
+export async function updateDocumentMetadata(
+  id: string,
+  input: Parameters<typeof updateLocalDocumentMetadata>[1],
+) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().updateDocumentMetadata(id, input);
+  }
+
+  return updateLocalDocumentMetadata(id, input);
+}
+
+export async function updateTopicReviewStatus(
+  topicId: string,
+  reviewStatus: TopicReviewStatus,
+) {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().updateTopicReviewStatus(
+      topicId,
+      reviewStatus,
+    );
+  }
+
+  return updateLocalTopicReviewStatus(topicId, reviewStatus);
+}
