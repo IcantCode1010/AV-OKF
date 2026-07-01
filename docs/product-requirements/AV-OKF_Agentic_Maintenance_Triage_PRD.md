@@ -295,7 +295,7 @@ The moat is not AI search over PDFs. The moat is structured aviation technical k
 | MVP-02 | Implement core frontmatter schema. | P0 | `okflint validate --manifest okf-base.yaml` enforces required fields by file type, allows the typed `relations` field, and runs as a CI gate. |
 | MVP-03 | Implement manual routing rules. | P0 | Agent can map intent to correct manual priority. |
 | MVP-04 | Implement ATA classifier. | P0 | Initial six fault routes map to ATA chapters with confidence. |
-| MVP-05 | Implement fault_route files. | P0 | Each MVP fault has manual priority, typed relation targets, source links, and targeted questions that pass the AV-OKF link-resolution profile. |
+| MVP-05 | Implement fault_route files. | P0 | Each MVP fault has manual priority, typed relation targets, source links, and targeted questions that pass the AV-OKF link-resolution profile and relation lint. |
 | MVP-06 | Implement hybrid retrieval. | P0 | System retrieves candidate files using semantic, keyword, ATA, synonym, and link signals. |
 | MVP-07 | Implement agent orchestration. | P0 | Triage, retrieval, authority, validation, and response roles run in sequence. |
 | MVP-08 | Implement evidence validation. | P0 | Unsupported dispatch/procedure/wiring/parts claims are blocked. |

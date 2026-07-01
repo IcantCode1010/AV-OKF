@@ -18,9 +18,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install okflint
-        run: python -m pip install okflint==0.1.3 beartype
+      - name: Install validators
+        run: python -m pip install okflint==0.1.3 beartype PyYAML
 
       - name: Validate OKF bundle
         run: okflint validate --manifest okf-base.yaml
 
+      - name: Validate OKF typed relations
+        run: python tools/okf_relation_lint.py --manifest okf-base.yaml

@@ -26,7 +26,7 @@ relations:
 
 ## Controlled Vocabulary
 
-Use this initial relation vocabulary:
+The relation vocabulary lives in `okf-base.yaml` under `relations.allowed`. The initial allowed values are:
 
 | Relation | Meaning | Validator Impact |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ Do not use a generic relation when the intent is operational. A fault route that
 
 For MVP, `okflint` enforces that `relations` is an allowed frontmatter field and blocks unknown top-level fields.
 
-The relation vocabulary should be enforced by a deterministic follow-on lint rule if `okflint` cannot validate nested list objects in the current release. That rule should reject relation entries unless:
+The relation vocabulary is enforced by `tools/okf_relation_lint.py`. That rule rejects relation entries unless:
 
 ```text
 relation is in the controlled vocabulary
@@ -52,6 +52,7 @@ target is present
 target follows the AV-OKF link-resolution rules
 target resolves inside the OKF bundle or allowed external source manifest
 target_type is present when the target is an OKF object
+target_type matches the resolved target file's frontmatter type
 ```
 
 Relation targets are internal bundle links for MVP. See [Link Resolution](link-resolution.md) for the exact Markdown and path rules.

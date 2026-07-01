@@ -94,6 +94,8 @@ relations:
 
 Typed relations may point to source-manifest external references only when the relation entry explicitly uses a future `target_scope: external_manifest` field. Until that field exists, relation targets are internal OKF bundle links.
 
+The relation linter must also read the resolved target file and compare its frontmatter `type` against the relation entry's declared `target_type`. A mismatch is a validation failure.
+
 ## Source References Are Not Links
 
 Source files, source pages, RAG chunk IDs, and document IDs are structured references, not Markdown graph links.
@@ -121,6 +123,7 @@ An internal Markdown link points to a missing file.
 An internal Markdown link uses a non-.md target.
 A relation target violates the same path rules.
 A relation target points to a missing OKF file.
+A relation target_type does not match the resolved target file's frontmatter type.
 ```
 
 The linter should ignore:

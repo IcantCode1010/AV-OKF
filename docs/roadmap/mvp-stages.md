@@ -121,7 +121,7 @@ Deliverables:
 - OKF-to-RAG coverage links
 - Bundle validation
 - Deterministic link lint for relative Markdown graph links and relation targets
-- Deterministic relation lint if nested relation objects are not enforceable by `okflint`
+- Deterministic relation lint for relation enum values, target resolution, and target type matching
 - GitHub Actions `okflint validate` CI gate
 - OKF preview UI
 
@@ -131,6 +131,7 @@ Exit criteria:
 - Internal graph links resolve under the AV-OKF link-resolution profile.
 - Approved OKF concepts can identify the RAG chunks and source pages they govern.
 - Operational links use typed relations such as `routes_to`, `references`, `supports`, `covered_by`, `supersedes`, and `conflicts_with`.
+- Relation targets declare a `target_type` that matches the resolved target file's frontmatter `type`.
 - MVP-02 is enforced by `okflint validate --manifest okf-base.yaml`, not a custom schema checker.
 
 Architecture note:

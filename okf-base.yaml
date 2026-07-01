@@ -13,6 +13,15 @@ base:
   link_resolution:
     external_refs:
     - source_manifest.md
+relations:
+  allowed:
+  - routes_to
+  - references
+  - supports
+  - covered_by
+  - supersedes
+  - conflicts_with
+  - depends_on
 profile:
   date_fields:
   - last_verified

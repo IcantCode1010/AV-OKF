@@ -69,7 +69,7 @@ relations:
     reason: Dispatch claims require MEL evidence.
 ```
 
-If the current `okflint` release cannot enforce nested relation vocabulary, add a deterministic follow-on lint check for relation entries. Do not rely on the LLM validator to catch malformed relation names.
+The relation vocabulary lives in `okf-base.yaml` under `relations.allowed`. `tools/okf_relation_lint.py` reads that enum and validates relation names, target shape, target resolution, and `target_type` against the resolved target file's frontmatter `type`.
 
 Link resolution is defined separately in [Link Resolution](link-resolution.md). The short version is: CommonMark inline links, relative `.md` targets only, no repo-root absolute links, no filesystem paths, no URLs for internal graph edges, and no unresolved relation targets.
 
@@ -99,6 +99,6 @@ Typed relations sit between those layers:
 ```text
 okflint = relations field is allowed and unknown fields are blocked
 link lint = Markdown graph links and relation targets resolve deterministically
-relation lint = relation names and target shape are deterministic
+relation lint = relation names, target shape, and target_type are deterministic
 Validation Agent = relation meaning affects evidence interpretation
 ```
