@@ -87,6 +87,28 @@ Exit criteria:
 
 - A user can inspect generated topic records and mark them for review, approval, rejection, or cleanup.
 
+## Stage 3.5: Docker/VPS Deployment
+
+Purpose: make the MVP deployable as a single-node Docker application before adding retrieval and agent features.
+
+This stage targets one container on one VPS with one mounted persistent data volume. It is not a multi-replica, serverless, or horizontally scaled architecture.
+
+Deliverables:
+
+- Dockerfile for the web app
+- Docker Compose configuration
+- Persistent `/data` volume for the JSON vault and uploaded PDFs
+- `AV_OKF_DATA_ROOT` runtime configuration
+- Health endpoint for reverse proxy and container checks
+- Deployment README instructions
+- Explicit limitation note: local JSON storage and in-process extraction are MVP-only and must later move to database/object storage plus a durable queue or worker
+
+Exit criteria:
+
+- The app can run with `docker compose up`.
+- Uploaded PDFs, extraction records, and topic records survive container restart through the mounted volume.
+- The container binds to `0.0.0.0:3000` and reports healthy through `/api/health`.
+
 ## Stage 4: Search And RAG
 
 Purpose: support broad discovery across raw and semi-structured content.

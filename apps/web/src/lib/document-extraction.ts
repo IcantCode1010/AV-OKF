@@ -57,7 +57,13 @@ function normalizeExtractionError(error: unknown) {
     };
   }
 
-  if (normalized.includes("invalid") || normalized.includes("corrupt")) {
+  if (
+    normalized.includes("malformed") ||
+    normalized.includes("invalid") ||
+    normalized.includes("corrupt") ||
+    normalized.includes("xref") ||
+    normalized.includes("trailer")
+  ) {
     return {
       code: "malformed_pdf",
       message: "PDF appears malformed or corrupt and could not be extracted.",

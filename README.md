@@ -82,7 +82,7 @@ topic review status
 
 ## Web App
 
-The Stage 2 product shell lives in `apps/web`.
+The Stage 3 product shell lives in `apps/web`.
 
 ```bash
 pnpm --dir apps/web dev
@@ -97,6 +97,32 @@ The app uses mock auth plus a local Stage 1 document vault. PDFs upload through 
 Stage 2 adds local in-process PDF extraction. Upload returns immediately, extraction runs in the same long-lived Node process, and the document detail page polls while extraction is queued or running. This is an MVP-only background job model and must be replaced with a durable queue or worker before serverless or production deployment.
 
 Stage 3 adds manual topic generation from extracted page records. It does not run automatically after re-extraction. Reruns replace draft topics, preserve approved or rejected topics, and skip regenerated drafts that overlap reviewed page coverage. Topic confidence is categorical, not numeric, and `sourcePageNumbers` is the page coverage field that later OKF export should consume.
+
+### Docker/VPS Deployment
+
+Stage 3.5 supports a single-node Docker deployment for demos and VPS hosting.
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+The container listens on `0.0.0.0:3000` and exposes a health check at:
+
+```text
+http://localhost:3000/api/health
+```
+
+Docker uses `AV_OKF_DATA_ROOT=/data`. The Compose file mounts the named volume `av-okf-data` at `/data`, which must persist:
+
+```text
+/data/document-vault.json
+/data/uploads/
+```
+
+Do not run the Docker container without a persistent `/data` mount unless the deployment is disposable. Without the volume, uploaded PDFs, extracted page records, topic records, and metadata are lost when the container is replaced.
+
+This is a single-container MVP deployment model. Do not run multiple replicas against the same JSON vault. Before serverless, multi-container, or public production deployment, replace the JSON vault with a real database/object store and replace in-process extraction with a durable queue or worker.
 
 ## Design Principles
 

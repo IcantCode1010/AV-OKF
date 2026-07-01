@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { generateTopicCandidates } from "./topic-records.ts";
 
@@ -331,6 +332,8 @@ const seedActivityEvents: ActivityEvent[] = [
   },
 ];
 
+const ATOMIC_RENAME_RETRIES = 6;
+
 export function getCurrentUser() {
   return currentUser;
 }
@@ -448,7 +451,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     await mkdir(root, { recursive: true });
     const tempPath = `${storePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tempPath, `${JSON.stringify(store, null, 2)}\n`);
-    await rename(tempPath, storePath);
+    await renameWithRetry(tempPath, storePath);
   }
 
   async function mutateStore<T>(mutation: (store: VaultStore) => Promise<T>) {
@@ -809,8 +812,14 @@ export async function updateTopicReviewStatus(
   return defaultVault.updateTopicReviewStatus(topicId, reviewStatus);
 }
 
-function getDefaultDataRoot() {
-  return path.resolve(process.cwd(), ".data");
+export function getDefaultDataRoot() {
+  const configuredDataRoot = process.env.AV_OKF_DATA_ROOT;
+
+  if (configuredDataRoot) {
+    return path.resolve(configuredDataRoot);
+  }
+
+  return path.join(process.cwd(), ".data");
 }
 
 function formatBytes(bytes: number) {
@@ -830,6 +839,26 @@ function formatTimestamp(date: Date) {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+async function renameWithRetry(sourcePath: string, targetPath: string) {
+  for (let attempt = 0; attempt <= ATOMIC_RENAME_RETRIES; attempt += 1) {
+    try {
+      await rename(sourcePath, targetPath);
+      return;
+    } catch (error) {
+      const canRetry =
+        isNodeError(error) &&
+        (error.code === "EPERM" || error.code === "EBUSY") &&
+        attempt < ATOMIC_RENAME_RETRIES;
+
+      if (!canRetry) {
+        throw error;
+      }
+
+      await delay(25 * (attempt + 1));
+    }
+  }
 }
 
 function getStoreDocument(store: VaultStore, id: string) {

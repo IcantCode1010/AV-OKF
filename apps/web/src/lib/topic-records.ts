@@ -25,12 +25,13 @@ export function generateTopicCandidates(
   const sortedPages = [...pageRecords].sort(
     (left, right) => left.pageNumber - right.pageNumber,
   );
-  const headings = sortedPages
+  const ignoredHeadingLines = findRepeatedHeadingLines(sortedPages);
+  const headings = dedupeConsecutiveHeadings(sortedPages
     .map((page) => ({
       pageNumber: page.pageNumber,
-      heading: getHeadingCandidate(page.text),
+      heading: getHeadingCandidate(page.text, ignoredHeadingLines),
     }))
-    .filter((heading): heading is HeadingBoundary => Boolean(heading.heading));
+    .filter((heading): heading is HeadingBoundary => Boolean(heading.heading)));
 
   if (headings.length > 0) {
     return headings.map((heading, index) => {
@@ -75,28 +76,87 @@ export function generateTopicCandidates(
   return topics;
 }
 
-function getHeadingCandidate(text: string) {
-  const firstLine = text
+function dedupeConsecutiveHeadings(headings: HeadingBoundary[]) {
+  return headings.filter((heading, index) => {
+    const previousHeading = headings[index - 1];
+    return (
+      !previousHeading ||
+      normalizeLine(previousHeading.heading) !== normalizeLine(heading.heading)
+    );
+  });
+}
+
+function getHeadingCandidate(text: string, ignoredHeadingLines = new Set<string>()) {
+  const candidateLines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .find(Boolean);
+    .filter(Boolean)
+    .slice(0, 8);
 
-  if (!firstLine || firstLine.length > 90) {
-    return null;
-  }
+  for (const line of candidateLines) {
+    const normalizedLine = normalizeLine(line);
 
-  const words = firstLine.split(/\s+/);
-  const upperLetters = firstLine.replace(/[^A-Z]/g, "").length;
-  const lowerLetters = firstLine.replace(/[^a-z]/g, "").length;
-  const allCapsLike = upperLetters > 0 && lowerLetters <= Math.max(1, upperLetters * 0.15);
-  const numberedHeading = /^(ATA|CHAPTER|SECTION|TASK|\d+(\.\d+)*\b)/i.test(firstLine);
-  const shortTitle = words.length <= 8 && !/[.!?]$/.test(firstLine);
+    if (
+      line.length > 90 ||
+      ignoredHeadingLines.has(normalizedLine) ||
+      isNonHeadingLine(line)
+    ) {
+      continue;
+    }
 
-  if (allCapsLike || numberedHeading || shortTitle) {
-    return firstLine;
+    const words = line.split(/\s+/);
+    const upperLetters = line.replace(/[^A-Z]/g, "").length;
+    const lowerLetters = line.replace(/[^a-z]/g, "").length;
+    const allCapsLike =
+      upperLetters > 0 && lowerLetters <= Math.max(1, upperLetters * 0.15);
+    const numberedHeading = /^(ATA|CHAPTER|SECTION|TASK|\d+(\.\d+)*\b)/i.test(
+      line,
+    );
+    const shortTitle = words.length <= 8 && !/[.!?]$/.test(line);
+
+    if (allCapsLike || numberedHeading || shortTitle) {
+      return line;
+    }
   }
 
   return null;
+}
+
+function findRepeatedHeadingLines(pages: ExtractedPageRecord[]) {
+  const counts = new Map<string, number>();
+  const minimumRepeatCount = Math.min(3, pages.length);
+
+  for (const page of pages) {
+    const uniqueLines = new Set(
+      page.text
+        .split(/\r?\n/)
+        .map((line) => normalizeLine(line))
+        .filter((line) => line.length > 0 && line.length <= 90)
+        .slice(0, 8),
+    );
+
+    for (const line of uniqueLines) {
+      counts.set(line, (counts.get(line) ?? 0) + 1);
+    }
+  }
+
+  return new Set(
+    [...counts.entries()]
+      .filter(([, count]) => count >= minimumRepeatCount)
+      .map(([line]) => line),
+  );
+}
+
+function normalizeLine(line: string) {
+  return line.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function isNonHeadingLine(line: string) {
+  return (
+    /^page\s+\d+$/i.test(line) ||
+    /^effective\s+on:/i.test(line) ||
+    /^(description|general)$/i.test(line)
+  );
 }
 
 function previousAvailablePage(pages: ExtractedPageRecord[], beforePage: number) {

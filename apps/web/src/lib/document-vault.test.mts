@@ -9,6 +9,7 @@ import {
   assertPdfUpload,
   assertSafeStorageKey,
   createLocalDocumentVault,
+  getDefaultDataRoot,
   generateStorageKey,
 } from "./document-vault.ts";
 
@@ -94,6 +95,42 @@ test("local vault stores PDF bytes under an opaque key and atomic JSON store", a
     const documents = await vault.getDocuments();
     assert.equal(documents.some((document) => document.id === uploaded.id), true);
   } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("default data root can be configured for Docker volume mounts", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-env-vault-"));
+  const previousDataRoot = process.env.AV_OKF_DATA_ROOT;
+  process.env.AV_OKF_DATA_ROOT = root;
+  const vault = createLocalDocumentVault();
+
+  try {
+    assert.equal(getDefaultDataRoot(), path.resolve(root));
+
+    const uploaded = await vault.createUploadedDocument({
+      bytes: Buffer.from("%PDF-1.7\n"),
+      description: "Uploaded into configured data root.",
+      originalFilename: "manual.pdf",
+      owner: "Maintenance Control",
+      sourceType: "aviation",
+      tags: ["docker"],
+      title: "Configured Data Root Manual",
+      type: "application/pdf",
+    });
+
+    const storedBytes = await readFile(
+      path.join(root, "uploads", uploaded.storageKey),
+      "utf8",
+    );
+    assert.equal(storedBytes, "%PDF-1.7\n");
+    await readFile(path.join(root, "document-vault.json"), "utf8");
+  } finally {
+    if (previousDataRoot === undefined) {
+      delete process.env.AV_OKF_DATA_ROOT;
+    } else {
+      process.env.AV_OKF_DATA_ROOT = previousDataRoot;
+    }
     await rm(root, { force: true, recursive: true });
   }
 });
@@ -244,6 +281,63 @@ test("metadata edits persist normalized extraction state for legacy documents", 
       await readFile(path.join(root, "document-vault.json"), "utf8"),
     );
     assert.equal(rawStore.documents[0].extraction.status, "queued");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("local vault preserves concurrent uploads and metadata edits without corrupting JSON", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-vault-"));
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    const uploads = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        vault.createUploadedDocument({
+          bytes: Buffer.from("%PDF-1.7\n"),
+          description: `Concurrent upload ${index}.`,
+          originalFilename: `manual-${index}.pdf`,
+          owner: "Maintenance Control",
+          sourceType: index % 2 === 0 ? "aviation" : "general",
+          tags: [`batch-${index}`],
+          title: `Concurrent Manual ${index}`,
+          type: "application/pdf",
+        }),
+      ),
+    );
+
+    await Promise.all(
+      uploads.map((document, index) =>
+        vault.updateDocumentMetadata(document.id, {
+          customProperties: [{ key: "Batch", value: String(index) }],
+          description: `Edited concurrent upload ${index}.`,
+          owner: "Reliability Engineering",
+          sourceType: document.sourceType,
+          status: "ready",
+          tags: [`batch-${index}`, "edited"],
+          title: `Edited Concurrent Manual ${index}`,
+        }),
+      ),
+    );
+
+    const rawStore = await readFile(path.join(root, "document-vault.json"), "utf8");
+    const parsedStore = JSON.parse(rawStore);
+    const persistedIds = new Set(
+      parsedStore.documents.map((document: { id: string }) => document.id),
+    );
+
+    for (const upload of uploads) {
+      assert.equal(persistedIds.has(upload.id), true);
+    }
+
+    for (let index = 0; index < uploads.length; index += 1) {
+      const persisted = parsedStore.documents.find(
+        (document: { id: string }) => document.id === uploads[index]!.id,
+      );
+      assert.equal(persisted.title, `Edited Concurrent Manual ${index}`);
+      assert.deepEqual(persisted.tags, [`batch-${index}`, "edited"]);
+      assert.equal(persisted.status, "ready");
+    }
   } finally {
     await rm(root, { force: true, recursive: true });
   }

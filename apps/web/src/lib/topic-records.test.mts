@@ -65,6 +65,40 @@ test("generateTopicCandidates falls back to coarse page ranges with low confiden
   assert.deepEqual(topics[0]?.sourcePageNumbers, [1, 2]);
 });
 
+test("generateTopicCandidates ignores running headers without suppressing repeated section titles", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "B737\nTechOps Training\nENGINE FUEL AND CONTROL - DISTRIBUTION - GENERAL\nBody text.\nEffective On:B737 MAX 1 ATA 73-00",
+      tables: [],
+      imageCount: 0,
+      charCount: 122,
+    },
+    {
+      pageNumber: 2,
+      text: "B737\nTechOps Training\nENGINE FUEL AND CONTROL - DISTRIBUTION - GENERAL\nMore body text.\nEffective On:B737 MAX 2 ATA 73-00",
+      tables: [],
+      imageCount: 0,
+      charCount: 127,
+    },
+    {
+      pageNumber: 3,
+      text: "B737\nTechOps Training\nENGINE FUEL AND CONTROL - COMPONENT LOCATION\nLocation body text.\nEffective On:B737 MAX 3 ATA 73-00",
+      tables: [],
+      imageCount: 0,
+      charCount: 126,
+    },
+  ]);
+
+  assert.equal(topics[0]?.title, "ENGINE FUEL AND CONTROL - DISTRIBUTION - GENERAL");
+  assert.deepEqual(topics[0]?.sourcePageNumbers, [1, 2]);
+  assert.equal(topics[1]?.title, "ENGINE FUEL AND CONTROL - COMPONENT LOCATION");
+  assert.equal(
+    topics.some((topic) => topic.title.startsWith("Effective On:")),
+    false,
+  );
+});
+
 test("vault topic generation requires completed extraction", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-topics-"));
   const vault = createLocalDocumentVault(root);

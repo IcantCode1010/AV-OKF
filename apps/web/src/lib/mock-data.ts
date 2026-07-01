@@ -53,7 +53,7 @@ export const currentUser: User = {
 export const workspace: Workspace = {
   id: "wrk_av_okf",
   name: "AV-OKF Demo Workspace",
-  plan: "Stage 0 Prototype",
+  plan: "Stage 1 Local Vault",
   memberCount: 4,
 };
 

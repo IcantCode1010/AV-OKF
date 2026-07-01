@@ -27,10 +27,10 @@ import {
 } from "@/components/ui/table";
 import {
   getActivityEvents,
-  getCurrentWorkspace,
   getDocumentMetrics,
   getRecentDocuments,
 } from "@/lib/document-vault";
+import { getCurrentWorkspace } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 

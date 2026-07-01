@@ -1,6 +1,6 @@
 # AV-OKF Web
 
-Stage 1 product shell and local document vault for the AV-OKF document intelligence platform.
+Stage 3 product shell, local document vault, extraction pipeline, and topic review UI for the AV-OKF document intelligence platform.
 
 ## Commands
 
@@ -8,6 +8,7 @@ Stage 1 product shell and local document vault for the AV-OKF document intellige
 pnpm --dir apps/web dev
 pnpm --dir apps/web lint
 pnpm --dir apps/web build
+pnpm --dir apps/web test
 ```
 
 ## Current Scope
@@ -25,12 +26,12 @@ pnpm --dir apps/web build
 
 ## Local Storage
 
-Stage 1 persists local development data under `apps/web/.data/`:
+Local development persists data under `apps/web/.data/`:
 
 - `document-vault.json` stores document metadata and activity.
 - `uploads/` stores uploaded PDFs using opaque UUID-based storage keys.
 
-This directory is ignored by git. The JSON file store is a temporary Stage 1 stand-in, not a long-term backend. A later stage should deliberately replace it with a real database and object storage service.
+Set `AV_OKF_DATA_ROOT` to move this store, for example `AV_OKF_DATA_ROOT=/data` in Docker. This directory is ignored by git. The JSON file store is a temporary MVP stand-in, not a long-term backend. A later stage should deliberately replace it with a real database and object storage service.
 
 ## Extraction Jobs
 
@@ -43,3 +44,22 @@ This local background approach assumes a long-lived Node process. It is not safe
 Stage 3 generates topic records manually from completed extraction records. Re-extraction does not trigger topic generation automatically.
 
 Rerunning topic generation deletes `needs_review` and `needs_cleanup` topics for the document, preserves `approved` and `rejected` topics, and skips new draft topics that overlap reviewed page coverage. Confidence is categorical: `high` for clear heading boundaries, `low` for coarse fallback page ranges, and `medium` is reserved for later mixed-boundary heuristics. `sourcePageNumbers` is the page coverage field intended for Stage 5 OKF export.
+
+## Docker/VPS Deployment
+
+The Stage 3.5 Docker path targets one container on one VPS with one persistent data volume:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+The compose service mounts `av-okf-data` at `/data` and sets `AV_OKF_DATA_ROOT=/data`. Keep that volume attached across restarts and rebuilds.
+
+Health check:
+
+```text
+GET /api/health
+```
+
+Do not run multiple containers against the JSON vault. Before multi-replica or serverless deployment, replace local JSON/filesystem storage with database/object storage and replace in-process extraction with a durable queue or worker.
