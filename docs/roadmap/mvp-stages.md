@@ -112,17 +112,24 @@ Deliverables:
 
 - Knowledge object model
 - OKF frontmatter schema
+- `okflint` profile for required frontmatter by file type
 - Markdown exporter
 - `index.md` generation
 - `source_manifest.md` generation
 - OKF-to-RAG coverage links
 - Bundle validation
+- GitHub Actions `okflint validate` CI gate
 - OKF preview UI
 
 Exit criteria:
 
 - Approved topic records export into valid OKF-style Markdown files with source references.
 - Approved OKF concepts can identify the RAG chunks and source pages they govern.
+- MVP-02 is enforced by `okflint validate --manifest okf-base.yaml`, not a custom schema checker.
+
+Architecture note:
+
+- [okflint Profile](../architecture/okflint-profile.md)
 
 ## Stage 6: Chat Agent
 

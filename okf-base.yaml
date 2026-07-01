@@ -1,0 +1,425 @@
+okf_version: '0.1'
+base:
+  name: AV-OKF Knowledge Bundle
+  roots:
+  - path: knowledge
+    exclude_patterns:
+    - '**/.DS_Store'
+    - '**/README.md'
+  reserved_files:
+    index: index.md
+    log: log.md
+  status_field: review_status
+  link_resolution:
+    external_refs:
+    - source_manifest.md
+profile:
+  date_fields:
+  - last_verified
+  - approved_at
+  - deprecated_at
+  types:
+    aircraft_index:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - related_topics
+      - source_authority
+      - revision
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    manual_category:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - source_authority
+      - revision
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - effectivity
+      - source_file
+      - source_pages
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    ata_index:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - ata
+      - knowledge_version
+      - last_verified
+      optional:
+      - manual_type
+      - source_authority
+      - related_faults
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    system_topic:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - ata
+      - effectivity
+      - source_authority
+      - revision
+      - source_file
+      - source_pages
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - related_faults
+      - related_topics
+      - task_numbers
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    component_topic:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - ata
+      - effectivity
+      - source_authority
+      - revision
+      - source_file
+      - source_pages
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - related_faults
+      - related_topics
+      - task_numbers
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    fault_route:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - ata
+      - effectivity
+      - source_authority
+      - source_file
+      - source_pages
+      - related_topics
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - manual_type
+      - revision
+      - related_faults
+      - task_numbers
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    procedure_reference:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - ata
+      - effectivity
+      - source_authority
+      - revision
+      - source_file
+      - source_pages
+      - task_numbers
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - related_faults
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    dispatch_reference:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - ata
+      - effectivity
+      - source_authority
+      - revision
+      - source_file
+      - source_pages
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - related_faults
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    wiring_reference:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - ata
+      - effectivity
+      - source_authority
+      - revision
+      - source_file
+      - source_pages
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - related_faults
+      - related_topics
+      - task_numbers
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    training_reference:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - manual_type
+      - ata
+      - effectivity
+      - source_authority
+      - source_file
+      - source_pages
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - revision
+      - related_faults
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    source_manifest:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - source_authority
+      - revision
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - manual_type
+      - effectivity
+      - source_file
+      - source_pages
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    routing_rule:
+      required:
+      - type
+      - review_status
+      - title
+      - description
+      - aircraft_family
+      - source_authority
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_variant
+      - manual_type
+      - ata
+      - effectivity
+      - source_file
+      - source_pages
+      - related_faults
+      - related_topics
+      - covered_rag_chunk_ids
+      - covered_topic_record_ids
+      - coverage_type
+      - approved_by
+      - approved_at
+      - deprecated_at
+      status_values:
+      - raw_extracted
+      - needs_ai_cleanup
+      - needs_human_review
+      - approved
+      - rejected
+      - deprecated
+    change_log:
+      required:
+      - type
+      - title
+      - description
+      - knowledge_version
+      - last_verified
+      optional:
+      - aircraft_family
+      - aircraft_variant
+      - source_authority
+      - revision
+      - related_topics
+      status_values: false
+hygiene:
+  broken_links: error
+  split_candidates: warn
+  reserved_files: error
+  unknown_fields: error

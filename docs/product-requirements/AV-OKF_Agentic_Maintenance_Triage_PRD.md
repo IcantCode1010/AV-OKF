@@ -292,7 +292,7 @@ The moat is not AI search over PDFs. The moat is structured aviation technical k
 | ID | Requirement | Priority | Acceptance Criteria |
 | --- | --- | --- | --- |
 | MVP-01 | Create 737NG AV-OKF repository scaffold. | P0 | Repository includes AGENTS.md, root index, aircraft/737ng, routing, manuals, ATA, faults, schema, and source manifest. |
-| MVP-02 | Implement core frontmatter schema. | P0 | Validator confirms required fields by file type. |
+| MVP-02 | Implement core frontmatter schema. | P0 | `okflint validate --manifest okf-base.yaml` enforces required fields by file type and runs as a CI gate. |
 | MVP-03 | Implement manual routing rules. | P0 | Agent can map intent to correct manual priority. |
 | MVP-04 | Implement ATA classifier. | P0 | Initial six fault routes map to ATA chapters with confidence. |
 | MVP-05 | Implement fault_route files. | P0 | Each MVP fault has manual priority, related topics, source links, and targeted questions. |
