@@ -198,6 +198,11 @@ Deliverables:
 - Keyword search
 - Vector search
 - Hybrid retrieval
+- OpenAI `text-embedding-3-small` production embedding provider
+- deterministic local/test embedding provider
+- pre-call token budget enforcement
+- Postgres + pgvector vector storage
+- derived OKF-to-RAG coverage projection; OKF frontmatter remains the source of truth
 - Source filters
 - Citation objects
 - Search UI

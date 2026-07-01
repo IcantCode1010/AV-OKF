@@ -98,6 +98,14 @@ Stage 2 adds local in-process PDF extraction. Upload returns immediately, extrac
 
 Stage 3 adds manual topic generation from extracted page records. It does not run automatically after re-extraction. Reruns replace draft topics, preserve approved or rejected topics, and skip regenerated drafts that overlap reviewed page coverage. Topic confidence is categorical, not numeric, and `sourcePageNumbers` is the page coverage field that later OKF export should consume.
 
+### Stage 4 RAG Search
+
+Stage 4 indexes extracted page records into retrieval-sized chunks. Production uses OpenAI `text-embedding-3-small` and Postgres + pgvector. Local tests use deterministic embeddings and never require an API key.
+
+RAG chunks are independent from OKF topics. RAG chunks optimize retrieval; OKF topics optimize human-reviewed meaning.
+
+Embedding budget caps are enforced before any OpenAI API call. If a cap is exceeded, indexing fails with `embedding_budget_exceeded`; the system does not truncate documents silently.
+
 ### Docker/VPS Deployment
 
 Stage 3.6-3.9 moves the app toward a production VPS shape:
