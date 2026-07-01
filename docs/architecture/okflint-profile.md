@@ -29,6 +29,7 @@ broken Markdown links
 reserved index/log files
 unknown frontmatter fields
 allowed typed-relation frontmatter field
+AV-OKF link-resolution profile through deterministic link lint
 ```
 
 The AV-OKF profile is defined in:
@@ -70,6 +71,8 @@ relations:
 
 If the current `okflint` release cannot enforce nested relation vocabulary, add a deterministic follow-on lint check for relation entries. Do not rely on the LLM validator to catch malformed relation names.
 
+Link resolution is defined separately in [Link Resolution](link-resolution.md). The short version is: CommonMark inline links, relative `.md` targets only, no repo-root absolute links, no filesystem paths, no URLs for internal graph edges, and no unresolved relation targets.
+
 ## CI Gate
 
 The GitHub Actions workflow runs:
@@ -95,6 +98,7 @@ Typed relations sit between those layers:
 
 ```text
 okflint = relations field is allowed and unknown fields are blocked
+link lint = Markdown graph links and relation targets resolve deterministically
 relation lint = relation names and target shape are deterministic
 Validation Agent = relation meaning affects evidence interpretation
 ```

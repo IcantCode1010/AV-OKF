@@ -49,9 +49,12 @@ The relation vocabulary should be enforced by a deterministic follow-on lint rul
 ```text
 relation is in the controlled vocabulary
 target is present
+target follows the AV-OKF link-resolution rules
 target resolves inside the OKF bundle or allowed external source manifest
 target_type is present when the target is an OKF object
 ```
+
+Relation targets are internal bundle links for MVP. See [Link Resolution](link-resolution.md) for the exact Markdown and path rules.
 
 ## Agent Rules
 

@@ -113,12 +113,14 @@ Deliverables:
 - Knowledge object model
 - OKF frontmatter schema
 - `okflint` profile for required frontmatter by file type
+- Explicit link-resolution profile
 - Typed relation field and controlled vocabulary
 - Markdown exporter
 - `index.md` generation
 - `source_manifest.md` generation
 - OKF-to-RAG coverage links
 - Bundle validation
+- Deterministic link lint for relative Markdown graph links and relation targets
 - Deterministic relation lint if nested relation objects are not enforceable by `okflint`
 - GitHub Actions `okflint validate` CI gate
 - OKF preview UI
@@ -126,6 +128,7 @@ Deliverables:
 Exit criteria:
 
 - Approved topic records export into valid OKF-style Markdown files with source references.
+- Internal graph links resolve under the AV-OKF link-resolution profile.
 - Approved OKF concepts can identify the RAG chunks and source pages they govern.
 - Operational links use typed relations such as `routes_to`, `references`, `supports`, `covered_by`, `supersedes`, and `conflicts_with`.
 - MVP-02 is enforced by `okflint validate --manifest okf-base.yaml`, not a custom schema checker.
@@ -133,6 +136,7 @@ Exit criteria:
 Architecture note:
 
 - [okflint Profile](../architecture/okflint-profile.md)
+- [Link Resolution](../architecture/link-resolution.md)
 - [Typed Relations](../architecture/typed-relations.md)
 
 ## Stage 6: Chat Agent

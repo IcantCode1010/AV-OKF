@@ -97,7 +97,7 @@ The agent layer should begin with one orchestrator and a small number of special
 ### File Format
 - All knowledge files must be Markdown with YAML frontmatter.
 - Every directory must include an index.md file where navigation is required.
-- Links must be relative Markdown links and must resolve inside the repository.
+- Links must be CommonMark-compatible inline Markdown links with relative `.md` targets and must resolve inside the repository under the AV-OKF link-resolution profile.
 - Each source-backed page must reference source files and source pages.
 - Every aircraft-specific topic must include aircraft family, effectivity, manual type, ATA, source authority, and revision when known.
 ### Required File Types
@@ -295,7 +295,7 @@ The moat is not AI search over PDFs. The moat is structured aviation technical k
 | MVP-02 | Implement core frontmatter schema. | P0 | `okflint validate --manifest okf-base.yaml` enforces required fields by file type, allows the typed `relations` field, and runs as a CI gate. |
 | MVP-03 | Implement manual routing rules. | P0 | Agent can map intent to correct manual priority. |
 | MVP-04 | Implement ATA classifier. | P0 | Initial six fault routes map to ATA chapters with confidence. |
-| MVP-05 | Implement fault_route files. | P0 | Each MVP fault has manual priority, related topics, source links, and targeted questions. |
+| MVP-05 | Implement fault_route files. | P0 | Each MVP fault has manual priority, typed relation targets, source links, and targeted questions that pass the AV-OKF link-resolution profile. |
 | MVP-06 | Implement hybrid retrieval. | P0 | System retrieves candidate files using semantic, keyword, ATA, synonym, and link signals. |
 | MVP-07 | Implement agent orchestration. | P0 | Triage, retrieval, authority, validation, and response roles run in sequence. |
 | MVP-08 | Implement evidence validation. | P0 | Unsupported dispatch/procedure/wiring/parts claims are blocked. |
