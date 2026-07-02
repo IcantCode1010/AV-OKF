@@ -1,6 +1,7 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
 import GitHubProvider from "next-auth/providers/github";
 import GoogleProvider from "next-auth/providers/google";
 
@@ -9,14 +10,27 @@ import type { AuthWorkspaceContext, WorkspaceRole } from "./auth-workspace.ts";
 import type { User, Workspace } from "./document-vault.ts";
 
 type AuthPrismaClient = ReturnType<typeof getPrisma>;
+type AuthEnv = Record<string, string | undefined>;
+
+const TEST_AUTH_EMAIL = "test@av-okf.local";
+const TEST_AUTH_NAME = "AV-OKF Test User";
+const TEST_AUTH_PASSWORD = "av-okf-test";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(getPrisma()) as NextAuthOptions["adapter"],
   callbacks: {
-    async session({ session, user }) {
+    async jwt({ token, user }) {
+      if (user) {
+        token.email = user.email;
+        token.name = user.name;
+        token.sub = user.id;
+      }
+      return token;
+    },
+    async session({ session, token, user }) {
       if (session.user) {
-        session.user.name = session.user.name ?? user.name;
-        session.user.email = session.user.email ?? user.email;
+        session.user.name = session.user.name ?? user?.name ?? token.name;
+        session.user.email = session.user.email ?? user?.email ?? token.email;
       }
       return session;
     },
@@ -28,29 +42,43 @@ export const authOptions: NextAuthOptions = {
       }
     },
   },
-  providers: [
-    ...(process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET
-      ? [
-          GitHubProvider({
-            clientId: process.env.AUTH_GITHUB_ID,
-            clientSecret: process.env.AUTH_GITHUB_SECRET,
-          }),
-        ]
-      : []),
-    ...(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET
-      ? [
-          GoogleProvider({
-            clientId: process.env.AUTH_GOOGLE_ID,
-            clientSecret: process.env.AUTH_GOOGLE_SECRET,
-          }),
-        ]
-      : []),
-  ],
+  providers: buildAuthProviders(process.env),
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   session: {
-    strategy: "database",
+    strategy: getAuthSessionStrategy(process.env),
   },
 };
+
+export function buildAuthProviderIds(env: AuthEnv = process.env): string[] {
+  const providerIds: string[] = [];
+
+  if (env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET) {
+    providerIds.push("github");
+  }
+
+  if (env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET) {
+    providerIds.push("google");
+  }
+
+  if (isTestAuthEnabled(env)) {
+    providerIds.push("credentials");
+  }
+
+  return providerIds;
+}
+
+export function getAuthSessionStrategy(
+  env: AuthEnv = process.env,
+): "database" | "jwt" {
+  return isTestAuthEnabled(env) ? "jwt" : "database";
+}
+
+export function isValidTestAuthPassword(
+  password: string | undefined,
+  env: AuthEnv = process.env,
+): boolean {
+  return Boolean(password) && password === getTestAuthPassword(env);
+}
 
 export async function getCurrentSessionWorkspace(): Promise<AuthWorkspaceContext | null> {
   const session = await getServerSession(authOptions);
@@ -188,4 +216,96 @@ function getInitials(value: string) {
 
 function normalizeWorkspaceRole(value: string): WorkspaceRole {
   return value === "admin" ? "admin" : "member";
+}
+
+function buildAuthProviders(env: AuthEnv): NextAuthOptions["providers"] {
+  return [
+    ...(env.AUTH_GITHUB_ID && env.AUTH_GITHUB_SECRET
+      ? [
+          GitHubProvider({
+            clientId: env.AUTH_GITHUB_ID,
+            clientSecret: env.AUTH_GITHUB_SECRET,
+          }),
+        ]
+      : []),
+    ...(env.AUTH_GOOGLE_ID && env.AUTH_GOOGLE_SECRET
+      ? [
+          GoogleProvider({
+            clientId: env.AUTH_GOOGLE_ID,
+            clientSecret: env.AUTH_GOOGLE_SECRET,
+          }),
+        ]
+      : []),
+    ...(isTestAuthEnabled(env) ? [buildTestCredentialsProvider(env)] : []),
+  ];
+}
+
+function buildTestCredentialsProvider(env: AuthEnv) {
+  return CredentialsProvider({
+    credentials: {
+      email: {
+        label: "Email",
+        type: "email",
+        value: getTestAuthEmail(env),
+      },
+      password: {
+        label: "Password",
+        type: "password",
+      },
+    },
+    name: "Test Login",
+    async authorize(credentials) {
+      const email = normalizeEmail(credentials?.email);
+
+      if (
+        email !== getTestAuthEmail(env) ||
+        !isValidTestAuthPassword(credentials?.password, env)
+      ) {
+        return null;
+      }
+
+      const name = getTestAuthName(env);
+      const prisma: AuthPrismaClient = getPrisma();
+      const user = await prisma.user.upsert({
+        create: {
+          email,
+          name,
+        },
+        update: {
+          name,
+        },
+        where: {
+          email,
+        },
+      });
+
+      await ensureDefaultWorkspace(user.id, user.name ?? user.email ?? name);
+
+      return {
+        email: user.email,
+        id: user.id,
+        name: user.name,
+      };
+    },
+  });
+}
+
+function isTestAuthEnabled(env: AuthEnv): boolean {
+  return env.AV_OKF_TEST_AUTH_ENABLED === "true";
+}
+
+function getTestAuthEmail(env: AuthEnv): string {
+  return normalizeEmail(env.AV_OKF_TEST_AUTH_EMAIL) ?? TEST_AUTH_EMAIL;
+}
+
+function getTestAuthName(env: AuthEnv): string {
+  return env.AV_OKF_TEST_AUTH_NAME?.trim() || TEST_AUTH_NAME;
+}
+
+function getTestAuthPassword(env: AuthEnv): string {
+  return env.AV_OKF_TEST_AUTH_PASSWORD || TEST_AUTH_PASSWORD;
+}
+
+function normalizeEmail(value: string | undefined): string | undefined {
+  return value?.trim().toLowerCase() || undefined;
 }
