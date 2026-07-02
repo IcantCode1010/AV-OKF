@@ -57,6 +57,7 @@ export type ProductionDocumentService = {
   generateTopicRecords(documentId: string): Promise<TopicRecord[]>;
   getActivityEvents(): Promise<ActivityEvent[]>;
   getDocumentById(documentId: string): Promise<Document>;
+  getDocumentWorkspaceId(documentId: string): Promise<string | undefined>;
   getDocumentMetrics(): Promise<DocumentMetrics>;
   getDocuments(): Promise<Document[]>;
   getRecentDocuments(limit?: number): Promise<Document[]>;
@@ -148,6 +149,11 @@ export function createProductionDocumentService(
         context: await requireAuthWorkspaceContext(),
         documentId,
       });
+    },
+    async getDocumentWorkspaceId(
+      documentId: string,
+    ): Promise<string | undefined> {
+      return repository.getDocumentWorkspaceId(documentId);
     },
     async getDocumentMetrics(): Promise<DocumentMetrics> {
       return repository.getDocumentMetrics(await requireAuthWorkspaceContext());

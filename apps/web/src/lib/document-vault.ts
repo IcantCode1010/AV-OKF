@@ -97,6 +97,7 @@ export type TopicRecord = {
 
 export type Document = {
   id: string;
+  workspaceId?: string;
   title: string;
   fileType: string;
   size: string;
@@ -191,6 +192,7 @@ const workspace: Workspace = {
 const seedDocuments: Document[] = [
   {
     id: "doc-737ng-amm-24",
+    workspaceId: workspace.id,
     title: "737NG AMM Electrical Power - ATA 24",
     fileType: "PDF",
     size: "42.8 MB",
@@ -220,6 +222,7 @@ const seedDocuments: Document[] = [
   },
   {
     id: "doc-elt-training",
+    workspaceId: workspace.id,
     title: "ELT System Training Notes",
     fileType: "PDF",
     size: "8.4 MB",
@@ -246,6 +249,7 @@ const seedDocuments: Document[] = [
   },
   {
     id: "doc-company-policy",
+    workspaceId: workspace.id,
     title: "Technical Publications Control Policy",
     fileType: "PDF",
     size: "2.1 MB",
@@ -272,6 +276,7 @@ const seedDocuments: Document[] = [
   },
   {
     id: "doc-apu-fault-routes",
+    workspaceId: workspace.id,
     title: "APU Fault Route Reference",
     fileType: "PDF",
     size: "11.6 MB",
@@ -298,6 +303,7 @@ const seedDocuments: Document[] = [
   },
   {
     id: "doc-vendor-onboarding",
+    workspaceId: workspace.id,
     title: "Vendor Onboarding Handbook",
     fileType: "PDF",
     size: "5.7 MB",
@@ -324,6 +330,7 @@ const seedDocuments: Document[] = [
   },
   {
     id: "doc-mel-dispatch",
+    workspaceId: workspace.id,
     title: "MEL Dispatch Gate Examples",
     fileType: "PDF",
     size: "19.3 MB",
@@ -541,6 +548,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     return mutateStore(async (store) => {
       const document: Document = {
         id: `doc-${randomUUID()}`,
+        workspaceId: workspace.id,
         title: input.title.trim() || input.originalFilename.replace(/\.pdf$/i, ""),
         fileType: "PDF",
         size: formatBytes(input.bytes.byteLength),

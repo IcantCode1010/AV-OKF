@@ -101,6 +101,16 @@ export async function getDocumentById(
   return getLocalDocumentById(id);
 }
 
+export async function getDocumentWorkspaceId(
+  id: string,
+): Promise<string | undefined> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getDocumentWorkspaceId(id);
+  }
+
+  return (await getLocalDocumentById(id))?.workspaceId;
+}
+
 export async function getDocumentMetrics(): Promise<DocumentMetrics> {
   if (isProductionBackend()) {
     return getProductionDocumentService().getDocumentMetrics();

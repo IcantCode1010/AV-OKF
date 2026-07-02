@@ -114,6 +114,7 @@ type DbDocumentRecord = {
   tags: string[];
   title: string;
   updatedLabel: string;
+  workspaceId: string;
 };
 
 type DbActivityEvent = {
@@ -474,6 +475,13 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       );
       return mapDocument(document);
     },
+    async getDocumentWorkspaceId(documentId: string) {
+      const document = await db.document.findUnique({
+        select: { workspaceId: true },
+        where: { id: documentId },
+      });
+      return document?.workspaceId;
+    },
     async getDocumentMetrics(context: AuthWorkspaceContext) {
       const documents = await db.document.findMany({
         where: { workspaceId: context.workspaceId },
@@ -699,6 +707,7 @@ function mapDocument(record: DbDocumentRecord): Document {
     },
     fileType: record.fileType,
     id: record.id,
+    workspaceId: record.workspaceId,
     manualType: record.manualType,
     mimeType: record.mimeType,
     originalFilename: record.originalFilename,

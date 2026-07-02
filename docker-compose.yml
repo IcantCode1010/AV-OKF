@@ -42,6 +42,8 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-before-public-deployment}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      AV_OKF_KNOWLEDGE_ROOT: /data/knowledge
+      AV_OKF_KNOWLEDGE_VERSION: ${AV_OKF_KNOWLEDGE_VERSION:-0.1.0}
       AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
       AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET:-}
       AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
@@ -59,6 +61,8 @@ services:
       RAG_EMBEDDING_MAX_TOKENS_GLOBAL_DAY: ${RAG_EMBEDDING_MAX_TOKENS_GLOBAL_DAY:-5000000}
     expose:
       - "3000"
+    volumes:
+      - caddy-data:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]

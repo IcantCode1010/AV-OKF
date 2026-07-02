@@ -7,6 +7,7 @@ import {
   assertPdfUpload,
   createUploadedDocument,
   generateTopicRecords,
+  getDocumentWorkspaceId,
   parseCustomProperties,
   parseTags,
   requestExtraction,
@@ -16,6 +17,11 @@ import {
   type SourceType,
   type TopicReviewStatus,
 } from "@/lib/document-backend";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import {
+  assertActionDocumentWorkspace,
+  normalizeAtaMetadata,
+} from "@/lib/document-action-guards";
 
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
@@ -79,10 +85,18 @@ export async function updateTopicReviewStatusAction(formData: FormData) {
 
 export async function updateDocumentMetadataAction(formData: FormData) {
   const id = getFormString(formData, "id");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(id);
+
+  assertActionDocumentWorkspace({
+    context,
+    document: { workspaceId },
+    mismatchError: "document_workspace_mismatch",
+  });
 
   await updateDocumentMetadata(id, {
     aircraftFamily: getNullableFormString(formData, "aircraftFamily"),
-    ata: getNullableFormString(formData, "ata"),
+    ata: normalizeAtaMetadata(getNullableFormString(formData, "ata")),
     customProperties: parseCustomProperties(
       getFormString(formData, "customProperties"),
     ),

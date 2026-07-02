@@ -5,12 +5,24 @@ import { redirect } from "next/navigation";
 
 import {
   getDocumentById,
+  getDocumentWorkspaceId,
   getTopicRecordsByDocumentId,
 } from "@/lib/document-backend";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 
 export async function exportTopicToOkfAction(formData: FormData) {
   const documentId = getFormString(formData, "documentId");
   const topicId = getFormString(formData, "topicId");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+
+  assertActionDocumentWorkspace({
+    context,
+    document: { workspaceId },
+    mismatchError: "okf_export_workspace_mismatch",
+  });
+
   const [document, topics] = await Promise.all([
     getDocumentById(documentId),
     getTopicRecordsByDocumentId(documentId),
