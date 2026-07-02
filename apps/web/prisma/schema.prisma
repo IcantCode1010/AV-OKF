@@ -93,6 +93,12 @@ model Document {
   sourceType       String
   pages            Int                      @default(0)
   description      String                   @default("")
+  aircraftFamily   String?
+  manualType       String?
+  ata              String?
+  effectivity      String?
+  sourceAuthority  String?
+  revision         String?
   ragStatus        String                   @default("not_indexed")
   ragIndexVersion  Int                      @default(0)
   originalFilename String?

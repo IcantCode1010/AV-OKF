@@ -3,8 +3,6 @@ name: okflint
 on:
   pull_request:
   push:
-    branches:
-      - main
 
 jobs:
   validate-okf:
