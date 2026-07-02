@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { BookOpenCheck, FileText } from "lucide-react";
+import type { ComponentType } from "react";
+import {
+  BookOpenCheck,
+  Clock,
+  FileText,
+  FolderOpen,
+  ShieldCheck,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,147 +17,113 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  getDefaultKnowledgeRoot,
-  listOkfBundleFiles,
-  readOkfBundleFile,
-} from "@/lib/okf-bundle";
+import { getDefaultKnowledgeRoot, getOkfBundleSummary } from "@/lib/okf-bundle";
 
 export const dynamic = "force-dynamic";
 
-export default async function KnowledgePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ file?: string }>;
-}) {
-  const { file } = await searchParams;
-  const knowledgeRoot = getDefaultKnowledgeRoot();
-  const files = await getFiles(knowledgeRoot);
-  const selectedName = file ?? files[0]?.filename;
-  const selectedFile = selectedName
-    ? await getSelectedFile(knowledgeRoot, selectedName)
-    : null;
+export default async function KnowledgePage() {
+  const summary = await getOkfBundleSummary(getDefaultKnowledgeRoot());
+  const latestModified = summary.latestModifiedAt
+    ? formatDate(summary.latestModifiedAt)
+    : "No exports yet";
 
   return (
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <Badge variant="secondary">OKF bundle</Badge>
+          <Badge variant="secondary">Knowledge</Badge>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-            Knowledge
+            Knowledge bundles
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Preview approved Markdown files exported from reviewed topic records.
+            Open the local OKF bundle generated from reviewed document topics.
           </p>
         </div>
-        <Badge variant="outline">{files.length} files</Badge>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[360px_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Bundle files</CardTitle>
-            <CardDescription>
-              Files are read from the configured OKF knowledge root.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {files.length > 0 ? (
-              files.map((bundleFile) => (
-                <Button
-                  key={bundleFile.filename}
-                  asChild
-                  className="h-auto w-full justify-start px-3 py-3"
-                  variant={
-                    bundleFile.filename === selectedName ? "secondary" : "ghost"
-                  }
-                >
-                  <Link href={`/knowledge?file=${encodeURIComponent(bundleFile.filename)}`}>
-                    <FileText className="h-4 w-4" />
-                    <span className="min-w-0 flex-1 text-left">
-                      <span className="block truncate text-sm">
-                        {bundleFile.title}
-                      </span>
-                      <span className="block truncate font-mono text-xs text-muted-foreground">
-                        {bundleFile.filename}
-                      </span>
-                    </span>
-                  </Link>
-                </Button>
-              ))
-            ) : (
-              <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
-                No OKF files have been exported yet.
+      <Card className="max-w-3xl">
+        <CardHeader>
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="flex gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-border bg-secondary">
+                <BookOpenCheck className="h-5 w-5 text-primary" />
               </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
-                <CardTitle>{selectedFile?.title ?? "No file selected"}</CardTitle>
-                <CardDescription>
-                  {selectedFile?.filename ?? "Export an approved topic to populate the bundle."}
+                <CardTitle>AV-OKF Knowledge Bundle</CardTitle>
+                <CardDescription className="mt-1">
+                  Approved OKF Markdown files exported from reviewed topic records.
                 </CardDescription>
               </div>
-              {selectedFile ? (
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{selectedFile.type}</Badge>
-                  <Badge variant="outline">{selectedFile.reviewStatus}</Badge>
-                </div>
-              ) : null}
             </div>
-          </CardHeader>
-          <CardContent>
-            {selectedFile ? (
-              <pre className="max-h-[680px] overflow-auto rounded-md border border-border bg-background p-4 text-xs leading-6 text-muted-foreground">
-                {selectedFile.content}
-              </pre>
-            ) : (
-              <div className="flex min-h-80 items-center justify-center rounded-md border border-border text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <BookOpenCheck className="h-4 w-4" />
-                  OKF preview will appear here.
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">OKF bundle</Badge>
+              <Badge variant="outline">Local volume</Badge>
+              <Badge variant="outline">Preview</Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <BundleMetric
+              icon={FileText}
+              label="Files"
+              value={summary.fileCount.toString()}
+            />
+            <BundleMetric
+              icon={BookOpenCheck}
+              label="System topics"
+              value={summary.groupCounts.system_topic.toString()}
+            />
+            <BundleMetric
+              icon={ShieldCheck}
+              label="Reserved files"
+              value={summary.groupCounts.reserved.toString()}
+            />
+            <BundleMetric icon={Clock} label="Last updated" value={latestModified} />
+          </div>
+
+          {summary.fileCount === 0 ? (
+            <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+              No exported OKF files yet. Approve a topic and export it to populate
+              this bundle.
+            </div>
+          ) : null}
+
+          <Button asChild>
+            <Link href="/knowledge/bundle">
+              <FolderOpen className="h-4 w-4" />
+              Open bundle
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
     </>
   );
 }
 
-async function getFiles(knowledgeRoot: string) {
-  try {
-    return await listOkfBundleFiles(knowledgeRoot);
-  } catch (error) {
-    if (isMissingDirectoryError(error)) {
-      return [];
-    }
-
-    throw error;
-  }
-}
-
-async function getSelectedFile(knowledgeRoot: string, filename: string) {
-  try {
-    return await readOkfBundleFile(knowledgeRoot, filename);
-  } catch (error) {
-    if (error instanceof Error && error.message === "okf_preview_only_markdown") {
-      return null;
-    }
-
-    throw error;
-  }
-}
-
-function isMissingDirectoryError(error: unknown) {
+function BundleMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
   return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "ENOENT"
+    <div className="rounded-md border border-border p-3">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        {label}
+      </div>
+      <div className="mt-2 truncate text-sm font-medium">{value}</div>
+    </div>
   );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

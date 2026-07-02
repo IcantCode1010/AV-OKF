@@ -1,10 +1,20 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 
+export type OkfBundleGroup =
+  | "fault_route"
+  | "other"
+  | "reserved"
+  | "routing_rule"
+  | "system_topic";
+
 export type OkfBundleFile = {
   filename: string;
+  group: OkfBundleGroup;
+  isReserved: boolean;
+  modifiedAt?: string;
   reviewStatus: string;
   title: string;
   type: string;
@@ -14,6 +24,14 @@ export type OkfBundleFileContent = OkfBundleFile & {
   content: string;
 };
 
+export type OkfBundleSummary = {
+  defaultFile?: string;
+  fileCount: number;
+  files: OkfBundleFile[];
+  groupCounts: Record<OkfBundleGroup, number>;
+  latestModifiedAt?: string;
+};
+
 export async function listOkfBundleFiles(
   knowledgeRoot: string,
 ): Promise<OkfBundleFile[]> {
@@ -21,15 +39,47 @@ export async function listOkfBundleFiles(
   const entries = await collectMarkdownFiles(root, root);
   const files = await Promise.all(
     entries.map(async (filename) => {
-      const content = await readFile(path.join(root, filename), "utf8");
+      const filePath = path.join(root, filename);
+      const [content, fileStat] = await Promise.all([
+        readFile(filePath, "utf8"),
+        stat(filePath),
+      ]);
+      const frontmatter = parseOkfFrontmatter(content);
       return {
         filename,
-        ...parseOkfFrontmatter(content),
+        group: getBundleFileGroup(filename, frontmatter.type),
+        isReserved: isReservedBundleFile(filename),
+        modifiedAt: fileStat.mtime.toISOString(),
+        ...frontmatter,
       };
     }),
   );
 
   return files.sort((left, right) => left.filename.localeCompare(right.filename));
+}
+
+export async function getOkfBundleSummary(
+  knowledgeRoot: string,
+): Promise<OkfBundleSummary> {
+  let files: OkfBundleFile[];
+
+  try {
+    files = await listOkfBundleFiles(knowledgeRoot);
+  } catch (error) {
+    if (isMissingDirectoryError(error)) {
+      files = [];
+    } else {
+      throw error;
+    }
+  }
+
+  return {
+    defaultFile: getDefaultBundleFile(files),
+    fileCount: files.length,
+    files,
+    groupCounts: getGroupCounts(files),
+    latestModifiedAt: getLatestModifiedAt(files),
+  };
 }
 
 export async function readOkfBundleFile(
@@ -45,12 +95,39 @@ export async function readOkfBundleFile(
   }
 
   const content = await readFile(target, "utf8");
+  const filenameInBundle = path.relative(root, target).replaceAll(path.sep, "/");
+  const frontmatter = parseOkfFrontmatter(content);
 
   return {
     content,
-    filename: path.relative(root, target).replaceAll(path.sep, "/"),
-    ...parseOkfFrontmatter(content),
+    filename: filenameInBundle,
+    group: getBundleFileGroup(filenameInBundle, frontmatter.type),
+    isReserved: isReservedBundleFile(filenameInBundle),
+    ...frontmatter,
   };
+}
+
+export function getBundleFileGroup(
+  filename: string,
+  type: string,
+): OkfBundleGroup {
+  if (isReservedBundleFile(filename)) {
+    return "reserved";
+  }
+
+  if (type === "system_topic") {
+    return "system_topic";
+  }
+
+  if (type === "fault_route") {
+    return "fault_route";
+  }
+
+  if (type === "routing_rule") {
+    return "routing_rule";
+  }
+
+  return "other";
 }
 
 async function collectMarkdownFiles(root: string, directory: string) {
@@ -77,6 +154,50 @@ function assertMarkdownFilename(filename: string) {
   if (!filename.endsWith(".md")) {
     throw new Error("okf_preview_only_markdown");
   }
+}
+
+function getDefaultBundleFile(files: OkfBundleFile[]) {
+  return (
+    files.find((file) => file.filename === "index.md")?.filename ??
+    files.find((file) => file.group === "system_topic")?.filename ??
+    files[0]?.filename
+  );
+}
+
+function getGroupCounts(files: OkfBundleFile[]) {
+  const counts: Record<OkfBundleGroup, number> = {
+    fault_route: 0,
+    other: 0,
+    reserved: 0,
+    routing_rule: 0,
+    system_topic: 0,
+  };
+
+  for (const file of files) {
+    counts[file.group] += 1;
+  }
+
+  return counts;
+}
+
+function getLatestModifiedAt(files: OkfBundleFile[]) {
+  return files
+    .map((file) => file.modifiedAt)
+    .filter((modifiedAt): modifiedAt is string => Boolean(modifiedAt))
+    .sort()
+    .at(-1);
+}
+
+function isMissingDirectoryError(error: unknown) {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function isReservedBundleFile(filename: string) {
+  return ["index.md", "log.md", "source_manifest.md"].includes(filename);
 }
 
 function parseOkfFrontmatter(content: string) {
