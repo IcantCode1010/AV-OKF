@@ -29,6 +29,7 @@ import {
   updateDocumentMetadataAction,
   updateTopicReviewStatusAction,
 } from "../actions";
+import { exportTopicToOkfAction } from "../okf-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +124,25 @@ export default async function DocumentDetailPage({
               label="Stored file"
               value={document.storageKey ? "Local PDF" : "Seed only"}
             />
+            <Separator />
+            <div className="space-y-2">
+              <p className="text-muted-foreground">OKF source metadata</p>
+              <MetadataRow
+                label="Aircraft family"
+                value={document.aircraftFamily ?? "Missing"}
+              />
+              <MetadataRow label="Manual type" value={document.manualType ?? "Missing"} />
+              <MetadataRow label="ATA" value={document.ata ?? "Missing"} />
+              <MetadataRow
+                label="Effectivity"
+                value={document.effectivity ?? "Missing"}
+              />
+              <MetadataRow
+                label="Source authority"
+                value={document.sourceAuthority ?? "Missing"}
+              />
+              <MetadataRow label="Revision" value={document.revision ?? "Missing"} />
+            </div>
             <Separator />
             <div>
               <div className="mb-2 flex items-center gap-2 text-muted-foreground">
@@ -317,6 +337,50 @@ export default async function DocumentDetailPage({
               <Input id="owner" name="owner" defaultValue={document.owner} />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="aircraftFamily">Aircraft family</Label>
+              <Input
+                id="aircraftFamily"
+                name="aircraftFamily"
+                defaultValue={document.aircraftFamily ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="manualType">Manual type</Label>
+              <Input
+                id="manualType"
+                name="manualType"
+                defaultValue={document.manualType ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ata">ATA</Label>
+              <Input id="ata" name="ata" defaultValue={document.ata ?? ""} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="effectivity">Effectivity</Label>
+              <Input
+                id="effectivity"
+                name="effectivity"
+                defaultValue={document.effectivity ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sourceAuthority">Source authority</Label>
+              <Input
+                id="sourceAuthority"
+                name="sourceAuthority"
+                defaultValue={document.sourceAuthority ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="revision">Revision</Label>
+              <Input
+                id="revision"
+                name="revision"
+                defaultValue={document.revision ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="tags">Tags</Label>
               <Input
                 id="tags"
@@ -488,6 +552,15 @@ function TopicRecordCard({
           </select>
           <PendingSubmitButton pendingLabel="Saving...">Save</PendingSubmitButton>
         </form>
+        {topic.reviewStatus === "approved" ? (
+          <form action={exportTopicToOkfAction}>
+            <input type="hidden" name="documentId" value={documentId} />
+            <input type="hidden" name="topicId" value={topic.id} />
+            <PendingSubmitButton pendingLabel="Exporting...">
+              Export OKF
+            </PendingSubmitButton>
+          </form>
+        ) : null}
       </div>
     </div>
   );

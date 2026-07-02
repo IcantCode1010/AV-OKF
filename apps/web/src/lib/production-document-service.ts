@@ -37,8 +37,14 @@ type UploadMetadata = {
 };
 
 type UpdateMetadata = {
+  aircraftFamily: string | null;
+  ata: string | null;
   description: string;
+  effectivity: string | null;
+  manualType: string | null;
   owner: string;
+  revision: string | null;
+  sourceAuthority: string | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
@@ -179,11 +185,17 @@ export function createProductionDocumentService(
       input: UpdateMetadata,
     ): Promise<Document> {
       return repository.updateDocumentMetadata({
+        aircraftFamily: input.aircraftFamily,
+        ata: input.ata,
         context: await requireAuthWorkspaceContext(),
         customProperties: input.customProperties,
         description: input.description,
         documentId,
+        effectivity: input.effectivity,
+        manualType: input.manualType,
         owner: input.owner,
+        revision: input.revision,
+        sourceAuthority: input.sourceAuthority,
         sourceType: input.sourceType,
         status: input.status,
         tags: input.tags,

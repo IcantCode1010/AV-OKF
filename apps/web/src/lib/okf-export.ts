@@ -97,7 +97,8 @@ export async function exportTopicToKnowledge(
   input: ExportTopicToKnowledgeInput,
 ): Promise<{ content: string; filename: string }> {
   const knowledgeRoot =
-    input.knowledgeRoot ?? path.join(process.cwd(), "knowledge");
+    input.knowledgeRoot ??
+    path.join(/* turbopackIgnore: true */ process.cwd(), "knowledge");
   const exported = buildOkfSystemTopic(input);
 
   await mkdir(knowledgeRoot, { recursive: true });

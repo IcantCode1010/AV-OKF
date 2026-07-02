@@ -81,11 +81,17 @@ export async function updateDocumentMetadataAction(formData: FormData) {
   const id = getFormString(formData, "id");
 
   await updateDocumentMetadata(id, {
+    aircraftFamily: getNullableFormString(formData, "aircraftFamily"),
+    ata: getNullableFormString(formData, "ata"),
     customProperties: parseCustomProperties(
       getFormString(formData, "customProperties"),
     ),
     description: getFormString(formData, "description"),
+    effectivity: getNullableFormString(formData, "effectivity"),
+    manualType: getNullableFormString(formData, "manualType"),
     owner: getFormString(formData, "owner"),
+    revision: getNullableFormString(formData, "revision"),
+    sourceAuthority: getNullableFormString(formData, "sourceAuthority"),
     sourceType: getSourceType(getFormString(formData, "sourceType")),
     status: getDocumentStatus(getFormString(formData, "status")),
     tags: parseTags(getFormString(formData, "tags")),
@@ -101,6 +107,11 @@ export async function updateDocumentMetadataAction(formData: FormData) {
 function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function getNullableFormString(formData: FormData, key: string) {
+  const value = getFormString(formData, key).trim();
+  return value.length > 0 ? value : null;
 }
 
 function getSourceType(value: string): SourceType {

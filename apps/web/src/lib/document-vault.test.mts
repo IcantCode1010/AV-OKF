@@ -268,9 +268,15 @@ test("metadata edits persist normalized extraction state for legacy documents", 
 
   try {
     await vault.updateDocumentMetadata("legacy-doc", {
+      aircraftFamily: "Boeing 737NG",
+      ata: "24",
       customProperties: [],
       description: "Edited legacy record.",
+      effectivity: "737-700/800/900",
+      manualType: "AMM",
       owner: "Maintenance Control",
+      revision: "2026-06",
+      sourceAuthority: "Boeing Aircraft Maintenance Manual",
       sourceType: "aviation",
       status: "processing",
       tags: ["legacy", "edited"],
@@ -281,6 +287,15 @@ test("metadata edits persist normalized extraction state for legacy documents", 
       await readFile(path.join(root, "document-vault.json"), "utf8"),
     );
     assert.equal(rawStore.documents[0].extraction.status, "queued");
+    assert.equal(rawStore.documents[0].aircraftFamily, "Boeing 737NG");
+    assert.equal(rawStore.documents[0].manualType, "AMM");
+    assert.equal(rawStore.documents[0].ata, "24");
+    assert.equal(rawStore.documents[0].effectivity, "737-700/800/900");
+    assert.equal(
+      rawStore.documents[0].sourceAuthority,
+      "Boeing Aircraft Maintenance Manual",
+    );
+    assert.equal(rawStore.documents[0].revision, "2026-06");
   } finally {
     await rm(root, { force: true, recursive: true });
   }
@@ -309,9 +324,15 @@ test("local vault preserves concurrent uploads and metadata edits without corrup
     await Promise.all(
       uploads.map((document, index) =>
         vault.updateDocumentMetadata(document.id, {
+          aircraftFamily: "Boeing 737NG",
+          ata: "24",
           customProperties: [{ key: "Batch", value: String(index) }],
           description: `Edited concurrent upload ${index}.`,
+          effectivity: "737-700/800/900",
+          manualType: "AMM",
           owner: "Reliability Engineering",
+          revision: "2026-06",
+          sourceAuthority: "Boeing Aircraft Maintenance Manual",
           sourceType: document.sourceType,
           status: "ready",
           tags: [`batch-${index}`, "edited"],
@@ -337,6 +358,8 @@ test("local vault preserves concurrent uploads and metadata edits without corrup
       assert.equal(persisted.title, `Edited Concurrent Manual ${index}`);
       assert.deepEqual(persisted.tags, [`batch-${index}`, "edited"]);
       assert.equal(persisted.status, "ready");
+      assert.equal(persisted.aircraftFamily, "Boeing 737NG");
+      assert.equal(persisted.manualType, "AMM");
     }
   } finally {
     await rm(root, { force: true, recursive: true });

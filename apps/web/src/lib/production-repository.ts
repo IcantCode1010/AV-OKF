@@ -34,11 +34,17 @@ type UploadRecordInput = {
 };
 
 type UpdateMetadataInput = {
+  aircraftFamily: string | null;
+  ata: string | null;
   context: AuthWorkspaceContext;
   customProperties: CustomProperty[];
   description: string;
   documentId: string;
+  effectivity: string | null;
+  manualType: string | null;
   owner: string;
+  revision: string | null;
+  sourceAuthority: string | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
@@ -83,21 +89,27 @@ type DbExtractionLog = {
 };
 
 type DbDocumentRecord = {
+  aircraftFamily: string | null;
+  ata: string | null;
   customProperties?: DbCustomProperty[];
   description: string;
+  effectivity: string | null;
   extractedPages?: DbExtractedPage[];
   extractionJobs?: DbExtractionJob[];
   extractionLogs?: DbExtractionLog[];
   fileType: string;
   id: string;
+  manualType: string | null;
   mimeType: string;
   objects?: DbDocumentObject[];
   originalFilename: string | null;
   owner: string;
   pages: number;
+  revision: string | null;
   size: string;
   sizeBytes: number;
   sourceType: string;
+  sourceAuthority: string | null;
   status: string;
   tags: string[];
   title: string;
@@ -582,11 +594,17 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       const document = await db.document.update({
         data: {
+          aircraftFamily: normalizeOptionalMetadata(input.aircraftFamily),
+          ata: normalizeOptionalMetadata(input.ata),
           customProperties: {
             create: input.customProperties,
           },
           description: input.description.trim(),
+          effectivity: normalizeOptionalMetadata(input.effectivity),
+          manualType: normalizeOptionalMetadata(input.manualType),
           owner: input.owner.trim() || "Unassigned",
+          revision: normalizeOptionalMetadata(input.revision),
+          sourceAuthority: normalizeOptionalMetadata(input.sourceAuthority),
           sourceType: input.sourceType,
           status: input.status,
           tags: input.tags,
@@ -658,11 +676,14 @@ function mapDocument(record: DbDocumentRecord): Document {
   );
 
   return {
+    aircraftFamily: record.aircraftFamily,
+    ata: record.ata,
     customProperties: (record.customProperties ?? []).map((property) => ({
       key: property.key,
       value: property.value,
     })),
     description: record.description,
+    effectivity: record.effectivity,
     extraction: {
       completedAt: latestJob?.completedAt ? formatTimestamp(latestJob.completedAt) : null,
       error: latestJob?.errorCode
@@ -678,19 +699,27 @@ function mapDocument(record: DbDocumentRecord): Document {
     },
     fileType: record.fileType,
     id: record.id,
+    manualType: record.manualType,
     mimeType: record.mimeType,
     originalFilename: record.originalFilename,
     owner: record.owner,
     pages: record.pages,
+    revision: record.revision,
     size: record.size,
     sizeBytes: record.sizeBytes,
     sourceType: normalizeSourceType(record.sourceType),
+    sourceAuthority: record.sourceAuthority,
     status: normalizeDocumentStatus(record.status),
     storageKey: primaryObject?.objectKey ?? null,
     tags: record.tags ?? [],
     title: record.title,
     updatedAt: record.updatedLabel,
   };
+}
+
+function normalizeOptionalMetadata(value: string | null) {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
 }
 
 function mapActivityEvent(record: DbActivityEvent): ActivityEvent {

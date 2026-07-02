@@ -112,6 +112,12 @@ export type Document = {
   originalFilename: string | null;
   mimeType: string;
   customProperties: CustomProperty[];
+  aircraftFamily: string | null;
+  manualType: string | null;
+  ata: string | null;
+  effectivity: string | null;
+  sourceAuthority: string | null;
+  revision: string | null;
   extraction: DocumentExtraction;
 };
 
@@ -148,8 +154,14 @@ type UploadMetadata = {
 };
 
 type UpdateMetadata = {
+  aircraftFamily: string | null;
+  ata: string | null;
   description: string;
+  effectivity: string | null;
+  manualType: string | null;
   owner: string;
+  revision: string | null;
+  sourceAuthority: string | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
@@ -198,6 +210,12 @@ const seedDocuments: Document[] = [
       { key: "Manual family", value: "AMM" },
       { key: "ATA chapter", value: "24" },
     ],
+    aircraftFamily: "Boeing 737NG",
+    manualType: "AMM",
+    ata: "24",
+    effectivity: "737NG",
+    sourceAuthority: "Boeing Aircraft Maintenance Manual",
+    revision: "Seeded",
     extraction: createSeedExtraction("queued"),
   },
   {
@@ -218,6 +236,12 @@ const seedDocuments: Document[] = [
     originalFilename: "elt-system-training-notes.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Training reference" }],
+    aircraftFamily: "Boeing 737NG",
+    manualType: "Training",
+    ata: "23",
+    effectivity: "737NG",
+    sourceAuthority: "Training reference",
+    revision: "Seeded",
     extraction: createSeedExtraction("queued"),
   },
   {
@@ -238,6 +262,12 @@ const seedDocuments: Document[] = [
     originalFilename: "technical-publications-control-policy.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Quality" }],
+    aircraftFamily: null,
+    manualType: "Policy",
+    ata: null,
+    effectivity: "Company-wide",
+    sourceAuthority: "Quality",
+    revision: "Seeded",
     extraction: createSeedExtraction("queued"),
   },
   {
@@ -258,6 +288,12 @@ const seedDocuments: Document[] = [
     originalFilename: "apu-fault-route-reference.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Route type", value: "Fault isolation" }],
+    aircraftFamily: "Boeing 737NG",
+    manualType: "Fault Route",
+    ata: "49",
+    effectivity: "737NG",
+    sourceAuthority: "Engineering",
+    revision: "Seeded",
     extraction: createSeedExtraction("completed"),
   },
   {
@@ -278,6 +314,12 @@ const seedDocuments: Document[] = [
     originalFilename: "vendor-onboarding-handbook.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Operations" }],
+    aircraftFamily: null,
+    manualType: "Handbook",
+    ata: null,
+    effectivity: "Company-wide",
+    sourceAuthority: "Operations",
+    revision: "Seeded",
     extraction: createSeedExtraction("completed"),
   },
   {
@@ -298,6 +340,12 @@ const seedDocuments: Document[] = [
     originalFilename: "mel-dispatch-gate-examples.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Example only" }],
+    aircraftFamily: "Boeing 737NG",
+    manualType: "MEL",
+    ata: null,
+    effectivity: "737NG",
+    sourceAuthority: "Example only",
+    revision: "Seeded",
     extraction: {
       ...createSeedExtraction("failed"),
       error: {
@@ -508,6 +556,12 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         originalFilename: input.originalFilename,
         mimeType: "application/pdf",
         customProperties: [],
+        aircraftFamily: null,
+        manualType: null,
+        ata: null,
+        effectivity: null,
+        sourceAuthority: null,
+        revision: null,
         extraction: {
           status: "queued",
           startedAt: null,
@@ -536,6 +590,12 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const document = getStoreDocument(store, id);
 
       document.title = input.title.trim() || document.title;
+      document.aircraftFamily = normalizeOptionalMetadata(input.aircraftFamily);
+      document.manualType = normalizeOptionalMetadata(input.manualType);
+      document.ata = normalizeOptionalMetadata(input.ata);
+      document.effectivity = normalizeOptionalMetadata(input.effectivity);
+      document.sourceAuthority = normalizeOptionalMetadata(input.sourceAuthority);
+      document.revision = normalizeOptionalMetadata(input.revision);
       document.owner = input.owner.trim() || "Unassigned";
       document.sourceType = input.sourceType;
       document.status = input.status;
@@ -734,7 +794,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         (candidate) => candidate.id === id,
       );
       if (document) {
-        document.extraction = normalizeExtraction(document.extraction);
+        normalizeDocument(document);
       }
       return document;
     },
@@ -918,10 +978,7 @@ function createExtractionLog(
 }
 
 function normalizeDocuments(documents: Document[]) {
-  return documents.map((document) => ({
-    ...document,
-    extraction: normalizeExtraction(document.extraction),
-  }));
+  return documents.map((document) => normalizeDocument({ ...document }));
 }
 
 function pagesOverlap(left: number[], right: number[]) {
@@ -940,4 +997,20 @@ function calculateDocumentMetrics(documents: Document[]): DocumentMetrics {
     review: documents.filter((document) => document.status === "needs_review")
       .length,
   };
+}
+
+function normalizeDocument(document: Document): Document {
+  document.extraction = normalizeExtraction(document.extraction);
+  document.aircraftFamily ??= null;
+  document.manualType ??= null;
+  document.ata ??= null;
+  document.effectivity ??= null;
+  document.sourceAuthority ??= null;
+  document.revision ??= null;
+  return document;
+}
+
+function normalizeOptionalMetadata(value: string | null) {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
 }
