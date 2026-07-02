@@ -1,4 +1,5 @@
 import { normalizeExtractionError } from "./extraction-errors.ts";
+import { getDefaultChunkingStrategyId } from "./rag-reindex.ts";
 import type { ExtractedPageRecord, ExtractionError } from "./document-vault.ts";
 import type { ObjectStorage } from "./production-storage.ts";
 
@@ -46,9 +47,11 @@ type RunProductionExtractionJobOptions = {
   extractPdfPages?: (bytes: Buffer) => Promise<ExtractedPageRecord[]>;
   ragQueue?: {
     enqueueIndexJob(input: {
+      chunkingStrategyId?: string;
       documentId: string;
       indexJobId: string;
       indexVersion: number;
+      mode?: "initial" | "reindex";
       workspaceId: string;
     }): Promise<void>;
   };
@@ -78,9 +81,11 @@ export async function runProductionExtractionJob(
         const indexJob =
           await options.repository.createRagIndexJobAfterExtraction(payload);
         await options.ragQueue.enqueueIndexJob({
+          chunkingStrategyId: getDefaultChunkingStrategyId(),
           documentId: indexJob.documentId,
           indexJobId: indexJob.id,
           indexVersion: indexJob.indexVersion,
+          mode: "initial",
           workspaceId: indexJob.workspaceId,
         });
       } catch (error) {

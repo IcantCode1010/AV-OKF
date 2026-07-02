@@ -7,6 +7,15 @@ const DEFAULT_TARGET_TOKENS = 800;
 const DEFAULT_MAX_TOKENS = 1200;
 const DEFAULT_OVERLAP_TOKENS = 120;
 
+export const RAG_CHUNK_STRATEGIES = [
+  {
+    description:
+      "Splits extracted page text into paragraph units, packs them by retrieval-sized token windows, and preserves source page citations.",
+    id: "paragraph-v1",
+    label: "Paragraph-granular (v1)",
+  },
+] as const;
+
 type TextUnit = {
   pageNumber: number;
   text: string;

@@ -1,9 +1,11 @@
 import { Queue } from "bullmq";
 
 export type RagIndexJobPayload = {
+  chunkingStrategyId?: string;
   documentId: string;
   indexJobId: string;
   indexVersion: number;
+  mode?: "initial" | "reindex";
   workspaceId: string;
 };
 

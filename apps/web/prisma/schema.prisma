@@ -216,6 +216,7 @@ model RagChunk {
   documentId        String
   indexJobId        String
   indexVersion      Int
+  chunkingStrategyId String?
   chunkOrdinal      Int
   text              String        @db.Text
   contentHash       String

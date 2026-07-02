@@ -5,11 +5,14 @@ import {
   assertEmbeddingBudget,
   type EmbeddingBudgetCaps,
 } from "./rag-budget.ts";
-import { chunkExtractedPages } from "./rag-chunker.ts";
 import {
   getEmbeddingProvider,
   type EmbeddingProvider,
 } from "./embedding-provider.ts";
+import {
+  RAG_CHUNK_STRATEGIES,
+  chunkExtractedPages,
+} from "./rag-chunker.ts";
 import { createRagRepository, type RagRepository } from "./rag-repository.ts";
 import type { RagIndexJobPayload } from "./rag-queue.ts";
 import type { ExtractedPageRecord } from "./document-vault.ts";
@@ -27,6 +30,15 @@ type RunRagIndexJobOptions = {
     | "markIndexJobRunning"
     | "storeCompletedIndex"
   > & {
+    deleteChunksForDocument?: (input: {
+      documentId: string;
+      workspaceId: string;
+    }) => Promise<void>;
+    markDocumentRagStatus?: (input: {
+      documentId: string;
+      status: string;
+      workspaceId: string;
+    }) => Promise<void>;
     reserveIndexJobBudget?: (input: {
       caps?: EmbeddingBudgetCaps;
       indexJobId: string;
@@ -43,6 +55,9 @@ export async function runRagIndexJob(
   const repository = options.repository ?? createRagRepository();
   const embeddingProvider = options.embeddingProvider ?? getEmbeddingProvider();
   const chunkPages = options.chunkPages ?? chunkExtractedPages;
+  const mode = payload.mode ?? "initial";
+  const chunkingStrategyId =
+    payload.chunkingStrategyId ?? RAG_CHUNK_STRATEGIES[0].id;
 
   try {
     const pages = (await repository.getExtractedPages(
@@ -54,7 +69,7 @@ export async function runRagIndexJob(
       indexVersion: payload.indexVersion,
       pages,
       workspaceId: payload.workspaceId,
-    });
+    }).map((chunk) => ({ ...chunk, chunkingStrategyId }));
     const tokenEstimate = chunks.reduce(
       (sum, chunk) => sum + chunk.tokenCount,
       0,
@@ -86,10 +101,32 @@ export async function runRagIndexJob(
       });
     }
 
+    await repository.markDocumentRagStatus?.({
+      documentId: payload.documentId,
+      status: "embedding",
+      workspaceId: payload.workspaceId,
+    });
+
     const embeddings =
       chunks.length > 0
         ? await embeddingProvider.embedTexts(chunks.map((chunk) => chunk.text))
         : [];
+
+    if (mode === "reindex") {
+      if (!repository.deleteChunksForDocument) {
+        throw new Error("rag_reindex_delete_not_supported");
+      }
+
+      await repository.markDocumentRagStatus?.({
+        documentId: payload.documentId,
+        status: "deleting_old_chunks",
+        workspaceId: payload.workspaceId,
+      });
+      await repository.deleteChunksForDocument({
+        documentId: payload.documentId,
+        workspaceId: payload.workspaceId,
+      });
+    }
 
     await repository.storeCompletedIndex({
       chunks,

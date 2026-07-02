@@ -35,6 +35,86 @@ test("createIndexJob increments document index version", async () => {
   assert.deepEqual(calls, ["job.version:3", "document.update"]);
 });
 
+test("createReindexJob rejects when another workspace document is in flight", async () => {
+  const calls: string[] = [];
+  let documentLookup = 0;
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $executeRaw: async () => {
+          calls.push("lock");
+        },
+        document: {
+          findFirst: async () => {
+            documentLookup += 1;
+            return documentLookup === 1
+              ? { ragIndexVersion: 1 }
+              : { id: "doc_active" };
+          },
+        },
+        ragIndexJob: {
+          create: async () => {
+            calls.push("job.create");
+          },
+        },
+      }),
+  });
+
+  await assert.rejects(
+    () =>
+      repository.createReindexJob({
+        chunkingStrategyId: "paragraph-v1",
+        documentId: "doc_b",
+        workspaceId: "wrk_1",
+      }),
+    /reindex_already_running:doc_active/,
+  );
+
+  assert.deepEqual(calls, ["lock"]);
+});
+
+test("deleteChunksForDocument deletes embeddings and chunks inside one transaction", async () => {
+  const calls: string[] = [];
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<void>) => {
+      calls.push("transaction.start");
+      await callback({
+        ragChunk: {
+          deleteMany: async (query: {
+            where: { documentId: string; workspaceId: string };
+          }) => {
+            calls.push(
+              `chunks:${query.where.workspaceId}:${query.where.documentId}`,
+            );
+          },
+        },
+        ragEmbedding: {
+          deleteMany: async (query: {
+            where: { chunk: { documentId: string; workspaceId: string } };
+          }) => {
+            calls.push(
+              `embeddings:${query.where.chunk.workspaceId}:${query.where.chunk.documentId}`,
+            );
+          },
+        },
+      });
+      calls.push("transaction.end");
+    },
+  });
+
+  await repository.deleteChunksForDocument({
+    documentId: "doc_1",
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(calls, [
+    "transaction.start",
+    "embeddings:wrk_1:doc_1",
+    "chunks:wrk_1:doc_1",
+    "transaction.end",
+  ]);
+});
+
 test("searchKeyword result objects include review status", async () => {
   const repository = createRagRepository({
     ragChunk: {

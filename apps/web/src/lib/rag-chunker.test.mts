@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chunkExtractedPages } from "./rag-chunker.ts";
+import { RAG_CHUNK_STRATEGIES, chunkExtractedPages } from "./rag-chunker.ts";
 import { createHeuristicTokenCounter } from "./rag-tokenizer.ts";
 import type { TokenCounter } from "./rag-tokenizer.ts";
 
@@ -18,6 +18,17 @@ const smallChunkConfig = {
   targetTokens: 50,
   tokenCounter: whitespaceTokenCounter,
 };
+
+test("RAG chunk strategy registry names the existing paragraph chunker", () => {
+  assert.deepEqual(RAG_CHUNK_STRATEGIES, [
+    {
+      description:
+        "Splits extracted page text into paragraph units, packs them by retrieval-sized token windows, and preserves source page citations.",
+      id: "paragraph-v1",
+      label: "Paragraph-granular (v1)",
+    },
+  ]);
+});
 
 test("chunkExtractedPages preserves source page coverage", () => {
   const chunks = chunkExtractedPages({

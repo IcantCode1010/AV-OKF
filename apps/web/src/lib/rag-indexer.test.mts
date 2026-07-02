@@ -131,6 +131,159 @@ test("runRagIndexJob stores completed index when embedding succeeds", async () =
   assert.equal(storedChunks, 1);
 });
 
+test("runRagIndexJob reindex deletes old chunks before storing fresh strategy-labeled chunks", async () => {
+  const calls: string[] = [];
+  let storedChunkIds: string[] = ["old_chunk_a", "old_chunk_b"];
+  let storedStrategyIds: Array<string | null | undefined> = [];
+
+  await runRagIndexJob(
+    {
+      chunkingStrategyId: "paragraph-v1",
+      documentId: "doc_1",
+      indexJobId: "job_2",
+      indexVersion: 2,
+      mode: "reindex",
+      workspaceId: "wrk_1",
+    },
+    {
+      chunkPages: () => [
+        createTestChunk({ id: "new_chunk_a", indexJobId: "job_2", indexVersion: 2 }),
+        createTestChunk({
+          chunkOrdinal: 1,
+          id: "new_chunk_b",
+          indexJobId: "job_2",
+          indexVersion: 2,
+        }),
+      ],
+      embeddingProvider: {
+        dimensions: 1536,
+        model: "test",
+        async embedTexts(input: string[]) {
+          calls.push("embedding");
+          return input.map(() => Array.from({ length: 1536 }, () => 0.01));
+        },
+      },
+      repository: {
+        deleteChunksForDocument: async () => {
+          calls.push("delete");
+          storedChunkIds = [];
+        },
+        failIndexJob: async () => {},
+        getExtractedPages: async () => [],
+        getTokenUsageToday: async () => ({
+          globalTokensUsedToday: 0,
+          workspaceTokensUsedToday: 0,
+        }),
+        markIndexJobRunning: async () => {
+          calls.push("mark");
+        },
+        storeCompletedIndex: async (input: {
+          chunks: Array<{ chunkingStrategyId?: string | null; id: string }>;
+        }) => {
+          calls.push("store");
+          storedChunkIds.push(...input.chunks.map((chunk) => chunk.id));
+          storedStrategyIds = input.chunks.map((chunk) => chunk.chunkingStrategyId);
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(calls, ["mark", "embedding", "delete", "store"]);
+  assert.deepEqual(storedChunkIds, ["new_chunk_a", "new_chunk_b"]);
+  assert.deepEqual(storedStrategyIds, ["paragraph-v1", "paragraph-v1"]);
+});
+
+test("runRagIndexJob initial indexing does not delete existing chunks", async () => {
+  let deleteCalled = false;
+
+  await runRagIndexJob(
+    {
+      chunkingStrategyId: "paragraph-v1",
+      documentId: "doc_1",
+      indexJobId: "job_1",
+      indexVersion: 1,
+      mode: "initial",
+      workspaceId: "wrk_1",
+    },
+    {
+      chunkPages: () => [createTestChunk({})],
+      embeddingProvider: {
+        dimensions: 1536,
+        model: "test",
+        async embedTexts(input: string[]) {
+          return input.map(() => Array.from({ length: 1536 }, () => 0.01));
+        },
+      },
+      repository: {
+        deleteChunksForDocument: async () => {
+          deleteCalled = true;
+        },
+        failIndexJob: async () => {},
+        getExtractedPages: async () => [],
+        getTokenUsageToday: async () => ({
+          globalTokensUsedToday: 0,
+          workspaceTokensUsedToday: 0,
+        }),
+        markIndexJobRunning: async () => {},
+        storeCompletedIndex: async () => {},
+      },
+    },
+  );
+
+  assert.equal(deleteCalled, false);
+});
+
+test("runRagIndexJob failed reindex before deletion leaves old chunks retryable", async () => {
+  let deleteCalled = false;
+  let failureCode = "";
+  const existingChunkIds = ["old_chunk_a", "old_chunk_b"];
+
+  await assert.rejects(
+    () =>
+      runRagIndexJob(
+        {
+          chunkingStrategyId: "paragraph-v1",
+          documentId: "doc_1",
+          indexJobId: "job_2",
+          indexVersion: 2,
+          mode: "reindex",
+          workspaceId: "wrk_1",
+        },
+        {
+          chunkPages: () => [createTestChunk({ id: "new_chunk_a" })],
+          embeddingProvider: {
+            dimensions: 1536,
+            model: "test",
+            async embedTexts() {
+              throw new Error("provider timeout");
+            },
+          },
+          repository: {
+            deleteChunksForDocument: async () => {
+              deleteCalled = true;
+              existingChunkIds.length = 0;
+            },
+            failIndexJob: async (input: { errorCode: string }) => {
+              failureCode = input.errorCode;
+            },
+            getExtractedPages: async () => [],
+            getTokenUsageToday: async () => ({
+              globalTokensUsedToday: 0,
+              workspaceTokensUsedToday: 0,
+            }),
+            markIndexJobRunning: async () => {},
+            storeCompletedIndex: async () => {},
+          },
+        },
+      ),
+    /provider timeout/,
+  );
+
+  assert.equal(deleteCalled, false);
+  assert.deepEqual(existingChunkIds, ["old_chunk_a", "old_chunk_b"]);
+  assert.equal(failureCode, "indexing_failed");
+});
+
 test("runRagIndexJob uses repository budget reservation when available", async () => {
   const calls: string[] = [];
 
@@ -375,3 +528,29 @@ test("runRagIndexJob rethrows transient provider failures for BullMQ retry", asy
 
   assert.equal(failureCode, "indexing_failed");
 });
+
+function createTestChunk(
+  overrides: Partial<{
+    chunkOrdinal: number;
+    id: string;
+    indexJobId: string;
+    indexVersion: number;
+  }>,
+) {
+  return {
+    chunkOrdinal: overrides.chunkOrdinal ?? 0,
+    contentHash: `hash-${overrides.id ?? "new_chunk"}`,
+    documentId: "doc_1",
+    headingPath: [],
+    id: overrides.id ?? "new_chunk",
+    indexJobId: overrides.indexJobId ?? "job_1",
+    indexVersion: overrides.indexVersion ?? 1,
+    pageEnd: 1,
+    pageStart: 1,
+    reviewStatus: "raw_extracted" as const,
+    sourcePageNumbers: [1],
+    text: "generator control",
+    tokenCount: 2,
+    workspaceId: "wrk_1",
+  };
+}

@@ -8,7 +8,12 @@ import {
   type EmbeddingBudgetCaps,
 } from "./rag-budget.ts";
 import type { ExtractedPageRecord } from "./document-vault.ts";
-import type { RagChunkRecord, RetrievalResult } from "./rag-types.ts";
+import {
+  RAG_REINDEX_IN_FLIGHT_STATUSES,
+  type RagChunkRecord,
+  type ReindexDocumentRow,
+  type RetrievalResult,
+} from "./rag-types.ts";
 
 type PrismaLike = ReturnType<typeof getPrisma>;
 
@@ -51,6 +56,77 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       return job;
     },
 
+    async createReindexJob(input: {
+      chunkingStrategyId: string;
+      documentId: string;
+      workspaceId: string;
+    }) {
+      return db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483002, hashtext(${input.workspaceId}))`;
+
+        const document = await tx.document.findFirst({
+          select: { ragIndexVersion: true },
+          where: { id: input.documentId, workspaceId: input.workspaceId },
+        });
+
+        if (!document) {
+          throw new Error("document_not_found");
+        }
+
+        const activeDocument = await tx.document.findFirst({
+          select: { id: true },
+          where: {
+            ragStatus: { in: [...RAG_REINDEX_IN_FLIGHT_STATUSES] },
+            workspaceId: input.workspaceId,
+          },
+        });
+
+        if (activeDocument) {
+          throw new Error(`reindex_already_running:${activeDocument.id}`);
+        }
+
+        const indexVersion = document.ragIndexVersion + 1;
+        const job = await tx.ragIndexJob.create({
+          data: {
+            documentId: input.documentId,
+            extractionJobId: null,
+            indexVersion,
+            status: "queued",
+            workspaceId: input.workspaceId,
+          },
+        });
+
+        await tx.document.update({
+          data: { ragStatus: "queued" },
+          where: { id: input.documentId },
+        });
+
+        return job;
+      });
+    },
+
+    async deleteChunksForDocument(input: {
+      documentId: string;
+      workspaceId: string;
+    }) {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.ragEmbedding.deleteMany({
+          where: {
+            chunk: {
+              documentId: input.documentId,
+              workspaceId: input.workspaceId,
+            },
+          },
+        });
+        await tx.ragChunk.deleteMany({
+          where: {
+            documentId: input.documentId,
+            workspaceId: input.workspaceId,
+          },
+        });
+      });
+    },
+
     async failIndexJob(input: {
       documentId: string;
       errorCode: string;
@@ -67,7 +143,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         where: { id: input.indexJobId },
       });
       await db.document.update({
-        data: { ragStatus: "index_failed" },
+        data: { ragStatus: "failed" },
         where: { id: input.documentId },
       });
     },
@@ -93,6 +169,62 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       return getReservedTokenUsageToday(db, input.workspaceId);
     },
 
+    async listReindexDocuments(input: {
+      workspaceId: string;
+    }): Promise<ReindexDocumentRow[]> {
+      const documents = await db.document.findMany({
+        include: {
+          ragChunks: {
+            orderBy: [{ indexVersion: "desc" }, { chunkOrdinal: "asc" }],
+            select: {
+              chunkingStrategyId: true,
+              createdAt: true,
+              id: true,
+              isActive: true,
+            },
+            where: { isActive: true },
+          },
+          ragIndexJobs: {
+            orderBy: [{ completedAt: "desc" }, { queuedAt: "desc" }],
+            select: {
+              completedAt: true,
+              errorCode: true,
+              errorMessage: true,
+              status: true,
+            },
+            take: 1,
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+        where: { workspaceId: input.workspaceId },
+      });
+
+      return documents.map((document) => {
+        const latestJob = document.ragIndexJobs[0];
+        const latestChunk = document.ragChunks[0];
+        const latestChunkDate = document.ragChunks.reduce<Date | null>(
+          (latest, chunk) =>
+            latest && latest > chunk.createdAt ? latest : chunk.createdAt,
+          null,
+        );
+
+        return {
+          chunkCount: document.ragChunks.length,
+          chunkingStrategyId: latestChunk?.chunkingStrategyId ?? null,
+          id: document.id,
+          lastIndexedAt: latestJob?.completedAt ?? latestChunkDate,
+          latestError:
+            latestJob?.status === "failed"
+              ? latestJob.errorMessage ?? latestJob.errorCode
+              : null,
+          ragStatus: document.ragStatus,
+          sizeBytes: document.sizeBytes,
+          sizeLabel: document.size,
+          title: document.title,
+        };
+      });
+    },
+
     async markIndexJobRunning(input: {
       indexJobId: string;
       tokenEstimate: number;
@@ -105,6 +237,27 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           tokenEstimate: input.tokenEstimate,
         },
         where: { id: input.indexJobId },
+      });
+      const job = await db.ragIndexJob.findUnique({
+        select: { documentId: true },
+        where: { id: input.indexJobId },
+      });
+      if (job) {
+        await db.document.update({
+          data: { ragStatus: "chunking" },
+          where: { id: job.documentId },
+        });
+      }
+    },
+
+    async markDocumentRagStatus(input: {
+      documentId: string;
+      status: string;
+      workspaceId: string;
+    }) {
+      await db.document.updateMany({
+        data: { ragStatus: input.status },
+        where: { id: input.documentId, workspaceId: input.workspaceId },
       });
     },
 
@@ -270,6 +423,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
               id: chunk.id,
               indexJobId: chunk.indexJobId,
               indexVersion: chunk.indexVersion,
+              chunkingStrategyId: chunk.chunkingStrategyId ?? null,
               isActive: true,
               pageEnd: chunk.pageEnd,
               pageStart: chunk.pageStart,

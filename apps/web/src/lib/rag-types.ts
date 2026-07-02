@@ -3,9 +3,13 @@ import type { ExtractedPageRecord } from "./document-vault.ts";
 export type RagIndexStatus =
   | "not_indexed"
   | "queued"
+  | "deleting_old_chunks"
+  | "chunking"
+  | "embedding"
   | "running"
   | "indexed"
-  | "index_failed";
+  | "index_failed"
+  | "failed";
 
 export type RagIndexJobStatus = "queued" | "running" | "completed" | "failed";
 
@@ -22,6 +26,7 @@ export type RagChunkRecord = {
   documentId: string;
   indexJobId: string;
   indexVersion: number;
+  chunkingStrategyId?: string | null;
   chunkOrdinal: number;
   text: string;
   contentHash: string;
@@ -39,6 +44,25 @@ export type RagChunkInput = {
   indexVersion: number;
   pages: ExtractedPageRecord[];
   workspaceId: string;
+};
+
+export const RAG_REINDEX_IN_FLIGHT_STATUSES = [
+  "queued",
+  "deleting_old_chunks",
+  "chunking",
+  "embedding",
+] as const;
+
+export type ReindexDocumentRow = {
+  id: string;
+  title: string;
+  sizeBytes: number;
+  sizeLabel: string;
+  chunkingStrategyId: string | null;
+  lastIndexedAt: Date | null;
+  chunkCount: number;
+  ragStatus: RagIndexStatus | string;
+  latestError: string | null;
 };
 
 export type RetrievalMode = "hybrid" | "vector" | "keyword";

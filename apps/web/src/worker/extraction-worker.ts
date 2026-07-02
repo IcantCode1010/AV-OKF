@@ -4,6 +4,7 @@ import { createPostgresDocumentRepository } from "../lib/production-repository.t
 import { createBullMqExtractionQueue, type ExtractionJobPayload } from "../lib/production-queue.ts";
 import { runRagIndexJob } from "../lib/rag-indexer.ts";
 import { createBullMqRagIndexQueue, type RagIndexJobPayload } from "../lib/rag-queue.ts";
+import { getDefaultChunkingStrategyId } from "../lib/rag-reindex.ts";
 import { createRagRepository } from "../lib/rag-repository.ts";
 import { getObjectStorage } from "../lib/production-storage.ts";
 import { runProductionExtractionJob } from "../lib/production-worker.ts";
@@ -111,9 +112,11 @@ async function reconcileQueuedRagJobs(
 
   for (const job of jobs) {
     await queue.enqueueIndexJob({
+      chunkingStrategyId: getDefaultChunkingStrategyId(),
       documentId: job.documentId,
       indexJobId: job.id,
       indexVersion: job.indexVersion,
+      mode: "initial",
       workspaceId: job.workspaceId,
     });
   }
