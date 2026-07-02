@@ -1,10 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { FileText, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Document, DocumentStatus } from "@/lib/document-vault";
+import {
+  getDocumentDetailHref,
+  shouldIgnoreDocumentRowNavigation,
+} from "@/lib/document-row-navigation";
 import { statusLabels, StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -87,10 +90,38 @@ export function DocumentLibrary({ documents }: { documents: Document[] }) {
               </TableHeader>
               <TableBody>
                 {filteredDocuments.map((document) => (
-                  <TableRow key={document.id}>
+                  <TableRow
+                    key={document.id}
+                    aria-label={`Open ${document.title}`}
+                    className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    role="link"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      if (shouldIgnoreDocumentRowNavigation(event.target)) {
+                        return;
+                      }
+
+                      window.location.assign(getDocumentDetailHref(document.id));
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        shouldIgnoreDocumentRowNavigation(event.target) ||
+                        (event.key !== "Enter" && event.key !== " ")
+                      ) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      window.location.assign(getDocumentDetailHref(document.id));
+                    }}
+                  >
                     <TableCell>
-                      <Link
-                        href={`/documents/${document.id}`}
+                      {/* Plain anchor, not next/link: Next.js 16's client
+                      router intermittently drops this transition (confirmed
+                      via repeated reproduction), so this list forces a full
+                      navigation instead of a soft one. */}
+                      <a
+                        href={getDocumentDetailHref(document.id)}
                         className="flex items-center gap-3"
                       >
                         <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background">
@@ -105,7 +136,7 @@ export function DocumentLibrary({ documents }: { documents: Document[] }) {
                             {document.pages} pages
                           </span>
                         </span>
-                      </Link>
+                      </a>
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={document.status} />

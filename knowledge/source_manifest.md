@@ -8,10 +8,10 @@ last_verified: "2026-07-02"
 ---
 
 # Source Manifest
-- electrical power
-  - aircraft_family: 737
-  - source_authority: boeing
+- 737NG AMM 32 Landing Gear
+  - aircraft_family: Boeing 737NG
+  - source_authority: Boeing Aircraft Maintenance Manual
   - manual_type: AMM
   - ata: 32
-  - effectivity: 1
-  - revision: 1
+  - effectivity: 737-700/800/900
+  - revision: 2026-06

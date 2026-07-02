@@ -58,6 +58,7 @@ Deliverables:
 - Extraction logs
 - Defensive handling for malformed, corrupt, and password-protected PDFs. The upload-time magic-byte check confirms file type only, not structural validity.
 - Stage 2 uses local in-process background extraction with client-side polling while a document is processing. This assumes a long-lived Node process and must be replaced with a durable queue or worker before serverless deployment.
+- Known limitation: text extraction does not detect multi-column page layout. Multi-column pages interleave column text line-by-line, which corrupts both page text and the Stage 3 heading detector's boundary picks. A 737 AMM student-book page (ata 32, pages 93-94) produced an approved-then-rejected topic from this defect; see `knowledge/log.md`. Column-aware extraction is required before heading-derived topics from multi-column manuals can be trusted at `high` confidence.
 
 Exit criteria:
 
@@ -235,7 +236,9 @@ Deliverables:
 - Deterministic link lint for relative Markdown graph links and relation targets
 - Deterministic relation lint for relation enum values, target resolution, and target type matching
 - GitHub Actions `okflint validate` CI gate
-- OKF preview UI
+- Bundle-first Knowledge page
+- Folder-style OKF bundle explorer grouped by reserved files, system topics, fault routes, routing rules, and other files
+- OKF Markdown file preview inside the bundle explorer
 
 Exit criteria:
 
@@ -245,6 +248,7 @@ Exit criteria:
 - Operational links use typed relations such as `routes_to`, `references`, `supports`, `covered_by`, `supersedes`, and `conflicts_with`.
 - Relation targets declare a `target_type` that matches the resolved target file's frontmatter `type`.
 - MVP-02 is enforced by `okflint validate --manifest okf-base.yaml`, not a custom schema checker.
+- A user can open the Knowledge page, select the `AV-OKF Knowledge Bundle`, browse the whole exported bundle structure, and preview reserved files or approved OKF topics without inspecting raw filesystem paths.
 
 Architecture note:
 
@@ -375,8 +379,9 @@ Demo flow:
 4. Review generated topics.
 5. Approve selected topics.
 6. Export OKF Markdown.
-7. Ask a direct question that uses OKF.
-8. Ask an open-ended question that uses RAG.
-9. Ask a mixed question that uses Hybrid only when needed.
-10. Show citations, router decision, retrieval mode, and trace.
+7. Open the Knowledge bundle explorer and preview the exported OKF file, index, manifest, and log.
+8. Ask a direct question that uses OKF.
+9. Ask an open-ended question that uses RAG.
+10. Ask a mixed question that uses Hybrid only when needed.
+11. Show citations, router decision, retrieval mode, and trace.
 ```
