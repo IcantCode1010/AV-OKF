@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 type ExportTopic = {
-  id?: string;
+  id: string;
   title: string;
   summary: string;
   pageStart: number;
@@ -50,6 +50,9 @@ const REQUIRED_DOCUMENT_METADATA = [
   "revision",
 ] as const;
 
+const MAX_TOPIC_SLUG_LENGTH = 80;
+const TOPIC_ID_FRAGMENT_LENGTH = 8;
+
 export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   content: string;
   filename: string;
@@ -60,7 +63,7 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
 
   const metadata = getRequiredDocumentMetadata(input.document);
 
-  const filename = `${slugify(metadata.ata)}-${slugify(input.topic.title)}.md`;
+  const filename = buildFilename(metadata.ata, input.topic);
   const lastVerified = toIsoDate(input.exportedAt ?? new Date());
   const frontmatter = stringifyFrontmatter({
     type: "system_topic",
@@ -213,6 +216,37 @@ function slugify(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function buildFilename(ata: string, topic: ExportTopic) {
+  if (!topic.id) {
+    throw new Error("okf_export_requires_topic_id");
+  }
+
+  const titleSlug = slugify(topic.title);
+  if (!titleSlug) {
+    throw new Error("okf_export_invalid_title: title produces empty slug");
+  }
+
+  const cappedSlug = capSlug(titleSlug, MAX_TOPIC_SLUG_LENGTH);
+  const topicIdFragment = topic.id.slice(0, TOPIC_ID_FRAGMENT_LENGTH);
+
+  return `${slugify(ata)}-${cappedSlug}-${topicIdFragment}.md`;
+}
+
+function capSlug(slug: string, maxLength: number) {
+  if (slug.length <= maxLength) {
+    return slug;
+  }
+
+  const truncated = slug.slice(0, maxLength).replace(/-+$/g, "");
+  const lastHyphen = truncated.lastIndexOf("-");
+
+  if (lastHyphen > 0) {
+    return truncated.slice(0, lastHyphen).replace(/-+$/g, "");
+  }
+
+  return truncated;
 }
 
 function toIsoDate(date: Date) {

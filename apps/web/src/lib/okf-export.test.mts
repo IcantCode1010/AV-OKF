@@ -85,9 +85,71 @@ test("buildOkfSystemTopic creates deterministic safe ATA-prefixed filenames", ()
     topic: { ...approvedTopic, title: "Main Gear / Brake System?" },
   });
 
-  assert.equal(exported.filename, "32-41-main-gear-brake-system.md");
+  assert.equal(exported.filename, "32-41-main-gear-brake-system-topic_32.md");
   assert.equal(exported.filename.includes(" "), false);
   assert.equal(/[\\/]/.test(exported.filename), false);
+});
+
+test("buildOkfSystemTopic rejects titles that produce empty slugs", () => {
+  assert.throws(
+    () =>
+      buildOkfSystemTopic({
+        document: exportDocument,
+        knowledgeVersion: "0.1.0",
+        topic: { ...approvedTopic, title: "!!!" },
+      }),
+    /okf_export_invalid_title: title produces empty slug/,
+  );
+});
+
+test("buildOkfSystemTopic caps long title slugs without trailing hyphen", () => {
+  const exported = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: {
+      ...approvedTopic,
+      id: "topic_long_title",
+      title: Array.from({ length: 60 }, (_, index) => `Brake ${index}`).join(" "),
+    },
+  });
+  const withoutExtension = exported.filename.replace(/\.md$/, "");
+  const idFragment = "topic_lo";
+  const slug = withoutExtension
+    .replace(/^32-/, "")
+    .replace(new RegExp(`-${idFragment}$`), "");
+
+  assert.equal(exported.filename.length <= 100, true);
+  assert.equal(slug.endsWith("-"), false);
+});
+
+test("buildOkfSystemTopic avoids collisions for matching titles and ATA", () => {
+  const first = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: { ...approvedTopic, id: "topic_a_1234" },
+  });
+  const second = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: { ...approvedTopic, id: "topic_b_5678" },
+  });
+
+  assert.notEqual(first.filename, second.filename);
+});
+
+test("buildOkfSystemTopic requires a topic id for collision-safe filenames", () => {
+  const topicWithoutId = { ...approvedTopic };
+  delete (topicWithoutId as Partial<typeof approvedTopic>).id;
+
+  assert.throws(
+    () =>
+      buildOkfSystemTopic({
+        document: exportDocument,
+        knowledgeVersion: "0.1.0",
+        topic: topicWithoutId,
+      }),
+    /okf_export_requires_topic_id/,
+  );
 });
 
 test("exportTopicToKnowledge updates index idempotently", async () => {
@@ -112,9 +174,39 @@ test("exportTopicToKnowledge updates index idempotently", async () => {
     const index = await readFile(path.join(root, "index.md"), "utf8");
     const entryCount = index
       .split("\n")
-      .filter((line) => line.includes("(32-main-gear-brake-system.md)")).length;
+      .filter((line) =>
+        line.includes("(32-main-gear-brake-system-topic_32.md)"),
+      ).length;
 
     assert.equal(entryCount, 1);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("exportTopicToKnowledge keeps matching-title topics as separate index entries", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-export-collision-"));
+
+  try {
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topic: { ...approvedTopic, id: "topic_a_1234" },
+    });
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topic: { ...approvedTopic, id: "topic_b_5678" },
+    });
+
+    const index = await readFile(path.join(root, "index.md"), "utf8");
+
+    assert.equal(index.includes("(32-main-gear-brake-system-topic_a_.md)"), true);
+    assert.equal(index.includes("(32-main-gear-brake-system-topic_b_.md)"), true);
   } finally {
     await rm(root, { force: true, recursive: true });
   }
