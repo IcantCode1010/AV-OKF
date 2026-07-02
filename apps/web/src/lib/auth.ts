@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import { getServerSession } from "next-auth";
@@ -15,6 +17,7 @@ type AuthEnv = Record<string, string | undefined>;
 const TEST_AUTH_EMAIL = "test@av-okf.local";
 const TEST_AUTH_NAME = "AV-OKF Test User";
 const TEST_AUTH_PASSWORD = "av-okf-test";
+let hasWarnedAboutProductionTestAuth = false;
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(getPrisma()) as NextAuthOptions["adapter"],
@@ -77,7 +80,11 @@ export function isValidTestAuthPassword(
   password: string | undefined,
   env: AuthEnv = process.env,
 ): boolean {
-  return Boolean(password) && password === getTestAuthPassword(env);
+  if (!password) {
+    return false;
+  }
+
+  return timingSafeEqual(hashSecret(password), hashSecret(getTestAuthPassword(env)));
 }
 
 export async function getCurrentSessionWorkspace(): Promise<AuthWorkspaceContext | null> {
@@ -291,7 +298,12 @@ function buildTestCredentialsProvider(env: AuthEnv) {
 }
 
 function isTestAuthEnabled(env: AuthEnv): boolean {
-  return env.AV_OKF_TEST_AUTH_ENABLED === "true";
+  if (env.AV_OKF_TEST_AUTH_ENABLED !== "true") {
+    return false;
+  }
+
+  assertProductionTestAuthIsSafe(env);
+  return true;
 }
 
 function getTestAuthEmail(env: AuthEnv): string {
@@ -304,6 +316,29 @@ function getTestAuthName(env: AuthEnv): string {
 
 function getTestAuthPassword(env: AuthEnv): string {
   return env.AV_OKF_TEST_AUTH_PASSWORD || TEST_AUTH_PASSWORD;
+}
+
+function assertProductionTestAuthIsSafe(env: AuthEnv) {
+  if (env.NODE_ENV !== "production") {
+    return;
+  }
+
+  if (getTestAuthPassword(env) === TEST_AUTH_PASSWORD) {
+    throw new Error(
+      "test_auth_blocked_in_production: set a non-default AV_OKF_TEST_AUTH_PASSWORD or disable test auth",
+    );
+  }
+
+  if (!hasWarnedAboutProductionTestAuth) {
+    console.warn(
+      "test_auth_enabled_in_production: local test credentials are enabled with a non-default password",
+    );
+    hasWarnedAboutProductionTestAuth = true;
+  }
+}
+
+function hashSecret(value: string) {
+  return createHash("sha256").update(value).digest();
 }
 
 function normalizeEmail(value: string | undefined): string | undefined {

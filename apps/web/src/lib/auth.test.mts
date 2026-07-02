@@ -32,6 +32,51 @@ test("getAuthSessionStrategy uses JWT only for credentials test auth", () => {
   assert.equal(getAuthSessionStrategy({ AV_OKF_TEST_AUTH_ENABLED: "true" }), "jwt");
 });
 
+test("test auth enabled in production with default password throws", () => {
+  assert.throws(
+    () =>
+      buildAuthProviderIds({
+        AV_OKF_TEST_AUTH_ENABLED: "true",
+        NODE_ENV: "production",
+      }),
+    /test_auth_blocked_in_production: set a non-default AV_OKF_TEST_AUTH_PASSWORD or disable test auth/,
+  );
+});
+
+test("test auth enabled in production with custom password does not throw", () => {
+  const warnings: string[] = [];
+  const originalWarn = console.warn;
+  console.warn = (message?: unknown) => {
+    warnings.push(String(message));
+  };
+
+  try {
+    const env = {
+      AV_OKF_TEST_AUTH_ENABLED: "true",
+      AV_OKF_TEST_AUTH_PASSWORD: "custom-production-smoke-password",
+      NODE_ENV: "production",
+    };
+
+    assert.deepEqual(buildAuthProviderIds(env), ["credentials"]);
+    assert.deepEqual(buildAuthProviderIds(env), ["credentials"]);
+    assert.deepEqual(warnings, [
+      "test_auth_enabled_in_production: local test credentials are enabled with a non-default password",
+    ]);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test("test auth enabled in development with default password does not throw", () => {
+  assert.deepEqual(
+    buildAuthProviderIds({
+      AV_OKF_TEST_AUTH_ENABLED: "true",
+      NODE_ENV: "development",
+    }),
+    ["credentials"],
+  );
+});
+
 test("isValidTestAuthPassword checks the configured local test password", () => {
   const env = {
     AV_OKF_TEST_AUTH_PASSWORD: "local-only-password",
