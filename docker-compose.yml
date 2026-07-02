@@ -62,7 +62,7 @@ services:
     expose:
       - "3000"
     volumes:
-      - caddy-data:/data
+      - knowledge-data:/data/knowledge
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
@@ -161,6 +161,7 @@ services:
 volumes:
   caddy-config:
   caddy-data:
+  knowledge-data:
   minio-data:
   postgres-data:
   redis-data:

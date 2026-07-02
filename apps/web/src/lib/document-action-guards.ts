@@ -5,14 +5,20 @@ type WorkspaceDocument = {
 };
 
 export function assertActionDocumentWorkspace(input: {
+  allowMissingWorkspace?: boolean;
   context: AuthWorkspaceContext;
   document: WorkspaceDocument;
   mismatchError: string;
 }): void {
-  if (
-    input.document.workspaceId &&
-    input.document.workspaceId !== input.context.workspaceId
-  ) {
+  if (input.document.workspaceId === input.context.workspaceId) {
+    return;
+  }
+
+  if (input.document.workspaceId == null && input.allowMissingWorkspace) {
+    return;
+  }
+
+  if (input.document.workspaceId !== input.context.workspaceId) {
     throw new Error(input.mismatchError);
   }
 }

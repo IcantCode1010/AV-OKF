@@ -18,6 +18,52 @@ test("assertActionDocumentWorkspace rejects metadata updates for another workspa
   );
 });
 
+test("assertActionDocumentWorkspace rejects missing workspace ids by default", () => {
+  for (const document of [{ workspaceId: null }, { workspaceId: undefined }, {}]) {
+    assert.throws(
+      () =>
+        assertActionDocumentWorkspace({
+          context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+          document,
+          mismatchError: "document_workspace_mismatch",
+        }),
+      /document_workspace_mismatch/,
+    );
+  }
+});
+
+test("assertActionDocumentWorkspace allows missing workspace only with explicit opt-out", () => {
+  assert.doesNotThrow(() =>
+    assertActionDocumentWorkspace({
+      allowMissingWorkspace: true,
+      context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+      document: { workspaceId: null },
+      mismatchError: "document_workspace_mismatch",
+    }),
+  );
+
+  assert.throws(
+    () =>
+      assertActionDocumentWorkspace({
+        allowMissingWorkspace: true,
+        context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+        document: { workspaceId: "wrk_2" },
+        mismatchError: "document_workspace_mismatch",
+      }),
+    /document_workspace_mismatch/,
+  );
+});
+
+test("assertActionDocumentWorkspace allows matching workspace ids", () => {
+  assert.doesNotThrow(() =>
+    assertActionDocumentWorkspace({
+      context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+      document: { workspaceId: "wrk_1" },
+      mismatchError: "document_workspace_mismatch",
+    }),
+  );
+});
+
 test("assertActionDocumentWorkspace rejects OKF exports for another workspace", () => {
   assert.throws(
     () =>

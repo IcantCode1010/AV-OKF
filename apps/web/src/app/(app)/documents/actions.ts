@@ -22,6 +22,7 @@ import {
   assertActionDocumentWorkspace,
   normalizeAtaMetadata,
 } from "@/lib/document-action-guards";
+import { isProductionBackend } from "@/lib/production-document-service";
 
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
@@ -89,6 +90,8 @@ export async function updateDocumentMetadataAction(formData: FormData) {
   const workspaceId = await getDocumentWorkspaceId(id);
 
   assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
     context,
     document: { workspaceId },
     mismatchError: "document_workspace_mismatch",

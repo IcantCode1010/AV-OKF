@@ -10,6 +10,7 @@ import {
 } from "@/lib/document-backend";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
+import { isProductionBackend } from "@/lib/production-document-service";
 
 export async function exportTopicToOkfAction(formData: FormData) {
   const documentId = getFormString(formData, "documentId");
@@ -18,6 +19,8 @@ export async function exportTopicToOkfAction(formData: FormData) {
   const workspaceId = await getDocumentWorkspaceId(documentId);
 
   assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
     context,
     document: { workspaceId },
     mismatchError: "okf_export_workspace_mismatch",
