@@ -38,6 +38,12 @@ type BuildOkfSystemTopicInput = {
   topic: ExportTopic;
 };
 
+type BuildOkfSourceManifestInput = {
+  document: ExportDocument;
+  exportedAt?: Date;
+  knowledgeVersion: string;
+};
+
 type ExportTopicToKnowledgeInput = BuildOkfSystemTopicInput & {
   knowledgeRoot?: string;
 };
@@ -93,6 +99,33 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   };
 }
 
+export function buildOkfSourceManifest(input: BuildOkfSourceManifestInput): {
+  content: string;
+  filename: string;
+} {
+  const metadata = getRequiredDocumentMetadata(input.document);
+  const lastVerified = toIsoDate(input.exportedAt ?? new Date());
+  const frontmatter = stringifyFrontmatter({
+    type: "source_manifest",
+    review_status: "approved",
+    title: "Source Manifest",
+    description: "Approved source documents represented in this OKF bundle.",
+    aircraft_family: metadata.aircraftFamily,
+    source_authority: metadata.sourceAuthority,
+    revision: metadata.revision,
+    knowledge_version: input.knowledgeVersion,
+    last_verified: lastVerified,
+    manual_type: metadata.manualType,
+    effectivity: metadata.effectivity,
+  });
+  const entry = formatSourceManifestEntry(input.document);
+
+  return {
+    content: `---\n${frontmatter}---\n\n# Source Manifest\n\n${entry}\n`,
+    filename: "source_manifest.md",
+  };
+}
+
 export async function exportTopicToKnowledge(
   input: ExportTopicToKnowledgeInput,
 ): Promise<{ content: string; filename: string }> {
@@ -115,8 +148,44 @@ export async function exportTopicToKnowledge(
     knowledgeVersion: input.knowledgeVersion,
     topic: input.topic,
   });
+  await upsertSourceManifestEntry({
+    document: input.document,
+    exportedAt: input.exportedAt ?? new Date(),
+    knowledgeRoot,
+    knowledgeVersion: input.knowledgeVersion,
+  });
 
   return exported;
+}
+
+async function upsertSourceManifestEntry(input: {
+  document: ExportDocument;
+  exportedAt: Date;
+  knowledgeRoot: string;
+  knowledgeVersion: string;
+}) {
+  const manifestPath = path.join(input.knowledgeRoot, "source_manifest.md");
+  const entry = formatSourceManifestEntry(input.document);
+  let existing = "";
+
+  try {
+    existing = await readFile(manifestPath, "utf8");
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+
+    existing = buildOkfSourceManifest(input).content;
+  }
+
+  const lines = existing.split(/\r?\n/);
+  const filtered = removeSourceManifestEntry(lines, input.document.title);
+
+  await writeFile(
+    manifestPath,
+    `${filtered.join("\n").trimEnd()}\n${entry}\n`,
+    "utf8",
+  );
 }
 
 async function upsertIndexEntry(input: {
@@ -195,6 +264,39 @@ function getRequiredDocumentMetadata(
     sourceAuthority: document.sourceAuthority!,
     revision: document.revision!,
   };
+}
+
+function formatSourceManifestEntry(document: ExportDocument) {
+  const metadata = getRequiredDocumentMetadata(document);
+
+  return [
+    `- ${document.title}`,
+    `  - authority: ${metadata.sourceAuthority}`,
+    `  - manual_type: ${metadata.manualType}`,
+    `  - ata: ${metadata.ata}`,
+    `  - effectivity: ${metadata.effectivity}`,
+    `  - revision: ${metadata.revision}`,
+  ].join("\n");
+}
+
+function removeSourceManifestEntry(lines: string[], title: string) {
+  const entryStart = `- ${title}`;
+  const result: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+
+    if (line.trim() !== entryStart) {
+      result.push(line);
+      continue;
+    }
+
+    while (index + 1 < lines.length && lines[index + 1]!.startsWith("  - ")) {
+      index += 1;
+    }
+  }
+
+  return result;
 }
 
 function stringifyFrontmatter(fields: Record<string, string | number[]>) {

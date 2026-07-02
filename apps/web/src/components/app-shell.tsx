@@ -40,12 +40,12 @@ const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/documents", label: "Documents", icon: Files },
   { href: "/search", label: "Search", icon: Search },
+  { href: "/knowledge", label: "Knowledge", icon: BookOpenCheck },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const futureNavigation = [
   { label: "Extraction", icon: FileSearch },
-  { label: "Knowledge", icon: BookOpenCheck },
   { label: "Retrieval", icon: Database },
 ];
 

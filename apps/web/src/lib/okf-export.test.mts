@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   buildOkfSystemTopic,
+  buildOkfSourceManifest,
   exportTopicToKnowledge,
 } from "./okf-export.ts";
 
@@ -239,13 +240,68 @@ test("buildOkfSystemTopic frontmatter always marks review_status approved", () =
   assert.equal(frontmatter.review_status, "approved");
 });
 
+test("buildOkfSourceManifest emits every required source_manifest frontmatter field", async () => {
+  const requiredFields = await readRequiredFieldsForType("source_manifest");
+  const exported = buildOkfSourceManifest({
+    document: exportDocument,
+    exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+    knowledgeVersion: "0.1.0",
+  });
+  const frontmatter = parseFrontmatter(exported.content);
+
+  assert.equal(exported.filename, "source_manifest.md");
+  for (const field of requiredFields) {
+    assert.equal(
+      Object.hasOwn(frontmatter, field),
+      true,
+      `missing required frontmatter field: ${field}`,
+    );
+  }
+});
+
+test("exportTopicToKnowledge writes source_manifest idempotently", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-export-manifest-"));
+
+  try {
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+
+    const manifest = await readFile(path.join(root, "source_manifest.md"), "utf8");
+    const entryCount = manifest
+      .split("\n")
+      .filter((line) => line.includes("737NG AMM 32 Landing Gear")).length;
+
+    assert.equal(entryCount, 1);
+    assert.match(manifest, /type: "source_manifest"/);
+    assert.match(manifest, /source_authority: "Boeing Aircraft Maintenance Manual"/);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 async function readRequiredSystemTopicFields() {
+  return readRequiredFieldsForType("system_topic");
+}
+
+async function readRequiredFieldsForType(type: string) {
   const manifest = await readFile(
     path.join(process.cwd(), "..", "..", "okf-base.yaml"),
     "utf8",
   );
   const lines = manifest.split(/\r?\n/);
-  const systemTopicIndex = lines.findIndex((line) => line.trim() === "system_topic:");
+  const systemTopicIndex = lines.findIndex((line) => line.trim() === `${type}:`);
   const requiredIndex = lines.findIndex(
     (line, index) => index > systemTopicIndex && line.trim() === "required:",
   );
