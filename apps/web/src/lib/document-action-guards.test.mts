@@ -76,6 +76,18 @@ test("assertActionDocumentWorkspace rejects OKF exports for another workspace", 
   );
 });
 
+test("assertActionDocumentWorkspace rejects typed relation updates for another workspace", () => {
+  assert.throws(
+    () =>
+      assertActionDocumentWorkspace({
+        context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+        document: { workspaceId: "wrk_2" },
+        mismatchError: "okf_export_workspace_mismatch",
+      }),
+    /okf_export_workspace_mismatch/,
+  );
+});
+
 test("normalizeAtaMetadata accepts ATA chapter, section, and subject formats", () => {
   assert.equal(normalizeAtaMetadata("32"), "32");
   assert.equal(normalizeAtaMetadata("32-41"), "32-41");

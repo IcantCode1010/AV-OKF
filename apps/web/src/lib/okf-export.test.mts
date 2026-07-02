@@ -452,6 +452,100 @@ test("exportTopicToKnowledge preserves existing log header and prior entries", a
   }
 });
 
+test("exportTopicToKnowledge exports typed relations that pass both OKF linters", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-relation-export-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+
+  try {
+    await copyManifestTo(root);
+    const target = await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+    const related = await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-03T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: {
+        ...approvedTopic,
+        id: "topic_32_brake_dispatch",
+        title: "Brake Dispatch Route",
+        relations: [
+          {
+            relation: "routes_to",
+            target: target.filename,
+            targetType: "system_topic",
+            reason: "Dispatch questions route to the approved brake system topic.",
+          },
+        ],
+      },
+    });
+
+    const markdown = await readFile(path.join(knowledgeRoot, related.filename), "utf8");
+    assert.match(markdown, /relations:/);
+    assert.match(markdown, /  - relation: "routes_to"/);
+    assert.match(markdown, new RegExp(`    target: "${target.filename}"`));
+    assert.match(markdown, /    target_type: "system_topic"/);
+    await assertOkflintPasses(root);
+    await assertRelationLintPasses(root);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("exportTopicToKnowledge fails without writing when relation target is missing", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-relation-missing-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+  const topicWithMissingRelation = {
+    ...approvedTopic,
+    id: "topic_missing_relation",
+    title: "Missing Relation Target",
+    relations: [
+      {
+        relation: "routes_to",
+        target: "missing-target.md",
+        targetType: "system_topic",
+        reason: "This target was renamed after relation approval.",
+      },
+    ],
+  };
+  const failedFilename = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: topicWithMissingRelation,
+  }).filename;
+
+  try {
+    await copyManifestTo(root);
+    await assert.rejects(
+      () =>
+        exportTopicToKnowledge({
+          document: exportDocument,
+          exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+          knowledgeRoot,
+          knowledgeVersion: "0.1.0",
+          topic: topicWithMissingRelation,
+        }),
+      /relation_target_missing/,
+    );
+
+    await assert.rejects(
+      () => readFile(path.join(knowledgeRoot, failedFilename), "utf8"),
+      /ENOENT/,
+    );
+    await assert.rejects(
+      () => readFile(path.join(knowledgeRoot, "log.md"), "utf8"),
+      /ENOENT/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 async function readRequiredSystemTopicFields() {
   return readRequiredFieldsForType("system_topic");
 }
@@ -538,5 +632,30 @@ async function assertOkflintPasses(root: string) {
         ? `${"stdout" in error ? String(error.stdout) : ""}\n${"stderr" in error ? String(error.stderr) : ""}`
         : String(error);
     assert.fail(`okflint validation failed:\n${details}`);
+  }
+}
+
+async function assertRelationLintPasses(root: string) {
+  const toolPath = path.join(
+    process.cwd(),
+    "..",
+    "..",
+    "tools",
+    "okf_relation_lint.py",
+  );
+  try {
+    await execFileAsync("python", [toolPath, "--manifest", "okf-base.yaml"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+      },
+    });
+  } catch (error) {
+    const details =
+      error && typeof error === "object"
+        ? `${"stdout" in error ? String(error.stdout) : ""}\n${"stderr" in error ? String(error.stderr) : ""}`
+        : String(error);
+    assert.fail(`relation lint failed:\n${details}`);
   }
 }

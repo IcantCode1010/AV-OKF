@@ -7,10 +7,17 @@ import {
   getDocumentById,
   getDocumentWorkspaceId,
   getTopicRecordsByDocumentId,
+  updateTopicRelations,
 } from "@/lib/document-backend";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
+import { getDefaultKnowledgeRoot } from "@/lib/knowledge-root";
+import {
+  RelationValidationError,
+  validateTopicRelations,
+  type TopicRelation,
+} from "@/lib/okf-relations";
 
 export async function exportTopicToOkfAction(formData: FormData) {
   const documentId = getFormString(formData, "documentId");
@@ -48,7 +55,92 @@ export async function exportTopicToOkfAction(formData: FormData) {
   redirect(`/documents/${documentId}`);
 }
 
+export async function updateTopicRelationsAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const relationAction = getFormString(formData, "relationAction");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+
+  assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "okf_export_workspace_mismatch",
+  });
+
+  const topic = (await getTopicRecordsByDocumentId(documentId)).find(
+    (candidate) => candidate.id === topicId,
+  );
+
+  if (!topic) {
+    throw new Error("topic_not_found");
+  }
+
+  if (topic.reviewStatus !== "approved") {
+    throw new Error("topic_relations_require_approved_topic");
+  }
+
+  const relations = buildNextRelations(topic.relations, relationAction, formData);
+
+  try {
+    await validateTopicRelations(relations, getDefaultKnowledgeRoot());
+  } catch (error) {
+    if (error instanceof RelationValidationError) {
+      redirect(
+        `/documents/${documentId}?relationError=${encodeURIComponent(
+          JSON.stringify(error.violation),
+        )}`,
+      );
+    }
+
+    throw error;
+  }
+
+  await updateTopicRelations(topicId, relations);
+
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}`);
+}
+
 function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function buildNextRelations(
+  currentRelations: TopicRelation[],
+  relationAction: string,
+  formData: FormData,
+) {
+  if (relationAction === "remove") {
+    const index = Number.parseInt(getFormString(formData, "relationIndex"), 10);
+    if (!Number.isInteger(index) || index < 0) {
+      throw new Error("relation_index_invalid");
+    }
+
+    return currentRelations.filter((_, relationIndex) => relationIndex !== index);
+  }
+
+  if (relationAction !== "add") {
+    throw new Error("relation_action_invalid");
+  }
+
+  return [
+    ...currentRelations,
+    buildRelationFromForm(formData),
+  ];
+}
+
+function buildRelationFromForm(formData: FormData): TopicRelation {
+  const rawTarget = getFormString(formData, "target");
+  const [target, targetTypeFromTarget] = rawTarget.split("::");
+
+  return {
+    relation: getFormString(formData, "relation"),
+    target: target ?? "",
+    targetType: getFormString(formData, "targetType") || targetTypeFromTarget || null,
+    reason: getFormString(formData, "reason"),
+  };
 }

@@ -1,0 +1,2 @@
+ALTER TABLE "TopicRecord"
+ADD COLUMN "relations" JSONB NOT NULL DEFAULT '[]';

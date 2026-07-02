@@ -4,6 +4,10 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { generateTopicCandidates } from "./topic-records.ts";
+import {
+  normalizeTopicRelations,
+  type TopicRelation,
+} from "./okf-relations.ts";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -90,6 +94,7 @@ export type TopicRecord = {
   pageEnd: number;
   confidence: TopicConfidence;
   reviewStatus: TopicReviewStatus;
+  relations: TopicRelation[];
   sourcePageNumbers: number[];
   createdAt: string;
   updatedAt: string;
@@ -757,6 +762,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           ...candidate,
           id: `topic-${randomUUID()}`,
           reviewStatus: "needs_review",
+          relations: [],
           createdAt: timestamp,
           updatedAt: timestamp,
         }));
@@ -788,7 +794,22 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
 
       topic.reviewStatus = reviewStatus;
       topic.updatedAt = formatTimestamp(new Date());
-      return topic;
+      return normalizeTopicRecord(topic);
+    });
+  }
+
+  async function updateTopicRelations(topicId: string, relations: TopicRelation[]) {
+    return mutateStore(async (store) => {
+      store.topicRecords ??= [];
+      const topic = getStoreTopic(store, topicId);
+
+      if (topic.reviewStatus !== "approved") {
+        throw new Error("topic_relations_require_approved_topic");
+      }
+
+      topic.relations = relations;
+      topic.updatedAt = formatTimestamp(new Date());
+      return normalizeTopicRecord(topic);
     });
   }
 
@@ -813,12 +834,13 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     getRecentDocuments: async (limit = 4) =>
       normalizeDocuments((await readStore()).documents).slice(0, limit),
     getTopicRecordsByDocumentId: async (id: string) =>
-      ((await readStore()).topicRecords ?? []).filter(
-        (topic) => topic.documentId === id,
-      ),
+      ((await readStore()).topicRecords ?? [])
+        .filter((topic) => topic.documentId === id)
+        .map(normalizeTopicRecord),
     generateTopicRecords,
     startExtraction,
     updateTopicReviewStatus,
+    updateTopicRelations,
     updateDocumentMetadata,
   };
 }
@@ -887,6 +909,13 @@ export async function updateTopicReviewStatus(
   return defaultVault.updateTopicReviewStatus(topicId, reviewStatus);
 }
 
+export async function updateTopicRelations(
+  topicId: string,
+  relations: TopicRelation[],
+) {
+  return defaultVault.updateTopicRelations(topicId, relations);
+}
+
 export function getDefaultDataRoot() {
   const configuredDataRoot = process.env.AV_OKF_DATA_ROOT;
 
@@ -945,6 +974,21 @@ function getStoreDocument(store: VaultStore, id: string) {
 
   document.extraction = normalizeExtraction(document.extraction);
   return document;
+}
+
+function getStoreTopic(store: VaultStore, id: string) {
+  const topic = (store.topicRecords ?? []).find((candidate) => candidate.id === id);
+
+  if (!topic) {
+    throw new Error("topic_not_found");
+  }
+
+  return normalizeTopicRecord(topic);
+}
+
+function normalizeTopicRecord(topic: TopicRecord): TopicRecord {
+  topic.relations = normalizeTopicRelations(topic.relations);
+  return topic;
 }
 
 function createSeedExtraction(status: ExtractionStatus): DocumentExtraction {

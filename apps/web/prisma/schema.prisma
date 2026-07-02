@@ -276,6 +276,7 @@ model TopicRecord {
   pageEnd           Int
   confidence        String
   reviewStatus      String
+  relations         Json      @default("[]")
   sourcePageNumbers Int[]
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   document          Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)

@@ -19,6 +19,7 @@ import type {
   TopicReviewStatus,
 } from "./document-vault.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import { normalizeTopicRelations, type TopicRelation } from "./okf-relations.ts";
 
 type UploadRecordInput = {
   context: AuthWorkspaceContext;
@@ -132,6 +133,7 @@ type DbTopicRecord = {
   id: string;
   pageEnd: number;
   pageStart: number;
+  relations: Prisma.JsonValue;
   reviewStatus: string;
   sourcePageNumbers: number[];
   summary: string;
@@ -429,6 +431,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             pageEnd: topic.pageEnd,
             pageStart: topic.pageStart,
             reviewStatus: "needs_review",
+            relations: [],
             sourcePageNumbers: topic.sourcePageNumbers,
             summary: topic.summary,
             title: topic.title,
@@ -659,6 +662,32 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return mapTopicRecord(topic);
     },
+    async updateTopicRelations(input: {
+      context: AuthWorkspaceContext;
+      relations: TopicRelation[];
+      topicId: string;
+    }) {
+      const existingTopic = await db.topicRecord.findFirst({
+        where: {
+          id: input.topicId,
+          workspaceId: input.context.workspaceId,
+        },
+      });
+
+      if (!existingTopic) {
+        throw new Error("topic_not_found");
+      }
+
+      if (normalizeTopicReviewStatus(existingTopic.reviewStatus) !== "approved") {
+        throw new Error("topic_relations_require_approved_topic");
+      }
+
+      const topic = await db.topicRecord.update({
+        data: { relations: input.relations as unknown as Prisma.InputJsonValue },
+        where: { id: input.topicId },
+      });
+      return mapTopicRecord(topic);
+    },
   };
 }
 
@@ -749,6 +778,7 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     id: record.id,
     pageEnd: record.pageEnd,
     pageStart: record.pageStart,
+    relations: normalizeTopicRelations(record.relations),
     reviewStatus: normalizeTopicReviewStatus(record.reviewStatus),
     sourcePageNumbers: record.sourcePageNumbers,
     summary: record.summary,

@@ -24,29 +24,47 @@ import {
   type TopicRecord,
 } from "@/lib/document-backend";
 import {
+  getDefaultKnowledgeRoot,
+  listOkfBundleFiles,
+  type OkfBundleFile,
+} from "@/lib/okf-bundle";
+import { getAllowedRelations } from "@/lib/okf-relations";
+import {
   generateTopicsAction,
   runExtractionAction,
   updateDocumentMetadataAction,
   updateTopicReviewStatusAction,
 } from "../actions";
-import { exportTopicToOkfAction } from "../okf-actions";
+import {
+  exportTopicToOkfAction,
+  updateTopicRelationsAction,
+} from "../okf-actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocumentDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ relationError?: string }>;
 }) {
   const { id } = await params;
-  const [document, topicRecords] = await Promise.all([
-    getDocumentById(id),
-    getTopicRecordsByDocumentId(id),
-  ]);
+  const { relationError } = await searchParams;
+  const knowledgeRoot = getDefaultKnowledgeRoot();
+  const [document, topicRecords, allowedRelations, relationTargets] =
+    await Promise.all([
+      getDocumentById(id),
+      getTopicRecordsByDocumentId(id),
+      getAllowedRelations(),
+      getRelationTargets(knowledgeRoot),
+    ]);
 
   if (!document) {
     notFound();
   }
+
+  const relationErrorMessage = formatRelationError(relationError);
 
   return (
     <>
@@ -300,8 +318,11 @@ export default async function DocumentDetailPage({
             <div className="space-y-3">
               {topicRecords.map((topic) => (
                 <TopicRecordCard
+                  allowedRelations={allowedRelations}
                   key={topic.id}
                   documentId={document.id}
+                  relationError={relationErrorMessage}
+                  relationTargets={relationTargets}
                   topic={topic}
                 />
               ))}
@@ -511,10 +532,16 @@ function ExtractionMetric({ label, value }: { label: string; value: string }) {
 }
 
 function TopicRecordCard({
+  allowedRelations,
   documentId,
+  relationError,
+  relationTargets,
   topic,
 }: {
+  allowedRelations: string[];
   documentId: string;
+  relationError: string | null;
+  relationTargets: OkfBundleFile[];
   topic: TopicRecord;
 }) {
   return (
@@ -562,6 +589,102 @@ function TopicRecordCard({
           </form>
         ) : null}
       </div>
+      {topic.reviewStatus === "approved" ? (
+        <div className="mt-4 space-y-3 border-t border-border pt-4">
+          <div>
+            <p className="text-sm font-medium">Typed relations</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Relations point this approved topic to other exported OKF files.
+            </p>
+          </div>
+          {relationError ? (
+            <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+              {relationError}
+            </div>
+          ) : null}
+          {topic.relations.length > 0 ? (
+            <div className="space-y-2">
+              {topic.relations.map((relation, index) => (
+                <div
+                  className="grid gap-3 rounded-md border border-border p-3 md:grid-cols-[1fr_auto]"
+                  key={`${relation.relation}-${relation.target}-${index}`}
+                >
+                  <div className="space-y-1 text-sm">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant="secondary">{relation.relation}</Badge>
+                      <Badge variant="outline">{relation.targetType}</Badge>
+                    </div>
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {relation.target}
+                    </p>
+                    <p className="text-muted-foreground">{relation.reason}</p>
+                  </div>
+                  <form action={updateTopicRelationsAction}>
+                    <input type="hidden" name="documentId" value={documentId} />
+                    <input type="hidden" name="topicId" value={topic.id} />
+                    <input type="hidden" name="relationAction" value="remove" />
+                    <input type="hidden" name="relationIndex" value={index} />
+                    <PendingSubmitButton pendingLabel="Removing...">
+                      Remove
+                    </PendingSubmitButton>
+                  </form>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-md border border-border p-3 text-sm text-muted-foreground">
+              No typed relations yet.
+            </div>
+          )}
+          <form
+            action={updateTopicRelationsAction}
+            className="grid gap-3 rounded-md border border-border p-3 lg:grid-cols-[180px_1fr_1.2fr_auto]"
+          >
+            <input type="hidden" name="documentId" value={documentId} />
+            <input type="hidden" name="topicId" value={topic.id} />
+            <input type="hidden" name="relationAction" value="add" />
+            <select
+              aria-label="Relation"
+              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+              name="relation"
+            >
+              {allowedRelations.map((relation) => (
+                <option key={relation} value={relation}>
+                  {relation}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Relation target"
+              className="h-9 rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+              name="target"
+            >
+              {relationTargets.map((target) => (
+                <option
+                  key={target.filename}
+                  value={`${target.filename}::${target.type}`}
+                >
+                  {target.title} ({target.filename})
+                </option>
+              ))}
+            </select>
+            <Input
+              aria-label="Relation reason"
+              name="reason"
+              placeholder="Reason this relation exists"
+            />
+            {relationTargets.length > 0 ? (
+              <PendingSubmitButton pendingLabel="Adding...">
+                Add
+              </PendingSubmitButton>
+            ) : (
+              <Button disabled type="submit">
+                Add
+              </Button>
+            )}
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -573,4 +696,38 @@ function MetadataRow({ label, value }: { label: string; value: string }) {
       <span className="text-right font-medium capitalize">{value}</span>
     </div>
   );
+}
+
+async function getRelationTargets(knowledgeRoot: string) {
+  try {
+    return (await listOkfBundleFiles(knowledgeRoot)).filter(
+      (file) =>
+        file.filename !== "index.md" &&
+        file.filename !== "log.md" &&
+        file.filename !== "source_manifest.md",
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+function formatRelationError(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { code?: string; index?: number };
+    return `Relation ${parsed.index ?? 0}: ${parsed.code ?? "validation_failed"}`;
+  } catch {
+    return "Relation validation failed.";
+  }
 }

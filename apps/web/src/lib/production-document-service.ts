@@ -24,6 +24,7 @@ import {
   createProductionDocumentId,
 } from "./production-repository.ts";
 import { getExtractionQueue } from "./production-queue.ts";
+import type { TopicRelation } from "./okf-relations.ts";
 
 type UploadMetadata = {
   bytes: Buffer;
@@ -70,6 +71,10 @@ export type ProductionDocumentService = {
   updateTopicReviewStatus(
     topicId: string,
     reviewStatus: TopicReviewStatus,
+  ): Promise<TopicRecord>;
+  updateTopicRelations(
+    topicId: string,
+    relations: TopicRelation[],
   ): Promise<TopicRecord>;
 };
 
@@ -215,6 +220,16 @@ export function createProductionDocumentService(
       return repository.updateTopicReviewStatus({
         context: await requireAuthWorkspaceContext(),
         reviewStatus,
+        topicId,
+      });
+    },
+    async updateTopicRelations(
+      topicId: string,
+      relations: TopicRelation[],
+    ): Promise<TopicRecord> {
+      return repository.updateTopicRelations({
+        context: await requireAuthWorkspaceContext(),
+        relations,
         topicId,
       });
     },

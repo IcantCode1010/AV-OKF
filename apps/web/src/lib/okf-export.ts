@@ -2,6 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  normalizeTopicRelations,
+  validateTopicRelations,
+  type TopicRelation,
+} from "./okf-relations.ts";
+
 type ExportTopic = {
   id: string;
   title: string;
@@ -9,6 +15,7 @@ type ExportTopic = {
   pageStart: number;
   pageEnd: number;
   reviewStatus: string;
+  relations?: TopicRelation[];
   sourcePageNumbers: number[];
 };
 
@@ -69,10 +76,11 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   }
 
   const metadata = getRequiredDocumentMetadata(input.document);
+  const relations = normalizeTopicRelations(input.topic.relations);
 
   const filename = buildFilename(metadata.ata, input.topic);
   const lastVerified = toIsoDate(input.exportedAt ?? new Date());
-  const frontmatter = stringifyFrontmatter({
+  const frontmatterFields: FrontmatterFields = {
     type: "system_topic",
     review_status: "approved",
     title: input.topic.title,
@@ -87,7 +95,13 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
     source_pages: input.topic.sourcePageNumbers,
     knowledge_version: input.knowledgeVersion,
     last_verified: lastVerified,
-  });
+  };
+
+  if (relations.length > 0) {
+    frontmatterFields.relations = relations;
+  }
+
+  const frontmatter = stringifyFrontmatter(frontmatterFields);
   const pageRange =
     input.topic.pageStart === input.topic.pageEnd
       ? `page ${input.topic.pageStart}`
@@ -126,6 +140,11 @@ export async function exportTopicToKnowledge(
   const knowledgeRoot =
     input.knowledgeRoot ??
     path.join(/* turbopackIgnore: true */ process.cwd(), "knowledge");
+  const relations = normalizeTopicRelations(input.topic.relations);
+  if (relations.length > 0) {
+    await validateTopicRelations(relations, knowledgeRoot);
+  }
+
   const exported = buildOkfSystemTopic(input);
   const topicPath = path.join(knowledgeRoot, exported.filename);
 
@@ -337,9 +356,18 @@ function removeSourceManifestEntry(lines: string[], title: string) {
   return result;
 }
 
-function stringifyFrontmatter(fields: Record<string, string | number[]>) {
+type FrontmatterFields = Record<
+  string,
+  string | number[] | TopicRelation[]
+>;
+
+function stringifyFrontmatter(fields: FrontmatterFields) {
   return Object.entries(fields)
     .map(([key, value]) => {
+      if (isTopicRelationArray(value)) {
+        return `${key}:\n${value.map(formatRelationFrontmatter).join("")}`;
+      }
+
       if (Array.isArray(value)) {
         return `${key}:\n${value.map((item) => `  - ${item}`).join("\n")}\n`;
       }
@@ -347,6 +375,30 @@ function stringifyFrontmatter(fields: Record<string, string | number[]>) {
       return `${key}: ${quoteYamlString(String(value))}\n`;
     })
     .join("");
+}
+
+function isTopicRelationArray(
+  value: FrontmatterFields[string],
+): value is TopicRelation[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "relation" in item &&
+        "target" in item,
+    )
+  );
+}
+
+function formatRelationFrontmatter(relation: TopicRelation) {
+  return [
+    `  - relation: ${quoteYamlString(relation.relation)}`,
+    `    target: ${quoteYamlString(relation.target)}`,
+    `    target_type: ${quoteYamlString(relation.targetType ?? "")}`,
+    `    reason: ${quoteYamlString(relation.reason)}`,
+  ].join("\n") + "\n";
 }
 
 function quoteYamlString(value: string) {

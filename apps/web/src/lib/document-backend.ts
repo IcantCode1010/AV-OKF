@@ -17,6 +17,7 @@ import {
   parseTags,
   startExtraction,
   updateDocumentMetadata as updateLocalDocumentMetadata,
+  updateTopicRelations as updateLocalTopicRelations,
   updateTopicReviewStatus as updateLocalTopicReviewStatus,
   type ActivityEvent,
   type CustomProperty,
@@ -32,6 +33,7 @@ import {
   type User,
   type Workspace,
 } from "./document-vault.ts";
+import type { TopicRelation } from "./okf-relations.ts";
 import { startDetachedExtraction } from "./document-extraction.ts";
 import {
   getProductionDocumentService,
@@ -177,4 +179,15 @@ export async function updateTopicReviewStatus(
   }
 
   return updateLocalTopicReviewStatus(topicId, reviewStatus);
+}
+
+export async function updateTopicRelations(
+  topicId: string,
+  relations: TopicRelation[],
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().updateTopicRelations(topicId, relations);
+  }
+
+  return updateLocalTopicRelations(topicId, relations);
 }
