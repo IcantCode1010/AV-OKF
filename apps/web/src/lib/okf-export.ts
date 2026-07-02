@@ -127,13 +127,11 @@ export async function exportTopicToKnowledge(
     input.knowledgeRoot ??
     path.join(/* turbopackIgnore: true */ process.cwd(), "knowledge");
   const exported = buildOkfSystemTopic(input);
+  const topicPath = path.join(knowledgeRoot, exported.filename);
 
   await mkdir(knowledgeRoot, { recursive: true });
-  await writeFile(
-    path.join(knowledgeRoot, exported.filename),
-    exported.content,
-    "utf8",
-  );
+  const isReExport = await fileExists(topicPath);
+  await writeFile(topicPath, exported.content, "utf8");
   await upsertIndexEntry({
     document: input.document,
     exported,
@@ -147,6 +145,12 @@ export async function exportTopicToKnowledge(
     exportedAt: input.exportedAt ?? new Date(),
     knowledgeRoot,
     knowledgeVersion: input.knowledgeVersion,
+  });
+  await appendLogEntry({
+    action: isReExport ? "re-export" : "export",
+    exported,
+    exportedAt: input.exportedAt ?? new Date(),
+    knowledgeRoot,
   });
 
   return exported;
@@ -201,41 +205,80 @@ async function upsertIndexEntry(input: {
       throw error;
     }
 
-    existing = createIndexFile(input);
+    existing = createIndexFile();
   }
 
   const lines = existing.split(/\r?\n/);
   const filtered = lines.filter(
     (line) => !line.includes(`](${input.exported.filename})`),
   );
-  const insertionIndex = filtered.findIndex((line) => line.trim() === "");
+  const normalizedFiltered = normalizeReservedIndexLines(filtered);
+  const insertionIndex = normalizedFiltered.findIndex(
+    (line) => line.trim() === "",
+  );
 
   if (insertionIndex === -1) {
-    filtered.push("", entry);
+    normalizedFiltered.push("", entry);
   } else {
-    filtered.splice(insertionIndex, 0, entry);
+    normalizedFiltered.splice(insertionIndex, 0, entry);
   }
 
-  await writeFile(indexPath, `${filtered.join("\n").trimEnd()}\n`, "utf8");
+  await writeFile(
+    indexPath,
+    `${normalizedFiltered.join("\n").trimEnd()}\n`,
+    "utf8",
+  );
 }
 
-function createIndexFile(input: {
-  document: ExportDocument;
-  exportedAt: Date;
-  knowledgeVersion: string;
-}) {
-  const lastVerified = toIsoDate(input.exportedAt);
-  const frontmatter = stringifyFrontmatter({
-    type: "aircraft_index",
-    review_status: "approved",
-    title: "AV-OKF Knowledge Index",
-    description: "Index of exported AV-OKF knowledge topics.",
-    aircraft_family: input.document.aircraftFamily || "Unknown",
-    knowledge_version: input.knowledgeVersion,
-    last_verified: lastVerified,
-  });
+function createIndexFile() {
+  return [
+    "# AV-OKF Knowledge Bundle",
+    "",
+    "This directory is the OKF bundle root.",
+    "",
+    "Approved OKF concepts are exported here after topic review. Raw extraction and unreviewed RAG content should not be committed here as trusted OKF.",
+    "",
+  ].join("\n");
+}
 
-  return `---\n${frontmatter}---\n\n# AV-OKF Knowledge Index\n\n`;
+async function appendLogEntry(input: {
+  action: "export" | "re-export";
+  exported: { filename: string };
+  exportedAt: Date;
+  knowledgeRoot: string;
+}) {
+  const logPath = path.join(input.knowledgeRoot, "log.md");
+  const entry = `- ${toIsoDate(input.exportedAt)} - ${input.action} - ${input.exported.filename}`;
+  let existing = "";
+
+  try {
+    existing = await readFile(logPath, "utf8");
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+  }
+
+  const base = existing.trimEnd() || "# Change Log";
+  await writeFile(logPath, `${base}\n\n${entry}\n`, "utf8");
+}
+
+function normalizeReservedIndexLines(lines: string[]) {
+  if (lines[0]?.trim() !== "---") {
+    return lines;
+  }
+
+  const frontmatterEnd = lines.findIndex(
+    (line, index) => index > 0 && line.trim() === "---",
+  );
+
+  if (frontmatterEnd === -1) {
+    return lines;
+  }
+
+  return lines.slice(frontmatterEnd + 1).filter((line, index) => {
+    return index !== 0 || line.trim().length > 0;
+  });
 }
 
 function getRequiredDocumentMetadata(
@@ -361,4 +404,17 @@ function isMissingFileError(error: unknown) {
   }
 
   return error.code === "ENOENT";
+}
+
+async function fileExists(filePath: string) {
+  try {
+    await readFile(filePath);
+    return true;
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return false;
+    }
+
+    throw error;
+  }
 }

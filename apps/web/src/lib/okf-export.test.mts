@@ -1,14 +1,25 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   buildOkfSystemTopic,
   buildOkfSourceManifest,
   exportTopicToKnowledge,
 } from "./okf-export.ts";
+
+const execFileAsync = promisify(execFile);
 
 const approvedTopic = {
   id: "topic_32_brakes",
@@ -346,6 +357,101 @@ test("exportTopicToKnowledge writes bundle-level source_manifest with idempotent
   }
 });
 
+test("exportTopicToKnowledge creates a raw bundle that passes okflint", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-raw-bundle-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+
+  try {
+    await copyManifestTo(root);
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+
+    await assertOkflintPasses(root);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("exportTopicToKnowledge appends log entries for export and re-export", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-export-log-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+
+  try {
+    await copyManifestTo(root);
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-03T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+
+    const log = await readFile(path.join(knowledgeRoot, "log.md"), "utf8");
+    const entries = log
+      .split(/\r?\n/)
+      .filter((line) => line.includes("32-main-gear-brake-system-494f144a6e.md"));
+
+    assert.deepEqual(entries, [
+      "- 2026-07-02 - export - 32-main-gear-brake-system-494f144a6e.md",
+      "- 2026-07-03 - re-export - 32-main-gear-brake-system-494f144a6e.md",
+    ]);
+    await assertOkflintPasses(root);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("exportTopicToKnowledge preserves existing log header and prior entries", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-existing-log-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+
+  try {
+    await copyManifestTo(root);
+    await mkdir(knowledgeRoot, { recursive: true });
+    const committedLog = await readFile(
+      path.join(process.cwd(), "..", "..", "knowledge", "log.md"),
+      "utf8",
+    );
+    const priorEntry = "- 2026-07-01 - export - existing-topic.md";
+    await writeFile(
+      path.join(knowledgeRoot, "log.md"),
+      `${committedLog.trimEnd()}\n\n${priorEntry}\n`,
+      "utf8",
+    );
+
+    await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+
+    const log = await readFile(path.join(knowledgeRoot, "log.md"), "utf8");
+
+    assert.equal(log.startsWith(committedLog.trimEnd()), true);
+    assert.equal(log.includes(priorEntry), true);
+    assert.equal(
+      log.includes("- 2026-07-02 - export - 32-main-gear-brake-system-494f144a6e.md"),
+      true,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 async function readRequiredSystemTopicFields() {
   return readRequiredFieldsForType("system_topic");
 }
@@ -408,4 +514,29 @@ function parseFrontmatter(markdown: string) {
   }
 
   return result;
+}
+
+async function copyManifestTo(root: string) {
+  await copyFile(
+    path.join(process.cwd(), "..", "..", "okf-base.yaml"),
+    path.join(root, "okf-base.yaml"),
+  );
+}
+
+async function assertOkflintPasses(root: string) {
+  try {
+    await execFileAsync("python", ["-m", "okflint", "validate", "--manifest", "okf-base.yaml"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+      },
+    });
+  } catch (error) {
+    const details =
+      error && typeof error === "object"
+        ? `${"stdout" in error ? String(error.stdout) : ""}\n${"stderr" in error ? String(error.stderr) : ""}`
+        : String(error);
+    assert.fail(`okflint validation failed:\n${details}`);
+  }
 }
