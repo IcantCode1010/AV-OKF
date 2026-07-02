@@ -85,7 +85,7 @@ test("buildOkfSystemTopic creates deterministic safe ATA-prefixed filenames", ()
     topic: { ...approvedTopic, title: "Main Gear / Brake System?" },
   });
 
-  assert.equal(exported.filename, "32-41-main-gear-brake-system-topic_32.md");
+  assert.equal(exported.filename, "32-41-main-gear-brake-system-494f144a6e.md");
   assert.equal(exported.filename.includes(" "), false);
   assert.equal(/[\\/]/.test(exported.filename), false);
 });
@@ -113,7 +113,7 @@ test("buildOkfSystemTopic caps long title slugs without trailing hyphen", () => 
     },
   });
   const withoutExtension = exported.filename.replace(/\.md$/, "");
-  const idFragment = "topic_lo";
+  const idFragment = "1fd2bae34c";
   const slug = withoutExtension
     .replace(/^32-/, "")
     .replace(new RegExp(`-${idFragment}$`), "");
@@ -126,15 +126,30 @@ test("buildOkfSystemTopic avoids collisions for matching titles and ATA", () => 
   const first = buildOkfSystemTopic({
     document: exportDocument,
     knowledgeVersion: "0.1.0",
-    topic: { ...approvedTopic, id: "topic_a_1234" },
+    topic: { ...approvedTopic, id: "cmr2m1bze00026uqx8pq55vuv" },
   });
   const second = buildOkfSystemTopic({
     document: exportDocument,
     knowledgeVersion: "0.1.0",
-    topic: { ...approvedTopic, id: "topic_b_5678" },
+    topic: { ...approvedTopic, id: "cmr2m1bze00090in0u27bj08j" },
   });
 
   assert.notEqual(first.filename, second.filename);
+});
+
+test("buildOkfSystemTopic produces deterministic filenames for matching topic ids", () => {
+  const first = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: { ...approvedTopic, id: "cmr2m1bze00026uqx8pq55vuv" },
+  });
+  const second = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: { ...approvedTopic, id: "cmr2m1bze00026uqx8pq55vuv" },
+  });
+
+  assert.equal(first.filename, second.filename);
 });
 
 test("buildOkfSystemTopic requires a topic id for collision-safe filenames", () => {
@@ -175,7 +190,7 @@ test("exportTopicToKnowledge updates index idempotently", async () => {
     const entryCount = index
       .split("\n")
       .filter((line) =>
-        line.includes("(32-main-gear-brake-system-topic_32.md)"),
+        line.includes("(32-main-gear-brake-system-494f144a6e.md)"),
       ).length;
 
     assert.equal(entryCount, 1);
@@ -193,20 +208,20 @@ test("exportTopicToKnowledge keeps matching-title topics as separate index entri
       exportedAt: new Date("2026-07-02T12:00:00.000Z"),
       knowledgeRoot: root,
       knowledgeVersion: "0.1.0",
-      topic: { ...approvedTopic, id: "topic_a_1234" },
+      topic: { ...approvedTopic, id: "cmr2m1bze00026uqx8pq55vuv" },
     });
     await exportTopicToKnowledge({
       document: exportDocument,
       exportedAt: new Date("2026-07-02T12:00:00.000Z"),
       knowledgeRoot: root,
       knowledgeVersion: "0.1.0",
-      topic: { ...approvedTopic, id: "topic_b_5678" },
+      topic: { ...approvedTopic, id: "cmr2m1bze00090in0u27bj08j" },
     });
 
     const index = await readFile(path.join(root, "index.md"), "utf8");
 
-    assert.equal(index.includes("(32-main-gear-brake-system-topic_a_.md)"), true);
-    assert.equal(index.includes("(32-main-gear-brake-system-topic_b_.md)"), true);
+    assert.equal(index.includes("(32-main-gear-brake-system-79a711f14d.md)"), true);
+    assert.equal(index.includes("(32-main-gear-brake-system-2f8dea0784.md)"), true);
   } finally {
     await rm(root, { force: true, recursive: true });
   }

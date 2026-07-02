@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -51,7 +52,7 @@ const REQUIRED_DOCUMENT_METADATA = [
 ] as const;
 
 const MAX_TOPIC_SLUG_LENGTH = 80;
-const TOPIC_ID_FRAGMENT_LENGTH = 8;
+const TOPIC_ID_FRAGMENT_LENGTH = 10;
 
 export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   content: string;
@@ -229,7 +230,10 @@ function buildFilename(ata: string, topic: ExportTopic) {
   }
 
   const cappedSlug = capSlug(titleSlug, MAX_TOPIC_SLUG_LENGTH);
-  const topicIdFragment = topic.id.slice(0, TOPIC_ID_FRAGMENT_LENGTH);
+  const topicIdFragment = createHash("sha256")
+    .update(topic.id)
+    .digest("hex")
+    .slice(0, TOPIC_ID_FRAGMENT_LENGTH);
 
   return `${slugify(ata)}-${cappedSlug}-${topicIdFragment}.md`;
 }
