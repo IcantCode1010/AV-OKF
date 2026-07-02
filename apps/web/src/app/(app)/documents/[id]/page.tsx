@@ -32,6 +32,7 @@ import { getAllowedRelations } from "@/lib/okf-relations";
 import {
   generateTopicsAction,
   runExtractionAction,
+  updateTopicContentAction,
   updateDocumentMetadataAction,
   updateTopicReviewStatusAction,
 } from "../actions";
@@ -556,9 +557,17 @@ function TopicRecordCard({
             <Badge variant="outline" className="capitalize">
               {topic.confidence} confidence
             </Badge>
+            {topic.editedAt ? (
+              <Badge variant="secondary">edited</Badge>
+            ) : null}
           </div>
           <h3 className="mt-3 text-base font-medium">{topic.title}</h3>
           <p className="mt-2 text-sm text-muted-foreground">{topic.summary}</p>
+          {topic.editedAt ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Edited by {topic.editedBy ?? "unknown"} on {topic.editedAt}
+            </p>
+          ) : null}
           <p className="mt-3 font-mono text-xs text-muted-foreground">
             Pages {topic.pageStart}-{topic.pageEnd} | sourcePageNumbers:{" "}
             {topic.sourcePageNumbers.join(", ")}
@@ -589,6 +598,54 @@ function TopicRecordCard({
           </form>
         ) : null}
       </div>
+      {topic.reviewStatus !== "approved" ? (
+        <details className="mt-4 rounded-md border border-border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            Edit topic content
+          </summary>
+          <form action={updateTopicContentAction} className="mt-3 space-y-3">
+            <input type="hidden" name="documentId" value={documentId} />
+            <input type="hidden" name="topicId" value={topic.id} />
+            <div className="space-y-2">
+              <Label htmlFor={`topic-title-${topic.id}`}>Title</Label>
+              <Input
+                id={`topic-title-${topic.id}`}
+                name="title"
+                defaultValue={topic.title}
+                required
+              />
+              {topic.originalTitle !== topic.title ? (
+                <p className="text-xs text-muted-foreground">
+                  Original: {topic.originalTitle}
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`topic-summary-${topic.id}`}>Summary</Label>
+              <textarea
+                id={`topic-summary-${topic.id}`}
+                name="summary"
+                rows={3}
+                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                defaultValue={topic.summary}
+              />
+              {topic.originalSummary !== topic.summary ? (
+                <p className="text-xs text-muted-foreground">
+                  Original summary is preserved for audit.
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <PendingSubmitButton pendingLabel="Saving...">
+                Save topic
+              </PendingSubmitButton>
+              <Button asChild variant="outline">
+                <Link href={`/documents/${documentId}`}>Cancel</Link>
+              </Button>
+            </div>
+          </form>
+        </details>
+      ) : null}
       {topic.reviewStatus === "approved" ? (
         <div className="mt-4 space-y-3 border-t border-border pt-4">
           <div>

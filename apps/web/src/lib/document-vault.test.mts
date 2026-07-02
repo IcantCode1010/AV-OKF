@@ -301,6 +301,154 @@ test("metadata edits persist normalized extraction state for legacy documents", 
   }
 });
 
+test("local vault topic content edits preserve original extracted values", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-topic-edit-"));
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    const uploaded = await vault.createUploadedDocument({
+      bytes: Buffer.from("%PDF-1.7\n"),
+      description: "Topic editing source.",
+      originalFilename: "manual.pdf",
+      owner: "Maintenance Control",
+      sourceType: "aviation",
+      tags: ["topic"],
+      title: "Editable Topic Manual",
+      type: "application/pdf",
+    });
+
+    await vault.completeExtraction(uploaded.id, {
+      pageRecords: [
+        {
+          pageNumber: 1,
+          text: "ATA 24 ELECTRICAL POWER\nGenerator bus detail.",
+          tables: [],
+          imageCount: 0,
+          charCount: 45,
+        },
+      ],
+    });
+
+    const [topic] = await vault.generateTopicRecords(uploaded.id);
+    assert.ok(topic);
+    assert.equal(topic.originalTitle, topic.title);
+    assert.equal(topic.originalSummary, topic.summary);
+    assert.equal(topic.editedAt, null);
+    assert.equal(topic.editedBy, null);
+
+    const edited = await vault.updateTopicContent(topic.id, {
+      editedBy: "usr_reviewer",
+      summary: "",
+      title: "Corrected electrical power topic",
+    });
+
+    assert.equal(edited.title, "Corrected electrical power topic");
+    assert.equal(edited.summary, "");
+    assert.equal(edited.originalTitle, topic.originalTitle);
+    assert.equal(edited.originalSummary, topic.summary);
+    assert.match(edited.editedAt ?? "", /\d{4}/);
+    assert.equal(edited.editedBy, "usr_reviewer");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("local vault topic content edit rejects approved topics and empty titles", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-topic-edit-"));
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    const uploaded = await vault.createUploadedDocument({
+      bytes: Buffer.from("%PDF-1.7\n"),
+      description: "Topic editing source.",
+      originalFilename: "manual.pdf",
+      owner: "Maintenance Control",
+      sourceType: "aviation",
+      tags: ["topic"],
+      title: "Locked Topic Manual",
+      type: "application/pdf",
+    });
+
+    await vault.completeExtraction(uploaded.id, {
+      pageRecords: [
+        {
+          pageNumber: 1,
+          text: "ATA 24 ELECTRICAL POWER\nGenerator bus detail.",
+          tables: [],
+          imageCount: 0,
+          charCount: 45,
+        },
+      ],
+    });
+
+    const [topic] = await vault.generateTopicRecords(uploaded.id);
+    assert.ok(topic);
+
+    await assert.rejects(
+      () =>
+        vault.updateTopicContent(topic.id, {
+          editedBy: "usr_reviewer",
+          title: " ",
+        }),
+      /topic_title_required/,
+    );
+
+    await vault.updateTopicReviewStatus(topic.id, "approved");
+
+    await assert.rejects(
+      () =>
+        vault.updateTopicContent(topic.id, {
+          editedBy: "usr_reviewer",
+          title: "Approved topic edit",
+        }),
+      /topic_content_edit_requires_unapproved_topic/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("local vault normalizes legacy topic content fields on read", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-topic-legacy-"));
+  await mkdir(path.join(root, "uploads"), { recursive: true });
+  await writeFile(
+    path.join(root, "document-vault.json"),
+    `${JSON.stringify({
+      documents: [],
+      activityEvents: [],
+      topicRecords: [
+        {
+          id: "legacy-topic",
+          documentId: "legacy-doc",
+          title: "Legacy extracted title",
+          topicType: "system_topic",
+          summary: "Legacy extracted summary",
+          pageStart: 1,
+          pageEnd: 2,
+          confidence: "high",
+          reviewStatus: "needs_review",
+          relations: [],
+          sourcePageNumbers: [1, 2],
+          createdAt: "Before edit fields",
+          updatedAt: "Before edit fields",
+        },
+      ],
+    })}\n`,
+  );
+  const vault = createLocalDocumentVault(root);
+
+  try {
+    const [topic] = await vault.getTopicRecordsByDocumentId("legacy-doc");
+
+    assert.equal(topic?.originalTitle, "Legacy extracted title");
+    assert.equal(topic?.originalSummary, "Legacy extracted summary");
+    assert.equal(topic?.editedAt, null);
+    assert.equal(topic?.editedBy, null);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("local vault preserves concurrent uploads and metadata edits without corrupting JSON", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-vault-"));
   const vault = createLocalDocumentVault(root);

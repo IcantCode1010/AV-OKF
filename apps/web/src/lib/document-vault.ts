@@ -87,9 +87,13 @@ export type TopicReviewStatus =
 export type TopicRecord = {
   id: string;
   documentId: string;
+  originalTitle: string;
+  originalSummary: string;
   title: string;
   topicType: string;
   summary: string;
+  editedAt: string | null;
+  editedBy: string | null;
   pageStart: number;
   pageEnd: number;
   confidence: TopicConfidence;
@@ -177,6 +181,12 @@ type UpdateMetadata = {
 
 type CompleteExtractionInput = {
   pageRecords: ExtractedPageRecord[];
+};
+
+type UpdateTopicContentInput = {
+  editedBy: string;
+  summary?: string;
+  title?: string;
 };
 
 const currentUser: User = {
@@ -761,6 +771,10 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         .map((candidate): TopicRecord => ({
           ...candidate,
           id: `topic-${randomUUID()}`,
+          originalTitle: candidate.title,
+          originalSummary: candidate.summary,
+          editedAt: null,
+          editedBy: null,
           reviewStatus: "needs_review",
           relations: [],
           createdAt: timestamp,
@@ -813,6 +827,40 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     });
   }
 
+  async function updateTopicContent(
+    topicId: string,
+    input: UpdateTopicContentInput,
+  ) {
+    return mutateStore(async (store) => {
+      store.topicRecords ??= [];
+      const topic = getStoreTopic(store, topicId);
+
+      if (topic.reviewStatus === "approved") {
+        throw new Error("topic_content_edit_requires_unapproved_topic");
+      }
+
+      const nextTitle = input.title === undefined ? topic.title : input.title.trim();
+      const nextSummary =
+        input.summary === undefined ? topic.summary : input.summary.trim();
+
+      if (nextTitle.length === 0) {
+        throw new Error("topic_title_required");
+      }
+
+      const changed = nextTitle !== topic.title || nextSummary !== topic.summary;
+      topic.title = nextTitle;
+      topic.summary = nextSummary;
+
+      if (changed) {
+        topic.editedAt = formatTimestamp(new Date());
+        topic.editedBy = input.editedBy;
+        topic.updatedAt = formatTimestamp(new Date());
+      }
+
+      return normalizeTopicRecord(topic);
+    });
+  }
+
   return {
     completeExtraction,
     createUploadedDocument,
@@ -841,6 +889,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     startExtraction,
     updateTopicReviewStatus,
     updateTopicRelations,
+    updateTopicContent,
     updateDocumentMetadata,
   };
 }
@@ -916,6 +965,13 @@ export async function updateTopicRelations(
   return defaultVault.updateTopicRelations(topicId, relations);
 }
 
+export async function updateTopicContent(
+  topicId: string,
+  input: UpdateTopicContentInput,
+) {
+  return defaultVault.updateTopicContent(topicId, input);
+}
+
 export function getDefaultDataRoot() {
   const configuredDataRoot = process.env.AV_OKF_DATA_ROOT;
 
@@ -987,6 +1043,10 @@ function getStoreTopic(store: VaultStore, id: string) {
 }
 
 function normalizeTopicRecord(topic: TopicRecord): TopicRecord {
+  topic.originalTitle ??= topic.title;
+  topic.originalSummary ??= topic.summary;
+  topic.editedAt ??= null;
+  topic.editedBy ??= null;
   topic.relations = normalizeTopicRelations(topic.relations);
   return topic;
 }

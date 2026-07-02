@@ -8,9 +8,11 @@ import {
   createUploadedDocument,
   generateTopicRecords,
   getDocumentWorkspaceId,
+  getTopicRecordsByDocumentId,
   parseCustomProperties,
   parseTags,
   requestExtraction,
+  updateTopicContent,
   updateTopicReviewStatus,
   updateDocumentMetadata,
   type DocumentStatus,
@@ -79,6 +81,42 @@ export async function updateTopicReviewStatusAction(formData: FormData) {
   const reviewStatus = getTopicReviewStatus(getFormString(formData, "reviewStatus"));
 
   await updateTopicReviewStatus(topicId, reviewStatus);
+
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}`);
+}
+
+export async function updateTopicContentAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+
+  assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "document_workspace_mismatch",
+  });
+
+  const topic = (await getTopicRecordsByDocumentId(documentId)).find(
+    (candidate) => candidate.id === topicId,
+  );
+
+  if (!topic) {
+    throw new Error("topic_not_found");
+  }
+
+  if (topic.reviewStatus === "approved") {
+    throw new Error("topic_content_edit_requires_unapproved_topic");
+  }
+
+  await updateTopicContent(topicId, {
+    editedBy: context.userId,
+    summary: getFormString(formData, "summary"),
+    title: getFormString(formData, "title"),
+  });
 
   revalidatePath(`/documents/${documentId}`);
   redirect(`/documents/${documentId}`);

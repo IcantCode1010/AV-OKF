@@ -270,9 +270,13 @@ model TopicRecord {
   id                String    @id @default(cuid())
   workspaceId       String
   documentId        String
+  originalTitle     String
+  originalSummary   String
   title             String
   topicType         String
   summary           String
+  editedAt          DateTime?
+  editedBy          String?
   pageStart         Int
   pageEnd           Int
   confidence        String

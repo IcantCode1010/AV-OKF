@@ -130,7 +130,11 @@ type DbTopicRecord = {
   confidence: string;
   createdAt: Date;
   documentId: string;
+  editedAt: Date | null;
+  editedBy: string | null;
   id: string;
+  originalSummary: string;
+  originalTitle: string;
   pageEnd: number;
   pageStart: number;
   relations: Prisma.JsonValue;
@@ -428,6 +432,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           data: newTopics.map((topic) => ({
             confidence: topic.confidence,
             documentId: input.documentId,
+            originalSummary: topic.summary,
+            originalTitle: topic.title,
             pageEnd: topic.pageEnd,
             pageStart: topic.pageStart,
             reviewStatus: "needs_review",
@@ -688,6 +694,55 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return mapTopicRecord(topic);
     },
+    async updateTopicContent(input: {
+      context: AuthWorkspaceContext;
+      editedBy: string;
+      summary?: string;
+      title?: string;
+      topicId: string;
+    }) {
+      const existingTopic = await db.topicRecord.findFirst({
+        where: {
+          id: input.topicId,
+          workspaceId: input.context.workspaceId,
+        },
+      });
+
+      if (!existingTopic) {
+        throw new Error("topic_not_found");
+      }
+
+      if (normalizeTopicReviewStatus(existingTopic.reviewStatus) === "approved") {
+        throw new Error("topic_content_edit_requires_unapproved_topic");
+      }
+
+      const nextTitle =
+        input.title === undefined ? existingTopic.title : input.title.trim();
+      const nextSummary =
+        input.summary === undefined ? existingTopic.summary : input.summary.trim();
+
+      if (nextTitle.length === 0) {
+        throw new Error("topic_title_required");
+      }
+
+      const changed =
+        nextTitle !== existingTopic.title || nextSummary !== existingTopic.summary;
+      const topic = await db.topicRecord.update({
+        data: {
+          ...(changed
+            ? {
+                editedAt: new Date(),
+                editedBy: input.editedBy,
+              }
+            : {}),
+          summary: nextSummary,
+          title: nextTitle,
+        },
+        where: { id: input.topicId },
+      });
+
+      return mapTopicRecord(topic);
+    },
   };
 }
 
@@ -775,7 +830,11 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     confidence: normalizeTopicConfidence(record.confidence),
     createdAt: formatTimestamp(record.createdAt),
     documentId: record.documentId,
+    editedAt: record.editedAt ? formatTimestamp(record.editedAt) : null,
+    editedBy: record.editedBy,
     id: record.id,
+    originalSummary: record.originalSummary ?? record.summary,
+    originalTitle: record.originalTitle ?? record.title,
     pageEnd: record.pageEnd,
     pageStart: record.pageStart,
     relations: normalizeTopicRelations(record.relations),

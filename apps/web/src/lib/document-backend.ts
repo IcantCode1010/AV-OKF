@@ -17,6 +17,7 @@ import {
   parseTags,
   startExtraction,
   updateDocumentMetadata as updateLocalDocumentMetadata,
+  updateTopicContent as updateLocalTopicContent,
   updateTopicRelations as updateLocalTopicRelations,
   updateTopicReviewStatus as updateLocalTopicReviewStatus,
   type ActivityEvent,
@@ -190,4 +191,15 @@ export async function updateTopicRelations(
   }
 
   return updateLocalTopicRelations(topicId, relations);
+}
+
+export async function updateTopicContent(
+  topicId: string,
+  input: Parameters<typeof updateLocalTopicContent>[1],
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().updateTopicContent(topicId, input);
+  }
+
+  return updateLocalTopicContent(topicId, input);
 }

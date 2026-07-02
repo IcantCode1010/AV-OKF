@@ -76,6 +76,10 @@ export type ProductionDocumentService = {
     topicId: string,
     relations: TopicRelation[],
   ): Promise<TopicRecord>;
+  updateTopicContent(
+    topicId: string,
+    input: { editedBy: string; summary?: string; title?: string },
+  ): Promise<TopicRecord>;
 };
 
 let cachedService: ProductionDocumentService | null = null;
@@ -241,6 +245,18 @@ export function createProductionDocumentService(
       return repository.updateTopicRelations({
         context: await requireAuthWorkspaceContext(),
         relations,
+        topicId,
+      });
+    },
+    async updateTopicContent(
+      topicId: string,
+      input: { editedBy: string; summary?: string; title?: string },
+    ): Promise<TopicRecord> {
+      return repository.updateTopicContent({
+        context: await requireAuthWorkspaceContext(),
+        editedBy: input.editedBy,
+        summary: input.summary,
+        title: input.title,
         topicId,
       });
     },
