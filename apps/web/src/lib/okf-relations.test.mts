@@ -36,6 +36,32 @@ test("getAllowedRelations reads vocabulary from okf-base.yaml", async () => {
   );
 });
 
+test("getAllowedRelations can read a Docker-mounted manifest path", async () => {
+  const previousManifestPath = process.env.AV_OKF_MANIFEST_PATH;
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-manifest-"));
+  const manifestPath = path.join(root, "okf-base.yaml");
+
+  try {
+    await writeFile(
+      manifestPath,
+      ["relations:", "  allowed:", "  - routes_to", "  - supports", ""].join(
+        "\n",
+      ),
+      "utf8",
+    );
+    process.env.AV_OKF_MANIFEST_PATH = manifestPath;
+
+    assert.deepEqual(await getAllowedRelations(), ["routes_to", "supports"]);
+  } finally {
+    if (previousManifestPath === undefined) {
+      delete process.env.AV_OKF_MANIFEST_PATH;
+    } else {
+      process.env.AV_OKF_MANIFEST_PATH = previousManifestPath;
+    }
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("validateTopicRelations reports required validation errors with indexes", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-relations-"));
 

@@ -53,13 +53,13 @@ export async function runRagIndexJob(
   options: RunRagIndexJobOptions = {},
 ) {
   const repository = options.repository ?? createRagRepository();
-  const embeddingProvider = options.embeddingProvider ?? getEmbeddingProvider();
   const chunkPages = options.chunkPages ?? chunkExtractedPages;
   const mode = payload.mode ?? "initial";
   const chunkingStrategyId =
     payload.chunkingStrategyId ?? RAG_CHUNK_STRATEGIES[0].id;
 
   try {
+    const embeddingProvider = options.embeddingProvider ?? getEmbeddingProvider();
     const pages = (await repository.getExtractedPages(
       payload,
     )) as ExtractedPageRecord[];

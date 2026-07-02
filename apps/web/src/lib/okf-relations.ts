@@ -30,7 +30,7 @@ export class RelationValidationError extends Error {
 }
 
 export async function getAllowedRelations(
-  manifestPath = path.join(process.cwd(), "..", "..", "okf-base.yaml"),
+  manifestPath = getDefaultManifestPath(),
 ): Promise<string[]> {
   const manifest = await readFile(manifestPath, "utf8");
   const lines = manifest.split(/\r?\n/);
@@ -53,6 +53,13 @@ export async function getAllowedRelations(
   }
 
   return allowed;
+}
+
+function getDefaultManifestPath() {
+  return (
+    process.env.AV_OKF_MANIFEST_PATH ??
+    path.join(process.cwd(), "..", "..", "okf-base.yaml")
+  );
 }
 
 export async function validateTopicRelations(

@@ -57,7 +57,7 @@ export type ProductionDocumentService = {
   createUploadedDocument(input: UploadMetadata): Promise<Document>;
   generateTopicRecords(documentId: string): Promise<TopicRecord[]>;
   getActivityEvents(): Promise<ActivityEvent[]>;
-  getDocumentById(documentId: string): Promise<Document>;
+  getDocumentById(documentId: string): Promise<Document | undefined>;
   getDocumentWorkspaceId(documentId: string): Promise<string | undefined>;
   getDocumentMetrics(): Promise<DocumentMetrics>;
   getDocuments(): Promise<Document[]>;
@@ -149,11 +149,22 @@ export function createProductionDocumentService(
     async getActivityEvents(): Promise<ActivityEvent[]> {
       return repository.getActivityEvents(await requireAuthWorkspaceContext());
     },
-    async getDocumentById(documentId: string): Promise<Document> {
-      return repository.getDocumentById({
-        context: await requireAuthWorkspaceContext(),
-        documentId,
-      });
+    async getDocumentById(documentId: string): Promise<Document | undefined> {
+      try {
+        return await repository.getDocumentById({
+          context: await requireAuthWorkspaceContext(),
+          documentId,
+        });
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "document_not_found"
+        ) {
+          return undefined;
+        }
+
+        throw error;
+      }
     },
     async getDocumentWorkspaceId(
       documentId: string,

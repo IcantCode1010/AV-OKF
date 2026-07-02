@@ -529,6 +529,65 @@ test("runRagIndexJob rethrows transient provider failures for BullMQ retry", asy
   assert.equal(failureCode, "indexing_failed");
 });
 
+test("runRagIndexJob marks provider construction failures failed", async () => {
+  const previousBackend = process.env.AV_OKF_BACKEND;
+  const previousApiKey = process.env.OPENAI_API_KEY;
+  let failureCode = "";
+  let failureMessage = "";
+
+  try {
+    process.env.AV_OKF_BACKEND = "production";
+    delete process.env.OPENAI_API_KEY;
+
+    await assert.rejects(
+      () =>
+        runRagIndexJob(
+          {
+            documentId: "doc_1",
+            indexJobId: "job_1",
+            indexVersion: 1,
+            workspaceId: "wrk_1",
+          },
+          {
+            chunkPages: () => [createTestChunk({})],
+            repository: {
+              failIndexJob: async (input: {
+                errorCode: string;
+                errorMessage: string;
+              }) => {
+                failureCode = input.errorCode;
+                failureMessage = input.errorMessage;
+              },
+              getExtractedPages: async () => [],
+              getTokenUsageToday: async () => ({
+                globalTokensUsedToday: 0,
+                workspaceTokensUsedToday: 0,
+              }),
+              markIndexJobRunning: async () => {},
+              storeCompletedIndex: async () => {},
+            },
+          },
+        ),
+      /missing_env_OPENAI_API_KEY/,
+    );
+
+    assert.equal(failureCode, "indexing_failed");
+    assert.match(failureMessage, /missing_env_OPENAI_API_KEY/);
+  } finally {
+    if (previousBackend === undefined) {
+      delete process.env.AV_OKF_BACKEND;
+    } else {
+      process.env.AV_OKF_BACKEND = previousBackend;
+    }
+
+    if (previousApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previousApiKey;
+    }
+  }
+});
+
 function createTestChunk(
   overrides: Partial<{
     chunkOrdinal: number;

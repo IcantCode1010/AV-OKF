@@ -22,6 +22,8 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
+      knowledge-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment: &app-env
@@ -42,6 +44,7 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-before-public-deployment}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      AV_OKF_MANIFEST_PATH: /data/okf-base.yaml
       AV_OKF_KNOWLEDGE_ROOT: /data/knowledge
       AV_OKF_KNOWLEDGE_VERSION: ${AV_OKF_KNOWLEDGE_VERSION:-0.1.0}
       AUTH_GITHUB_ID: ${AUTH_GITHUB_ID:-}
@@ -62,6 +65,7 @@ services:
     expose:
       - "3000"
     volumes:
+      - ./okf-base.yaml:/data/okf-base.yaml:ro
       - knowledge-data:/data/knowledge
     restart: unless-stopped
     healthcheck:
@@ -78,10 +82,15 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
+      knowledge-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     environment: *app-env
     command: ["node", "node_modules/tsx/dist/cli.mjs", "src/worker/extraction-worker.ts"]
+    volumes:
+      - ./okf-base.yaml:/data/okf-base.yaml:ro
+      - knowledge-data:/data/knowledge
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "ps | grep -q '[e]xtraction-worker'"]
@@ -156,6 +165,13 @@ services:
       - |
         mc alias set local http://minio:9000 av_okf_minio av_okf_minio_secret
         mc mb --ignore-existing local/av-okf
+    restart: "no"
+
+  knowledge-init:
+    image: alpine:3.22
+    command: ["sh", "-c", "mkdir -p /data/knowledge && chown -R 100:101 /data/knowledge"]
+    volumes:
+      - knowledge-data:/data/knowledge
     restart: "no"
 
 volumes:
