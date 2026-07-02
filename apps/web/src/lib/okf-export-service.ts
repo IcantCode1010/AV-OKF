@@ -1,6 +1,6 @@
-import path from "node:path";
-
 import type { Document, TopicRecord } from "./document-vault.ts";
+export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
+import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 import { exportTopicToKnowledge } from "./okf-export.ts";
 
 type ExportApprovedTopicInput = {
@@ -28,18 +28,6 @@ export async function exportApprovedTopicForDocument(
     knowledgeVersion: input.knowledgeVersion ?? getKnowledgeVersion(),
     topic,
   });
-}
-
-export function getDefaultKnowledgeRoot(cwd = process.cwd()): string {
-  if (process.env.AV_OKF_KNOWLEDGE_ROOT) {
-    return path.resolve(process.env.AV_OKF_KNOWLEDGE_ROOT);
-  }
-
-  if (path.basename(cwd) === "web" && path.basename(path.dirname(cwd)) === "apps") {
-    return path.resolve(cwd, "..", "..", "knowledge");
-  }
-
-  return path.resolve(cwd, "knowledge");
 }
 
 function getKnowledgeVersion() {

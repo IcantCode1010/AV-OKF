@@ -1,6 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
+
 export type OkfBundleFile = {
   filename: string;
   reviewStatus: string;
@@ -11,18 +13,6 @@ export type OkfBundleFile = {
 export type OkfBundleFileContent = OkfBundleFile & {
   content: string;
 };
-
-export function getDefaultKnowledgeRoot(cwd = process.cwd()): string {
-  if (process.env.AV_OKF_KNOWLEDGE_ROOT) {
-    return path.resolve(process.env.AV_OKF_KNOWLEDGE_ROOT);
-  }
-
-  if (path.basename(cwd) === "web" && path.basename(path.dirname(cwd)) === "apps") {
-    return path.resolve(cwd, "..", "..", "knowledge");
-  }
-
-  return path.resolve(cwd, "knowledge");
-}
 
 export async function listOkfBundleFiles(
   knowledgeRoot: string,

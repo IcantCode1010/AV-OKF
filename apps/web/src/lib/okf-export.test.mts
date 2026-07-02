@@ -257,10 +257,33 @@ test("buildOkfSourceManifest emits every required source_manifest frontmatter fi
       `missing required frontmatter field: ${field}`,
     );
   }
+  for (const field of [
+    "aircraft_family",
+    "manual_type",
+    "effectivity",
+    "source_authority",
+    "revision",
+  ]) {
+    assert.equal(
+      Object.hasOwn(frontmatter, field),
+      false,
+      `source_manifest frontmatter should not contain document field: ${field}`,
+    );
+  }
 });
 
-test("exportTopicToKnowledge writes source_manifest idempotently", async () => {
+test("exportTopicToKnowledge writes bundle-level source_manifest with idempotent document entries", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-export-manifest-"));
+  const a320Document = {
+    ...exportDocument,
+    title: "A320 AMM 27 Flight Controls",
+    aircraftFamily: "Airbus A320",
+    manualType: "AMM",
+    ata: "27",
+    effectivity: "A320-200",
+    sourceAuthority: "Airbus Aircraft Maintenance Manual",
+    revision: "2026-05",
+  };
 
   try {
     await exportTopicToKnowledge({
@@ -271,6 +294,27 @@ test("exportTopicToKnowledge writes source_manifest idempotently", async () => {
       topic: approvedTopic,
     });
     await exportTopicToKnowledge({
+      document: a320Document,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topic: {
+        ...approvedTopic,
+        id: "topic_27_flight_controls",
+        pageStart: 12,
+        pageEnd: 14,
+        sourcePageNumbers: [12, 13, 14],
+        title: "Flight Control System",
+      },
+    });
+
+    const beforeReexport = await readFile(
+      path.join(root, "source_manifest.md"),
+      "utf8",
+    );
+    const beforeFrontmatter = parseFrontmatter(beforeReexport);
+
+    await exportTopicToKnowledge({
       document: exportDocument,
       exportedAt: new Date("2026-07-02T12:00:00.000Z"),
       knowledgeRoot: root,
@@ -279,13 +323,24 @@ test("exportTopicToKnowledge writes source_manifest idempotently", async () => {
     });
 
     const manifest = await readFile(path.join(root, "source_manifest.md"), "utf8");
+    const frontmatter = parseFrontmatter(manifest);
     const entryCount = manifest
       .split("\n")
       .filter((line) => line.includes("737NG AMM 32 Landing Gear")).length;
 
     assert.equal(entryCount, 1);
-    assert.match(manifest, /type: "source_manifest"/);
-    assert.match(manifest, /source_authority: "Boeing Aircraft Maintenance Manual"/);
+    assert.deepEqual(frontmatter, beforeFrontmatter);
+    assert.equal(Object.hasOwn(frontmatter, "aircraft_family"), false);
+    assert.equal(Object.hasOwn(frontmatter, "manual_type"), false);
+    assert.equal(Object.hasOwn(frontmatter, "effectivity"), false);
+    assert.equal(Object.hasOwn(frontmatter, "source_authority"), false);
+    assert.equal(Object.hasOwn(frontmatter, "revision"), false);
+    assert.match(manifest, /- 737NG AMM 32 Landing Gear/);
+    assert.match(manifest, /  - aircraft_family: Boeing 737NG/);
+    assert.match(manifest, /  - source_authority: Boeing Aircraft Maintenance Manual/);
+    assert.match(manifest, /- A320 AMM 27 Flight Controls/);
+    assert.match(manifest, /  - aircraft_family: Airbus A320/);
+    assert.match(manifest, /  - source_authority: Airbus Aircraft Maintenance Manual/);
   } finally {
     await rm(root, { force: true, recursive: true });
   }

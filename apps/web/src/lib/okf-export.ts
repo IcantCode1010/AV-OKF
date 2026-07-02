@@ -103,20 +103,14 @@ export function buildOkfSourceManifest(input: BuildOkfSourceManifestInput): {
   content: string;
   filename: string;
 } {
-  const metadata = getRequiredDocumentMetadata(input.document);
   const lastVerified = toIsoDate(input.exportedAt ?? new Date());
   const frontmatter = stringifyFrontmatter({
     type: "source_manifest",
     review_status: "approved",
     title: "Source Manifest",
     description: "Approved source documents represented in this OKF bundle.",
-    aircraft_family: metadata.aircraftFamily,
-    source_authority: metadata.sourceAuthority,
-    revision: metadata.revision,
     knowledge_version: input.knowledgeVersion,
     last_verified: lastVerified,
-    manual_type: metadata.manualType,
-    effectivity: metadata.effectivity,
   });
   const entry = formatSourceManifestEntry(input.document);
 
@@ -271,7 +265,8 @@ function formatSourceManifestEntry(document: ExportDocument) {
 
   return [
     `- ${document.title}`,
-    `  - authority: ${metadata.sourceAuthority}`,
+    `  - aircraft_family: ${metadata.aircraftFamily}`,
+    `  - source_authority: ${metadata.sourceAuthority}`,
     `  - manual_type: ${metadata.manualType}`,
     `  - ata: ${metadata.ata}`,
     `  - effectivity: ${metadata.effectivity}`,

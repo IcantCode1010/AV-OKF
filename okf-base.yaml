@@ -366,17 +366,9 @@ profile:
       - review_status
       - title
       - description
-      - aircraft_family
-      - source_authority
-      - revision
       - knowledge_version
       - last_verified
       optional:
-      - aircraft_variant
-      - manual_type
-      - effectivity
-      - source_file
-      - source_pages
       - relations
       - related_topics
       - covered_rag_chunk_ids
