@@ -206,6 +206,52 @@ test("chunkExtractedPages does not emit adjacent chunks fully contained in each 
   }
 });
 
+test("chunkExtractedPages does not carry a whole emitted chunk as overlap", () => {
+  const paragraphs = [
+    `paragraph-thirty ${words("thirty", 29)}`,
+    `paragraph-fifteen ${words("fifteen", 14)}`,
+    `paragraph-forty-five ${words("forty-five", 44)}`,
+  ];
+  const chunks = chunkExtractedPages({
+    documentId: "doc_whole_overlap",
+    indexJobId: "job_whole_overlap",
+    indexVersion: 1,
+    maxTokens: 60,
+    overlapTokens: 20,
+    pages: [
+      {
+        charCount: 1_000,
+        imageCount: 0,
+        pageNumber: 1,
+        tables: [],
+        text: paragraphs.join("\n\n"),
+      },
+    ],
+    targetTokens: 40,
+    tokenCounter: whitespaceTokenCounter,
+    workspaceId: "wrk_1",
+  });
+
+  for (let index = 1; index < chunks.length; index += 1) {
+    const previous = chunks[index - 1]?.text ?? "";
+    const current = chunks[index]?.text ?? "";
+
+    assert.equal(
+      previous.includes(current) || current.includes(previous),
+      false,
+      `contained adjacent chunks at ${index - 1}/${index}`,
+    );
+  }
+
+  for (const paragraph of paragraphs) {
+    assert.equal(
+      chunks.some((chunk) => chunk.text.includes(paragraph)),
+      true,
+      `missing paragraph: ${paragraph}`,
+    );
+  }
+});
+
 test("chunkExtractedPages bounds shared adjacent text by overlap config", () => {
   const chunks = chunkExtractedPages({
     documentId: "doc_overlap",

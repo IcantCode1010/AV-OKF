@@ -183,7 +183,7 @@ function createOverlapBuffer(
     }
   }
 
-  return overlap;
+  return overlap.length === units.length ? [] : overlap;
 }
 
 function inferHeadingPath(text: string): string[] {
