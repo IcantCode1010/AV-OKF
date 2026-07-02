@@ -1,5 +1,7 @@
 import type { RetrievalResult } from "@/lib/rag-types";
 
+import { Badge } from "@/components/ui/badge";
+
 export function SearchResults({
   query,
   results,
@@ -29,9 +31,12 @@ export function SearchResults({
         <article key={result.chunkId} className="rounded-md border p-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium">{result.documentTitle}</h2>
-            <span className="text-xs text-muted-foreground">
-              Pages {result.pageStart}-{result.pageEnd}
-            </span>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{formatReviewStatus(result.reviewStatus)}</Badge>
+              <span className="text-xs text-muted-foreground">
+                Pages {result.pageStart}-{result.pageEnd}
+              </span>
+            </div>
           </div>
           <p className="mt-3 line-clamp-4 text-sm text-muted-foreground">
             {result.text}
@@ -40,4 +45,8 @@ export function SearchResults({
       ))}
     </div>
   );
+}
+
+function formatReviewStatus(reviewStatus: string) {
+  return reviewStatus === "raw_extracted" ? "raw" : reviewStatus;
 }

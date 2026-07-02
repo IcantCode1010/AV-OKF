@@ -17,9 +17,11 @@ export async function retrieveDocuments(
   }
 
   const repository = createRagRepository();
+  const documentIds = request.documentIds ?? request.filters?.documentIds;
+  const repositoryRequest = { ...request, documentIds };
 
   if (request.mode === "keyword") {
-    return repository.searchKeyword(request);
+    return repository.searchKeyword(repositoryRequest);
   }
 
   const provider = getEmbeddingProvider();
@@ -30,12 +32,12 @@ export async function retrieveDocuments(
   }
 
   if (request.mode === "vector") {
-    return searchVector(repository, request, queryEmbedding);
+    return searchVector(repository, repositoryRequest, queryEmbedding);
   }
 
   const [keywordResults, vectorResults] = await Promise.all([
-    repository.searchKeyword(request),
-    searchVector(repository, request, queryEmbedding),
+    repository.searchKeyword(repositoryRequest),
+    searchVector(repository, repositoryRequest, queryEmbedding),
   ]);
 
   return mergeHybridResults(keywordResults, vectorResults, request.topK);
@@ -53,7 +55,7 @@ async function searchVector(
   return [];
 }
 
-function mergeHybridResults(
+export function mergeHybridResults(
   keywordResults: RetrievalResult[],
   vectorResults: RetrievalResult[],
   topK: number,

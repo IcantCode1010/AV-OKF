@@ -44,6 +44,7 @@ export type RagChunkInput = {
 export type RetrievalMode = "hybrid" | "vector" | "keyword";
 
 export type RetrievalRequest = {
+  documentIds?: string[];
   filters?: {
     documentIds?: string[];
     pageNumbers?: number[];
@@ -64,6 +65,7 @@ export type RetrievalResult = {
   pageEnd: number;
   pageStart: number;
   retrievalMode: RetrievalMode;
+  reviewStatus: string;
   score: number;
   sourcePageNumbers: number[];
   text: string;

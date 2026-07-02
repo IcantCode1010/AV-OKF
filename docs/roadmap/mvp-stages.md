@@ -202,10 +202,11 @@ Deliverables:
 - deterministic local/test embedding provider
 - pre-call token budget enforcement
 - Postgres + pgvector vector storage
-- derived OKF-to-RAG coverage projection; OKF frontmatter remains the source of truth
 - Source filters
 - Citation objects
 - Search UI
+
+Coverage projection moved to Stage 5 (consumes OKF concepts).
 
 Exit criteria:
 
@@ -228,6 +229,7 @@ Deliverables:
 - Markdown exporter
 - `index.md` generation
 - `source_manifest.md` generation
+- derived OKF-to-RAG coverage projection; OKF frontmatter remains the source of truth
 - OKF-to-RAG coverage links
 - Bundle validation
 - Deterministic link lint for relative Markdown graph links and relation targets

@@ -142,14 +142,24 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     },
 
     async searchKeyword(input: {
+      documentIds?: string[];
       query: string;
       topK: number;
       workspaceId: string;
     }): Promise<RetrievalResult[]> {
+      const documentIds = normalizeDocumentIds(input.documentIds);
       const rows = await db.ragChunk.findMany({
         include: { document: true },
+        orderBy: [
+          { documentId: "asc" },
+          { pageStart: "asc" },
+          { chunkOrdinal: "asc" },
+        ],
         take: input.topK,
         where: {
+          ...(documentIds.length > 0
+            ? { documentId: { in: documentIds } }
+            : {}),
           isActive: true,
           text: { contains: input.query, mode: "insensitive" },
           workspaceId: input.workspaceId,
@@ -164,6 +174,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         pageEnd: row.pageEnd,
         pageStart: row.pageStart,
         retrievalMode: "keyword",
+        reviewStatus: row.reviewStatus,
         score: 1 / (index + 1),
         sourcePageNumbers: row.sourcePageNumbers,
         text: row.text,
@@ -171,12 +182,15 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     },
 
     async searchVector(input: {
+      documentIds?: string[];
       embedding: number[];
       query: string;
       topK: number;
       workspaceId: string;
     }): Promise<RetrievalResult[]> {
       void input.query;
+      const documentIds = normalizeDocumentIds(input.documentIds);
+      const hasDocumentFilter = documentIds.length > 0;
       const rows = await db.$queryRaw<
         Array<{
           chunkId: string;
@@ -184,6 +198,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           documentTitle: string;
           pageEnd: number;
           pageStart: number;
+          reviewStatus: string;
           score: number;
           sourcePageNumbers: number[];
           text: string;
@@ -195,6 +210,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           d."title" AS "documentTitle",
           c."pageEnd" AS "pageEnd",
           c."pageStart" AS "pageStart",
+          c."reviewStatus" AS "reviewStatus",
           1 - (e."embedding" <=> ${vectorLiteral(input.embedding)}::vector) AS "score",
           c."sourcePageNumbers" AS "sourcePageNumbers",
           c."text" AS "text"
@@ -203,6 +219,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         INNER JOIN "Document" d ON d."id" = c."documentId"
         WHERE c."workspaceId" = ${input.workspaceId}
           AND c."isActive" = true
+          AND (${hasDocumentFilter} = false OR c."documentId" = ANY(${documentIds}::text[]))
         ORDER BY e."embedding" <=> ${vectorLiteral(input.embedding)}::vector ASC
         LIMIT ${input.topK}
       `;
@@ -215,6 +232,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         pageEnd: row.pageEnd,
         pageStart: row.pageStart,
         retrievalMode: "vector",
+        reviewStatus: row.reviewStatus,
         score: row.score,
         sourcePageNumbers: row.sourcePageNumbers,
         text: row.text,
@@ -382,4 +400,8 @@ function isExtractedTable(
 
 function vectorLiteral(embedding: number[]) {
   return `[${embedding.join(",")}]`;
+}
+
+function normalizeDocumentIds(documentIds?: string[]) {
+  return documentIds?.filter((documentId) => documentId.trim().length > 0) ?? [];
 }
