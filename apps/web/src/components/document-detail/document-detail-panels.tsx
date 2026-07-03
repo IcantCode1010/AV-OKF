@@ -42,6 +42,7 @@ type TopicPanelProps = {
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord | null;
+  topicsGeneratedCount: number | null;
 };
 
 export function DocumentSummaryPanel({
@@ -62,7 +63,7 @@ export function DocumentSummaryPanel({
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-3">
           {[
-            ["Extraction", extractionSummary(document.extraction.status)],
+            ["Extraction", extractionSummary(document.extraction)],
             ["Topic records", `${topicCount} review candidates`],
             ["Knowledge links", "Created after human approval"],
           ].map(([title, detail]) => (
@@ -445,6 +446,7 @@ export function TopicWorkflowPanel({
   relationError,
   relationTargets,
   topic,
+  topicsGeneratedCount,
 }: TopicPanelProps) {
   return (
     <Card>
@@ -466,6 +468,12 @@ export function TopicWorkflowPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {topicsGeneratedCount !== null ? (
+          <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-200">
+            Topic generation complete: {topicsGeneratedCount} topic record
+            {topicsGeneratedCount === 1 ? "" : "s"} ready for review.
+          </div>
+        ) : null}
         {okfExportError ? (
           <div className="rounded-md border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-200">
             {okfExportError}
@@ -487,7 +495,9 @@ export function TopicWorkflowPanel({
           />
         ) : (
           <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
-            No topic record is selected.
+            {document.extraction.status === "completed"
+              ? "No topics yet. Click “Generate topics” above to create draft topics from the extracted pages."
+              : "No topic record is selected."}
           </div>
         )}
       </CardContent>
@@ -838,20 +848,26 @@ function SelectedTopicPanel({
   );
 }
 
-function extractionSummary(status: string) {
-  if (status === "completed") {
-    return "Page records extracted";
+function extractionSummary(extraction: Document["extraction"]) {
+  if (extraction.status === "completed") {
+    return extraction.completedAt
+      ? `${extraction.pageRecords.length} pages · finished ${extraction.completedAt}`
+      : `${extraction.pageRecords.length} pages extracted`;
   }
 
-  if (status === "failed") {
+  if (extraction.status === "failed") {
     return "Extraction failed; check logs";
   }
 
-  if (status === "running") {
-    return "Extraction running in background";
+  if (extraction.status === "running") {
+    return extraction.startedAt
+      ? `Running since ${extraction.startedAt}`
+      : "Extraction running in background";
   }
 
-  return "Extraction queued";
+  return extraction.startedAt
+    ? `Queued at ${extraction.startedAt}`
+    : "Extraction queued";
 }
 
 function ExtractionMetric({ label, value }: { label: string; value: string }) {

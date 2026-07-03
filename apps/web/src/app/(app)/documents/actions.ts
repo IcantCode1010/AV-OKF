@@ -72,12 +72,12 @@ export async function runExtractionAction(formData: FormData) {
 export async function generateTopicsAction(formData: FormData) {
   const id = getFormString(formData, "id");
 
-  await generateTopicRecords(id);
+  const topics = await generateTopicRecords(id);
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
-  redirect(`/documents/${id}`);
+  redirect(`/documents/${id}?panel=topics&topicsGenerated=${topics.length}`);
 }
 
 export async function updateTopicReviewStatusAction(formData: FormData) {

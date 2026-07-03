@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import {
   getDocumentById,
   getTopicRecordsByDocumentId,
+  type Document,
 } from "@/lib/document-backend";
 import {
   getDefaultKnowledgeRoot,
@@ -42,6 +43,7 @@ export default async function DocumentDetailPage({
     panel?: string;
     relationError?: string;
     topic?: string;
+    topicsGenerated?: string;
   }>;
 }) {
   const { id } = await params;
@@ -51,6 +53,7 @@ export default async function DocumentDetailPage({
     panel,
     relationError,
     topic: topicId,
+    topicsGenerated,
   } = await searchParams;
   const knowledgeRoot = getDefaultKnowledgeRoot();
   const [document, topicRecords, allowedRelations, relationTargets] =
@@ -66,7 +69,11 @@ export default async function DocumentDetailPage({
   }
 
   const currentDocument = document;
-  const activePanel = resolvePanel(panel, topicRecords.length);
+  const activePanel = resolvePanel(
+    panel,
+    topicRecords.length,
+    currentDocument.extraction.status,
+  );
   const selectedTopic =
     activePanel === "topics"
       ? topicRecords.find((topic) => topic.id === topicId) ??
@@ -104,6 +111,9 @@ export default async function DocumentDetailPage({
               </h1>
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                 {currentDocument.description}
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {formatExtractionActivity(currentDocument.extraction)}
               </p>
             </div>
             {currentDocument.storageKey ? (
@@ -162,6 +172,7 @@ export default async function DocumentDetailPage({
           relationError={relationErrorMessage}
           relationTargets={relationTargets}
           topic={selectedTopic}
+          topicsGeneratedCount={parseTopicsGeneratedCount(topicsGenerated)}
         />
       );
     }
@@ -196,16 +207,53 @@ async function getRelationTargets(knowledgeRoot: string) {
   }
 }
 
-function resolvePanel(panel: string | undefined, topicCount: number) {
+function formatExtractionActivity(extraction: Document["extraction"]) {
+  if (extraction.status === "completed") {
+    return extraction.completedAt
+      ? `Extraction finished ${extraction.completedAt} · ${extraction.pageRecords.length} pages`
+      : "Extraction finished";
+  }
+
+  if (extraction.status === "failed") {
+    return extraction.completedAt
+      ? `Extraction failed ${extraction.completedAt}`
+      : "Extraction failed";
+  }
+
+  if (extraction.status === "running" || extraction.status === "queued") {
+    return extraction.startedAt
+      ? `Extraction started ${extraction.startedAt} · this page auto-refreshes`
+      : "Extraction queued · this page auto-refreshes";
+  }
+
+  return "Extraction has not been run yet";
+}
+
+function resolvePanel(
+  panel: string | undefined,
+  topicCount: number,
+  extractionStatus: Document["extraction"]["status"],
+) {
   if (panel && documentPanels.includes(panel)) {
     return panel;
   }
 
-  if (topicCount > 0) {
+  // Once extraction finishes, the next required action is generating topics,
+  // so land there even with zero topics instead of the unchanging summary tab.
+  if (topicCount > 0 || extractionStatus === "completed") {
     return "topics";
   }
 
   return "summary";
+}
+
+function parseTopicsGeneratedCount(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function formatRelationError(raw: string | undefined) {
