@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   approveTopicContentSource,
+  createOpenAiTopicEnrichmentProvider,
+  createTopicEnrichmentProvider,
   enrichTopic,
   type TopicEnrichmentProvider,
   type TopicEnrichmentRepository,
@@ -176,6 +178,7 @@ function createFakeRepository(input: {
 }
 
 function createProvider(
+  providerId: string,
   implementation: TopicEnrichmentProvider["enrich"] = async () => ({
     rawResponse: JSON.stringify({
       summary: "Polished enriched summary",
@@ -187,8 +190,8 @@ function createProvider(
 ) {
   const calls: Parameters<TopicEnrichmentProvider["enrich"]>[0][] = [];
   const provider: TopicEnrichmentProvider = {
-    model: "claude-test",
-    provider: "anthropic",
+    model: `${providerId}-test`,
+    provider: providerId,
     async enrich(input) {
       calls.push(input);
       return implementation(input);
@@ -208,7 +211,7 @@ test("enrichment on approved topic is rejected before provider call", async () =
   const { repository, audits } = createFakeRepository({
     topic: baseTopic({ reviewStatus: "approved" }),
   });
-  const { calls, provider } = createProvider();
+  const { calls, provider } = createProvider("anthropic");
 
   await assert.rejects(
     () =>
@@ -227,7 +230,7 @@ test("enrichment on approved topic is rejected before provider call", async () =
 
 test("missing API key prevents enrichment and audit creation", async () => {
   const { repository, audits } = createFakeRepository();
-  const { calls, provider } = createProvider();
+  const { calls, provider } = createProvider("anthropic");
 
   await assert.rejects(
     () =>
@@ -246,7 +249,7 @@ test("missing API key prevents enrichment and audit creation", async () => {
 
 test("successful enrichment stores latest enriched values and success audit", async () => {
   const fake = createFakeRepository();
-  const { provider } = createProvider();
+  const { provider } = createProvider("anthropic");
 
   const enriched = await enrichTopic("topic_1", {
     context,
@@ -270,7 +273,7 @@ test("successful enrichment stores latest enriched values and success audit", as
 
 test("failed enrichment stores failure audit and returns failed state", async () => {
   const { repository, audits } = createFakeRepository();
-  const { provider } = createProvider(async () => {
+  const { provider } = createProvider("anthropic", async () => {
     throw new Error("anthropic_unavailable");
   });
 
@@ -291,7 +294,7 @@ test("failed enrichment stores failure audit and returns failed state", async ()
 test("re-enrichment creates a second audit row and keeps latest success on topic", async () => {
   const { repository, audits } = createFakeRepository();
   let run = 0;
-  const { provider } = createProvider(async () => {
+  const { provider } = createProvider("anthropic", async () => {
     run += 1;
     return {
       rawResponse: `response ${run}`,
@@ -357,7 +360,7 @@ test("approval can choose enriched or raw content explicitly", async () => {
 
 test("cross-workspace enrichment trigger is rejected", async () => {
   const { repository } = createFakeRepository({ workspaceId: "wrk_other" });
-  const { calls, provider } = createProvider();
+  const { calls, provider } = createProvider("anthropic");
 
   await assert.rejects(
     () =>
@@ -382,7 +385,7 @@ test("provider receives current edited title and summary, not original extractio
       title: "Reviewer corrected title",
     }),
   });
-  const { calls, provider } = createProvider();
+  const { calls, provider } = createProvider("anthropic");
 
   await enrichTopic("topic_1", {
     context,
@@ -395,4 +398,66 @@ test("provider receives current edited title and summary, not original extractio
   assert.equal(calls[0]?.summary, "Reviewer corrected summary");
   assert.notEqual(calls[0]?.title, "Original title must not drive enrichment");
   assert.notEqual(calls[0]?.summary, "Original summary must not drive enrichment");
+});
+
+test("workspace OpenAI setting selects the OpenAI provider implementation", async () => {
+  const { repository } = createFakeRepository();
+  const anthropic = createProvider("anthropic");
+  const openai = createProvider("openai");
+
+  await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-openai", provider: "openai" }),
+    providerFactory: (providerId) =>
+      providerId === "openai" ? openai.provider : anthropic.provider,
+    repository,
+  });
+
+  assert.equal(openai.calls.length, 1);
+  assert.equal(anthropic.calls.length, 0);
+});
+
+test("workspace Anthropic setting still selects the Anthropic provider implementation", async () => {
+  const { repository } = createFakeRepository();
+  const anthropic = createProvider("anthropic");
+  const openai = createProvider("openai");
+
+  await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-ant", provider: "anthropic" }),
+    providerFactory: (providerId) =>
+      providerId === "openai" ? openai.provider : anthropic.provider,
+    repository,
+  });
+
+  assert.equal(anthropic.calls.length, 1);
+  assert.equal(openai.calls.length, 0);
+});
+
+test("OpenAI provider reports malformed JSON fields like Anthropic", async () => {
+  const provider = createOpenAiTopicEnrichmentProvider(async () =>
+    new Response(
+      JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ title: "Only title" }) } }],
+      }),
+      { status: 200 },
+    ),
+  );
+
+  await assert.rejects(
+    () =>
+      provider.enrich({
+        apiKey: "sk-openai",
+        prompt: "prompt",
+        sourcePages: [],
+        summary: "summary",
+        title: "title",
+      }),
+    /llm_enrichment_malformed_response/,
+  );
+});
+
+test("provider factory returns registered implementations", () => {
+  assert.equal(createTopicEnrichmentProvider("anthropic").provider, "anthropic");
+  assert.equal(createTopicEnrichmentProvider("openai").provider, "openai");
 });

@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { getWorkspaceLlmSetting } from "@/lib/llm-provider-settings";
+import { getLlmProvider, LLM_PROVIDERS } from "@/lib/llm-providers";
 import { getCurrentUser, getCurrentWorkspace } from "@/lib/mock-data";
 import { redirect } from "next/navigation";
 
@@ -28,6 +29,7 @@ export default async function SettingsPage() {
   const { user, workspace } = await getSettingsShellContext();
   const context = await requireAuthWorkspaceContext();
   const llmSetting = await getWorkspaceLlmSetting(context.workspaceId);
+  const selectedProvider = getLlmProvider(llmSetting.provider);
 
   return (
     <>
@@ -106,7 +108,9 @@ export default async function SettingsPage() {
                   </CardDescription>
                 </div>
                 <Badge variant={llmSetting.hasKey ? "secondary" : "outline"}>
-                  {llmSetting.hasKey ? "Key configured" : "No key stored"}
+                  {llmSetting.hasKey
+                    ? `Key configured (${selectedProvider.label})`
+                    : "No key stored"}
                 </Badge>
               </div>
             </CardHeader>
@@ -114,7 +118,19 @@ export default async function SettingsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="llm-provider">Provider</Label>
-                  <Input id="llm-provider" value="Anthropic" readOnly />
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                    defaultValue={selectedProvider.id}
+                    form="llm-settings-form"
+                    id="llm-provider"
+                    name="provider"
+                  >
+                    {LLM_PROVIDERS.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="llm-updated">Last updated</Label>
@@ -130,27 +146,34 @@ export default async function SettingsPage() {
                 </div>
               </div>
 
-              <form action={saveLlmSettingsAction} className="space-y-3">
+              <form
+                action={saveLlmSettingsAction}
+                className="space-y-3"
+                id="llm-settings-form"
+              >
                 <input
                   type="hidden"
                   name="workspaceId"
                   value={context.workspaceId}
                 />
                 <div className="grid gap-2">
-                  <Label htmlFor="anthropic-api-key">Anthropic API key</Label>
+                  <Label htmlFor="llm-api-key">Provider API key</Label>
                   <Input
-                    id="anthropic-api-key"
+                    id="llm-api-key"
                     name="apiKey"
-                    placeholder={
-                      llmSetting.hasKey
-                        ? "Enter a new key to replace the stored key"
-                        : "Paste Anthropic API key"
-                    }
+                      placeholder={
+                        llmSetting.hasKey
+                          ? "Enter a new key to replace the stored key"
+                          : "Paste provider API key"
+                      }
                     type="password"
                   />
                   <p className="text-xs text-muted-foreground">
                     The key is encrypted before storage and is never displayed
                     again after saving.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Switching providers requires entering a new API key.
                   </p>
                 </div>
                 <PendingSubmitButton pendingLabel="Saving...">

@@ -17,7 +17,7 @@ export async function saveLlmSettingsAction(formData: FormData) {
 
   await saveWorkspaceLlmApiKey(
     workspaceId,
-    "anthropic",
+    getFormString(formData, "provider"),
     getFormString(formData, "apiKey"),
     {
       updatedBy: context.userId,

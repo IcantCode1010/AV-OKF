@@ -109,6 +109,63 @@ test("workspace LLM key rejects empty saves and clears back to hasKey false", as
   });
 });
 
+test("workspace LLM settings accept OpenAI and reject unsupported providers", async () => {
+  const { client } = createFakeSettingsClient();
+
+  const saved = await saveWorkspaceLlmApiKey("wrk_1", "openai", "sk-openai", {
+    client,
+    env: encryptionEnv,
+    updatedBy: "usr_1",
+  });
+
+  assert.equal(saved.provider, "openai");
+  assert.equal(saved.hasKey, true);
+
+  await assert.rejects(
+    () =>
+      saveWorkspaceLlmApiKey("wrk_1", "grok", "sk-grok", {
+        client,
+        env: encryptionEnv,
+        updatedBy: "usr_1",
+      }),
+    /unsupported_llm_provider/,
+  );
+});
+
+test("switching providers replaces the single active provider and key", async () => {
+  const { client, rows } = createFakeSettingsClient();
+
+  await saveWorkspaceLlmApiKey("wrk_1", "anthropic", "sk-ant-secret", {
+    client,
+    env: encryptionEnv,
+    updatedBy: "usr_1",
+  });
+  await saveWorkspaceLlmApiKey("wrk_1", "openai", "sk-openai-secret", {
+    client,
+    env: encryptionEnv,
+    updatedBy: "usr_1",
+  });
+
+  assert.equal(rows.size, 1);
+  const row = rows.get("wrk_1");
+  assert.ok(row);
+  assert.equal(row.provider, "openai");
+  assert.equal(
+    __llmProviderSettingsTestHooks.decryptStoredApiKey(
+      row.encryptedApiKey ?? "",
+      encryptionEnv,
+    ),
+    "sk-openai-secret",
+  );
+  assert.notEqual(
+    __llmProviderSettingsTestHooks.decryptStoredApiKey(
+      row.encryptedApiKey ?? "",
+      encryptionEnv,
+    ),
+    "sk-ant-secret",
+  );
+});
+
 test("missing production encryption key fails when LLM settings storage is used", async () => {
   const { client } = createFakeSettingsClient();
 

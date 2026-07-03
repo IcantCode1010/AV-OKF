@@ -6,6 +6,11 @@ import {
 } from "node:crypto";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import {
+  getLlmProvider,
+  LLM_PROVIDERS,
+  type LlmProviderId,
+} from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
 
 type LlmSettingsEnv = Record<string, string | undefined>;
@@ -40,12 +45,12 @@ type LlmSettingsOptions = {
 
 export type WorkspaceLlmSettingSummary = {
   hasKey: boolean;
-  provider: string;
+  provider: LlmProviderId;
   updatedAt: string | null;
   updatedBy: string | null;
 };
 
-const DEFAULT_PROVIDER = "anthropic";
+const DEFAULT_PROVIDER = LLM_PROVIDERS[0].id;
 const ENCRYPTION_VERSION = "v1";
 
 export function assertLlmSettingsWorkspace(input: {
@@ -76,7 +81,7 @@ export async function getWorkspaceLlmSetting(
 
   return {
     hasKey: Boolean(row.encryptedApiKey),
-    provider: row.provider,
+    provider: normalizeProvider(row.provider),
     updatedAt: row.updatedAt.toISOString(),
     updatedBy: row.updatedBy,
   };
@@ -85,7 +90,7 @@ export async function getWorkspaceLlmSetting(
 export async function getWorkspaceLlmApiKeyForEnrichment(
   workspaceId: string,
   options: Pick<LlmSettingsOptions, "client" | "env"> = {},
-): Promise<{ apiKey: string; provider: string } | null> {
+): Promise<{ apiKey: string; provider: LlmProviderId } | null> {
   const row = await getSettingsClient(options.client).workspaceLlmSetting.findUnique({
     where: { workspaceId },
   });
@@ -96,7 +101,7 @@ export async function getWorkspaceLlmApiKeyForEnrichment(
 
   return {
     apiKey: decryptStoredApiKey(row.encryptedApiKey, options.env),
-    provider: row.provider,
+    provider: normalizeProvider(row.provider),
   };
 }
 
@@ -214,14 +219,9 @@ function getSettingsEncryptionKey(env: LlmSettingsEnv = process.env): Buffer {
   return createHash("sha256").update(secret).digest();
 }
 
-function normalizeProvider(provider: string): string {
+function normalizeProvider(provider: string): LlmProviderId {
   const normalized = provider.trim().toLowerCase();
-
-  if (normalized !== DEFAULT_PROVIDER) {
-    throw new Error("unsupported_llm_provider");
-  }
-
-  return normalized;
+  return getLlmProvider(normalized).id;
 }
 
 function getSettingsClient(
@@ -233,7 +233,7 @@ function getSettingsClient(
 function toSummary(row: WorkspaceLlmSettingRow): WorkspaceLlmSettingSummary {
   return {
     hasKey: Boolean(row.encryptedApiKey),
-    provider: row.provider,
+    provider: normalizeProvider(row.provider),
     updatedAt: row.updatedAt.toISOString(),
     updatedBy: row.updatedBy,
   };

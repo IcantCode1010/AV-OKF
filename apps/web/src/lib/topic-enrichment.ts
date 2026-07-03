@@ -11,6 +11,11 @@ import {
   type TopicRecord,
 } from "./document-backend.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
+import {
+  getLlmProvider,
+  LLM_PROVIDERS,
+  type LlmProviderId,
+} from "./llm-providers.ts";
 
 export type TopicEnrichmentProviderInput = {
   apiKey: string;
@@ -28,7 +33,7 @@ export type TopicEnrichmentProviderOutput = {
 
 export type TopicEnrichmentProvider = {
   model: string;
-  provider: string;
+  provider: LlmProviderId;
   enrich(
     input: TopicEnrichmentProviderInput,
   ): Promise<TopicEnrichmentProviderOutput>;
@@ -75,8 +80,9 @@ type EnrichTopicOptions = {
   context?: AuthWorkspaceContext;
   getApiKey?: (
     workspaceId: string,
-  ) => Promise<{ apiKey: string; provider: string } | string | null>;
+  ) => Promise<{ apiKey: string; provider: LlmProviderId | string } | string | null>;
   provider?: TopicEnrichmentProvider;
+  providerFactory?: (providerId: LlmProviderId) => TopicEnrichmentProvider;
   repository?: TopicEnrichmentRepository;
 };
 
@@ -85,7 +91,8 @@ type ApproveTopicOptions = {
   repository?: Pick<TopicEnrichmentRepository, "approveTopicContent">;
 };
 
-const ANTHROPIC_MODEL = "claude-3-5-haiku-20241022";
+const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
+const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
 
 export async function enrichTopic(
   topicId: string,
@@ -93,7 +100,6 @@ export async function enrichTopic(
 ): Promise<TopicRecord> {
   const context = options.context ?? (await requireAuthWorkspaceContext());
   const repository = options.repository ?? createDefaultTopicEnrichmentRepository();
-  const provider = options.provider ?? createAnthropicTopicEnrichmentProvider();
   const { topic, sourcePages } = await repository.getTopicEnrichmentInput({
     context,
     topicId,
@@ -107,6 +113,11 @@ export async function enrichTopic(
   if (!key) {
     throw new Error("llm_enrichment_requires_api_key");
   }
+
+  const provider =
+    options.provider ??
+    options.providerFactory?.(key.provider) ??
+    createTopicEnrichmentProvider(key.provider);
 
   await repository.markTopicEnrichmentPending({ context, topicId });
 
@@ -188,6 +199,22 @@ export function buildTopicEnrichmentPrompt(input: {
   ].join("\n");
 }
 
+export function createTopicEnrichmentProvider(
+  providerId: LlmProviderId,
+): TopicEnrichmentProvider {
+  const provider = getLlmProvider(providerId);
+
+  if (provider.id === ANTHROPIC_PROVIDER.id) {
+    return createAnthropicTopicEnrichmentProvider();
+  }
+
+  if (provider.id === OPENAI_PROVIDER.id) {
+    return createOpenAiTopicEnrichmentProvider();
+  }
+
+  throw new Error("unsupported_llm_provider");
+}
+
 function createDefaultTopicEnrichmentRepository(): TopicEnrichmentRepository {
   return {
     approveTopicContent: async (input) =>
@@ -217,23 +244,26 @@ async function resolveApiKey(
   if (typeof resolved === "string") {
     return {
       apiKey: resolved,
-      provider: "anthropic",
+      provider: ANTHROPIC_PROVIDER.id,
     };
   }
 
-  return resolved;
+  return {
+    apiKey: resolved.apiKey,
+    provider: getLlmProvider(resolved.provider).id,
+  };
 }
 
 function createAnthropicTopicEnrichmentProvider(): TopicEnrichmentProvider {
   return {
-    model: ANTHROPIC_MODEL,
-    provider: "anthropic",
+    model: ANTHROPIC_PROVIDER.model,
+    provider: ANTHROPIC_PROVIDER.id,
     async enrich(input) {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         body: JSON.stringify({
           max_tokens: 1200,
           messages: [{ content: input.prompt, role: "user" }],
-          model: ANTHROPIC_MODEL,
+          model: ANTHROPIC_PROVIDER.model,
           system:
             "You enrich topic records for a technical knowledge base. Return only JSON.",
         }),
@@ -255,6 +285,46 @@ function createAnthropicTopicEnrichmentProvider(): TopicEnrichmentProvider {
   };
 }
 
+export function createOpenAiTopicEnrichmentProvider(
+  fetchImplementation: typeof fetch = fetch,
+): TopicEnrichmentProvider {
+  return {
+    model: OPENAI_PROVIDER.model,
+    provider: OPENAI_PROVIDER.id,
+    async enrich(input) {
+      const response = await fetchImplementation(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          body: JSON.stringify({
+            messages: [
+              {
+                content:
+                  "You enrich topic records for a technical knowledge base. Return only JSON.",
+                role: "system",
+              },
+              { content: input.prompt, role: "user" },
+            ],
+            model: OPENAI_PROVIDER.model,
+            response_format: { type: "json_object" },
+          }),
+          headers: {
+            authorization: `Bearer ${input.apiKey}`,
+            "content-type": "application/json",
+          },
+          method: "POST",
+        },
+      );
+      const rawResponse = await response.text();
+
+      if (!response.ok) {
+        throw new Error(`openai_request_failed:${response.status}`);
+      }
+
+      return parseOpenAiResponse(rawResponse);
+    },
+  };
+}
+
 function parseAnthropicResponse(rawResponse: string): TopicEnrichmentProviderOutput {
   const parsed = JSON.parse(rawResponse) as {
     content?: Array<{ text?: string; type?: string }>;
@@ -265,7 +335,27 @@ function parseAnthropicResponse(rawResponse: string): TopicEnrichmentProviderOut
     throw new Error("llm_enrichment_malformed_response");
   }
 
-  const payload = JSON.parse(text) as { summary?: unknown; title?: unknown };
+  return parseProviderJsonPayload(text, rawResponse);
+}
+
+function parseOpenAiResponse(rawResponse: string): TopicEnrichmentProviderOutput {
+  const parsed = parseJson(rawResponse) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = parsed.choices?.[0]?.message?.content;
+
+  if (!text) {
+    throw new Error("llm_enrichment_malformed_response");
+  }
+
+  return parseProviderJsonPayload(text, rawResponse);
+}
+
+function parseProviderJsonPayload(
+  jsonText: string,
+  rawResponse: string,
+): TopicEnrichmentProviderOutput {
+  const payload = parseJson(jsonText) as { summary?: unknown; title?: unknown };
 
   if (typeof payload.title !== "string" || typeof payload.summary !== "string") {
     throw new Error("llm_enrichment_malformed_response");
@@ -276,6 +366,14 @@ function parseAnthropicResponse(rawResponse: string): TopicEnrichmentProviderOut
     summary: payload.summary,
     title: payload.title,
   };
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error("llm_enrichment_malformed_response");
+  }
 }
 
 function normalizeErrorMessage(error: unknown) {
