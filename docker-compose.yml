@@ -17,6 +17,8 @@ services:
       context: ./apps/web
       dockerfile: Dockerfile
     image: av-okf-web:production-data-plane
+    env_file:
+      - ./apps/web/.env
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -56,7 +58,6 @@ services:
       AV_OKF_TEST_AUTH_EMAIL: ${AV_OKF_TEST_AUTH_EMAIL:-test@av-okf.local}
       AV_OKF_TEST_AUTH_PASSWORD: ${AV_OKF_TEST_AUTH_PASSWORD:-codex-local-test-password}
       AV_OKF_TEST_AUTH_NAME: ${AV_OKF_TEST_AUTH_NAME:-AV-OKF Test User}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RAG_CHUNK_TARGET_TOKENS: ${RAG_CHUNK_TARGET_TOKENS:-800}
       RAG_CHUNK_MAX_TOKENS: ${RAG_CHUNK_MAX_TOKENS:-1200}
       RAG_CHUNK_OVERLAP_TOKENS: ${RAG_CHUNK_OVERLAP_TOKENS:-120}
@@ -78,6 +79,8 @@ services:
 
   worker:
     image: av-okf-web:production-data-plane
+    env_file:
+      - ./apps/web/.env
     depends_on:
       migrate:
         condition: service_completed_successfully
