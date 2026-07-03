@@ -31,6 +31,8 @@ import {
 import { getAllowedRelations } from "@/lib/okf-relations";
 import {
   generateTopicsAction,
+  approveTopicContentAction,
+  enrichTopicAction,
   runExtractionAction,
   updateTopicContentAction,
   updateDocumentMetadataAction,
@@ -48,10 +50,10 @@ export default async function DocumentDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ relationError?: string }>;
+  searchParams: Promise<{ enrichmentError?: string; relationError?: string }>;
 }) {
   const { id } = await params;
-  const { relationError } = await searchParams;
+  const { enrichmentError, relationError } = await searchParams;
   const knowledgeRoot = getDefaultKnowledgeRoot();
   const [document, topicRecords, allowedRelations, relationTargets] =
     await Promise.all([
@@ -66,6 +68,7 @@ export default async function DocumentDetailPage({
   }
 
   const relationErrorMessage = formatRelationError(relationError);
+  const enrichmentErrorMessage = formatEnrichmentError(enrichmentError);
 
   return (
     <>
@@ -322,6 +325,7 @@ export default async function DocumentDetailPage({
                   allowedRelations={allowedRelations}
                   key={topic.id}
                   documentId={document.id}
+                  enrichmentError={enrichmentErrorMessage}
                   relationError={relationErrorMessage}
                   relationTargets={relationTargets}
                   topic={topic}
@@ -535,12 +539,14 @@ function ExtractionMetric({ label, value }: { label: string; value: string }) {
 function TopicRecordCard({
   allowedRelations,
   documentId,
+  enrichmentError,
   relationError,
   relationTargets,
   topic,
 }: {
   allowedRelations: string[];
   documentId: string;
+  enrichmentError: string | null;
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord;
@@ -559,6 +565,16 @@ function TopicRecordCard({
             </Badge>
             {topic.editedAt ? (
               <Badge variant="secondary">edited</Badge>
+            ) : null}
+            {topic.enrichmentStatus !== "none" ? (
+              <Badge variant="secondary" className="capitalize">
+                enrichment {topic.enrichmentStatus}
+              </Badge>
+            ) : null}
+            {topic.approvedContentSource ? (
+              <Badge variant="outline">
+                approved from {topic.approvedContentSource}
+              </Badge>
             ) : null}
           </div>
           <h3 className="mt-3 text-base font-medium">{topic.title}</h3>
@@ -583,7 +599,9 @@ function TopicRecordCard({
           >
             <option value="needs_review">Needs review</option>
             <option value="needs_cleanup">Needs cleanup</option>
-            <option value="approved">Approved</option>
+            {!hasEnrichedContent(topic) ? (
+              <option value="approved">Approved</option>
+            ) : null}
             <option value="rejected">Rejected</option>
           </select>
           <PendingSubmitButton pendingLabel="Saving...">Save</PendingSubmitButton>
@@ -599,52 +617,156 @@ function TopicRecordCard({
         ) : null}
       </div>
       {topic.reviewStatus !== "approved" ? (
-        <details className="mt-4 rounded-md border border-border p-3">
-          <summary className="cursor-pointer text-sm font-medium">
-            Edit topic content
-          </summary>
-          <form action={updateTopicContentAction} className="mt-3 space-y-3">
-            <input type="hidden" name="documentId" value={documentId} />
-            <input type="hidden" name="topicId" value={topic.id} />
-            <div className="space-y-2">
-              <Label htmlFor={`topic-title-${topic.id}`}>Title</Label>
-              <Input
-                id={`topic-title-${topic.id}`}
-                name="title"
-                defaultValue={topic.title}
-                required
-              />
-              {topic.originalTitle !== topic.title ? (
-                <p className="text-xs text-muted-foreground">
-                  Original: {topic.originalTitle}
+        <>
+          <details className="mt-4 rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              Edit topic content
+            </summary>
+            <form action={updateTopicContentAction} className="mt-3 space-y-3">
+              <input type="hidden" name="documentId" value={documentId} />
+              <input type="hidden" name="topicId" value={topic.id} />
+              <div className="space-y-2">
+                <Label htmlFor={`topic-title-${topic.id}`}>Title</Label>
+                <Input
+                  id={`topic-title-${topic.id}`}
+                  name="title"
+                  defaultValue={topic.title}
+                  required
+                />
+                {topic.originalTitle !== topic.title ? (
+                  <p className="text-xs text-muted-foreground">
+                    Original: {topic.originalTitle}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`topic-summary-${topic.id}`}>Summary</Label>
+                <textarea
+                  id={`topic-summary-${topic.id}`}
+                  name="summary"
+                  rows={3}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  defaultValue={topic.summary}
+                />
+                {topic.originalSummary !== topic.summary ? (
+                  <p className="text-xs text-muted-foreground">
+                    Original summary is preserved for audit.
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <PendingSubmitButton pendingLabel="Saving...">
+                  Save topic
+                </PendingSubmitButton>
+                <Button asChild variant="outline">
+                  <Link href={`/documents/${documentId}`}>Cancel</Link>
+                </Button>
+              </div>
+            </form>
+          </details>
+          <div className="mt-4 space-y-3 rounded-md border border-border p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-medium">LLM enrichment</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Uses the current topic title, summary, and extracted source
+                  pages to polish content before approval.
                 </p>
-              ) : null}
+              </div>
+              <form action={enrichTopicAction}>
+                <input type="hidden" name="documentId" value={documentId} />
+                <input type="hidden" name="topicId" value={topic.id} />
+                {topic.enrichmentStatus === "pending" ? (
+                  <Button disabled type="submit">
+                    Enrichment pending
+                  </Button>
+                ) : (
+                  <PendingSubmitButton pendingLabel="Enriching...">
+                    {hasEnrichedContent(topic)
+                      ? "Re-enrich topic"
+                      : "Enrich this topic"}
+                  </PendingSubmitButton>
+                )}
+              </form>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor={`topic-summary-${topic.id}`}>Summary</Label>
-              <textarea
-                id={`topic-summary-${topic.id}`}
-                name="summary"
-                rows={3}
-                className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                defaultValue={topic.summary}
-              />
-              {topic.originalSummary !== topic.summary ? (
-                <p className="text-xs text-muted-foreground">
-                  Original summary is preserved for audit.
-                </p>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <PendingSubmitButton pendingLabel="Saving...">
-                Save topic
-              </PendingSubmitButton>
-              <Button asChild variant="outline">
-                <Link href={`/documents/${documentId}`}>Cancel</Link>
-              </Button>
-            </div>
-          </form>
-        </details>
+            {enrichmentError ? (
+              <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+                {enrichmentError}
+              </div>
+            ) : null}
+            {topic.enrichmentStatus === "failed" ? (
+              <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+                {topic.enrichmentErrorMessage ?? "Enrichment failed."}
+              </div>
+            ) : null}
+            {topic.enrichmentStatus !== "none" ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="rounded-md border border-border p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">Raw current topic</p>
+                    <Badge variant="outline">review draft</Badge>
+                  </div>
+                  <p className="text-sm font-medium">{topic.title}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {topic.summary}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">Enriched topic</p>
+                    <Badge variant="outline">
+                      {topic.enrichmentModel ?? "model pending"}
+                    </Badge>
+                  </div>
+                  {topic.enrichedAt ? (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Generated {topic.enrichedAt}
+                    </p>
+                  ) : null}
+                  <p className="text-sm font-medium">
+                    {topic.enrichedTitle ?? "No enriched title yet."}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {topic.enrichedSummary ?? "No enriched summary yet."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            {hasEnrichedContent(topic) ? (
+              <form
+                action={approveTopicContentAction}
+                className="space-y-3 rounded-md border border-border p-3"
+              >
+                <input type="hidden" name="documentId" value={documentId} />
+                <input type="hidden" name="topicId" value={topic.id} />
+                <p className="text-sm font-medium">Approve topic content</p>
+                <div className="grid gap-2 text-sm text-muted-foreground">
+                  <label className="flex items-center gap-2">
+                    <input
+                      name="approvedContentSource"
+                      required
+                      type="radio"
+                      value="raw"
+                    />
+                    Approve the raw/current version
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      name="approvedContentSource"
+                      required
+                      type="radio"
+                      value="enriched"
+                    />
+                    Approve the enriched version
+                  </label>
+                </div>
+                <PendingSubmitButton pendingLabel="Approving...">
+                  Approve selected content
+                </PendingSubmitButton>
+              </form>
+            ) : null}
+          </div>
+        </>
       ) : null}
       {topic.reviewStatus === "approved" ? (
         <div className="mt-4 space-y-3 border-t border-border pt-4">
@@ -787,4 +909,20 @@ function formatRelationError(raw: string | undefined) {
   } catch {
     return "Relation validation failed.";
   }
+}
+
+function formatEnrichmentError(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  if (raw === "llm_enrichment_requires_api_key") {
+    return "Add an Anthropic API key in Settings before enriching topics.";
+  }
+
+  return "Topic enrichment could not start.";
+}
+
+function hasEnrichedContent(topic: TopicRecord) {
+  return Boolean(topic.enrichedTitle && topic.enrichedSummary);
 }

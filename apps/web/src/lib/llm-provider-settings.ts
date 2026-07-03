@@ -82,6 +82,24 @@ export async function getWorkspaceLlmSetting(
   };
 }
 
+export async function getWorkspaceLlmApiKeyForEnrichment(
+  workspaceId: string,
+  options: Pick<LlmSettingsOptions, "client" | "env"> = {},
+): Promise<{ apiKey: string; provider: string } | null> {
+  const row = await getSettingsClient(options.client).workspaceLlmSetting.findUnique({
+    where: { workspaceId },
+  });
+
+  if (!row?.encryptedApiKey) {
+    return null;
+  }
+
+  return {
+    apiKey: decryptStoredApiKey(row.encryptedApiKey, options.env),
+    provider: row.provider,
+  };
+}
+
 export async function saveWorkspaceLlmApiKey(
   workspaceId: string,
   provider: string,

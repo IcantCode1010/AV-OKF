@@ -1,13 +1,17 @@
 import {
   completeExtraction,
+  completeTopicEnrichment as completeLocalTopicEnrichment,
+  approveTopicContent as approveLocalTopicContent,
   createUploadedDocument as createLocalUploadedDocument,
   customPropertiesToText,
   failExtraction,
+  failTopicEnrichment as failLocalTopicEnrichment,
   generateTopicRecords as generateLocalTopicRecords,
   getActivityEvents as getLocalActivityEvents,
   getDocumentById as getLocalDocumentById,
   getDocumentMetrics as getLocalDocumentMetrics,
   getDocumentPdfBytes,
+  getTopicEnrichmentInput as getLocalTopicEnrichmentInput,
   getDocuments as getLocalDocuments,
   getRecentDocuments as getLocalRecentDocuments,
   getTopicRecordsByDocumentId as getLocalTopicRecordsByDocumentId,
@@ -16,6 +20,7 @@ import {
   parseCustomProperties,
   parseTags,
   startExtraction,
+  markTopicEnrichmentPending as markLocalTopicEnrichmentPending,
   updateDocumentMetadata as updateLocalDocumentMetadata,
   updateTopicContent as updateLocalTopicContent,
   updateTopicRelations as updateLocalTopicRelations,
@@ -31,6 +36,7 @@ import {
   type SourceType,
   type TopicRecord,
   type TopicReviewStatus,
+  type ApprovedContentSource,
   type User,
   type Workspace,
 } from "./document-vault.ts";
@@ -64,6 +70,7 @@ export type {
   SourceType,
   TopicRecord,
   TopicReviewStatus,
+  ApprovedContentSource,
   User,
   Workspace,
 };
@@ -202,4 +209,60 @@ export async function updateTopicContent(
   }
 
   return updateLocalTopicContent(topicId, input);
+}
+
+export async function getTopicEnrichmentInput(
+  topicId: string,
+): Promise<Awaited<ReturnType<typeof getLocalTopicEnrichmentInput>>> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getTopicEnrichmentInput(topicId);
+  }
+
+  return getLocalTopicEnrichmentInput(topicId);
+}
+
+export async function markTopicEnrichmentPending(
+  topicId: string,
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().markTopicEnrichmentPending(topicId);
+  }
+
+  return markLocalTopicEnrichmentPending(topicId);
+}
+
+export async function completeTopicEnrichment(
+  topicId: string,
+  input: Parameters<typeof completeLocalTopicEnrichment>[1],
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().completeTopicEnrichment(topicId, input);
+  }
+
+  return completeLocalTopicEnrichment(topicId, input);
+}
+
+export async function failTopicEnrichment(
+  topicId: string,
+  input: Parameters<typeof failLocalTopicEnrichment>[1],
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().failTopicEnrichment(topicId, input);
+  }
+
+  return failLocalTopicEnrichment(topicId, input);
+}
+
+export async function approveTopicContent(
+  topicId: string,
+  approvedContentSource: ApprovedContentSource,
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().approveTopicContent(
+      topicId,
+      approvedContentSource,
+    );
+  }
+
+  return approveLocalTopicContent(topicId, approvedContentSource);
 }

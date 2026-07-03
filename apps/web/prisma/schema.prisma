@@ -285,6 +285,10 @@ model TopicRecord {
   title             String
   topicType         String
   summary           String
+  enrichedTitle     String?
+  enrichedSummary   String?
+  enrichmentStatus  String    @default("none")
+  approvedContentSource String?
   editedAt          DateTime?
   editedBy          String?
   pageStart         Int
@@ -295,10 +299,27 @@ model TopicRecord {
   sourcePageNumbers Int[]
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   document          Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  enrichmentAudits  TopicEnrichmentAudit[]
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([workspaceId, documentId])
+}
+
+model TopicEnrichmentAudit {
+  id           String      @id @default(cuid())
+  topicId      String
+  provider     String
+  model        String
+  promptSent   String      @db.Text
+  rawResponse  String      @db.Text
+  createdAt    DateTime    @default(now())
+  requestedBy  String
+  succeeded    Boolean
+  errorMessage String?
+  topic        TopicRecord @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId, createdAt])
 }
 
 model ActivityEvent {

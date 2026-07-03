@@ -9,6 +9,7 @@ import {
   type Document,
   type DocumentMetrics,
   type DocumentStatus,
+  type ApprovedContentSource,
   type SourceType,
   type TopicRecord,
   type TopicReviewStatus,
@@ -22,6 +23,7 @@ import {
 import {
   createPostgresDocumentRepository,
   createProductionDocumentId,
+  type ProductionDocumentRepository,
 } from "./production-repository.ts";
 import { getExtractionQueue } from "./production-queue.ts";
 import type { TopicRelation } from "./okf-relations.ts";
@@ -79,6 +81,36 @@ export type ProductionDocumentService = {
   updateTopicContent(
     topicId: string,
     input: { editedBy: string; summary?: string; title?: string },
+  ): Promise<TopicRecord>;
+  getTopicEnrichmentInput(
+    topicId: string,
+  ): ReturnType<ProductionDocumentRepository["getTopicEnrichmentInput"]>;
+  markTopicEnrichmentPending(topicId: string): Promise<TopicRecord>;
+  completeTopicEnrichment(
+    topicId: string,
+    input: Parameters<ProductionDocumentRepository["completeTopicEnrichment"]>[0] extends {
+      context: infer _Context;
+    }
+      ? Omit<
+          Parameters<ProductionDocumentRepository["completeTopicEnrichment"]>[0],
+          "context" | "topicId"
+        >
+      : never,
+  ): Promise<TopicRecord>;
+  failTopicEnrichment(
+    topicId: string,
+    input: Parameters<ProductionDocumentRepository["failTopicEnrichment"]>[0] extends {
+      context: infer _Context;
+    }
+      ? Omit<
+          Parameters<ProductionDocumentRepository["failTopicEnrichment"]>[0],
+          "context" | "topicId"
+        >
+      : never,
+  ): Promise<TopicRecord>;
+  approveTopicContent(
+    topicId: string,
+    approvedContentSource: ApprovedContentSource,
   ): Promise<TopicRecord>;
 };
 
@@ -257,6 +289,42 @@ export function createProductionDocumentService(
         editedBy: input.editedBy,
         summary: input.summary,
         title: input.title,
+        topicId,
+      });
+    },
+    async getTopicEnrichmentInput(topicId: string) {
+      return repository.getTopicEnrichmentInput({
+        context: await requireAuthWorkspaceContext(),
+        topicId,
+      });
+    },
+    async markTopicEnrichmentPending(topicId: string): Promise<TopicRecord> {
+      return repository.markTopicEnrichmentPending({
+        context: await requireAuthWorkspaceContext(),
+        topicId,
+      });
+    },
+    async completeTopicEnrichment(topicId, input): Promise<TopicRecord> {
+      return repository.completeTopicEnrichment({
+        context: await requireAuthWorkspaceContext(),
+        topicId,
+        ...input,
+      });
+    },
+    async failTopicEnrichment(topicId, input): Promise<TopicRecord> {
+      return repository.failTopicEnrichment({
+        context: await requireAuthWorkspaceContext(),
+        topicId,
+        ...input,
+      });
+    },
+    async approveTopicContent(
+      topicId: string,
+      approvedContentSource: ApprovedContentSource,
+    ): Promise<TopicRecord> {
+      return repository.approveTopicContent({
+        approvedContentSource,
+        context: await requireAuthWorkspaceContext(),
         topicId,
       });
     },

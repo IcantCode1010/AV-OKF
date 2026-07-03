@@ -12,6 +12,7 @@ import {
   parseCustomProperties,
   parseTags,
   requestExtraction,
+  type ApprovedContentSource,
   updateTopicContent,
   updateTopicReviewStatus,
   updateDocumentMetadata,
@@ -25,6 +26,10 @@ import {
   normalizeAtaMetadata,
 } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
+import {
+  approveTopicContentSource,
+  enrichTopic,
+} from "@/lib/topic-enrichment";
 
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
@@ -80,7 +85,74 @@ export async function updateTopicReviewStatusAction(formData: FormData) {
   const topicId = getFormString(formData, "topicId");
   const reviewStatus = getTopicReviewStatus(getFormString(formData, "reviewStatus"));
 
+  if (reviewStatus === "approved") {
+    const topic = (await getTopicRecordsByDocumentId(documentId)).find(
+      (candidate) => candidate.id === topicId,
+    );
+    if (topic?.enrichedTitle || topic?.enrichedSummary) {
+      throw new Error("topic_approval_requires_content_source");
+    }
+  }
+
   await updateTopicReviewStatus(topicId, reviewStatus);
+
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}`);
+}
+
+export async function enrichTopicAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+
+  assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "topic_enrichment_workspace_mismatch",
+  });
+
+  try {
+    await enrichTopic(topicId, { context });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "llm_enrichment_requires_api_key"
+    ) {
+      redirect(
+        `/documents/${documentId}?enrichmentError=${encodeURIComponent(
+          error.message,
+        )}`,
+      );
+    }
+
+    throw error;
+  }
+
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}`);
+}
+
+export async function approveTopicContentAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const approvedContentSource = getApprovedContentSource(
+    getFormString(formData, "approvedContentSource"),
+  );
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+
+  assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "topic_enrichment_workspace_mismatch",
+  });
+
+  await approveTopicContentSource(topicId, approvedContentSource, { context });
 
   revalidatePath(`/documents/${documentId}`);
   redirect(`/documents/${documentId}`);
@@ -198,4 +270,12 @@ function getTopicReviewStatus(value: string): TopicReviewStatus {
   return statuses.includes(value as TopicReviewStatus)
     ? (value as TopicReviewStatus)
     : "needs_review";
+}
+
+function getApprovedContentSource(value: string): ApprovedContentSource {
+  if (value !== "raw" && value !== "enriched") {
+    throw new Error("approved_content_source_required");
+  }
+
+  return value;
 }

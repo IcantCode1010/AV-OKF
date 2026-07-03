@@ -13,8 +13,10 @@ import type {
   ExtractedPageRecord,
   ExtractionError,
   ExtractionStatus,
+  ApprovedContentSource,
   SourceType,
   TopicConfidence,
+  TopicEnrichmentStatus,
   TopicRecord,
   TopicReviewStatus,
 } from "./document-vault.ts";
@@ -127,11 +129,16 @@ type DbActivityEvent = {
 };
 
 type DbTopicRecord = {
+  approvedContentSource: string | null;
   confidence: string;
   createdAt: Date;
   documentId: string;
   editedAt: Date | null;
   editedBy: string | null;
+  enrichedSummary: string | null;
+  enrichedTitle: string | null;
+  enrichmentAudits?: DbTopicEnrichmentAudit[];
+  enrichmentStatus: string;
   id: string;
   originalSummary: string;
   originalTitle: string;
@@ -144,6 +151,19 @@ type DbTopicRecord = {
   title: string;
   topicType: string;
   updatedAt: Date;
+};
+
+type DbTopicEnrichmentAudit = {
+  createdAt: Date;
+  errorMessage: string | null;
+  id: string;
+  model: string;
+  promptSent: string;
+  provider: string;
+  rawResponse: string;
+  requestedBy: string;
+  succeeded: boolean;
+  topicId: string;
 };
 
 type QueuedExtractionJob = {
@@ -430,8 +450,12 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         });
         await tx.topicRecord.createMany({
           data: newTopics.map((topic) => ({
+            approvedContentSource: null,
             confidence: topic.confidence,
             documentId: input.documentId,
+            enrichedSummary: null,
+            enrichedTitle: null,
+            enrichmentStatus: "none",
             originalSummary: topic.summary,
             originalTitle: topic.title,
             pageEnd: topic.pageEnd,
@@ -458,6 +482,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
 
       const topics = await db.topicRecord.findMany({
+        include: {
+          enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+        },
         orderBy: [{ pageStart: "asc" }, { createdAt: "asc" }],
         where: {
           documentId: input.documentId,
@@ -553,6 +580,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       documentId: string;
     }) {
       const topics = await db.topicRecord.findMany({
+        include: {
+          enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+        },
         orderBy: [{ pageStart: "asc" }, { createdAt: "asc" }],
         where: {
           documentId: input.documentId,
@@ -560,6 +590,183 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         },
       });
       return topics.map(mapTopicRecord);
+    },
+    async getTopicEnrichmentInput(input: {
+      context: AuthWorkspaceContext;
+      topicId: string;
+    }) {
+      const topic = await db.topicRecord.findFirst({
+        include: {
+          enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+        },
+        where: {
+          id: input.topicId,
+          workspaceId: input.context.workspaceId,
+        },
+      });
+
+      if (!topic) {
+        throw new Error("topic_not_found");
+      }
+
+      const sourcePages = await db.extractedPage.findMany({
+        orderBy: { pageNumber: "asc" },
+        where: {
+          documentId: topic.documentId,
+          pageNumber: { in: topic.sourcePageNumbers },
+          workspaceId: input.context.workspaceId,
+        },
+      });
+
+      return {
+        sourcePages: sourcePages.map(mapExtractedPage),
+        topic: mapTopicRecord(topic),
+      };
+    },
+    async markTopicEnrichmentPending(input: {
+      context: AuthWorkspaceContext;
+      topicId: string;
+    }) {
+      const existingTopic = await db.topicRecord.findFirst({
+        where: {
+          id: input.topicId,
+          workspaceId: input.context.workspaceId,
+        },
+      });
+
+      if (!existingTopic) {
+        throw new Error("topic_not_found");
+      }
+
+      if (normalizeTopicReviewStatus(existingTopic.reviewStatus) === "approved") {
+        throw new Error("topic_enrichment_requires_unapproved_topic");
+      }
+
+      const topic = await db.topicRecord.update({
+        data: { enrichmentStatus: "pending" },
+        include: {
+          enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+        },
+        where: { id: input.topicId },
+      });
+      return mapTopicRecord(topic);
+    },
+    async completeTopicEnrichment(input: {
+      context: AuthWorkspaceContext;
+      enrichedSummary: string;
+      enrichedTitle: string;
+      model: string;
+      promptSent: string;
+      provider: string;
+      rawResponse: string;
+      requestedBy: string;
+      topicId: string;
+    }) {
+      await assertTopicInWorkspace(db, input.topicId, input.context.workspaceId);
+      const topic = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.topicEnrichmentAudit.create({
+          data: {
+            errorMessage: null,
+            model: input.model,
+            promptSent: input.promptSent,
+            provider: input.provider,
+            rawResponse: input.rawResponse,
+            requestedBy: input.requestedBy,
+            succeeded: true,
+            topicId: input.topicId,
+          },
+        });
+        return tx.topicRecord.update({
+          data: {
+            enrichedSummary: input.enrichedSummary,
+            enrichedTitle: input.enrichedTitle,
+            enrichmentStatus: "completed",
+          },
+          include: {
+            enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          },
+          where: { id: input.topicId },
+        });
+      });
+      return mapTopicRecord(topic);
+    },
+    async failTopicEnrichment(input: {
+      context: AuthWorkspaceContext;
+      errorMessage: string;
+      model: string;
+      promptSent: string;
+      provider: string;
+      rawResponse: string;
+      requestedBy: string;
+      topicId: string;
+    }) {
+      await assertTopicInWorkspace(db, input.topicId, input.context.workspaceId);
+      const topic = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.topicEnrichmentAudit.create({
+          data: {
+            errorMessage: input.errorMessage,
+            model: input.model,
+            promptSent: input.promptSent,
+            provider: input.provider,
+            rawResponse: input.rawResponse,
+            requestedBy: input.requestedBy,
+            succeeded: false,
+            topicId: input.topicId,
+          },
+        });
+        return tx.topicRecord.update({
+          data: { enrichmentStatus: "failed" },
+          include: {
+            enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          },
+          where: { id: input.topicId },
+        });
+      });
+      return mapTopicRecord(topic);
+    },
+    async approveTopicContent(input: {
+      approvedContentSource: ApprovedContentSource;
+      context: AuthWorkspaceContext;
+      topicId: string;
+    }) {
+      const existingTopic = await db.topicRecord.findFirst({
+        where: {
+          id: input.topicId,
+          workspaceId: input.context.workspaceId,
+        },
+      });
+
+      if (!existingTopic) {
+        throw new Error("topic_not_found");
+      }
+
+      if (normalizeTopicReviewStatus(existingTopic.reviewStatus) === "approved") {
+        throw new Error("topic_already_approved");
+      }
+
+      if (input.approvedContentSource === "enriched") {
+        if (!existingTopic.enrichedTitle || !existingTopic.enrichedSummary) {
+          throw new Error("topic_enrichment_required_for_approval");
+        }
+      }
+
+      const topic = await db.topicRecord.update({
+        data: {
+          approvedContentSource: input.approvedContentSource,
+          reviewStatus: "approved",
+          ...(input.approvedContentSource === "enriched"
+            ? {
+                summary: existingTopic.enrichedSummary ?? existingTopic.summary,
+                title: existingTopic.enrichedTitle ?? existingTopic.title,
+              }
+            : {}),
+        },
+        include: {
+          enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+        },
+        where: { id: input.topicId },
+      });
+      return mapTopicRecord(topic);
     },
     async startExtractionJob(input: {
       documentId: string;
@@ -810,6 +1017,16 @@ function mapDocument(record: DbDocumentRecord): Document {
   };
 }
 
+function mapExtractedPage(page: DbExtractedPage): ExtractedPageRecord {
+  return {
+    charCount: page.charCount,
+    imageCount: page.imageCount,
+    pageNumber: page.pageNumber,
+    tables: normalizeExtractedTables(page.tables),
+    text: page.text,
+  };
+}
+
 function normalizeOptionalMetadata(value: string | null) {
   const normalized = value?.trim() ?? "";
   return normalized.length > 0 ? normalized : null;
@@ -826,12 +1043,28 @@ function mapActivityEvent(record: DbActivityEvent): ActivityEvent {
 }
 
 function mapTopicRecord(record: DbTopicRecord): TopicRecord {
+  const audits = record.enrichmentAudits ?? [];
+  const latestAudit = audits[0];
+  const latestSuccess = audits.find((audit) => audit.succeeded);
+
   return {
+    approvedContentSource: normalizeApprovedContentSource(
+      record.approvedContentSource,
+    ),
     confidence: normalizeTopicConfidence(record.confidence),
     createdAt: formatTimestamp(record.createdAt),
     documentId: record.documentId,
     editedAt: record.editedAt ? formatTimestamp(record.editedAt) : null,
     editedBy: record.editedBy,
+    enrichedAt: latestSuccess ? formatTimestamp(latestSuccess.createdAt) : null,
+    enrichedSummary: record.enrichedSummary,
+    enrichedTitle: record.enrichedTitle,
+    enrichmentErrorMessage:
+      normalizeTopicEnrichmentStatus(record.enrichmentStatus) === "failed"
+        ? latestAudit?.errorMessage ?? null
+        : null,
+    enrichmentModel: latestSuccess?.model ?? null,
+    enrichmentStatus: normalizeTopicEnrichmentStatus(record.enrichmentStatus),
     id: record.id,
     originalSummary: record.originalSummary ?? record.summary,
     originalTitle: record.originalTitle ?? record.title,
@@ -845,6 +1078,21 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     topicType: record.topicType,
     updatedAt: formatTimestamp(record.updatedAt),
   };
+}
+
+async function assertTopicInWorkspace(
+  db: ReturnType<typeof getPrisma>,
+  topicId: string,
+  workspaceId: string,
+) {
+  const topic = await db.topicRecord.findFirst({
+    select: { id: true },
+    where: { id: topicId, workspaceId },
+  });
+
+  if (!topic) {
+    throw new Error("topic_not_found");
+  }
 }
 
 function pagesOverlap(left: number[], right: number[]) {
@@ -909,6 +1157,24 @@ function normalizeTopicReviewStatus(value: string): TopicReviewStatus {
   }
 
   return "needs_review";
+}
+
+function normalizeTopicEnrichmentStatus(value: string): TopicEnrichmentStatus {
+  if (
+    value === "pending" ||
+    value === "completed" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+
+  return "none";
+}
+
+function normalizeApprovedContentSource(
+  value: string | null,
+): ApprovedContentSource | null {
+  return value === "raw" || value === "enriched" ? value : null;
 }
 
 function normalizeExtractedTables(value: unknown): ExtractedPageRecord["tables"] {

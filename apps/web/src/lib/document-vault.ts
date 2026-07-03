@@ -84,6 +84,27 @@ export type TopicReviewStatus =
   | "approved"
   | "rejected";
 
+export type TopicEnrichmentStatus =
+  | "none"
+  | "pending"
+  | "completed"
+  | "failed";
+
+export type ApprovedContentSource = "raw" | "enriched";
+
+export type TopicEnrichmentAudit = {
+  id: string;
+  topicId: string;
+  provider: string;
+  model: string;
+  promptSent: string;
+  rawResponse: string;
+  createdAt: string;
+  requestedBy: string;
+  succeeded: boolean;
+  errorMessage: string | null;
+};
+
 export type TopicRecord = {
   id: string;
   documentId: string;
@@ -92,6 +113,13 @@ export type TopicRecord = {
   title: string;
   topicType: string;
   summary: string;
+  enrichedTitle: string | null;
+  enrichedSummary: string | null;
+  enrichmentStatus: TopicEnrichmentStatus;
+  approvedContentSource: ApprovedContentSource | null;
+  enrichedAt: string | null;
+  enrichmentModel: string | null;
+  enrichmentErrorMessage: string | null;
   editedAt: string | null;
   editedBy: string | null;
   pageStart: number;
@@ -149,6 +177,7 @@ export type ActivityEvent = {
 type VaultStore = {
   documents: Document[];
   activityEvents: ActivityEvent[];
+  topicEnrichmentAudits?: TopicEnrichmentAudit[];
   topicRecords?: TopicRecord[];
 };
 
@@ -507,6 +536,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         await writeStoreAtomic({
           documents: seedDocuments,
           activityEvents: seedActivityEvents,
+          topicEnrichmentAudits: [],
           topicRecords: [],
         });
         return;
@@ -520,6 +550,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     await ensureStore();
     const rawStore = await readFile(storePath, "utf8");
     const store = JSON.parse(rawStore) as VaultStore;
+    store.topicEnrichmentAudits ??= [];
     store.topicRecords ??= [];
     return store;
   }
@@ -773,6 +804,13 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           id: `topic-${randomUUID()}`,
           originalTitle: candidate.title,
           originalSummary: candidate.summary,
+          approvedContentSource: null,
+          enrichedAt: null,
+          enrichedSummary: null,
+          enrichedTitle: null,
+          enrichmentErrorMessage: null,
+          enrichmentModel: null,
+          enrichmentStatus: "none",
           editedAt: null,
           editedBy: null,
           reviewStatus: "needs_review",
@@ -808,7 +846,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
 
       topic.reviewStatus = reviewStatus;
       topic.updatedAt = formatTimestamp(new Date());
-      return normalizeTopicRecord(topic);
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
   }
 
@@ -823,7 +861,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
 
       topic.relations = relations;
       topic.updatedAt = formatTimestamp(new Date());
-      return normalizeTopicRecord(topic);
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
   }
 
@@ -857,14 +895,139 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         topic.updatedAt = formatTimestamp(new Date());
       }
 
-      return normalizeTopicRecord(topic);
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function getTopicEnrichmentInput(topicId: string) {
+    const store = await readStore();
+    const topic = getStoreTopic(store, topicId);
+    const document = getStoreDocument(store, topic.documentId);
+    const wantedPages = new Set(topic.sourcePageNumbers);
+    return {
+      sourcePages: document.extraction.pageRecords.filter((pageRecord) =>
+        wantedPages.has(pageRecord.pageNumber),
+      ),
+      topic: normalizeTopicRecord(topic, store.topicEnrichmentAudits),
+    };
+  }
+
+  async function markTopicEnrichmentPending(topicId: string) {
+    return mutateStore(async (store) => {
+      const topic = getStoreTopic(store, topicId);
+      if (topic.reviewStatus === "approved") {
+        throw new Error("topic_enrichment_requires_unapproved_topic");
+      }
+      topic.enrichmentStatus = "pending";
+      topic.enrichmentErrorMessage = null;
+      topic.updatedAt = formatTimestamp(new Date());
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function completeTopicEnrichment(
+    topicId: string,
+    input: {
+      enrichedSummary: string;
+      enrichedTitle: string;
+      model: string;
+      promptSent: string;
+      provider: string;
+      rawResponse: string;
+      requestedBy: string;
+    },
+  ) {
+    return mutateStore(async (store) => {
+      store.topicEnrichmentAudits ??= [];
+      const topic = getStoreTopic(store, topicId);
+      const createdAt = formatTimestamp(new Date());
+      store.topicEnrichmentAudits.push({
+        id: `audit-${randomUUID()}`,
+        createdAt,
+        errorMessage: null,
+        model: input.model,
+        promptSent: input.promptSent,
+        provider: input.provider,
+        rawResponse: input.rawResponse,
+        requestedBy: input.requestedBy,
+        succeeded: true,
+        topicId,
+      });
+      topic.enrichedTitle = input.enrichedTitle;
+      topic.enrichedSummary = input.enrichedSummary;
+      topic.enrichmentStatus = "completed";
+      topic.enrichmentErrorMessage = null;
+      topic.enrichmentModel = input.model;
+      topic.enrichedAt = createdAt;
+      topic.updatedAt = createdAt;
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function failTopicEnrichment(
+    topicId: string,
+    input: {
+      errorMessage: string;
+      model: string;
+      promptSent: string;
+      provider: string;
+      rawResponse: string;
+      requestedBy: string;
+    },
+  ) {
+    return mutateStore(async (store) => {
+      store.topicEnrichmentAudits ??= [];
+      const topic = getStoreTopic(store, topicId);
+      const createdAt = formatTimestamp(new Date());
+      store.topicEnrichmentAudits.push({
+        id: `audit-${randomUUID()}`,
+        createdAt,
+        errorMessage: input.errorMessage,
+        model: input.model,
+        promptSent: input.promptSent,
+        provider: input.provider,
+        rawResponse: input.rawResponse,
+        requestedBy: input.requestedBy,
+        succeeded: false,
+        topicId,
+      });
+      topic.enrichmentStatus = "failed";
+      topic.enrichmentErrorMessage = input.errorMessage;
+      topic.updatedAt = createdAt;
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function approveTopicContent(
+    topicId: string,
+    approvedContentSource: ApprovedContentSource,
+  ) {
+    return mutateStore(async (store) => {
+      const topic = getStoreTopic(store, topicId);
+      if (topic.reviewStatus === "approved") {
+        throw new Error("topic_already_approved");
+      }
+      if (approvedContentSource === "enriched") {
+        if (!topic.enrichedTitle || !topic.enrichedSummary) {
+          throw new Error("topic_enrichment_required_for_approval");
+        }
+        topic.title = topic.enrichedTitle;
+        topic.summary = topic.enrichedSummary;
+      }
+      topic.approvedContentSource = approvedContentSource;
+      topic.reviewStatus = "approved";
+      topic.updatedAt = formatTimestamp(new Date());
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
   }
 
   return {
     completeExtraction,
+    completeTopicEnrichment,
+    approveTopicContent,
     createUploadedDocument,
     failExtraction,
+    failTopicEnrichment,
     getActivityEvents: async () => (await readStore()).activityEvents,
     getDocumentById: async (id: string) => {
       const document = (await readStore()).documents.find(
@@ -882,10 +1045,15 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     getRecentDocuments: async (limit = 4) =>
       normalizeDocuments((await readStore()).documents).slice(0, limit),
     getTopicRecordsByDocumentId: async (id: string) =>
-      ((await readStore()).topicRecords ?? [])
-        .filter((topic) => topic.documentId === id)
-        .map(normalizeTopicRecord),
+      await (async () => {
+        const store = await readStore();
+        return (store.topicRecords ?? [])
+          .filter((topic) => topic.documentId === id)
+          .map((topic) => normalizeTopicRecord(topic, store.topicEnrichmentAudits));
+      })(),
+    getTopicEnrichmentInput,
     generateTopicRecords,
+    markTopicEnrichmentPending,
     startExtraction,
     updateTopicReviewStatus,
     updateTopicRelations,
@@ -972,6 +1140,35 @@ export async function updateTopicContent(
   return defaultVault.updateTopicContent(topicId, input);
 }
 
+export async function getTopicEnrichmentInput(topicId: string) {
+  return defaultVault.getTopicEnrichmentInput(topicId);
+}
+
+export async function markTopicEnrichmentPending(topicId: string) {
+  return defaultVault.markTopicEnrichmentPending(topicId);
+}
+
+export async function completeTopicEnrichment(
+  topicId: string,
+  input: Parameters<typeof defaultVault.completeTopicEnrichment>[1],
+) {
+  return defaultVault.completeTopicEnrichment(topicId, input);
+}
+
+export async function failTopicEnrichment(
+  topicId: string,
+  input: Parameters<typeof defaultVault.failTopicEnrichment>[1],
+) {
+  return defaultVault.failTopicEnrichment(topicId, input);
+}
+
+export async function approveTopicContent(
+  topicId: string,
+  approvedContentSource: ApprovedContentSource,
+) {
+  return defaultVault.approveTopicContent(topicId, approvedContentSource);
+}
+
 export function getDefaultDataRoot() {
   const configuredDataRoot = process.env.AV_OKF_DATA_ROOT;
 
@@ -1042,11 +1239,29 @@ function getStoreTopic(store: VaultStore, id: string) {
   return normalizeTopicRecord(topic);
 }
 
-function normalizeTopicRecord(topic: TopicRecord): TopicRecord {
+function normalizeTopicRecord(
+  topic: TopicRecord,
+  audits: TopicEnrichmentAudit[] = [],
+): TopicRecord {
   topic.originalTitle ??= topic.title;
   topic.originalSummary ??= topic.summary;
   topic.editedAt ??= null;
   topic.editedBy ??= null;
+  topic.enrichedTitle ??= null;
+  topic.enrichedSummary ??= null;
+  topic.enrichmentStatus ??= "none";
+  topic.approvedContentSource ??= null;
+  const topicAudits = audits
+    .filter((audit) => audit.topicId === topic.id)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  const latestAudit = topicAudits.at(-1);
+  const latestSuccess = topicAudits.filter((audit) => audit.succeeded).at(-1);
+  topic.enrichedAt ??= latestSuccess?.createdAt ?? null;
+  topic.enrichmentModel ??= latestSuccess?.model ?? null;
+  topic.enrichmentErrorMessage ??=
+    topic.enrichmentStatus === "failed"
+      ? latestAudit?.errorMessage ?? null
+      : null;
   topic.relations = normalizeTopicRelations(topic.relations);
   return topic;
 }
