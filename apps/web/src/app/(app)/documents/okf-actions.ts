@@ -13,6 +13,7 @@ import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
 import { getDefaultKnowledgeRoot } from "@/lib/knowledge-root";
+import { isRecoverableOkfExportError } from "@/lib/okf-export-errors";
 import {
   RelationValidationError,
   validateTopicRelations,
@@ -45,11 +46,23 @@ export async function exportTopicToOkfAction(formData: FormData) {
   const { exportApprovedTopicForDocument } = await import(
     "@/lib/okf-export-service"
   );
-  await exportApprovedTopicForDocument({
-    document,
-    topicId,
-    topics,
-  });
+  try {
+    await exportApprovedTopicForDocument({
+      document,
+      topicId,
+      topics,
+    });
+  } catch (error) {
+    if (isRecoverableOkfExportError(error)) {
+      redirect(
+        `/documents/${documentId}?okfExportError=${encodeURIComponent(
+          error.message,
+        )}`,
+      );
+    }
+
+    throw error;
+  }
 
   revalidatePath(`/documents/${documentId}`);
   redirect(`/documents/${documentId}`);
