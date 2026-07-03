@@ -73,7 +73,7 @@ test("createReindexJob rejects when another workspace document is in flight", as
   assert.deepEqual(calls, ["lock"]);
 });
 
-test("deleteChunksForDocument deletes embeddings and chunks inside one transaction", async () => {
+test("deleteChunksForDocument deletes only raw extraction embeddings and chunks inside one transaction", async () => {
   const calls: string[] = [];
   const repository = createRagRepository({
     $transaction: async (callback: (tx: unknown) => Promise<void>) => {
@@ -81,19 +81,29 @@ test("deleteChunksForDocument deletes embeddings and chunks inside one transacti
       await callback({
         ragChunk: {
           deleteMany: async (query: {
-            where: { documentId: string; workspaceId: string };
+            where: {
+              documentId: string;
+              sourceType: string;
+              workspaceId: string;
+            };
           }) => {
             calls.push(
-              `chunks:${query.where.workspaceId}:${query.where.documentId}`,
+              `chunks:${query.where.workspaceId}:${query.where.documentId}:${query.where.sourceType}`,
             );
           },
         },
         ragEmbedding: {
           deleteMany: async (query: {
-            where: { chunk: { documentId: string; workspaceId: string } };
+            where: {
+              chunk: {
+                documentId: string;
+                sourceType: string;
+                workspaceId: string;
+              };
+            };
           }) => {
             calls.push(
-              `embeddings:${query.where.chunk.workspaceId}:${query.where.chunk.documentId}`,
+              `embeddings:${query.where.chunk.workspaceId}:${query.where.chunk.documentId}:${query.where.chunk.sourceType}`,
             );
           },
         },
@@ -109,16 +119,120 @@ test("deleteChunksForDocument deletes embeddings and chunks inside one transacti
 
   assert.deepEqual(calls, [
     "transaction.start",
-    "embeddings:wrk_1:doc_1",
-    "chunks:wrk_1:doc_1",
+    "embeddings:wrk_1:doc_1:raw_extraction",
+    "chunks:wrk_1:doc_1:raw_extraction",
     "transaction.end",
   ]);
 });
 
+test("deleteOkfSyncedChunks deletes only OKF topic chunks for the requested scope", async () => {
+  const calls: string[] = [];
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<void>) => {
+      calls.push("transaction.start");
+      await callback({
+        ragChunk: {
+          deleteMany: async (query: {
+            where: {
+              documentId: string;
+              sourceTopicId?: string;
+              sourceType: string;
+              workspaceId: string;
+            };
+          }) => {
+            calls.push(
+              `chunks:${query.where.workspaceId}:${query.where.documentId}:${query.where.sourceType}:${query.where.sourceTopicId}`,
+            );
+          },
+        },
+        ragEmbedding: {
+          deleteMany: async (query: {
+            where: {
+              chunk: {
+                documentId: string;
+                sourceTopicId?: string;
+                sourceType: string;
+                workspaceId: string;
+              };
+            };
+          }) => {
+            calls.push(
+              `embeddings:${query.where.chunk.workspaceId}:${query.where.chunk.documentId}:${query.where.chunk.sourceType}:${query.where.chunk.sourceTopicId}`,
+            );
+          },
+        },
+      });
+      calls.push("transaction.end");
+    },
+  });
+
+  await repository.deleteOkfSyncedChunks({
+    documentId: "doc_1",
+    sourceTopicId: "topic_1",
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(calls, [
+    "transaction.start",
+    "embeddings:wrk_1:doc_1:okf_topic:topic_1",
+    "chunks:wrk_1:doc_1:okf_topic:topic_1",
+    "transaction.end",
+  ]);
+});
+
+test("createOkfSyncIndexJob advances document index version for per-topic chunks", async () => {
+  const calls: string[] = [];
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $executeRaw: async () => {
+          calls.push("lock");
+        },
+        document: {
+          findFirst: async () => ({ ragIndexVersion: 7 }),
+          update: async (query: { data: { ragIndexVersion: number } }) => {
+            calls.push(`document.version:${query.data.ragIndexVersion}`);
+          },
+        },
+        ragIndexJob: {
+          aggregate: async () => ({ _sum: { tokenEstimate: 0 } }),
+          create: async ({ data }: { data: { indexVersion: number } }) => {
+            calls.push(`job.version:${data.indexVersion}`);
+            return {
+              documentId: "doc_1",
+              id: "job_1",
+              indexVersion: data.indexVersion,
+              workspaceId: "wrk_1",
+            };
+          },
+        },
+      }),
+  });
+
+  await repository.createOkfSyncIndexJob({
+    documentId: "doc_1",
+    tokenEstimate: 10,
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(calls, [
+    "lock",
+    "lock",
+    "document.version:8",
+    "job.version:8",
+  ]);
+});
+
+
 test("searchKeyword result objects include review status", async () => {
   const repository = createRagRepository({
     ragChunk: {
-      findMany: async () => [createChunkRow({ reviewStatus: "raw_extracted" })],
+      findMany: async () => [
+        createChunkRow({
+          reviewStatus: "approved",
+          sourceType: "okf_topic",
+        }),
+      ],
     },
   });
 
@@ -128,13 +242,14 @@ test("searchKeyword result objects include review status", async () => {
     workspaceId: "wrk_1",
   });
 
-  assert.equal(result?.reviewStatus, "raw_extracted");
+  assert.equal(result?.reviewStatus, "approved");
+  assert.equal(result?.sourceType, "okf_topic");
 });
 
-test("searchVector result objects include review status", async () => {
+test("searchVector result objects include review status and source type", async () => {
   const repository = createRagRepository({
     $queryRaw: async () => [
-      createVectorRow({ reviewStatus: "raw_extracted" }),
+      createVectorRow({ reviewStatus: "approved", sourceType: "okf_topic" }),
     ],
   });
 
@@ -145,7 +260,8 @@ test("searchVector result objects include review status", async () => {
     workspaceId: "wrk_1",
   });
 
-  assert.equal(result?.reviewStatus, "raw_extracted");
+  assert.equal(result?.reviewStatus, "approved");
+  assert.equal(result?.sourceType, "okf_topic");
 });
 
 test("searchKeyword filters document ids when provided", async () => {
@@ -273,6 +389,79 @@ test("searchKeyword returns identical order for identical searches", async () =>
   );
 });
 
+test("storeCompletedIndex deactivates only raw extraction chunks before writing raw index chunks", async () => {
+  const calls: string[] = [];
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<void>) =>
+      callback({
+        $executeRaw: async () => {
+          calls.push("embedding.insert");
+        },
+        document: {
+          update: async () => {
+            calls.push("document.update");
+          },
+        },
+        ragChunk: {
+          create: async (query: {
+            data: { sourceType?: string; sourceTopicId?: string | null };
+          }) => {
+            calls.push(
+              `chunk.create:${query.data.sourceType}:${query.data.sourceTopicId}`,
+            );
+          },
+          updateMany: async (query: {
+            where: { documentId: string; sourceType: string; workspaceId: string };
+          }) => {
+            calls.push(
+              `chunk.deactivate:${query.where.workspaceId}:${query.where.documentId}:${query.where.sourceType}`,
+            );
+          },
+        },
+        ragIndexJob: {
+          update: async () => {
+            calls.push("job.update");
+          },
+        },
+      }),
+  });
+
+  await repository.storeCompletedIndex({
+    chunks: [
+      {
+        chunkOrdinal: 0,
+        contentHash: "hash",
+        documentId: "doc_1",
+        headingPath: [],
+        id: "chunk_1",
+        indexJobId: "job_1",
+        indexVersion: 1,
+        pageEnd: 1,
+        pageStart: 1,
+        reviewStatus: "raw_extracted",
+        sourcePageNumbers: [1],
+        text: "raw text",
+        tokenCount: 2,
+        workspaceId: "wrk_1",
+      },
+    ],
+    documentId: "doc_1",
+    embeddings: [[0.1, 0.2]],
+    indexJobId: "job_1",
+    indexVersion: 1,
+    model: "test",
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(calls, [
+    "chunk.deactivate:wrk_1:doc_1:raw_extraction",
+    "chunk.create:raw_extraction:null",
+    "embedding.insert",
+    "job.update",
+    "document.update",
+  ]);
+});
+
 function createChunkRow(overrides: Partial<ReturnType<typeof baseChunkRow>>) {
   return { ...baseChunkRow(), ...overrides };
 }
@@ -290,6 +479,7 @@ function baseChunkRow() {
     pageEnd: 1,
     pageStart: 1,
     reviewStatus: "raw_extracted",
+    sourceType: "raw_extraction",
     sourcePageNumbers: [1],
     text: "Generator control unit.",
   };
@@ -304,6 +494,7 @@ function baseVectorRow() {
     pageStart: 1,
     reviewStatus: "raw_extracted",
     score: 0.8,
+    sourceType: "raw_extraction",
     sourcePageNumbers: [1],
     text: "Generator control unit.",
   };

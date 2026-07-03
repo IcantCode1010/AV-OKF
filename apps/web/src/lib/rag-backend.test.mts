@@ -22,16 +22,32 @@ test("retrieveDocuments returns an empty local result set without production bac
   }
 });
 
-test("mergeHybridResults preserves review status on fused items", () => {
+test("mergeHybridResults preserves review status and source type on fused items", () => {
   const results = mergeHybridResults(
-    [createRetrievalResult({ chunkId: "chunk_keyword", reviewStatus: "raw_extracted" })],
-    [createRetrievalResult({ chunkId: "chunk_vector", reviewStatus: "raw_extracted" })],
+    [
+      createRetrievalResult({
+        chunkId: "chunk_keyword",
+        reviewStatus: "raw_extracted",
+        sourceType: "raw_extraction",
+      }),
+    ],
+    [
+      createRetrievalResult({
+        chunkId: "chunk_vector",
+        reviewStatus: "approved",
+        sourceType: "okf_topic",
+      }),
+    ],
     10,
   );
 
   assert.deepEqual(
     results.map((result) => result.reviewStatus),
-    ["raw_extracted", "raw_extracted"],
+    ["raw_extracted", "approved"],
+  );
+  assert.deepEqual(
+    results.map((result) => result.sourceType),
+    ["raw_extraction", "okf_topic"],
   );
 });
 
@@ -49,6 +65,7 @@ function createRetrievalResult(
     reviewStatus: "raw_extracted",
     score: 1,
     sourcePageNumbers: [1],
+    sourceType: "raw_extraction",
     text: "Generator control unit.",
     ...overrides,
   };

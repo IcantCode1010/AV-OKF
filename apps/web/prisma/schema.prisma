@@ -236,6 +236,8 @@ model RagChunk {
   sourcePageNumbers Int[]
   headingPath       String[]
   reviewStatus      String        @default("raw_extracted")
+  sourceType        String        @default("raw_extraction")
+  sourceTopicId     String?
   isActive          Boolean       @default(false)
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -245,6 +247,8 @@ model RagChunk {
 
   @@unique([documentId, indexVersion, chunkOrdinal])
   @@index([workspaceId, documentId, isActive])
+  @@index([workspaceId, documentId, sourceType])
+  @@index([workspaceId, sourceType, sourceTopicId])
   @@index([workspaceId, isActive])
   @@index([contentHash])
 }

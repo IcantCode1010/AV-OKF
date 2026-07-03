@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { DatabaseZap, RefreshCw } from "lucide-react";
 
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Badge } from "@/components/ui/badge";
@@ -27,12 +27,21 @@ import {
   getReindexAdminState,
 } from "@/lib/rag-reindex";
 import type { ReindexDocumentRow } from "@/lib/rag-types";
-import { requestReindexAction } from "./actions";
+import { requestReindexAction, syncApprovedTopicsToRagAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminReindexPage() {
+export default async function AdminReindexPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    okfFailed?: string;
+    okfSynced?: string;
+    okfUnchanged?: string;
+  }>;
+}) {
   const context = await requireAuthWorkspaceContext();
+  const params = await searchParams;
 
   if (!isProductionBackend()) {
     return (
@@ -82,6 +91,39 @@ export default async function AdminReindexPage() {
           </Badge>
         )}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sync approved topics to RAG</CardTitle>
+          <CardDescription>
+            Writes one searchable OKF-derived chunk for each approved topic in
+            this workspace. These chunks are tagged separately from raw PDF
+            extraction chunks and are safe from document reindex replacement.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary">sourceType: okf_topic</Badge>
+            <Badge variant="outline">manual sync</Badge>
+            <Badge variant="outline">idempotent</Badge>
+          </div>
+          <form action={syncApprovedTopicsToRagAction}>
+            <PendingSubmitButton pendingLabel="Syncing...">
+              <DatabaseZap className="mr-2 h-4 w-4" />
+              Sync approved topics
+            </PendingSubmitButton>
+          </form>
+        </CardContent>
+        {params?.okfSynced || params?.okfUnchanged || params?.okfFailed ? (
+          <CardContent className="border-t pt-4">
+            <p className="text-sm text-muted-foreground">
+              Last sync: {formatCount(params.okfSynced)} synced,{" "}
+              {formatCount(params.okfUnchanged)} unchanged,{" "}
+              {formatCount(params.okfFailed)} failed.
+            </p>
+          </CardContent>
+        ) : null}
+      </Card>
 
       <Card>
         <CardHeader>
@@ -206,4 +248,9 @@ function formatDate(date: Date | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatCount(value?: string) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

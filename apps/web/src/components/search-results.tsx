@@ -32,6 +32,7 @@ export function SearchResults({
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium">{result.documentTitle}</h2>
             <div className="flex items-center gap-2">
+              <Badge variant="secondary">{formatSourceType(result.sourceType)}</Badge>
               <Badge variant="outline">{formatReviewStatus(result.reviewStatus)}</Badge>
               <span className="text-xs text-muted-foreground">
                 Pages {result.pageStart}-{result.pageEnd}
@@ -49,4 +50,8 @@ export function SearchResults({
 
 function formatReviewStatus(reviewStatus: string) {
   return reviewStatus === "raw_extracted" ? "raw" : reviewStatus;
+}
+
+function formatSourceType(sourceType: string) {
+  return sourceType === "okf_topic" ? "OKF topic" : "raw extraction";
 }

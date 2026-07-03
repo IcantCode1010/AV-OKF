@@ -15,6 +15,9 @@ import {
   type RetrievalResult,
 } from "./rag-types.ts";
 
+const RAW_EXTRACTION_SOURCE_TYPE = "raw_extraction";
+const OKF_TOPIC_SOURCE_TYPE = "okf_topic";
+
 type PrismaLike = ReturnType<typeof getPrisma>;
 
 export type RagRepository = ReturnType<typeof createRagRepository>;
@@ -114,6 +117,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           where: {
             chunk: {
               documentId: input.documentId,
+              sourceType: RAW_EXTRACTION_SOURCE_TYPE,
               workspaceId: input.workspaceId,
             },
           },
@@ -121,8 +125,31 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         await tx.ragChunk.deleteMany({
           where: {
             documentId: input.documentId,
+            sourceType: RAW_EXTRACTION_SOURCE_TYPE,
             workspaceId: input.workspaceId,
           },
+        });
+      });
+    },
+
+    async deleteOkfSyncedChunks(input: {
+      documentId: string;
+      sourceTopicId?: string;
+      workspaceId: string;
+    }) {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        const chunkWhere: Prisma.RagChunkWhereInput = {
+          documentId: input.documentId,
+          sourceType: OKF_TOPIC_SOURCE_TYPE,
+          ...(input.sourceTopicId ? { sourceTopicId: input.sourceTopicId } : {}),
+          workspaceId: input.workspaceId,
+        };
+
+        await tx.ragEmbedding.deleteMany({
+          where: { chunk: chunkWhere },
+        });
+        await tx.ragChunk.deleteMany({
+          where: chunkWhere,
         });
       });
     },
@@ -182,7 +209,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
               id: true,
               isActive: true,
             },
-            where: { isActive: true },
+            where: { isActive: true, sourceType: RAW_EXTRACTION_SOURCE_TYPE },
           },
           ragIndexJobs: {
             orderBy: [{ completedAt: "desc" }, { queuedAt: "desc" }],
@@ -330,6 +357,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         reviewStatus: row.reviewStatus,
         score: 1 / (index + 1),
         sourcePageNumbers: row.sourcePageNumbers,
+        sourceType: row.sourceType,
         text: row.text,
       }));
     },
@@ -354,6 +382,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           reviewStatus: string;
           score: number;
           sourcePageNumbers: number[];
+          sourceType: string;
           text: string;
         }>
       >`
@@ -366,6 +395,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           c."reviewStatus" AS "reviewStatus",
           1 - (e."embedding" <=> ${vectorLiteral(input.embedding)}::vector) AS "score",
           c."sourcePageNumbers" AS "sourcePageNumbers",
+          c."sourceType" AS "sourceType",
           c."text" AS "text"
         FROM "RagEmbedding" e
         INNER JOIN "RagChunk" c ON c."id" = e."chunkId"
@@ -388,6 +418,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         reviewStatus: row.reviewStatus,
         score: row.score,
         sourcePageNumbers: row.sourcePageNumbers,
+        sourceType: row.sourceType,
         text: row.text,
       }));
     },
@@ -404,7 +435,11 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       await db.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.ragChunk.updateMany({
           data: { isActive: false },
-          where: { documentId: input.documentId, workspaceId: input.workspaceId },
+          where: {
+            documentId: input.documentId,
+            sourceType: RAW_EXTRACTION_SOURCE_TYPE,
+            workspaceId: input.workspaceId,
+          },
         });
 
         for (const [index, chunk] of input.chunks.entries()) {
@@ -429,6 +464,8 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
               pageStart: chunk.pageStart,
               reviewStatus: chunk.reviewStatus,
               sourcePageNumbers: chunk.sourcePageNumbers,
+              sourceTopicId: chunk.sourceTopicId ?? null,
+              sourceType: chunk.sourceType ?? RAW_EXTRACTION_SOURCE_TYPE,
               text: chunk.text,
               tokenCount: chunk.tokenCount,
               workspaceId: chunk.workspaceId,
@@ -472,6 +509,185 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         });
       });
     },
+
+    async listApprovedTopicsForRagSync(input: { workspaceId: string }) {
+      return db.topicRecord.findMany({
+        orderBy: [{ documentId: "asc" }, { updatedAt: "asc" }],
+        select: {
+          approvedContentSource: true,
+          documentId: true,
+          enrichedSummary: true,
+          enrichedTitle: true,
+          id: true,
+          originalSummary: true,
+          originalTitle: true,
+          pageEnd: true,
+          pageStart: true,
+          sourcePageNumbers: true,
+          summary: true,
+          title: true,
+          workspaceId: true,
+        },
+        where: {
+          reviewStatus: "approved",
+          workspaceId: input.workspaceId,
+        },
+      });
+    },
+
+    async getOkfSyncedChunksForTopics(input: {
+      sourceTopicIds: string[];
+      workspaceId: string;
+    }) {
+      if (input.sourceTopicIds.length === 0) {
+        return [];
+      }
+
+      return db.ragChunk.findMany({
+        select: {
+          contentHash: true,
+          documentId: true,
+          id: true,
+          sourceTopicId: true,
+          workspaceId: true,
+        },
+        where: {
+          isActive: true,
+          sourceTopicId: { in: input.sourceTopicIds },
+          sourceType: OKF_TOPIC_SOURCE_TYPE,
+          workspaceId: input.workspaceId,
+        },
+      });
+    },
+
+    async createOkfSyncIndexJob(input: {
+      caps?: EmbeddingBudgetCaps;
+      documentId: string;
+      tokenEstimate: number;
+      workspaceId: string;
+    }) {
+      return db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483003, hashtext(${input.documentId}))`;
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483001, hashtext(${input.workspaceId}))`;
+
+        const document = await tx.document.findFirst({
+          select: { ragIndexVersion: true },
+          where: { id: input.documentId, workspaceId: input.workspaceId },
+        });
+
+        if (!document) {
+          throw new Error("document_not_found");
+        }
+
+        const indexVersion = document.ragIndexVersion + 1;
+        const usage = await getReservedTokenUsageToday(tx, input.workspaceId);
+
+        assertEmbeddingBudget(
+          {
+            documentTokenEstimate: input.tokenEstimate,
+            globalTokensUsedToday: usage.globalTokensUsedToday,
+            workspaceTokensUsedToday: usage.workspaceTokensUsedToday,
+          },
+          input.caps,
+        );
+
+        await tx.document.update({
+          data: { ragIndexVersion: indexVersion },
+          where: { id: input.documentId },
+        });
+
+        return tx.ragIndexJob.create({
+          data: {
+            documentId: input.documentId,
+            extractionJobId: null,
+            indexVersion,
+            startedAt: new Date(),
+            status: "okf_sync_running",
+            tokenEstimate: input.tokenEstimate,
+            workspaceId: input.workspaceId,
+          },
+        });
+      });
+    },
+
+    async completeOkfSyncJob(input: { indexJobId: string }) {
+      await db.ragIndexJob.update({
+        data: {
+          completedAt: new Date(),
+          status: "okf_sync_completed",
+        },
+        where: { id: input.indexJobId },
+      });
+    },
+
+    async failOkfSyncJob(input: {
+      errorMessage: string;
+      indexJobId: string;
+    }) {
+      await db.ragIndexJob.update({
+        data: {
+          completedAt: new Date(),
+          errorCode: "okf_sync_failed",
+          errorMessage: input.errorMessage,
+          status: "failed",
+        },
+        where: { id: input.indexJobId },
+      });
+    },
+
+    async storeOkfSyncedChunk(input: {
+      chunk: RagChunkRecord;
+      embedding: number[];
+      model: string;
+    }) {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.ragChunk.create({
+          data: {
+            chunkOrdinal: input.chunk.chunkOrdinal,
+            chunkingStrategyId: input.chunk.chunkingStrategyId ?? null,
+            contentHash: input.chunk.contentHash,
+            documentId: input.chunk.documentId,
+            headingPath: input.chunk.headingPath,
+            id: input.chunk.id,
+            indexJobId: input.chunk.indexJobId,
+            indexVersion: input.chunk.indexVersion,
+            isActive: true,
+            pageEnd: input.chunk.pageEnd,
+            pageStart: input.chunk.pageStart,
+            reviewStatus: input.chunk.reviewStatus,
+            sourcePageNumbers: input.chunk.sourcePageNumbers,
+            sourceTopicId: input.chunk.sourceTopicId ?? null,
+            sourceType: input.chunk.sourceType ?? OKF_TOPIC_SOURCE_TYPE,
+            text: input.chunk.text,
+            tokenCount: input.chunk.tokenCount,
+            workspaceId: input.chunk.workspaceId,
+          },
+        });
+
+        await tx.$executeRaw`
+          INSERT INTO "RagEmbedding" (
+            "id",
+            "workspaceId",
+            "chunkId",
+            "model",
+            "dimensions",
+            "tokenCount",
+            "embedding",
+            "createdAt"
+          )
+          VALUES (
+            ${randomUUID()},
+            ${input.chunk.workspaceId},
+            ${input.chunk.id},
+            ${input.model},
+            ${input.embedding.length},
+            ${input.chunk.tokenCount},
+            ${vectorLiteral(input.embedding)}::vector,
+            NOW()
+          )
+        `;
+      });
+    },
   };
 }
 
@@ -483,8 +699,14 @@ async function getReservedTokenUsageToday(
   start.setHours(0, 0, 0, 0);
   const usageWindow: Prisma.RagIndexJobWhereInput = {
     OR: [
-      { completedAt: { gte: start }, status: "completed" },
-      { startedAt: { gte: start }, status: "running" },
+      {
+        completedAt: { gte: start },
+        status: { in: ["completed", "okf_sync_completed"] },
+      },
+      {
+        startedAt: { gte: start },
+        status: { in: ["running", "okf_sync_running"] },
+      },
     ],
     tokenEstimate: { gt: 0 },
   };

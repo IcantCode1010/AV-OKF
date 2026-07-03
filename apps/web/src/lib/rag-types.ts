@@ -13,6 +13,8 @@ export type RagIndexStatus =
 
 export type RagIndexJobStatus = "queued" | "running" | "completed" | "failed";
 
+export type RagChunkSourceType = "raw_extraction" | "okf_topic";
+
 export type RagIndexErrorCode =
   | "chunking_failed"
   | "embedding_budget_exceeded"
@@ -35,7 +37,9 @@ export type RagChunkRecord = {
   pageEnd: number;
   sourcePageNumbers: number[];
   headingPath: string[];
-  reviewStatus: "raw_extracted";
+  reviewStatus: string;
+  sourceTopicId?: string | null;
+  sourceType?: RagChunkSourceType | string;
 };
 
 export type RagChunkInput = {
@@ -92,5 +96,6 @@ export type RetrievalResult = {
   reviewStatus: string;
   score: number;
   sourcePageNumbers: number[];
+  sourceType: string;
   text: string;
 };
