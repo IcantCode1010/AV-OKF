@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Reframed the upcoming topic workflow: after PDF upload and text extraction, an LLM should review the extracted document text, propose draft topic records with source sections/pages, let the reviewer tweak those topics, optionally enhance an individual topic with the LLM, and only then allow human approval/export to OKF.
+- Added workspace-level Anthropic API key settings for future AI enrichment. Keys are encrypted at rest, managed from Settings, and never displayed back to the client after save.
+- Added on-demand LLM topic enrichment for unapproved topics, including side-by-side raw/enriched review, explicit raw-vs-enriched approval choice, and a full audit trail of prompt, raw response, provider, model, requester, success state, and error message.
 
 ### Fixed
 
