@@ -81,7 +81,8 @@ Deliverables:
 - Topic review UI
 - Manual topic generation only. Re-extraction does not automatically regenerate topics in Stage 3.
 - Reruns delete `needs_review` and `needs_cleanup` topics, preserve `approved` and `rejected` topics, and skip new draft topics that overlap reviewed page coverage.
-- Confidence is categorical: `high` for clear heading boundaries, `low` for coarse page-range fallback, and `medium` is reserved for later mixed-boundary heuristics.
+- Confidence is categorical: `high` for ALL-CAPS or explicitly numbered/lettered heading matches, `medium` for the weaker short-line heading heuristic, and `low` for the coarse page-range fallback.
+- Heading detection rejects page-index/cross-reference code lines (e.g. `"0.1"`, `"Lights.Index.5"`) so they don't get mistaken for section headings; a 737 QRH document produced 368 mostly single-page junk-titled topics before this fix.
 - `sourcePageNumbers` is the page coverage field that Stage 5 OKF export will consume.
 
 Exit criteria:

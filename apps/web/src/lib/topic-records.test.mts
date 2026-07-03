@@ -99,6 +99,262 @@ test("generateTopicCandidates ignores running headers without suppressing repeat
   );
 });
 
+test("generateTopicCandidates skips a bare page-index code and finds the real heading below it", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "0.1\nEmergency Descent < >\nCondition: One or more of these occur:",
+      tables: [],
+      imageCount: 0,
+      charCount: 60,
+    },
+    {
+      pageNumber: 2,
+      text: "0.2\nRapid Depressurization <>\nCondition: Cabin altitude exceeds 10,000 feet.",
+      tables: [],
+      imageCount: 0,
+      charCount: 70,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.equal(topics[0]?.title, "Emergency Descent < >");
+  assert.equal(topics[0]?.confidence, "medium");
+  assert.equal(
+    topics.some((topic) => topic.title === "0.1" || topic.title === "0.2"),
+    false,
+  );
+});
+
+test("generateTopicCandidates keeps a numbered heading with trailing title text as high confidence", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "1.1 Compressor Overhaul\nBody text about compressor overhaul.",
+      tables: [],
+      imageCount: 0,
+      charCount: 60,
+    },
+    {
+      pageNumber: 2,
+      text: "1.2 Turbine Inspection\nBody text about turbine inspection.",
+      tables: [],
+      imageCount: 0,
+      charCount: 58,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.equal(topics[0]?.title, "1.1 Compressor Overhaul");
+  assert.equal(topics[0]?.confidence, "high");
+});
+
+test("generateTopicCandidates absorbs a page-index-code-only page into the preceding topic instead of spawning a junk topic", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "ATA 24 ELECTRICAL POWER\nGenerator bus procedure details.",
+      tables: [],
+      imageCount: 0,
+      charCount: 55,
+    },
+    {
+      pageNumber: 2,
+      text: "Lights.Index.5\nSome cross-reference body text about various lights and page numbers.",
+      tables: [],
+      imageCount: 0,
+      charCount: 85,
+    },
+    {
+      pageNumber: 3,
+      text: "SECTION 2 FAULT ISOLATION\nFault isolation details.",
+      tables: [],
+      imageCount: 0,
+      charCount: 49,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.deepEqual(topics[0]?.sourcePageNumbers, [1, 2]);
+  assert.deepEqual(topics[1]?.sourcePageNumbers, [3]);
+  assert.equal(
+    topics.some((topic) => topic.title === "Lights.Index.5"),
+    false,
+  );
+});
+
+test("generateTopicCandidates never titles a topic after a bare dotted page-index code", () => {
+  for (const code of ["0.1", "0.12", "1.1", "1.10"]) {
+    const topics = generateTopicCandidates("doc-1", [
+      {
+        pageNumber: 1,
+        text: code,
+        tables: [],
+        imageCount: 0,
+        charCount: code.length,
+      },
+    ]);
+
+    assert.equal(
+      topics.some((topic) => topic.title === code),
+      false,
+      `expected no topic titled "${code}"`,
+    );
+  }
+});
+
+test("generateTopicCandidates assigns medium confidence to shortTitle-only heading matches", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "Quick Action Index\nBody text about quick action items.",
+      tables: [],
+      imageCount: 0,
+      charCount: 56,
+    },
+    {
+      pageNumber: 2,
+      text: "Alphabetical Index\nBody text listing items alphabetically.",
+      tables: [],
+      imageCount: 0,
+      charCount: 60,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.equal(topics[0]?.title, "Quick Action Index");
+  assert.equal(topics[0]?.confidence, "medium");
+});
+
+test("generateTopicCandidates does not reject a hyphenated dotted heading like NNC.0-Miscellaneous", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "NNC.0-Miscellaneous\nBody text about miscellaneous items in this section.",
+      tables: [],
+      imageCount: 0,
+      charCount: 74,
+    },
+    {
+      pageNumber: 2,
+      text: "NNC.1-Airplane General\nBody text about airplane general items in this section.",
+      tables: [],
+      imageCount: 0,
+      charCount: 80,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.equal(topics[0]?.title, "NNC.0-Miscellaneous");
+  assert.equal(topics[0]?.confidence, "medium");
+});
+
+test("generateTopicCandidates absorbs a dot-leader index entry into the preceding topic", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "ATA 24 ELECTRICAL POWER\nGenerator bus procedure details.",
+      tables: [],
+      imageCount: 0,
+      charCount: 55,
+    },
+    {
+      pageNumber: 2,
+      text: "LOW QUANTITY............................................ 13.13\nSome cross-reference body text about low quantity conditions.",
+      tables: [],
+      imageCount: 0,
+      charCount: 110,
+    },
+    {
+      pageNumber: 3,
+      text: "SECTION 2 FAULT ISOLATION\nFault isolation details.",
+      tables: [],
+      imageCount: 0,
+      charCount: 49,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.deepEqual(topics[0]?.sourcePageNumbers, [1, 2]);
+  assert.deepEqual(topics[1]?.sourcePageNumbers, [3]);
+  assert.equal(
+    topics.some((topic) =>
+      topic.title.includes("LOW QUANTITY............"),
+    ),
+    false,
+  );
+});
+
+test("generateTopicCandidates never titles a topic after a bare 1-3 letter line", () => {
+  for (const letter of ["D", "B", "R"]) {
+    const topics = generateTopicCandidates("doc-1", [
+      {
+        pageNumber: 1,
+        text: letter,
+        tables: [],
+        imageCount: 0,
+        charCount: letter.length,
+      },
+    ]);
+
+    assert.equal(
+      topics.some((topic) => topic.title === letter),
+      false,
+      `expected no topic titled "${letter}"`,
+    );
+  }
+});
+
+test("generateTopicCandidates resolves a bare 3-letter truncation artifact to the real heading on the next line", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "REV\nREVERSER UNLOCKED (IN FLIGHT)\nCondition: Reverser lever moved up.",
+      tables: [],
+      imageCount: 0,
+      charCount: 70,
+    },
+    {
+      pageNumber: 2,
+      text: "GPS\nGPS GPS\nCondition: Satellite signal lost.",
+      tables: [],
+      imageCount: 0,
+      charCount: 47,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.equal(topics[0]?.title, "REVERSER UNLOCKED (IN FLIGHT)");
+  assert.equal(topics[0]?.confidence, "high");
+  assert.equal(topics[1]?.title, "GPS GPS");
+  assert.equal(
+    topics.some((topic) => topic.title === "REV" || topic.title === "GPS"),
+    false,
+  );
+});
+
+test("generateTopicCandidates keeps a real short multi-word heading like ICE ON", () => {
+  const topics = generateTopicCandidates("doc-1", [
+    {
+      pageNumber: 1,
+      text: "ICE ON\nBody text about ice protection status.",
+      tables: [],
+      imageCount: 0,
+      charCount: 47,
+    },
+    {
+      pageNumber: 2,
+      text: "ICE OFF\nBody text about ice protection status ending.",
+      tables: [],
+      imageCount: 0,
+      charCount: 55,
+    },
+  ]);
+
+  assert.equal(topics.length, 2);
+  assert.equal(topics[0]?.title, "ICE ON");
+});
+
 test("vault topic generation requires completed extraction", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-topics-"));
   const vault = createLocalDocumentVault(root);

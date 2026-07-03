@@ -14,6 +14,7 @@ export type TopicCandidate = {
 type HeadingBoundary = {
   pageNumber: number;
   heading: string;
+  confidence: TopicConfidence;
 };
 
 const FALLBACK_PAGE_RANGE_SIZE = 5;
@@ -27,10 +28,15 @@ export function generateTopicCandidates(
   );
   const ignoredHeadingLines = findRepeatedHeadingLines(sortedPages);
   const headings = dedupeConsecutiveHeadings(sortedPages
-    .map((page) => ({
-      pageNumber: page.pageNumber,
-      heading: getHeadingCandidate(page.text, ignoredHeadingLines),
-    }))
+    .map((page) => {
+      const candidate = getHeadingCandidate(page.text, ignoredHeadingLines);
+
+      return {
+        pageNumber: page.pageNumber,
+        heading: candidate?.heading ?? "",
+        confidence: candidate?.confidence ?? "low",
+      };
+    })
     .filter((heading): heading is HeadingBoundary => Boolean(heading.heading)));
 
   if (headings.length > 0) {
@@ -48,7 +54,7 @@ export function generateTopicCandidates(
         summary: summarizePages(sortedPages, sourcePageNumbers),
         pageStart: heading.pageNumber,
         pageEnd,
-        confidence: "high",
+        confidence: heading.confidence,
         sourcePageNumbers,
       };
     });
@@ -86,7 +92,10 @@ function dedupeConsecutiveHeadings(headings: HeadingBoundary[]) {
   });
 }
 
-function getHeadingCandidate(text: string, ignoredHeadingLines = new Set<string>()) {
+function getHeadingCandidate(
+  text: string,
+  ignoredHeadingLines = new Set<string>(),
+): { heading: string; confidence: TopicConfidence } | null {
   const candidateLines = text
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -109,13 +118,21 @@ function getHeadingCandidate(text: string, ignoredHeadingLines = new Set<string>
     const lowerLetters = line.replace(/[^a-z]/g, "").length;
     const allCapsLike =
       upperLetters > 0 && lowerLetters <= Math.max(1, upperLetters * 0.15);
-    const numberedHeading = /^(ATA|CHAPTER|SECTION|TASK|\d+(\.\d+)*\b)/i.test(
-      line,
-    );
+    // Requires a dotted section number (not just any bare leading digit, which
+    // would also match plain sentences like "737 Flight Crew Operations
+    // Manual") followed by real trailing title text, so page-index codes like
+    // "0.1" alone don't masquerade as headings.
+    const numberedHeading =
+      /^(ATA|CHAPTER|SECTION|TASK)\b/i.test(line) ||
+      /^\d+(\.\d+)+\s+[A-Za-z]/.test(line);
     const shortTitle = words.length <= 8 && !/[.!?]$/.test(line);
 
-    if (allCapsLike || numberedHeading || shortTitle) {
-      return line;
+    if (allCapsLike || numberedHeading) {
+      return { heading: line, confidence: "high" };
+    }
+
+    if (shortTitle) {
+      return { heading: line, confidence: "medium" };
     }
   }
 
@@ -155,7 +172,20 @@ function isNonHeadingLine(line: string) {
   return (
     /^page\s+\d+$/i.test(line) ||
     /^effective\s+on:/i.test(line) ||
-    /^(description|general)$/i.test(line)
+    /^(description|general)$/i.test(line) ||
+    // Bare page-index/cross-reference codes, e.g. "0.1", "1.10".
+    /^\d+(\.\d+)+$/.test(line) ||
+    // Single-token dotted codes, e.g. "Lights.Index.5", "Alpha.Index.8".
+    /^[A-Za-z]+\.[A-Za-z]+\.\d+$/.test(line) ||
+    // Dot-leader index/TOC entries, e.g. "ENG 1 OVERHEAT.............8.4".
+    /\.{4,}\s*\d/.test(line) ||
+    // Bare 1-3 letter lines (alphabetical-index dividers like "D", or
+    // truncated print artifacts like "REV" that precede the real heading on
+    // the next line, e.g. "REVERSER UNLOCKED (IN FLIGHT)"). A genuine
+    // standalone 1-3 letter heading with nothing else on the line would be
+    // silently skipped by this - accepted tradeoff, same class as the
+    // Word.Word.Digit tradeoff above.
+    /^[A-Za-z]{1,3}$/.test(line)
   );
 }
 
