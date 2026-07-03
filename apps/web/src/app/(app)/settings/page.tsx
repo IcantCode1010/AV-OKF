@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import {
   Card,
   CardContent,
@@ -11,11 +12,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { getWorkspaceLlmSetting } from "@/lib/llm-provider-settings";
 import { getCurrentUser, getCurrentWorkspace } from "@/lib/mock-data";
+import { redirect } from "next/navigation";
 
-export default function SettingsPage() {
-  const user = getCurrentUser();
-  const workspace = getCurrentWorkspace();
+import {
+  clearLlmSettingsAction,
+  saveLlmSettingsAction,
+} from "./actions";
+
+export const dynamic = "force-dynamic";
+
+export default async function SettingsPage() {
+  const { user, workspace } = await getSettingsShellContext();
+  const context = await requireAuthWorkspaceContext();
+  const llmSetting = await getWorkspaceLlmSetting(context.workspaceId);
 
   return (
     <>
@@ -35,6 +47,7 @@ export default function SettingsPage() {
           <TabsTrigger value="workspace">Workspace</TabsTrigger>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="sources">Sources</TabsTrigger>
+          <TabsTrigger value="ai">AI Enrichment</TabsTrigger>
         </TabsList>
         <TabsContent value="workspace" className="mt-4">
           <Card>
@@ -82,6 +95,88 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        <TabsContent value="ai" className="mt-4">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>AI Enrichment</CardTitle>
+                  <CardDescription>
+                    Store the workspace API key used by future topic enrichment.
+                  </CardDescription>
+                </div>
+                <Badge variant={llmSetting.hasKey ? "secondary" : "outline"}>
+                  {llmSetting.hasKey ? "Key configured" : "No key stored"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="llm-provider">Provider</Label>
+                  <Input id="llm-provider" value="Anthropic" readOnly />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="llm-updated">Last updated</Label>
+                  <Input
+                    id="llm-updated"
+                    value={
+                      llmSetting.updatedAt
+                        ? formatSettingsTimestamp(llmSetting.updatedAt)
+                        : "Not configured"
+                    }
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              <form action={saveLlmSettingsAction} className="space-y-3">
+                <input
+                  type="hidden"
+                  name="workspaceId"
+                  value={context.workspaceId}
+                />
+                <div className="grid gap-2">
+                  <Label htmlFor="anthropic-api-key">Anthropic API key</Label>
+                  <Input
+                    id="anthropic-api-key"
+                    name="apiKey"
+                    placeholder={
+                      llmSetting.hasKey
+                        ? "Enter a new key to replace the stored key"
+                        : "Paste Anthropic API key"
+                    }
+                    type="password"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The key is encrypted before storage and is never displayed
+                    again after saving.
+                  </p>
+                </div>
+                <PendingSubmitButton pendingLabel="Saving...">
+                  Save API key
+                </PendingSubmitButton>
+              </form>
+
+              <Separator />
+
+              <form action={clearLlmSettingsAction}>
+                <input
+                  type="hidden"
+                  name="workspaceId"
+                  value={context.workspaceId}
+                />
+                <Button
+                  disabled={!llmSetting.hasKey}
+                  type="submit"
+                  variant="outline"
+                >
+                  Clear stored key
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
         <TabsContent value="sources" className="mt-4">
           <Card>
             <CardHeader>
@@ -109,4 +204,29 @@ export default function SettingsPage() {
       </Tabs>
     </>
   );
+}
+
+async function getSettingsShellContext() {
+  if (process.env.AV_OKF_BACKEND === "production") {
+    const { getProductionShellContext } = await import("@/lib/auth");
+    const shell = await getProductionShellContext();
+
+    if (!shell) {
+      redirect("/api/auth/signin");
+    }
+
+    return shell;
+  }
+
+  return {
+    user: getCurrentUser(),
+    workspace: getCurrentWorkspace(),
+  };
+}
+
+function formatSettingsTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

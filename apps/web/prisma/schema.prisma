@@ -63,6 +63,7 @@ model Workspace {
   ragIndexJobs    RagIndexJob[]
   topicRecords    TopicRecord[]
   activityEvents  ActivityEvent[]
+  llmSetting      WorkspaceLlmSetting?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 }
@@ -77,6 +78,15 @@ model WorkspaceMember {
   createdAt   DateTime  @default(now())
 
   @@unique([workspaceId, userId])
+}
+
+model WorkspaceLlmSetting {
+  workspaceId     String    @id
+  provider        String    @default("anthropic")
+  encryptedApiKey String?
+  updatedAt       DateTime  @default(now()) @updatedAt
+  updatedBy       String?
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
 model Document {

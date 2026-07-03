@@ -44,6 +44,7 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-before-public-deployment}
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      AV_OKF_SETTINGS_ENCRYPTION_KEY: ${AV_OKF_SETTINGS_ENCRYPTION_KEY:-}
       AV_OKF_MANIFEST_PATH: /data/okf-base.yaml
       AV_OKF_KNOWLEDGE_ROOT: /data/knowledge
       AV_OKF_KNOWLEDGE_VERSION: ${AV_OKF_KNOWLEDGE_VERSION:-0.1.0}
