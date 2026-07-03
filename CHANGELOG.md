@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- Reframed the upcoming topic workflow: after PDF upload and text extraction, an LLM should review the extracted document text, propose draft topic records with source sections/pages, let the reviewer tweak those topics, optionally enhance an individual topic with the LLM, and only then allow human approval/export to OKF.
+
 ### Fixed
 
 - Document library rows were intermittently unclickable. Root cause was Next.js 16's client-side router silently failing to commit some navigations (reproduced even on a bare `next/link` click with no custom code involved). `document-library.tsx` now navigates with a plain `<a href>` and `window.location.assign()` instead of `next/link` and `router.push()`, forcing a full browser navigation for this list.
