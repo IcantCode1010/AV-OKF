@@ -239,6 +239,33 @@ test("exportTopicToKnowledge keeps matching-title topics as separate index entri
   }
 });
 
+test("buildOkfSystemTopic omits coverage fields when no chunk ids are provided", () => {
+  const exported = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: approvedTopic,
+  });
+
+  assert.equal(exported.content.includes("covered_rag_chunk_ids"), false);
+  assert.equal(exported.content.includes("coverage_type"), false);
+});
+
+test("buildOkfSystemTopic writes covered_rag_chunk_ids and coverage_type when resolved", () => {
+  const exported = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: {
+      ...approvedTopic,
+      coverageType: "direct_source",
+      coveredRagChunkIds: ["chunk_1", "chunk_2"],
+    },
+  });
+  const frontmatter = parseFrontmatter(exported.content);
+
+  assert.deepEqual(frontmatter.covered_rag_chunk_ids, ["chunk_1", "chunk_2"]);
+  assert.equal(frontmatter.coverage_type, "direct_source");
+});
+
 test("buildOkfSystemTopic frontmatter always marks review_status approved", () => {
   const exported = buildOkfSystemTopic({
     document: exportDocument,
@@ -492,6 +519,35 @@ test("exportTopicToKnowledge exports typed relations that pass both OKF linters"
     assert.match(markdown, /    target_type: "system_topic"/);
     await assertOkflintPasses(root);
     await assertRelationLintPasses(root);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("exportTopicToKnowledge exports coverage fields that pass okflint", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-coverage-export-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+
+  try {
+    await copyManifestTo(root);
+    const exported = await exportTopicToKnowledge({
+      document: exportDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: {
+        ...approvedTopic,
+        coverageType: "direct_source",
+        coveredRagChunkIds: ["chunk_1", "chunk_2"],
+      },
+    });
+
+    const markdown = await readFile(path.join(knowledgeRoot, exported.filename), "utf8");
+    assert.match(markdown, /covered_rag_chunk_ids:/);
+    assert.match(markdown, /  - chunk_1/);
+    assert.match(markdown, /  - chunk_2/);
+    assert.match(markdown, /coverage_type: "direct_source"/);
+    await assertOkflintPasses(root);
   } finally {
     await rm(root, { force: true, recursive: true });
   }

@@ -345,10 +345,14 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           workspaceId: input.workspaceId,
         },
       });
+      const coverage = await getCoverageByChunkId(db, {
+        chunkIds: rows.map((row) => row.id),
+        workspaceId: input.workspaceId,
+      });
 
       return rows.map((row, index) => ({
         chunkId: row.id,
-        coveredByOkfConceptIds: [],
+        coveredByOkfConceptIds: coverage.get(row.id) ?? [],
         documentId: row.documentId,
         documentTitle: row.document.title,
         pageEnd: row.pageEnd,
@@ -406,10 +410,14 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         ORDER BY e."embedding" <=> ${vectorLiteral(input.embedding)}::vector ASC
         LIMIT ${input.topK}
       `;
+      const coverage = await getCoverageByChunkId(db, {
+        chunkIds: rows.map((row) => row.chunkId),
+        workspaceId: input.workspaceId,
+      });
 
       return rows.map((row) => ({
         chunkId: row.chunkId,
-        coveredByOkfConceptIds: [],
+        coveredByOkfConceptIds: coverage.get(row.chunkId) ?? [],
         documentId: row.documentId,
         documentTitle: row.documentTitle,
         pageEnd: row.pageEnd,
@@ -635,6 +643,57 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       });
     },
 
+    async listActiveChunksForDocument(input: {
+      documentId: string;
+      workspaceId: string;
+    }): Promise<{ id: string; sourcePageNumbers: number[] }[]> {
+      // Coverage only resolves against raw extraction chunks: okf_topic chunks
+      // (synced separately) carry a topic's own page range and would otherwise
+      // let a topic "cover" itself or another approved topic's synced chunk.
+      return db.ragChunk.findMany({
+        select: { id: true, sourcePageNumbers: true },
+        where: {
+          documentId: input.documentId,
+          isActive: true,
+          sourceType: RAW_EXTRACTION_SOURCE_TYPE,
+          workspaceId: input.workspaceId,
+        },
+      });
+    },
+
+    async syncOkfConceptChunkLinks(input: {
+      chunkIds: string[];
+      coverageType: string;
+      okfConceptId: string;
+      workspaceId: string;
+    }) {
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.okfConceptChunkLink.deleteMany({
+          where: {
+            okfConceptId: input.okfConceptId,
+            workspaceId: input.workspaceId,
+            ...(input.chunkIds.length > 0
+              ? { chunkId: { notIn: input.chunkIds } }
+              : {}),
+          },
+        });
+
+        if (input.chunkIds.length === 0) {
+          return;
+        }
+
+        await tx.okfConceptChunkLink.createMany({
+          data: input.chunkIds.map((chunkId) => ({
+            chunkId,
+            coverageType: input.coverageType,
+            okfConceptId: input.okfConceptId,
+            workspaceId: input.workspaceId,
+          })),
+          skipDuplicates: true,
+        });
+      });
+    },
+
     async storeOkfSyncedChunk(input: {
       chunk: RagChunkRecord;
       embedding: number[];
@@ -772,6 +831,34 @@ function isExtractedTable(
         row.every((cell) => typeof cell === "string"),
     )
   );
+}
+
+async function getCoverageByChunkId(
+  db: PrismaLike,
+  input: { chunkIds: string[]; workspaceId: string },
+): Promise<Map<string, string[]>> {
+  const coverage = new Map<string, string[]>();
+
+  if (input.chunkIds.length === 0) {
+    return coverage;
+  }
+
+  const links = await db.okfConceptChunkLink.findMany({
+    select: { chunkId: true, okfConceptId: true },
+    where: { chunkId: { in: input.chunkIds }, workspaceId: input.workspaceId },
+  });
+
+  for (const link of links) {
+    const existing = coverage.get(link.chunkId);
+
+    if (existing) {
+      existing.push(link.okfConceptId);
+    } else {
+      coverage.set(link.chunkId, [link.okfConceptId]);
+    }
+  }
+
+  return coverage;
 }
 
 function vectorLiteral(embedding: number[]) {

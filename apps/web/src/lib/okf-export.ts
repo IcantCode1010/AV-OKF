@@ -17,6 +17,8 @@ type ExportTopic = {
   reviewStatus: string;
   relations?: TopicRelation[];
   sourcePageNumbers: number[];
+  coveredRagChunkIds?: string[];
+  coverageType?: string;
 };
 
 type ExportDocument = {
@@ -99,6 +101,11 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
 
   if (relations.length > 0) {
     frontmatterFields.relations = relations;
+  }
+
+  if (input.topic.coveredRagChunkIds && input.topic.coveredRagChunkIds.length > 0) {
+    frontmatterFields.covered_rag_chunk_ids = input.topic.coveredRagChunkIds;
+    frontmatterFields.coverage_type = input.topic.coverageType ?? "direct_source";
   }
 
   const frontmatter = stringifyFrontmatter(frontmatterFields);
@@ -358,7 +365,7 @@ function removeSourceManifestEntry(lines: string[], title: string) {
 
 type FrontmatterFields = Record<
   string,
-  string | number[] | TopicRelation[]
+  string | number[] | string[] | TopicRelation[]
 >;
 
 function stringifyFrontmatter(fields: FrontmatterFields) {

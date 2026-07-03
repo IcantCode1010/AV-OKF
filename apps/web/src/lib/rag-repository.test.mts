@@ -226,6 +226,7 @@ test("createOkfSyncIndexJob advances document index version for per-topic chunks
 
 test("searchKeyword result objects include review status", async () => {
   const repository = createRagRepository({
+    okfConceptChunkLink: { findMany: async () => [] },
     ragChunk: {
       findMany: async () => [
         createChunkRow({
@@ -251,6 +252,7 @@ test("searchVector result objects include review status and source type", async 
     $queryRaw: async () => [
       createVectorRow({ reviewStatus: "approved", sourceType: "okf_topic" }),
     ],
+    okfConceptChunkLink: { findMany: async () => [] },
   });
 
   const [result] = await repository.searchVector({
@@ -264,6 +266,143 @@ test("searchVector result objects include review status and source type", async 
   assert.equal(result?.sourceType, "okf_topic");
 });
 
+test("searchKeyword reports real coveredByOkfConceptIds for covered and uncovered chunks", async () => {
+  const repository = createRagRepository({
+    okfConceptChunkLink: {
+      findMany: async (query: { where: { chunkId: { in: string[] } } }) =>
+        query.where.chunkId.in
+          .filter((chunkId) => chunkId === "chunk_covered")
+          .map((chunkId) => ({ chunkId, okfConceptId: "topic_1" })),
+    },
+    ragChunk: {
+      findMany: async () => [
+        createChunkRow({ id: "chunk_covered" }),
+        createChunkRow({ id: "chunk_uncovered" }),
+      ],
+    },
+  });
+
+  const results = await repository.searchKeyword({
+    query: "generator",
+    topK: 10,
+    workspaceId: "wrk_1",
+  });
+
+  const covered = results.find((result) => result.chunkId === "chunk_covered");
+  const uncovered = results.find((result) => result.chunkId === "chunk_uncovered");
+
+  assert.deepEqual(covered?.coveredByOkfConceptIds, ["topic_1"]);
+  assert.deepEqual(uncovered?.coveredByOkfConceptIds, []);
+});
+
+test("searchVector reports real coveredByOkfConceptIds for a covered chunk", async () => {
+  const repository = createRagRepository({
+    $queryRaw: async () => [createVectorRow({ chunkId: "chunk_covered" })],
+    okfConceptChunkLink: {
+      findMany: async () => [
+        { chunkId: "chunk_covered", okfConceptId: "topic_1" },
+      ],
+    },
+  });
+
+  const [result] = await repository.searchVector({
+    embedding: [0.1, 0.2],
+    query: "generator",
+    topK: 10,
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(result?.coveredByOkfConceptIds, ["topic_1"]);
+});
+
+test("listActiveChunksForDocument returns only active raw extraction chunks", async () => {
+  const capturedQueries: Array<{ where: { sourceType: string } }> = [];
+  const repository = createRagRepository({
+    ragChunk: {
+      findMany: async (query: { where: { sourceType: string } }) => {
+        capturedQueries.push(query);
+        return [{ id: "chunk_1", sourcePageNumbers: [1, 2] }];
+      },
+    },
+  });
+
+  const chunks = await repository.listActiveChunksForDocument({
+    documentId: "doc_1",
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(chunks, [{ id: "chunk_1", sourcePageNumbers: [1, 2] }]);
+  assert.equal(capturedQueries[0]?.where.sourceType, "raw_extraction");
+});
+
+test("syncOkfConceptChunkLinks deletes stale links and creates the resolved set", async () => {
+  const calls: string[] = [];
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<void>) =>
+      callback({
+        okfConceptChunkLink: {
+          createMany: async (query: {
+            data: { chunkId: string }[];
+            skipDuplicates: boolean;
+          }) => {
+            calls.push(
+              `create:${query.data.map((row) => row.chunkId).join(",")}:${query.skipDuplicates}`,
+            );
+          },
+          deleteMany: async (query: {
+            where: { chunkId?: { notIn: string[] }; okfConceptId: string };
+          }) => {
+            calls.push(
+              `delete:${query.where.okfConceptId}:${query.where.chunkId?.notIn.join(",")}`,
+            );
+          },
+        },
+      }),
+  });
+
+  await repository.syncOkfConceptChunkLinks({
+    chunkIds: ["chunk_1", "chunk_2"],
+    coverageType: "direct_source",
+    okfConceptId: "topic_1",
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(calls, [
+    "delete:topic_1:chunk_1,chunk_2",
+    "create:chunk_1,chunk_2:true",
+  ]);
+});
+
+test("syncOkfConceptChunkLinks deletes all links when coverage resolves to nothing", async () => {
+  const calls: string[] = [];
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<void>) =>
+      callback({
+        okfConceptChunkLink: {
+          createMany: async () => {
+            calls.push("create");
+          },
+          deleteMany: async (query: {
+            where: { chunkId?: { notIn: string[] }; okfConceptId: string };
+          }) => {
+            calls.push(
+              `delete:${query.where.okfConceptId}:${query.where.chunkId === undefined}`,
+            );
+          },
+        },
+      }),
+  });
+
+  await repository.syncOkfConceptChunkLinks({
+    chunkIds: [],
+    coverageType: "direct_source",
+    okfConceptId: "topic_1",
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(calls, ["delete:topic_1:true"]);
+});
+
 test("searchKeyword filters document ids when provided", async () => {
   const capturedQueries: Array<{ where?: { documentId?: { in?: string[] } } }> =
     [];
@@ -272,6 +411,7 @@ test("searchKeyword filters document ids when provided", async () => {
     createChunkRow({ documentId: "doc_b" }),
   ];
   const repository = createRagRepository({
+    okfConceptChunkLink: { findMany: async () => [] },
     ragChunk: {
       findMany: async (query: {
         where?: { documentId?: { in?: string[] } };
@@ -319,6 +459,7 @@ test("searchVector filters document ids when provided", async () => {
       );
       return [createVectorRow({ documentId: documentIds?.[0] ?? "doc_b" })];
     },
+    okfConceptChunkLink: { findMany: async () => [] },
   });
 
   const filtered = await repository.searchVector({
@@ -353,6 +494,7 @@ test("searchKeyword returns identical order for identical searches", async () =>
     createChunkRow({ chunkOrdinal: 1, documentId: "doc_a", id: "chunk_a_1" }),
   ];
   const repository = createRagRepository({
+    okfConceptChunkLink: { findMany: async () => [] },
     ragChunk: {
       findMany: async (query: {
         orderBy?: Array<Record<string, "asc">>;

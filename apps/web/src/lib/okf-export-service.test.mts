@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { exportApprovedTopicForDocument } from "./okf-export-service.ts";
 import type { Document, TopicRecord } from "./document-vault.ts";
+import type { OkfCoverageRepository } from "./okf-coverage.ts";
 
 const document: Document = {
   id: "doc-amm-32",
@@ -103,3 +104,96 @@ test("exportApprovedTopicForDocument keeps non-approved topics blocked", async (
     /okf_export_requires_approved_topic/,
   );
 });
+
+test("exportApprovedTopicForDocument resolves and syncs coverage against the production backend", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-service-coverage-"));
+  const previousBackend = process.env.AV_OKF_BACKEND;
+  process.env.AV_OKF_BACKEND = "production";
+
+  const productionDocument: Document = { ...document, workspaceId: "wrk_1" };
+  const syncCalls: Parameters<OkfCoverageRepository["syncOkfConceptChunkLinks"]>[0][] =
+    [];
+  const coverageRepository: OkfCoverageRepository = {
+    async listActiveChunksForDocument() {
+      return [
+        { id: "chunk_1", sourcePageNumbers: [41] },
+        { id: "chunk_2", sourcePageNumbers: [99] },
+      ];
+    },
+    async syncOkfConceptChunkLinks(input) {
+      syncCalls.push(input);
+    },
+  };
+
+  try {
+    const exported = await exportApprovedTopicForDocument({
+      coverageRepository,
+      document: productionDocument,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topicId: approvedTopic.id,
+      topics: [approvedTopic],
+    });
+
+    const markdown = await readFile(path.join(root, exported.filename), "utf8");
+    assert.match(markdown, /covered_rag_chunk_ids:/);
+    assert.match(markdown, /  - chunk_1/);
+    assert.equal(markdown.includes("chunk_2"), false);
+    assert.deepEqual(syncCalls, [
+      {
+        chunkIds: ["chunk_1"],
+        coverageType: "direct_source",
+        okfConceptId: approvedTopic.id,
+        workspaceId: "wrk_1",
+      },
+    ]);
+  } finally {
+    restoreBackendEnv(previousBackend);
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("exportApprovedTopicForDocument skips coverage resolution on the local JSON-vault backend", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-service-no-coverage-"));
+  const previousBackend = process.env.AV_OKF_BACKEND;
+  delete process.env.AV_OKF_BACKEND;
+
+  let resolveCalled = false;
+  const coverageRepository: OkfCoverageRepository = {
+    async listActiveChunksForDocument() {
+      resolveCalled = true;
+      return [];
+    },
+    async syncOkfConceptChunkLinks() {
+      resolveCalled = true;
+    },
+  };
+
+  try {
+    const exported = await exportApprovedTopicForDocument({
+      coverageRepository,
+      document,
+      exportedAt: new Date("2026-07-02T12:00:00.000Z"),
+      knowledgeRoot: root,
+      knowledgeVersion: "0.1.0",
+      topicId: approvedTopic.id,
+      topics: [approvedTopic],
+    });
+
+    const markdown = await readFile(path.join(root, exported.filename), "utf8");
+    assert.equal(markdown.includes("covered_rag_chunk_ids"), false);
+    assert.equal(resolveCalled, false);
+  } finally {
+    restoreBackendEnv(previousBackend);
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+function restoreBackendEnv(previousValue: string | undefined) {
+  if (previousValue === undefined) {
+    delete process.env.AV_OKF_BACKEND;
+  } else {
+    process.env.AV_OKF_BACKEND = previousValue;
+  }
+}
