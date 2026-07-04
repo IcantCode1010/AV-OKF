@@ -1,0 +1,172 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  createPostgresChatRepository,
+  STUB_ASSISTANT_REPLY_TEXT,
+} from "./production-chat-repository.ts";
+
+const context = { role: "admin" as const, userId: "usr_1", workspaceId: "wrk_1" };
+
+test("createSession scopes workspaceId and userId from context", async () => {
+  const calls: unknown[] = [];
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        calls.push(data);
+        return {
+          createdAt: new Date("2026-07-04T00:00:00.000Z"),
+          id: "session_1",
+          title: data.title,
+          updatedAt: new Date("2026-07-04T00:00:00.000Z"),
+          userId: data.userId,
+          workspaceId: data.workspaceId,
+        };
+      },
+    },
+  });
+
+  const session = await repository.createSession({ context });
+
+  assert.deepEqual(calls, [
+    { title: "New chat", userId: "usr_1", workspaceId: "wrk_1" },
+  ]);
+  assert.equal(session.title, "New chat");
+});
+
+test("createSession trims a provided title and falls back when blank", async () => {
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      create: async ({ data }: { data: Record<string, unknown> }) => ({
+        createdAt: new Date(),
+        id: "session_1",
+        title: data.title,
+        updatedAt: new Date(),
+        userId: data.userId,
+        workspaceId: data.workspaceId,
+      }),
+    },
+  });
+
+  const trimmed = await repository.createSession({
+    context,
+    title: "  Reverser question  ",
+  });
+  const blank = await repository.createSession({ context, title: "   " });
+
+  assert.equal(trimmed.title, "Reverser question");
+  assert.equal(blank.title, "New chat");
+});
+
+test("getSessionWorkspaceId returns undefined for a missing session", async () => {
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findUnique: async () => null,
+    },
+  });
+
+  const workspaceId = await repository.getSessionWorkspaceId("session_missing");
+
+  assert.equal(workspaceId, undefined);
+});
+
+test("getSessionWithMessages rejects a session belonging to another workspace", async () => {
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findFirst: async () => null,
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      repository.getSessionWithMessages({
+        context,
+        sessionId: "session_other_workspace",
+      }),
+    /chat_session_not_found/,
+  );
+});
+
+test("appendUserMessageAndStubReply inserts one user and one assistant message and touches session.updatedAt", async () => {
+  const calls: string[] = [];
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findFirst: async () => ({
+        createdAt: new Date(),
+        id: "session_1",
+        title: "New chat",
+        updatedAt: new Date(),
+        userId: "usr_1",
+        workspaceId: "wrk_1",
+      }),
+    },
+    $transaction: async (
+      callback: (tx: unknown) => Promise<unknown>,
+    ) =>
+      callback({
+        chatMessage: {
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            calls.push(`message.create:${data.role}`);
+            return {
+              citations: [],
+              content: data.content,
+              createdAt: new Date(),
+              id: `msg_${data.role}`,
+              role: data.role,
+              sessionId: data.sessionId,
+              trace: null,
+            };
+          },
+        },
+        chatSession: {
+          update: async () => {
+            calls.push("session.update");
+          },
+        },
+      }),
+  });
+
+  const result = await repository.appendUserMessageAndStubReply({
+    content: "What's the procedure for REVERSER UNLOCKED IN FLIGHT?",
+    context,
+    sessionId: "session_1",
+  });
+
+  assert.deepEqual(calls, [
+    "message.create:user",
+    "message.create:assistant",
+    "session.update",
+  ]);
+  assert.equal(result.userMessage.role, "user");
+  assert.equal(
+    result.userMessage.content,
+    "What's the procedure for REVERSER UNLOCKED IN FLIGHT?",
+  );
+  assert.equal(result.assistantMessage.role, "assistant");
+  assert.equal(result.assistantMessage.content, STUB_ASSISTANT_REPLY_TEXT);
+  assert.deepEqual(result.assistantMessage.citations, []);
+  assert.equal(result.assistantMessage.trace, null);
+});
+
+test("appendUserMessageAndStubReply rejects before writing when the session belongs to another workspace", async () => {
+  const calls: string[] = [];
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findFirst: async () => null,
+    },
+    $transaction: async () => {
+      calls.push("transaction.started");
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      repository.appendUserMessageAndStubReply({
+        content: "Hello",
+        context,
+        sessionId: "session_other_workspace",
+      }),
+    /chat_session_not_found/,
+  );
+  assert.deepEqual(calls, []);
+});

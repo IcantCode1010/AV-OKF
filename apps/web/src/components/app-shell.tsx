@@ -10,6 +10,7 @@ import {
   Database,
   FileSearch,
   Files,
+  MessageSquare,
   Menu,
   Search,
   Settings,
@@ -38,6 +39,7 @@ import { cn } from "@/lib/utils";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/documents", label: "Documents", icon: Files },
   { href: "/search", label: "Search", icon: Search },
   { href: "/knowledge", label: "Knowledge", icon: BookOpenCheck },
