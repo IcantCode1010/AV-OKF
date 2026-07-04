@@ -3,8 +3,10 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
   buildStage6aRouterReply,
   buildStage6aRouterTrace,
+  isRetrievalRoute,
   routeChatQuestion,
 } from "./chat-router.ts";
+import { buildRetrievalAnswer, runChatRetrieval, type ChatRetrievalFn } from "./chat-retrieval.ts";
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
 import {
   createPostgresChatRepository,
@@ -28,6 +30,7 @@ let cachedService: ProductionChatService | null = null;
 
 type ProductionChatServiceOptions = {
   getContext?: () => Promise<AuthWorkspaceContext>;
+  retrieve?: ChatRetrievalFn;
 };
 
 export function getProductionChatService(): ProductionChatService {
@@ -45,6 +48,8 @@ export function createProductionChatService(
   async function getContext(): Promise<AuthWorkspaceContext> {
     return options.getContext ? options.getContext() : requireAuthWorkspaceContext();
   }
+
+  const retrieve = options.retrieve ?? runChatRetrieval;
 
   return {
     async createSession(title?: string) {
@@ -78,10 +83,21 @@ export function createProductionChatService(
     async sendMessage(sessionId: string, content: string) {
       const context = await getContext();
       const decision = routeChatQuestion(content);
+      const retrieval = isRetrievalRoute(decision.route)
+        ? await retrieve({ decision, query: content, workspaceId: context.workspaceId })
+        : { citations: [], retrievalError: false, retrievalToolsCalled: [], sourcesRead: [] };
+      const assistantContent = isRetrievalRoute(decision.route)
+        ? buildRetrievalAnswer(decision.route, retrieval)
+        : buildStage6aRouterReply(decision);
+
       return repository.appendUserMessageAndAssistantReply({
-        assistantContent: buildStage6aRouterReply(decision),
-        assistantTrace: buildStage6aRouterTrace(decision),
-        citations: [],
+        assistantContent,
+        assistantTrace: {
+          ...buildStage6aRouterTrace(decision),
+          retrievalToolsCalled: retrieval.retrievalToolsCalled,
+          sourcesRead: retrieval.sourcesRead,
+        },
+        citations: retrieval.citations,
         content,
         context,
         sessionId,

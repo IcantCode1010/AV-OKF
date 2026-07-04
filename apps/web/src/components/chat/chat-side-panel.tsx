@@ -19,7 +19,7 @@ export function ChatSidePanelContent({
         <CardContent className="flex flex-col gap-2">
           {citations.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No sources yet. Stage 6A only records the router decision.
+              No sources for this reply.
             </p>
           ) : (
             citations.map((citation) => (
@@ -66,9 +66,12 @@ export function ChatSidePanelContent({
                 value={
                   trace.retrievalToolsCalled.length > 0
                     ? trace.retrievalToolsCalled.join(", ")
-                    : "None in Stage 6A"
+                    : "None for this route"
                 }
               />
+              {trace.sourcesRead.length > 0 ? (
+                <TraceRow label="Sources read" value={trace.sourcesRead.join(", ")} />
+              ) : null}
             </>
           ) : (
             <p className="text-xs text-muted-foreground">

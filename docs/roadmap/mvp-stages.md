@@ -294,6 +294,8 @@ Implementation note:
 Start with a rules-first router plus an LLM fallback. Do not run OKF and RAG together unless the router selects Hybrid.
 ```
 
+Progress note: the router (rules-first, no LLM fallback yet), OKF retrieval tool, RAG retrieval tool, hybrid mode, citation renderer, and agent trace drawer are implemented. The answer builder is currently deterministic (it surfaces retrieved excerpts with `[n]` citation markers rather than LLM-synthesized prose); an LLM-based answer builder is a follow-up slice. Retrieval's source-type/approval filtering happens client-side in `chat-retrieval.ts` because `rag-repository.ts` does not yet apply `RetrievalRequest.filters.sourceTypes`/`reviewStatus` at the query level.
+
 Exit criteria:
 
 - A user can ask questions and see whether the router sent the query to OKF, RAG, Hybrid, or missing-context handling.

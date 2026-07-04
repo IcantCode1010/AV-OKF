@@ -23,9 +23,9 @@ export default async function ChatPage() {
             Conversations
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Ask questions across your documents. Stage 6A classifies each
-            message into OKF, RAG, Hybrid, missing-context, or unsupported
-            routing before retrieval is added.
+            Ask questions across your documents. Each message is routed to
+            OKF, RAG, Hybrid, missing-context, or unsupported handling, then
+            answered from the retrieved evidence with citations.
           </p>
         </div>
         <form action={createChatSessionAction}>

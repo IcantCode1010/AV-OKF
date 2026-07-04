@@ -37,6 +37,12 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   stage: "router";
 };
 
+export type RetrievalChatRoute = "okf_only" | "rag_only" | "hybrid";
+
+export function isRetrievalRoute(route: ChatRoute): route is RetrievalChatRoute {
+  return route === "okf_only" || route === "rag_only" || route === "hybrid";
+}
+
 const MISSING_OPERATIONAL_CONTEXT = [
   "aircraft_family",
   "effectivity",
