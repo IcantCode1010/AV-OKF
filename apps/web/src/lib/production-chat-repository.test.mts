@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  createPostgresChatRepository,
-  STUB_ASSISTANT_REPLY_TEXT,
-} from "./production-chat-repository.ts";
+import { buildStage6aRouterTrace, routeChatQuestion } from "./chat-router.ts";
+import { createPostgresChatRepository } from "./production-chat-repository.ts";
 
 const context = { role: "admin" as const, userId: "usr_1", workspaceId: "wrk_1" };
 
@@ -87,8 +85,11 @@ test("getSessionWithMessages rejects a session belonging to another workspace", 
   );
 });
 
-test("appendUserMessageAndStubReply inserts one user and one assistant message and touches session.updatedAt", async () => {
+test("appendUserMessageAndAssistantReply inserts one user and one assistant message with trace and touches session.updatedAt", async () => {
   const calls: string[] = [];
+  const assistantTrace = buildStage6aRouterTrace(
+    routeChatQuestion("What is the official manual path for GEN OFF BUS?"),
+  );
   const repository = createPostgresChatRepository({
     chatSession: {
       findFirst: async () => ({
@@ -114,7 +115,7 @@ test("appendUserMessageAndStubReply inserts one user and one assistant message a
               id: `msg_${data.role}`,
               role: data.role,
               sessionId: data.sessionId,
-              trace: null,
+              trace: data.trace ?? null,
             };
           },
         },
@@ -126,7 +127,10 @@ test("appendUserMessageAndStubReply inserts one user and one assistant message a
       }),
   });
 
-  const result = await repository.appendUserMessageAndStubReply({
+  const result = await repository.appendUserMessageAndAssistantReply({
+    assistantContent: "This looks like an approved-knowledge question.",
+    assistantTrace,
+    citations: [],
     content: "What's the procedure for REVERSER UNLOCKED IN FLIGHT?",
     context,
     sessionId: "session_1",
@@ -143,12 +147,15 @@ test("appendUserMessageAndStubReply inserts one user and one assistant message a
     "What's the procedure for REVERSER UNLOCKED IN FLIGHT?",
   );
   assert.equal(result.assistantMessage.role, "assistant");
-  assert.equal(result.assistantMessage.content, STUB_ASSISTANT_REPLY_TEXT);
+  assert.equal(
+    result.assistantMessage.content,
+    "This looks like an approved-knowledge question.",
+  );
   assert.deepEqual(result.assistantMessage.citations, []);
-  assert.equal(result.assistantMessage.trace, null);
+  assert.deepEqual(result.assistantMessage.trace, assistantTrace);
 });
 
-test("appendUserMessageAndStubReply rejects before writing when the session belongs to another workspace", async () => {
+test("appendUserMessageAndAssistantReply rejects before writing when the session belongs to another workspace", async () => {
   const calls: string[] = [];
   const repository = createPostgresChatRepository({
     chatSession: {
@@ -161,7 +168,12 @@ test("appendUserMessageAndStubReply rejects before writing when the session belo
 
   await assert.rejects(
     () =>
-      repository.appendUserMessageAndStubReply({
+      repository.appendUserMessageAndAssistantReply({
+        assistantContent: "This looks like an approved-knowledge question.",
+        assistantTrace: buildStage6aRouterTrace(
+          routeChatQuestion("What is the official manual path for GEN OFF BUS?"),
+        ),
+        citations: [],
         content: "Hello",
         context,
         sessionId: "session_other_workspace",

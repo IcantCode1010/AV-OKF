@@ -1,3 +1,5 @@
+import type { Stage6aRouterTrace } from "./chat-router.ts";
+
 export type ChatRole = "user" | "assistant";
 
 // Provisional, for-display-only shape — not backed by real retrieval yet.
@@ -19,7 +21,7 @@ export type ChatMessage = {
   id: string;
   role: ChatRole;
   sessionId: string;
-  trace: unknown | null;
+  trace: Stage6aRouterTrace | null;
 };
 
 export type ChatSession = {

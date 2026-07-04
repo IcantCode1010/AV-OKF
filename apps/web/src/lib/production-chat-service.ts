@@ -1,4 +1,10 @@
 import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
+import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import {
+  buildStage6aRouterReply,
+  buildStage6aRouterTrace,
+  routeChatQuestion,
+} from "./chat-router.ts";
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
 import {
   createPostgresChatRepository,
@@ -20,6 +26,10 @@ export type ProductionChatService = {
 
 let cachedService: ProductionChatService | null = null;
 
+type ProductionChatServiceOptions = {
+  getContext?: () => Promise<AuthWorkspaceContext>;
+};
+
 export function getProductionChatService(): ProductionChatService {
   if (!cachedService) {
     cachedService = createProductionChatService();
@@ -30,10 +40,15 @@ export function getProductionChatService(): ProductionChatService {
 
 export function createProductionChatService(
   repository: ProductionChatRepository = createPostgresChatRepository(),
+  options: ProductionChatServiceOptions = {},
 ): ProductionChatService {
+  async function getContext(): Promise<AuthWorkspaceContext> {
+    return options.getContext ? options.getContext() : requireAuthWorkspaceContext();
+  }
+
   return {
     async createSession(title?: string) {
-      const context = await requireAuthWorkspaceContext();
+      const context = await getContext();
       return repository.createSession({ context, title });
     },
 
@@ -42,12 +57,12 @@ export function createProductionChatService(
     },
 
     async getSessions() {
-      const context = await requireAuthWorkspaceContext();
+      const context = await getContext();
       return repository.getSessions(context);
     },
 
     async getSessionWithMessages(sessionId: string) {
-      const context = await requireAuthWorkspaceContext();
+      const context = await getContext();
 
       try {
         return await repository.getSessionWithMessages({ context, sessionId });
@@ -61,8 +76,12 @@ export function createProductionChatService(
     },
 
     async sendMessage(sessionId: string, content: string) {
-      const context = await requireAuthWorkspaceContext();
-      return repository.appendUserMessageAndStubReply({
+      const context = await getContext();
+      const decision = routeChatQuestion(content);
+      return repository.appendUserMessageAndAssistantReply({
+        assistantContent: buildStage6aRouterReply(decision),
+        assistantTrace: buildStage6aRouterTrace(decision),
+        citations: [],
         content,
         context,
         sessionId,

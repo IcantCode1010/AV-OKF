@@ -8,6 +8,7 @@ export function ChatSidePanelContent({
   latestAssistantMessage: ChatMessage | null;
 }) {
   const citations = latestAssistantMessage?.citations ?? [];
+  const trace = latestAssistantMessage?.trace;
 
   return (
     <div className="flex flex-col gap-4">
@@ -18,7 +19,7 @@ export function ChatSidePanelContent({
         <CardContent className="flex flex-col gap-2">
           {citations.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No sources yet — this is a stubbed reply.
+              No sources yet. Stage 6A only records the router decision.
             </p>
           ) : (
             citations.map((citation) => (
@@ -45,13 +46,80 @@ export function ChatSidePanelContent({
         <CardHeader>
           <CardTitle className="text-sm">Trace</CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">
-            Trace will appear here once the query router ships (route, query
-            category, confidence, and rationale).
-          </p>
+        <CardContent className="space-y-3">
+          {trace ? (
+            <>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">{formatRoute(trace.route)}</Badge>
+                <Badge variant="outline">{trace.confidence} confidence</Badge>
+              </div>
+              <TraceRow label="Category" value={formatLabel(trace.queryCategory)} />
+              <TraceRow label="Rationale" value={trace.rationale} />
+              {trace.requiredContext.length > 0 ? (
+                <TraceRow
+                  label="Required context"
+                  value={trace.requiredContext.map(formatLabel).join(", ")}
+                />
+              ) : null}
+              <TraceRow
+                label="Tools called"
+                value={
+                  trace.retrievalToolsCalled.length > 0
+                    ? trace.retrievalToolsCalled.join(", ")
+                    : "None in Stage 6A"
+                }
+              />
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Trace will appear after a router decision is stored.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
   );
+}
+
+function TraceRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="text-xs leading-relaxed">{value}</div>
+    </div>
+  );
+}
+
+function formatRoute(route: string): string {
+  if (route === "okf_only") {
+    return "Routed to OKF";
+  }
+
+  if (route === "rag_only") {
+    return "Routed to RAG";
+  }
+
+  if (route === "hybrid") {
+    return "Routed to Hybrid";
+  }
+
+  if (route === "missing_context") {
+    return "Missing context";
+  }
+
+  if (route === "unsupported") {
+    return "Unsupported";
+  }
+
+  return formatLabel(route);
+}
+
+function formatLabel(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }

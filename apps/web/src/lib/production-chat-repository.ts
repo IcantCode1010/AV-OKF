@@ -3,10 +3,7 @@ import type { Prisma } from "@prisma/client";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation, ChatMessage, ChatSession } from "./chat-types.ts";
 import { getPrisma } from "./prisma.ts";
-
-export const STUB_ASSISTANT_REPLY_TEXT =
-  "Chat routing isn't implemented yet - this is a placeholder reply. " +
-  "Your message has been saved, but no document search, OKF lookup, or retrieval has run against it.";
+import type { Stage6aRouterTrace } from "./chat-router.ts";
 
 export type ProductionChatRepository = ReturnType<typeof createPostgresChatRepository>;
 
@@ -102,7 +99,10 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
       };
     },
 
-    async appendUserMessageAndStubReply(input: {
+    async appendUserMessageAndAssistantReply(input: {
+      assistantContent: string;
+      assistantTrace: Stage6aRouterTrace;
+      citations: ChatCitation[];
       content: string;
       context: AuthWorkspaceContext;
       sessionId: string;
@@ -121,9 +121,11 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
           });
           const assistantRecord = await tx.chatMessage.create({
             data: {
-              content: STUB_ASSISTANT_REPLY_TEXT,
+              citations: input.citations,
+              content: input.assistantContent,
               role: "assistant",
               sessionId: input.sessionId,
+              trace: input.assistantTrace,
               workspaceId: input.context.workspaceId,
             },
           });
@@ -163,7 +165,7 @@ function mapChatMessage(record: DbChatMessageRecord): ChatMessage {
     id: record.id,
     role: record.role === "assistant" ? "assistant" : "user",
     sessionId: record.sessionId,
-    trace: record.trace ?? null,
+    trace: normalizeTrace(record.trace),
   };
 }
 
@@ -181,5 +183,37 @@ function isChatCitation(value: unknown): value is ChatCitation {
     value !== null &&
     "index" in value &&
     "documentTitle" in value
+  );
+}
+
+function normalizeTrace(value: unknown): Stage6aRouterTrace | null {
+  if (!isStage6aRouterTrace(value)) {
+    return null;
+  }
+
+  return value;
+}
+
+function isStage6aRouterTrace(value: unknown): value is Stage6aRouterTrace {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "stage" in value &&
+    value.stage === "router" &&
+    "route" in value &&
+    typeof value.route === "string" &&
+    "queryCategory" in value &&
+    typeof value.queryCategory === "string" &&
+    "confidence" in value &&
+    typeof value.confidence === "string" &&
+    "rationale" in value &&
+    typeof value.rationale === "string" &&
+    "requiredContext" in value &&
+    Array.isArray(value.requiredContext) &&
+    "constraints" in value &&
+    typeof value.constraints === "object" &&
+    value.constraints !== null &&
+    "retrievalToolsCalled" in value &&
+    Array.isArray(value.retrievalToolsCalled)
   );
 }

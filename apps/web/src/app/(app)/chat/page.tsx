@@ -23,9 +23,9 @@ export default async function ChatPage() {
             Conversations
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Ask questions across your documents. Routing to OKF, RAG, or
-            Hybrid retrieval isn&apos;t wired up yet — replies are a
-            placeholder for now.
+            Ask questions across your documents. Stage 6A classifies each
+            message into OKF, RAG, Hybrid, missing-context, or unsupported
+            routing before retrieval is added.
           </p>
         </div>
         <form action={createChatSessionAction}>
@@ -55,8 +55,8 @@ function ChatUnavailableNotice() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Chat sessions are stored in Postgres and are not available in
-            local JSON-vault dev mode. Set{" "}
+            Chat sessions are stored in Postgres and are not available in local
+            JSON-vault dev mode. Set{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">
               AV_OKF_BACKEND=production
             </code>{" "}
