@@ -1,6 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
+
 export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 
 export type OkfBundleGroup =
@@ -201,16 +203,11 @@ function isReservedBundleFile(filename: string) {
 }
 
 function parseOkfFrontmatter(content: string) {
-  const frontmatter = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? "";
+  const { frontmatter } = parseOkfMarkdown(content);
 
   return {
-    reviewStatus: readScalar(frontmatter, "review_status") ?? "unknown",
-    title: readScalar(frontmatter, "title") ?? "Untitled",
-    type: readScalar(frontmatter, "type") ?? "unknown",
+    reviewStatus: getFrontmatterScalar(frontmatter, "review_status") ?? "unknown",
+    title: getFrontmatterScalar(frontmatter, "title") ?? "Untitled",
+    type: getFrontmatterScalar(frontmatter, "type") ?? "unknown",
   };
-}
-
-function readScalar(frontmatter: string, key: string) {
-  const match = new RegExp(`^${key}:\\s*(.*)$`, "m").exec(frontmatter);
-  return match?.[1]?.trim().replace(/^"|"$/g, "");
 }

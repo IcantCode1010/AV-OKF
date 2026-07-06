@@ -18,6 +18,7 @@ import {
   buildOkfSourceManifest,
   exportTopicToKnowledge,
 } from "./okf-export.ts";
+import { parseOkfMarkdown } from "./okf-frontmatter.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -634,36 +635,9 @@ async function readRequiredFieldsForType(type: string) {
 }
 
 function parseFrontmatter(markdown: string) {
-  const match = /^---\n([\s\S]*?)\n---/.exec(markdown);
-  assert.ok(match, "expected YAML frontmatter");
-  const result: Record<string, unknown> = {};
-  const lines = match[1]!.split(/\r?\n/);
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]!;
-    const scalar = /^([a-z_]+):\s*(.*)$/.exec(line);
-
-    if (scalar && scalar[2] !== "") {
-      result[scalar[1]!] = scalar[2]!.replace(/^"|"$/g, "");
-      continue;
-    }
-
-    if (scalar) {
-      const values: string[] = [];
-      for (let listIndex = index + 1; listIndex < lines.length; listIndex += 1) {
-        const item = /^  -\s*(.*)$/.exec(lines[listIndex]!);
-        if (!item) {
-          break;
-        }
-
-        values.push(item[1]!.replace(/^"|"$/g, ""));
-        index = listIndex;
-      }
-      result[scalar[1]!] = values;
-    }
-  }
-
-  return result;
+  const parsed = parseOkfMarkdown(markdown);
+  assert.notDeepEqual(parsed.frontmatter, {}, "expected YAML frontmatter");
+  return parsed.frontmatter;
 }
 
 async function copyManifestTo(root: string) {

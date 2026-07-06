@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
+import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
 import {
   buildRetrievalAnswer,
   resolveEvidenceStatus,
   runChatRetrieval,
 } from "./chat-retrieval.ts";
 import { routeChatQuestion } from "./chat-router.ts";
+import {
+  retrieveOkfBundleEvidence,
+  type OkfBundleEvidence,
+} from "./okf-bundle-retriever.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 
 function makeResult(overrides: Partial<RetrievalResult>): RetrievalResult {
@@ -18,33 +26,72 @@ function makeResult(overrides: Partial<RetrievalResult>): RetrievalResult {
     pageEnd: 12,
     pageStart: 12,
     retrievalMode: "hybrid",
-    reviewStatus: "approved",
+    reviewStatus: "raw_extracted",
     score: 0.9,
     sourcePageNumbers: [12],
-    sourceType: "okf_topic",
+    sourceType: "raw_extraction",
     text: "GEN OFF BUS light indicates a generator bus fault.",
     ...overrides,
   };
 }
 
-test("okf_only route keeps only approved okf_topic results and calls okf_retrieval", async () => {
+function makeOkfEvidence(
+  overrides: Partial<OkfBundleEvidence> = {},
+): OkfBundleEvidence {
+  return {
+    body: "GEN OFF BUS light indicates a generator bus fault.",
+    coveredRagChunkIds: [],
+    coverageType: null,
+    description: "GEN OFF BUS dispatch guidance.",
+    excerpt: "GEN OFF BUS light indicates a generator bus fault.",
+    filePath: "24-gen-off-bus-abc123.md",
+    matchedTerms: ["gen", "off", "bus"],
+    matchReason: "strong title phrase match",
+    matchStrength: "strong",
+    pageEnd: 12,
+    pageStart: 12,
+    relations: [],
+    reviewStatus: "approved",
+    score: 120,
+    sourceFile: "737NG QRH",
+    sourcePages: [12],
+    sourceType: "okf_bundle",
+    title: "GEN OFF BUS",
+    type: "system_topic",
+    ...overrides,
+  };
+}
+
+test("okf_only route reads approved OKF bundle evidence and calls okf_retrieval", async () => {
   const decision = routeChatQuestion("What is the official manual path for GEN OFF BUS?");
   assert.equal(decision.route, "okf_only");
+  const okfRequests: unknown[] = [];
 
   const result = await runChatRetrieval(
     { decision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
-    async () => [
-      makeResult({ chunkId: "c1", sourceType: "okf_topic", reviewStatus: "approved" }),
-      makeResult({ chunkId: "c2", sourceType: "okf_topic", reviewStatus: "needs_review" }),
-      makeResult({ chunkId: "c3", sourceType: "raw_extraction", reviewStatus: "approved" }),
-    ],
+    async () => {
+      throw new Error("rag_should_not_be_called");
+    },
+    async (request) => {
+      okfRequests.push(request);
+      return [makeOkfEvidence()];
+    },
   );
 
+  assert.deepEqual(okfRequests, [
+    {
+      query: "GEN OFF BUS",
+      topK: 4,
+      workspaceId: "wrk_1",
+    },
+  ]);
   assert.deepEqual(result.retrievalToolsCalled, ["okf_retrieval"]);
   assert.equal(result.citations.length, 1);
   assert.equal(result.citations[0]?.sourceType, "okf");
+  assert.equal(result.citations[0]?.okfFilePath, "24-gen-off-bus-abc123.md");
+  assert.equal(result.citations[0]?.sourceFile, "737NG QRH");
   assert.equal(result.citations[0]?.index, 1);
-  assert.deepEqual(result.sourcesRead, ["737NG QRH (p. 12)"]);
+  assert.deepEqual(result.sourcesRead, ["GEN OFF BUS (737NG QRH p. 12)"]);
 });
 
 test("okf_only downgrades to labeled RAG discovery when no approved OKF evidence exists", async () => {
@@ -56,20 +103,18 @@ test("okf_only downgrades to labeled RAG discovery when no approved OKF evidence
     { decision, query: "what is DC generation", workspaceId: "wrk_1" },
     async (request) => {
       requestedSourceTypes.push(request.filters?.sourceTypes);
-      if (request.filters?.sourceTypes?.includes("okf_topic")) {
-        return [];
-      }
       return [
         makeResult({
           chunkId: "c_raw",
-          sourceType: "raw_extraction",
           reviewStatus: "raw_extracted",
+          sourceType: "raw_extraction",
         }),
       ];
     },
+    async () => [],
   );
 
-  assert.deepEqual(requestedSourceTypes, [["okf_topic"], ["raw_extraction"]]);
+  assert.deepEqual(requestedSourceTypes, [["raw_extraction"]]);
   assert.deepEqual(result.retrievalToolsCalled, ["okf_retrieval", "rag_retrieval"]);
   assert.equal(result.approvedOkfAvailable, false);
   assert.equal(result.ragUsedForDiscoveryOnly, true);
@@ -81,11 +126,71 @@ test("okf_only downgrades to labeled RAG discovery when no approved OKF evidence
   assert.doesNotMatch(answer, /^Approved knowledge base:/);
 });
 
+test("okf_only falls back to raw RAG when live OKF bundle relevance is too low", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-chat-low-relevance-"));
+  const originalKnowledgeRoot = process.env.AV_OKF_KNOWLEDGE_ROOT;
+
+  try {
+    process.env.AV_OKF_KNOWLEDGE_ROOT = root;
+    await writeChatTopic(root, "32-brakes.md", {
+      body: "The brake system provides normal and alternate braking.",
+      description:
+        "The main gear brake system provides normal and alternate braking.",
+      title: "Main Gear Brake System",
+    });
+
+    const decision = routeChatQuestion(
+      "What is the official manual path for galley water heater leak troubleshooting?",
+    );
+    assert.equal(decision.route, "okf_only");
+
+    const result = await runChatRetrieval(
+      {
+        decision,
+        query: "galley water heater leak troubleshooting",
+        workspaceId: "wrk_1",
+      },
+      async () => [
+        makeResult({
+          documentTitle: "Galley Water Manual",
+          reviewStatus: "raw_extracted",
+          sourceType: "raw_extraction",
+          text: "Galley water heater troubleshooting appears in the raw manual.",
+        }),
+      ],
+      retrieveOkfBundleEvidence,
+    );
+    const profile = buildAnswerEvidenceProfile({
+      citations: result.citations,
+      trace: {
+        ragUsedForDiscoveryOnly: result.ragUsedForDiscoveryOnly,
+        route: decision.route,
+      },
+    });
+
+    assert.equal(result.approvedOkfAvailable, false);
+    assert.equal(result.ragUsedForDiscoveryOnly, true);
+    assert.equal(result.citations.length, 1);
+    assert.equal(result.citations[0]?.sourceType, "rag");
+    assert.equal(profile.evidenceKind, "raw_rag");
+  } finally {
+    if (originalKnowledgeRoot === undefined) {
+      delete process.env.AV_OKF_KNOWLEDGE_ROOT;
+    } else {
+      process.env.AV_OKF_KNOWLEDGE_ROOT = originalKnowledgeRoot;
+    }
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("okf_only with approved evidence never reads as discovery", async () => {
   const decision = routeChatQuestion("What is the official manual path for GEN OFF BUS?");
   const result = await runChatRetrieval(
     { decision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
-    async () => [makeResult({ sourceType: "okf_topic", reviewStatus: "approved" })],
+    async () => {
+      throw new Error("rag_should_not_be_called");
+    },
+    async () => [makeOkfEvidence()],
   );
 
   assert.equal(result.approvedOkfAvailable, true);
@@ -101,10 +206,8 @@ test("hybrid without approved OKF results is flagged as discovery", async () => 
 
   const result = await runChatRetrieval(
     { decision, query: "policy examples", workspaceId: "wrk_1" },
-    async (request) =>
-      request.filters?.sourceTypes?.includes("okf_topic")
-        ? []
-        : [makeResult({ chunkId: "c_raw", sourceType: "raw_extraction" })],
+    async () => [makeResult({ chunkId: "c_raw", sourceType: "raw_extraction" })],
+    async () => [],
   );
 
   assert.equal(result.approvedOkfAvailable, false);
@@ -140,17 +243,20 @@ test("resolveEvidenceStatus maps retrieval outcomes to the trace vocabulary", ()
   );
 });
 
-test("citations carry coverage links from retrieval results", async () => {
+test("citations carry coverage links from raw retrieval results", async () => {
   const decision = routeChatQuestion("Find all documents that mention ELT battery replacement.");
   const result = await runChatRetrieval(
     { decision, query: "ELT battery", workspaceId: "wrk_1" },
     async () => [
       makeResult({
         chunkId: "c_covered",
-        sourceType: "raw_extraction",
         coveredByOkfConceptIds: ["okf_elt_battery"],
+        sourceType: "raw_extraction",
       }),
     ],
+    async () => {
+      throw new Error("okf_should_not_be_called");
+    },
   );
 
   assert.deepEqual(result.citations[0]?.coveredByOkfConceptIds, ["okf_elt_battery"]);
@@ -162,9 +268,10 @@ test("retrieval evidence mirrors citation indexes but keeps longer excerpts", as
 
   const result = await runChatRetrieval(
     { decision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
-    async () => [
-      makeResult({ chunkId: "c1", sourceType: "okf_topic", reviewStatus: "approved", text: longText }),
-    ],
+    async () => {
+      throw new Error("rag_should_not_be_called");
+    },
+    async () => [makeOkfEvidence({ excerpt: longText })],
   );
 
   assert.equal(result.evidence.length, 1);
@@ -175,33 +282,7 @@ test("retrieval evidence mirrors citation indexes but keeps longer excerpts", as
   );
 });
 
-test("okf_only route pushes approved OKF filters into retrieval request", async () => {
-  const decision = routeChatQuestion("What is the official manual path for GEN OFF BUS?");
-  const requests: unknown[] = [];
-
-  await runChatRetrieval(
-    { decision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
-    async (request) => {
-      requests.push(request);
-      return [makeResult({ sourceType: "okf_topic", reviewStatus: "approved" })];
-    },
-  );
-
-  assert.deepEqual(requests, [
-    {
-      filters: {
-        reviewStatus: ["approved"],
-        sourceTypes: ["okf_topic"],
-      },
-      mode: "hybrid",
-      query: "GEN OFF BUS",
-      topK: 4,
-      workspaceId: "wrk_1",
-    },
-  ]);
-});
-
-test("rag_only route keeps raw_extraction results regardless of review status", async () => {
+test("rag_only route does not call the OKF bundle retriever", async () => {
   const decision = routeChatQuestion("Find all documents that mention ELT battery replacement.");
   assert.equal(decision.route, "rag_only");
 
@@ -210,13 +291,16 @@ test("rag_only route keeps raw_extraction results regardless of review status", 
     async () => [
       makeResult({
         chunkId: "c1",
-        sourceType: "raw_extraction",
-        reviewStatus: "needs_review",
-        pageStart: 40,
         pageEnd: 41,
+        pageStart: 40,
+        reviewStatus: "needs_review",
+        sourceType: "raw_extraction",
       }),
       makeResult({ chunkId: "c2", sourceType: "okf_topic", reviewStatus: "approved" }),
     ],
+    async () => {
+      throw new Error("okf_should_not_be_called");
+    },
   );
 
   assert.deepEqual(result.retrievalToolsCalled, ["rag_retrieval"]);
@@ -225,7 +309,7 @@ test("rag_only route keeps raw_extraction results regardless of review status", 
   assert.deepEqual(result.sourcesRead, ["737NG QRH (p. 40-41)"]);
 });
 
-test("hybrid route combines approved okf results with raw extraction results", async () => {
+test("hybrid route combines approved OKF bundle results with raw extraction results", async () => {
   const decision = routeChatQuestion(
     "What is the approved policy and show examples from the manuals?",
   );
@@ -234,10 +318,9 @@ test("hybrid route combines approved okf results with raw extraction results", a
   const result = await runChatRetrieval(
     { decision, query: "policy examples", workspaceId: "wrk_1" },
     async () => [
-      makeResult({ chunkId: "c1", sourceType: "okf_topic", reviewStatus: "approved" }),
-      makeResult({ chunkId: "c2", sourceType: "okf_topic", reviewStatus: "needs_review" }),
-      makeResult({ chunkId: "c3", sourceType: "raw_extraction", reviewStatus: "approved" }),
+      makeResult({ chunkId: "c_raw", reviewStatus: "raw_extracted", sourceType: "raw_extraction" }),
     ],
+    async () => [makeOkfEvidence({ title: "Approved Policy" })],
   );
 
   assert.deepEqual(result.retrievalToolsCalled, ["okf_retrieval", "rag_retrieval"]);
@@ -246,6 +329,8 @@ test("hybrid route combines approved okf results with raw extraction results", a
   assert.equal(result.citations[0]?.index, 1);
   assert.equal(result.citations[1]?.sourceType, "rag");
   assert.equal(result.citations[1]?.index, 2);
+  assert.equal(result.approvedOkfAvailable, true);
+  assert.equal(result.ragUsedForDiscoveryOnly, false);
 });
 
 test("missing_context and unsupported routes never call retrieve", async () => {
@@ -255,14 +340,19 @@ test("missing_context and unsupported routes never call retrieve", async () => {
   const retrieve = async (): Promise<RetrievalResult[]> => {
     throw new Error("retrieve_should_not_be_called");
   };
+  const retrieveOkf = async (): Promise<OkfBundleEvidence[]> => {
+    throw new Error("okf_should_not_be_called");
+  };
 
   const missingContextResult = await runChatRetrieval(
     { decision: missingContext, query: "Can we dispatch?", workspaceId: "wrk_1" },
     retrieve,
+    retrieveOkf,
   );
   const unsupportedResult = await runChatRetrieval(
     { decision: unsupported, query: "What is today's inventory count?", workspaceId: "wrk_1" },
     retrieve,
+    retrieveOkf,
   );
 
   assert.deepEqual(missingContextResult, {
@@ -291,8 +381,9 @@ test("a retrieval failure degrades to an error result instead of throwing", asyn
 
   const result = await runChatRetrieval(
     { decision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
+    async () => [],
     async () => {
-      throw new Error("missing_env_OPENAI_API_KEY");
+      throw new Error("malformed_okf_bundle");
     },
   );
 
@@ -338,4 +429,117 @@ test("buildRetrievalAnswer cites each retrieved excerpt by index", () => {
 
   assert.match(answer, /generator bus fault/i);
   assert.match(answer, /\[1\]/);
+});
+
+async function writeChatTopic(
+  root: string,
+  filename: string,
+  options: {
+    body: string;
+    description: string;
+    title: string;
+  },
+) {
+  await mkdir(path.dirname(path.join(root, filename)), { recursive: true });
+  await writeFile(
+    path.join(root, filename),
+    [
+      "---",
+      'type: "system_topic"',
+      'review_status: "approved"',
+      `title: "${options.title}"`,
+      `description: "${options.description}"`,
+      'source_file: "737NG AMM 32 Landing Gear"',
+      "source_pages:",
+      "  - 41",
+      "---",
+      "",
+      "# Topic",
+      "",
+      options.body,
+    ].join("\n"),
+    "utf8",
+  );
+}
+
+test("a hybrid-route OKF failure degrades to an error result with no partial citations", async () => {
+  const decision = routeChatQuestion(
+    "What is the approved policy and show examples from the manuals?",
+  );
+  assert.equal(decision.route, "hybrid");
+
+  const result = await runChatRetrieval(
+    { decision, query: "policy examples", workspaceId: "wrk_1" },
+    async () => [makeResult({ chunkId: "c_raw", sourceType: "raw_extraction" })],
+    async () => {
+      throw new Error("malformed_okf_bundle");
+    },
+  );
+
+  assert.deepEqual(result, {
+    approvedOkfAvailable: false,
+    citations: [],
+    evidence: [],
+    ragUsedForDiscoveryOnly: false,
+    retrievalError: true,
+    retrievalToolsCalled: ["okf_retrieval", "rag_retrieval"],
+    sourcesRead: [],
+  });
+});
+
+test("okf_retrieval is always called with topK 4 regardless of route", async () => {
+  const okfRequests: unknown[] = [];
+  const captureOkf = async (request: {
+    query: string;
+    topK: number;
+    workspaceId: string;
+  }) => {
+    okfRequests.push(request);
+    return [];
+  };
+
+  const hybridDecision = routeChatQuestion(
+    "What is the approved policy and show examples from the manuals?",
+  );
+  assert.equal(hybridDecision.route, "hybrid");
+  await runChatRetrieval(
+    { decision: hybridDecision, query: "policy examples", workspaceId: "wrk_1" },
+    async () => [makeResult({ chunkId: "c_raw", sourceType: "raw_extraction" })],
+    captureOkf,
+  );
+
+  const okfOnlyDecision = routeChatQuestion(
+    "What is the official manual path for GEN OFF BUS?",
+  );
+  assert.equal(okfOnlyDecision.route, "okf_only");
+  await runChatRetrieval(
+    { decision: okfOnlyDecision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
+    async () => [],
+    captureOkf,
+  );
+
+  assert.equal(okfRequests.length, 2);
+  for (const request of okfRequests) {
+    assert.equal((request as { topK: number }).topK, 4);
+  }
+});
+
+test("hybrid discovery-only answers read as unreviewed, not official", () => {
+  const discoveryAnswer = buildRetrievalAnswer("hybrid", {
+    citations: [
+      {
+        documentTitle: "737NG QRH",
+        index: 1,
+        pageEnd: 12,
+        pageStart: 12,
+        sourceType: "rag",
+        text: "Raw excerpt only, no approved OKF concept matched.",
+      },
+    ],
+    ragUsedForDiscoveryOnly: true,
+    retrievalError: false,
+  });
+
+  assert.match(discoveryAnswer, /no reviewed answer exists for this yet/i);
+  assert.doesNotMatch(discoveryAnswer, /approved knowledge/i);
 });

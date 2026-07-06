@@ -129,6 +129,13 @@ function SourceGroup({
                   : "Raw PDF extraction"}
               </span>
             </div>
+            {citation.sourceFile || citation.okfFilePath ? (
+              <p className="mt-1 text-[0.68rem] text-muted-foreground">
+                {citation.sourceFile ? `Source: ${citation.sourceFile}` : null}
+                {citation.sourceFile && citation.okfFilePath ? " | " : null}
+                {citation.okfFilePath ? `OKF file: ${citation.okfFilePath}` : null}
+              </p>
+            ) : null}
             <p className="mt-1.5 leading-relaxed text-muted-foreground">
               {citation.text}
             </p>
@@ -147,7 +154,7 @@ function evidenceCardCopy(profile: ChatAnswerEvidenceProfile) {
       description: "Evidence from curated OKF topics only - highest trust",
       detailTitle: "Approved OKF sources",
       iconClass: "text-emerald-400",
-      label: "Approved · OKF",
+      label: "Approved - OKF",
       labelClass: "text-emerald-300",
       noticeClass: "bg-emerald-500/10 text-emerald-100",
     };

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
+
 export type TopicRelation = {
   relation: string;
   target: string;
@@ -92,7 +94,10 @@ export async function validateTopicRelations(
       throw error;
     }
 
-    const actualType = readFrontmatterScalar(targetContent, "type");
+    const actualType = getFrontmatterScalar(
+      parseOkfMarkdown(targetContent).frontmatter,
+      "type",
+    );
     if (!relation.targetType || relation.targetType !== actualType) {
       throwViolation(index, "relation_target_type_mismatch");
     }
@@ -144,12 +149,6 @@ function resolveRelationTarget(target: string, root: string) {
   }
 
   return resolved;
-}
-
-function readFrontmatterScalar(markdown: string, key: string) {
-  const frontmatter = /^---\n([\s\S]*?)\n---/.exec(markdown)?.[1] ?? "";
-  const match = new RegExp(`^${key}:\\s*(.*)$`, "m").exec(frontmatter);
-  return match?.[1]?.trim().replace(/^"|"$/g, "") ?? null;
 }
 
 function throwViolation(

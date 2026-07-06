@@ -94,23 +94,25 @@ export default async function AdminReindexPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Sync approved topics to RAG</CardTitle>
+          <CardTitle>Legacy OKF-to-RAG cache</CardTitle>
           <CardDescription>
-            Writes one searchable OKF-derived chunk for each approved topic in
-            this workspace. These chunks are tagged separately from raw PDF
-            extraction chunks and are safe from document reindex replacement.
+            Optional cache projection for approved topics. Chat now reads the
+            exported OKF bundle files directly for authoritative OKF evidence;
+            this sync is only a compatibility path for experiments that need
+            OKF-shaped chunks inside the RAG index.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-2">
             <Badge variant="secondary">sourceType: okf_topic</Badge>
-            <Badge variant="outline">manual sync</Badge>
+            <Badge variant="outline">legacy cache</Badge>
+            <Badge variant="outline">optional</Badge>
             <Badge variant="outline">idempotent</Badge>
           </div>
           <form action={syncApprovedTopicsToRagAction}>
             <PendingSubmitButton pendingLabel="Syncing...">
               <DatabaseZap className="mr-2 h-4 w-4" />
-              Sync approved topics
+              Refresh legacy OKF cache
             </PendingSubmitButton>
           </form>
         </CardContent>

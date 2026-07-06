@@ -12,8 +12,10 @@ export type ChatCitation = {
   coveredByOkfConceptIds?: string[];
   documentTitle: string;
   index: number;
+  okfFilePath?: string;
   pageEnd: number;
   pageStart: number;
+  sourceFile?: string;
   sourceType: "okf" | "rag";
   text: string;
 };
