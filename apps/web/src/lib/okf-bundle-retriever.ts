@@ -9,7 +9,7 @@ import {
   getFrontmatterStringArray,
   parseOkfMarkdown,
 } from "./okf-frontmatter.ts";
-import type { TopicRelation } from "./okf-relations.ts";
+import type { TopicRelation } from "./okf-relation-types.ts";
 
 export type OkfBundleEvidence = {
   body: string;

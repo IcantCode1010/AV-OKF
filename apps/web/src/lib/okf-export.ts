@@ -4,9 +4,9 @@ import path from "node:path";
 
 import {
   normalizeTopicRelations,
-  validateTopicRelations,
   type TopicRelation,
-} from "./okf-relations.ts";
+} from "./okf-relation-types.ts";
+import { validateTopicRelations } from "./okf-relations.ts";
 
 type ExportTopic = {
   id: string;
@@ -146,7 +146,7 @@ export async function exportTopicToKnowledge(
 ): Promise<{ content: string; filename: string }> {
   const knowledgeRoot =
     input.knowledgeRoot ??
-    path.join(/* turbopackIgnore: true */ process.cwd(), "knowledge");
+    path.join(/*turbopackIgnore: true*/ process.cwd(), "knowledge");
   const relations = normalizeTopicRelations(input.topic.relations);
   if (relations.length > 0) {
     await validateTopicRelations(relations, knowledgeRoot);
@@ -155,9 +155,9 @@ export async function exportTopicToKnowledge(
   const exported = buildOkfSystemTopic(input);
   const topicPath = path.join(knowledgeRoot, exported.filename);
 
-  await mkdir(knowledgeRoot, { recursive: true });
+  await mkdir(/*turbopackIgnore: true*/ knowledgeRoot, { recursive: true });
   const isReExport = await fileExists(topicPath);
-  await writeFile(topicPath, exported.content, "utf8");
+  await writeFile(/*turbopackIgnore: true*/ topicPath, exported.content, "utf8");
   await upsertIndexEntry({
     document: input.document,
     exported,
@@ -193,7 +193,10 @@ async function upsertSourceManifestEntry(input: {
   let existing = "";
 
   try {
-    existing = await readFile(manifestPath, "utf8");
+    existing = await readFile(
+      /*turbopackIgnore: true*/ manifestPath,
+      "utf8",
+    );
   } catch (error) {
     if (!isMissingFileError(error)) {
       throw error;
@@ -206,7 +209,7 @@ async function upsertSourceManifestEntry(input: {
   const filtered = removeSourceManifestEntry(lines, input.document.title);
 
   await writeFile(
-    manifestPath,
+    /*turbopackIgnore: true*/ manifestPath,
     `${filtered.join("\n").trimEnd()}\n${entry}\n`,
     "utf8",
   );
@@ -225,7 +228,7 @@ async function upsertIndexEntry(input: {
   let existing = "";
 
   try {
-    existing = await readFile(indexPath, "utf8");
+    existing = await readFile(/*turbopackIgnore: true*/ indexPath, "utf8");
   } catch (error) {
     if (!isMissingFileError(error)) {
       throw error;
@@ -250,7 +253,7 @@ async function upsertIndexEntry(input: {
   }
 
   await writeFile(
-    indexPath,
+    /*turbopackIgnore: true*/ indexPath,
     `${normalizedFiltered.join("\n").trimEnd()}\n`,
     "utf8",
   );
@@ -278,7 +281,7 @@ async function appendLogEntry(input: {
   let existing = "";
 
   try {
-    existing = await readFile(logPath, "utf8");
+    existing = await readFile(/*turbopackIgnore: true*/ logPath, "utf8");
   } catch (error) {
     if (!isMissingFileError(error)) {
       throw error;
@@ -286,7 +289,11 @@ async function appendLogEntry(input: {
   }
 
   const base = existing.trimEnd() || "# Change Log";
-  await writeFile(logPath, `${base}\n\n${entry}\n`, "utf8");
+  await writeFile(
+    /*turbopackIgnore: true*/ logPath,
+    `${base}\n\n${entry}\n`,
+    "utf8",
+  );
 }
 
 function normalizeReservedIndexLines(lines: string[]) {
@@ -467,7 +474,7 @@ function isMissingFileError(error: unknown) {
 
 async function fileExists(filePath: string) {
   try {
-    await readFile(filePath);
+    await readFile(/*turbopackIgnore: true*/ filePath);
     return true;
   } catch (error) {
     if (isMissingFileError(error)) {

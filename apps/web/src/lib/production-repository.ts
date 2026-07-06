@@ -21,7 +21,10 @@ import type {
   TopicReviewStatus,
 } from "./document-vault.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
-import { normalizeTopicRelations, type TopicRelation } from "./okf-relations.ts";
+import {
+  normalizeTopicRelations,
+  type TopicRelation,
+} from "./okf-relation-types.ts";
 
 type UploadRecordInput = {
   context: AuthWorkspaceContext;

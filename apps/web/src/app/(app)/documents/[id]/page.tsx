@@ -25,7 +25,7 @@ import {
   listOkfBundleFiles,
 } from "@/lib/okf-bundle";
 import { formatOkfExportError } from "@/lib/okf-export-errors";
-import { getAllowedRelations } from "@/lib/okf-relations";
+import { getAllowedRelations } from "@/lib/okf-relation-vocabulary";
 import { runExtractionAction } from "../actions";
 
 export const dynamic = "force-dynamic";

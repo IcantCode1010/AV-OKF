@@ -2,13 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
-
-export type TopicRelation = {
-  relation: string;
-  target: string;
-  targetType: string | null;
-  reason: string;
-};
+export { getAllowedRelations } from "./okf-relation-vocabulary.ts";
+import { getAllowedRelations } from "./okf-relation-vocabulary.ts";
+export { normalizeTopicRelations } from "./okf-relation-types.ts";
+export type { TopicRelation } from "./okf-relation-types.ts";
+import type { TopicRelation } from "./okf-relation-types.ts";
 
 export type RelationValidationViolation = {
   code:
@@ -29,39 +27,6 @@ export class RelationValidationError extends Error {
     this.name = "RelationValidationError";
     this.violation = violation;
   }
-}
-
-export async function getAllowedRelations(
-  manifestPath = getDefaultManifestPath(),
-): Promise<string[]> {
-  const manifest = await readFile(manifestPath, "utf8");
-  const lines = manifest.split(/\r?\n/);
-  const relationsIndex = lines.findIndex((line) => line.trim() === "relations:");
-  const allowedIndex = lines.findIndex(
-    (line, index) => index > relationsIndex && line.trim() === "allowed:",
-  );
-  const allowed: string[] = [];
-
-  for (const line of lines.slice(allowedIndex + 1)) {
-    if (!line.startsWith("  - ")) {
-      break;
-    }
-
-    allowed.push(line.trim().slice(2).trim());
-  }
-
-  if (relationsIndex === -1 || allowedIndex === -1 || allowed.length === 0) {
-    throw new Error("missing_allowed_relations");
-  }
-
-  return allowed;
-}
-
-function getDefaultManifestPath() {
-  return (
-    process.env.AV_OKF_MANIFEST_PATH ??
-    path.join(process.cwd(), "..", "..", "okf-base.yaml")
-  );
 }
 
 export async function validateTopicRelations(
@@ -85,7 +50,10 @@ export async function validateTopicRelations(
 
     let targetContent = "";
     try {
-      targetContent = await readFile(targetPath, "utf8");
+      targetContent = await readFile(
+        /*turbopackIgnore: true*/ targetPath,
+        "utf8",
+      );
     } catch (error) {
       if (isMissingFileError(error)) {
         throwViolation(index, "relation_target_missing");
@@ -106,29 +74,6 @@ export async function validateTopicRelations(
       throwViolation(index, "relation_reason_required");
     }
   }
-}
-
-export function normalizeTopicRelations(value: unknown): TopicRelation[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return null;
-      }
-
-      const candidate = entry as Partial<Record<keyof TopicRelation, unknown>>;
-      return {
-        relation: typeof candidate.relation === "string" ? candidate.relation : "",
-        target: typeof candidate.target === "string" ? candidate.target : "",
-        targetType:
-          typeof candidate.targetType === "string" ? candidate.targetType : null,
-        reason: typeof candidate.reason === "string" ? candidate.reason : "",
-      };
-    })
-    .filter((entry): entry is TopicRelation => entry !== null);
 }
 
 function resolveRelationTarget(target: string, root: string) {

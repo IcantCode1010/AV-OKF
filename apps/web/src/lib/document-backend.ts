@@ -40,7 +40,7 @@ import {
   type User,
   type Workspace,
 } from "./document-vault.ts";
-import type { TopicRelation } from "./okf-relations.ts";
+import type { TopicRelation } from "./okf-relation-types.ts";
 import { startDetachedExtraction } from "./document-extraction.ts";
 import {
   getProductionDocumentService,

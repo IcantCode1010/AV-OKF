@@ -14,11 +14,7 @@ import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
 import { getDefaultKnowledgeRoot } from "@/lib/knowledge-root";
 import { isRecoverableOkfExportError } from "@/lib/okf-export-errors";
-import {
-  RelationValidationError,
-  validateTopicRelations,
-  type TopicRelation,
-} from "@/lib/okf-relations";
+import type { TopicRelation } from "@/lib/okf-relation-types";
 
 export async function exportTopicToOkfAction(formData: FormData) {
   const documentId = getFormString(formData, "documentId");
@@ -96,6 +92,9 @@ export async function updateTopicRelationsAction(formData: FormData) {
   }
 
   const relations = buildNextRelations(topic.relations, relationAction, formData);
+  const { RelationValidationError, validateTopicRelations } = await import(
+    "@/lib/okf-relations"
+  );
 
   try {
     await validateTopicRelations(relations, getDefaultKnowledgeRoot());

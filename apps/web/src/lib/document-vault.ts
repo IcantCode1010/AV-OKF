@@ -7,7 +7,7 @@ import { generateTopicCandidates } from "./topic-records.ts";
 import {
   normalizeTopicRelations,
   type TopicRelation,
-} from "./okf-relations.ts";
+} from "./okf-relation-types.ts";
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 

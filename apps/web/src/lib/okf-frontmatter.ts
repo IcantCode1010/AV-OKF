@@ -1,4 +1,4 @@
-import type { TopicRelation } from "./okf-relations.ts";
+import type { TopicRelation } from "./okf-relation-types.ts";
 
 export type OkfFrontmatterValue = string | string[] | OkfFrontmatterObject[];
 

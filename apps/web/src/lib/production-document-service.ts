@@ -26,7 +26,7 @@ import {
   type ProductionDocumentRepository,
 } from "./production-repository.ts";
 import { getExtractionQueue } from "./production-queue.ts";
-import type { TopicRelation } from "./okf-relations.ts";
+import type { TopicRelation } from "./okf-relation-types.ts";
 
 type UploadMetadata = {
   bytes: Buffer;
