@@ -448,6 +448,47 @@ test("searchKeyword filters document ids when provided", async () => {
   assert.deepEqual(capturedQueries[1]?.where?.documentId?.in, ["doc_a"]);
 });
 
+test("searchKeyword applies source type and review status filters at query time", async () => {
+  const capturedQueries: Array<{
+    where?: {
+      reviewStatus?: { in?: string[] };
+      sourceType?: { in?: string[] };
+    };
+  }> = [];
+  const repository = createRagRepository({
+    okfConceptChunkLink: { findMany: async () => [] },
+    ragChunk: {
+      findMany: async (query: {
+        where?: {
+          reviewStatus?: { in?: string[] };
+          sourceType?: { in?: string[] };
+        };
+      }) => {
+        capturedQueries.push(query);
+        return [
+          createChunkRow({
+            reviewStatus: "approved",
+            sourceType: "okf_topic",
+          }),
+        ];
+      },
+    },
+  });
+
+  await repository.searchKeyword({
+    filters: {
+      reviewStatus: ["approved"],
+      sourceTypes: ["okf_topic"],
+    },
+    query: "GEN OFF BUS",
+    topK: 10,
+    workspaceId: "wrk_1",
+  });
+
+  assert.deepEqual(capturedQueries[0]?.where?.sourceType?.in, ["okf_topic"]);
+  assert.deepEqual(capturedQueries[0]?.where?.reviewStatus?.in, ["approved"]);
+});
+
 test("searchVector filters document ids when provided", async () => {
   const capturedValues: unknown[][] = [];
   const repository = createRagRepository({
@@ -481,6 +522,56 @@ test("searchVector filters document ids when provided", async () => {
           Array.isArray(value) &&
           value.length === 1 &&
           value[0] === "doc_a",
+      ),
+    ),
+    true,
+  );
+});
+
+test("searchVector applies source type and review status filters at query time", async () => {
+  const capturedValues: unknown[][] = [];
+  const repository = createRagRepository({
+    $queryRaw: async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+      capturedValues.push(values);
+      return [
+        createVectorRow({
+          reviewStatus: "approved",
+          sourceType: "okf_topic",
+        }),
+      ];
+    },
+    okfConceptChunkLink: { findMany: async () => [] },
+  });
+
+  await repository.searchVector({
+    embedding: [0.1, 0.2],
+    filters: {
+      reviewStatus: ["approved"],
+      sourceTypes: ["okf_topic"],
+    },
+    query: "GEN OFF BUS",
+    topK: 10,
+    workspaceId: "wrk_1",
+  });
+
+  assert.equal(
+    capturedValues.some((values) =>
+      values.some(
+        (value) =>
+          Array.isArray(value) &&
+          value.length === 1 &&
+          value[0] === "okf_topic",
+      ),
+    ),
+    true,
+  );
+  assert.equal(
+    capturedValues.some((values) =>
+      values.some(
+        (value) =>
+          Array.isArray(value) &&
+          value.length === 1 &&
+          value[0] === "approved",
       ),
     ),
     true,

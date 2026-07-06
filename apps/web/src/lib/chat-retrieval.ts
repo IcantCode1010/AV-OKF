@@ -1,17 +1,41 @@
-import { isRetrievalRoute, type ChatRoute, type ChatRouterDecision } from "./chat-router.ts";
+import {
+  isRetrievalRoute,
+  type ChatEvidenceStatus,
+  type ChatRoute,
+  type ChatRouterDecision,
+} from "./chat-router.ts";
 import type { ChatCitation } from "./chat-types.ts";
 import { retrieveDocuments } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
-// Retrieval filters (source type, approval) are applied client-side below, not
-// by the repository, so over-fetch before slicing to the real topK per source.
-const OVER_FETCH_MULTIPLIER = 3;
 const CITATION_EXCERPT_MAX_CHARS = 240;
+// Evidence excerpts feed the LLM answer builder, so they carry much more of
+// the chunk than the short persisted/rendered citation excerpts do.
+const EVIDENCE_EXCERPT_MAX_CHARS = 1500;
+
+// Fuller-text counterpart to a ChatCitation, keyed by the same index. Used
+// only to prompt the answer builder; never persisted or rendered.
+export type ChatRetrievalEvidence = {
+  documentTitle: string;
+  index: number;
+  pageEnd: number;
+  pageStart: number;
+  sourceType: "okf" | "rag";
+  text: string;
+};
 
 export type ChatRetrievalResult = {
+  // True when approved OKF evidence was retrieved for this answer
+  // (query-router.md trace field whether_approved_okf_was_available).
+  approvedOkfAvailable: boolean;
   citations: ChatCitation[];
+  evidence: ChatRetrievalEvidence[];
+  // True when the citations are unreviewed RAG content standing in as
+  // discovery — either a rag_only answer or an OKF route downgraded because
+  // no approved evidence existed. Never true when OKF evidence is present.
+  ragUsedForDiscoveryOnly: boolean;
   retrievalError: boolean;
   retrievalToolsCalled: string[];
   sourcesRead: string[];
@@ -30,21 +54,53 @@ export async function runChatRetrieval(
   const { decision, query, workspaceId } = input;
 
   if (!isRetrievalRoute(decision.route)) {
-    return { citations: [], retrievalError: false, retrievalToolsCalled: [], sourcesRead: [] };
+    return {
+      approvedOkfAvailable: false,
+      citations: [],
+      evidence: [],
+      ragUsedForDiscoveryOnly: false,
+      retrievalError: false,
+      retrievalToolsCalled: [],
+      sourcesRead: [],
+    };
   }
 
   const toolsForRoute = retrievalToolsForRoute(decision.route);
 
   try {
     if (decision.route === "okf_only") {
-      const results = await fetchBySourceType(retrieve, {
+      const okfResults = await fetchBySourceType(retrieve, {
         approvedOnly: true,
         query,
         sourceType: "okf_topic",
         topK: OKF_TOP_K,
         workspaceId,
       });
-      return buildRetrievalResult(results, toolsForRoute);
+
+      if (okfResults.length > 0) {
+        return buildRetrievalResult(okfResults, toolsForRoute, {
+          approvedOkfAvailable: true,
+          ragUsedForDiscoveryOnly: false,
+        });
+      }
+
+      // query-router.md fallback rule: okf_only with no approved OKF object
+      // downgrades to RAG for discovery only — never presented as official.
+      const discoveryResults = await fetchBySourceType(retrieve, {
+        approvedOnly: false,
+        query,
+        sourceType: "raw_extraction",
+        topK: RAG_TOP_K,
+        workspaceId,
+      });
+      return buildRetrievalResult(
+        discoveryResults,
+        ["okf_retrieval", "rag_retrieval"],
+        {
+          approvedOkfAvailable: false,
+          ragUsedForDiscoveryOnly: discoveryResults.length > 0,
+        },
+      );
     }
 
     if (decision.route === "rag_only") {
@@ -55,33 +111,43 @@ export async function runChatRetrieval(
         topK: RAG_TOP_K,
         workspaceId,
       });
-      return buildRetrievalResult(results, toolsForRoute);
+      return buildRetrievalResult(results, toolsForRoute, {
+        approvedOkfAvailable: false,
+        ragUsedForDiscoveryOnly: results.length > 0,
+      });
     }
 
-    const [okfResults, ragResults] = await Promise.all([
-      fetchBySourceType(retrieve, {
-        approvedOnly: true,
-        query,
-        sourceType: "okf_topic",
-        topK: OKF_TOP_K,
-        workspaceId,
-      }),
-      fetchBySourceType(retrieve, {
-        approvedOnly: false,
-        query,
-        sourceType: "raw_extraction",
-        topK: RAG_TOP_K,
-        workspaceId,
-      }),
-    ]);
+    // Hybrid reads OKF first, then RAG for the supporting evidence — kept
+    // sequential (not parallel) per the design so a later slice can shape
+    // the RAG fetch around what OKF already covered.
+    const okfResults = await fetchBySourceType(retrieve, {
+      approvedOnly: true,
+      query,
+      sourceType: "okf_topic",
+      topK: OKF_TOP_K,
+      workspaceId,
+    });
+    const ragResults = await fetchBySourceType(retrieve, {
+      approvedOnly: false,
+      query,
+      sourceType: "raw_extraction",
+      topK: RAG_TOP_K,
+      workspaceId,
+    });
 
-    return buildRetrievalResult([...okfResults, ...ragResults], toolsForRoute);
+    return buildRetrievalResult([...okfResults, ...ragResults], toolsForRoute, {
+      approvedOkfAvailable: okfResults.length > 0,
+      ragUsedForDiscoveryOnly: okfResults.length === 0 && ragResults.length > 0,
+    });
   } catch {
     // A retrieval failure (missing/invalid embedding credentials, budget
     // exceeded, transient provider/db error) must never crash the chat
     // turn or imply an unsupported answer — surface it as unavailable.
     return {
+      approvedOkfAvailable: false,
       citations: [],
+      evidence: [],
+      ragUsedForDiscoveryOnly: false,
       retrievalError: true,
       retrievalToolsCalled: toolsForRoute,
       sourcesRead: [],
@@ -112,9 +178,13 @@ async function fetchBySourceType(
   },
 ): Promise<RetrievalResult[]> {
   const results = await retrieve({
+    filters: {
+      ...(options.approvedOnly ? { reviewStatus: ["approved"] } : {}),
+      sourceTypes: [options.sourceType],
+    },
     mode: "hybrid",
     query: options.query,
-    topK: options.topK * OVER_FETCH_MULTIPLIER,
+    topK: options.topK,
     workspaceId: options.workspaceId,
   });
 
@@ -127,23 +197,44 @@ async function fetchBySourceType(
 function buildRetrievalResult(
   results: RetrievalResult[],
   retrievalToolsCalled: string[],
+  flags: Pick<ChatRetrievalResult, "approvedOkfAvailable" | "ragUsedForDiscoveryOnly">,
 ): ChatRetrievalResult {
   const citations = results.map((result, index) => toChatCitation(result, index + 1));
+  const evidence = results.map((result, index) => toEvidence(result, index + 1));
   const sourcesRead = Array.from(
     new Set(results.map((result) => `${result.documentTitle} (p. ${formatPageRange(result)})`)),
   );
 
-  return { citations, retrievalError: false, retrievalToolsCalled, sourcesRead };
+  return {
+    ...flags,
+    citations,
+    evidence,
+    retrievalError: false,
+    retrievalToolsCalled,
+    sourcesRead,
+  };
 }
 
 function toChatCitation(result: RetrievalResult, index: number): ChatCitation {
+  return {
+    coveredByOkfConceptIds: result.coveredByOkfConceptIds,
+    documentTitle: result.documentTitle,
+    index,
+    pageEnd: result.pageEnd,
+    pageStart: result.pageStart,
+    sourceType: result.sourceType === "okf_topic" ? "okf" : "rag",
+    text: truncateExcerpt(result.text, CITATION_EXCERPT_MAX_CHARS),
+  };
+}
+
+function toEvidence(result: RetrievalResult, index: number): ChatRetrievalEvidence {
   return {
     documentTitle: result.documentTitle,
     index,
     pageEnd: result.pageEnd,
     pageStart: result.pageStart,
     sourceType: result.sourceType === "okf_topic" ? "okf" : "rag",
-    text: truncateExcerpt(result.text),
+    text: truncateExcerpt(result.text, EVIDENCE_EXCERPT_MAX_CHARS),
   };
 }
 
@@ -153,16 +244,21 @@ function formatPageRange(result: RetrievalResult): string {
     : `${result.pageStart}-${result.pageEnd}`;
 }
 
-function truncateExcerpt(text: string): string {
+function truncateExcerpt(text: string, maxChars: number): string {
   const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized.length > CITATION_EXCERPT_MAX_CHARS
-    ? `${normalized.slice(0, CITATION_EXCERPT_MAX_CHARS - 1).trimEnd()}…`
+  return normalized.length > maxChars
+    ? `${normalized.slice(0, maxChars - 1).trimEnd()}…`
     : normalized;
 }
 
+export type RetrievalAnswerInput = Pick<
+  ChatRetrievalResult,
+  "citations" | "retrievalError"
+> & { ragUsedForDiscoveryOnly?: boolean };
+
 export function buildRetrievalAnswer(
   route: ChatRoute,
-  retrieval: Pick<ChatRetrievalResult, "citations" | "retrievalError">,
+  retrieval: RetrievalAnswerInput,
 ): string {
   if (retrieval.retrievalError) {
     return "Retrieval is temporarily unavailable, so this can't be answered with cited evidence right now. Please try again shortly.";
@@ -175,10 +271,35 @@ export function buildRetrievalAnswer(
   const body = retrieval.citations
     .map((citation) => `${citation.text} [${citation.index}]`)
     .join(" ");
-  return `${introForRoute(route)} ${body}`;
+  return `${introForRetrieval(route, retrieval)} ${body}`;
 }
 
-function introForRoute(route: ChatRoute): string {
+export function resolveEvidenceStatus(
+  retrieval: Pick<
+    ChatRetrievalResult,
+    "approvedOkfAvailable" | "citations" | "retrievalError"
+  >,
+): ChatEvidenceStatus {
+  if (retrieval.retrievalError) {
+    return "retrieval_error";
+  }
+
+  if (retrieval.citations.length === 0) {
+    return "no_evidence";
+  }
+
+  return retrieval.approvedOkfAvailable ? "approved_evidence" : "discovery_evidence";
+}
+
+function introForRetrieval(
+  route: ChatRoute,
+  retrieval: RetrievalAnswerInput,
+): string {
+  // A downgraded OKF/hybrid answer must not read as official knowledge.
+  if (retrieval.ragUsedForDiscoveryOnly && route !== "rag_only") {
+    return "No reviewed answer exists for this yet. From the raw indexed documents (unreviewed):";
+  }
+
   if (route === "okf_only") {
     return "Approved knowledge base:";
   }

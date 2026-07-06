@@ -294,13 +294,20 @@ Implementation note:
 Start with a rules-first router plus an LLM fallback. Do not run OKF and RAG together unless the router selects Hybrid.
 ```
 
-Progress note: the router (rules-first, no LLM fallback yet), OKF retrieval tool, RAG retrieval tool, hybrid mode, citation renderer, and agent trace drawer are implemented. The answer builder is currently deterministic (it surfaces retrieved excerpts with `[n]` citation markers rather than LLM-synthesized prose); an LLM-based answer builder is a follow-up slice. Retrieval's source-type/approval filtering happens client-side in `chat-retrieval.ts` because `rag-repository.ts` does not yet apply `RetrievalRequest.filters.sourceTypes`/`reviewStatus` at the query level.
+Progress note: the router (rules-first, no LLM fallback yet), OKF retrieval tool, RAG retrieval tool, hybrid mode, citation renderer, agent trace drawer, and the LLM answer builder (`chat-answer.ts`) are implemented. When the workspace has an LLM provider key configured (Settings), replies are synthesized from the retrieved evidence with enforced `[n]` citation markers — answers with missing or out-of-range markers are rejected and fall back to the deterministic excerpt echo, as do provider failures and workspaces without a key, so the citation-echo path remains the floor. The trace records `answerMode` (`llm`/`deterministic`) plus provider/model. Retrieval's source-type/approval filters are applied server-side by `rag-repository.ts` (`filters.sourceTypes`/`reviewStatus`); `chat-retrieval.ts` keeps a client-side guard as defense-in-depth.
+
+Agent-readiness pass: `routeChatQuestion` now also accepts the structured input shape from [Query Router](../architecture/query-router.md) (`question`/`workspaceId`/`conversationContext`), and `sendMessage` threads recent session turns through as that context — the seam a future LLM/agent router consumes without callers changing. Rules were widened to cover plain interrogative questions (`what is`, `how does`, `explain`, `describe`), which previously fell through to `missing_context` for anything not using an exact keyword like "definition" or "official". Hybrid retrieval now reads OKF before RAG (sequential, not parallel) per [Ingestion To Knowledge Flow](../architecture/ingestion-to-knowledge-flow.md), and an `okf_only` route with no approved evidence downgrades to labeled RAG discovery (unreviewed, never presented as official) instead of a dead-end reply. The trace now also records `approvedOkfAvailable`, `ragUsedForDiscoveryOnly`, and `finalEvidenceStatus` (`approved_evidence`/`discovery_evidence`/`no_evidence`/`retrieval_error`) — the OKF-priority signals [Validation Agent](../architecture/validation-agent.md) needs. Citations now carry `coveredByOkfConceptIds` so a future validator can treat a covering approved OKF concept as controlling over a raw RAG chunk.
+
+Stage 6 closeout correction: the LLM fallback classifier is now implemented for low-confidence rule results, with high-confidence safety routes kept rules-first. The current Stage 6 boundary is router-first retrieval, evidence-bound answer synthesis, citations, and traceability; gap-targeted hybrid retrieval and claim-level validation move to Stage 7.
+
+Stage 6.5 architecture correction: OKF retrieval should read the exported OKF bundle files directly, not depend on `okf_topic` rows embedded into the RAG vector database. The `okf_topic` RAG projection remains a legacy/optional cache from the Stage 4 follow-up, but the agent path should treat `knowledge/` as the reviewed knowledge source of truth. RAG remains the raw document discovery layer; OKF remains the reviewed Markdown/YAML bundle the agent can crawl through `index.md`, frontmatter, links, relations, `source_manifest.md`, and `log.md`.
 
 Exit criteria:
 
 - A user can ask questions and see whether the router sent the query to OKF, RAG, Hybrid, or missing-context handling.
 - Agent traces show the router category, route, confidence, and rationale.
 - Hybrid retrieval is demonstrably not the default path.
+- OKF-routed answers can be sourced from actual exported bundle files, with raw RAG used only for discovery fallback or hybrid supporting context.
 
 Architecture note:
 
@@ -386,5 +393,5 @@ Demo flow:
 8. Ask a direct question that uses OKF.
 9. Ask an open-ended question that uses RAG.
 10. Ask a mixed question that uses Hybrid only when needed.
-11. Show citations, router decision, retrieval mode, and trace.
+11. Show citations, router decision, retrieval mode, evidence card, and trace.
 ```

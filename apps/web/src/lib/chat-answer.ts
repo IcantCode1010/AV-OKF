@@ -1,0 +1,306 @@
+import { parseCitationMarkers } from "./chat-citation-markers.ts";
+import {
+  buildRetrievalAnswer,
+  type ChatRetrievalEvidence,
+  type RetrievalAnswerInput,
+} from "./chat-retrieval.ts";
+import type { RetrievalChatRoute } from "./chat-router.ts";
+import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
+import { getLlmProvider, type LlmProviderId } from "./llm-providers.ts";
+
+const ANSWER_MAX_TOKENS = 1024;
+
+export type ChatAnswer = {
+  content: string;
+  mode: "llm" | "deterministic";
+  model?: string;
+  provider?: LlmProviderId;
+};
+
+export type ChatAnswerProviderFn = (input: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  provider: LlmProviderId;
+}) => Promise<string>;
+
+type GenerateChatAnswerOptions = {
+  callProvider?: ChatAnswerProviderFn;
+  getApiKey?: (
+    workspaceId: string,
+  ) => Promise<{ apiKey: string; provider: LlmProviderId } | null>;
+};
+
+export async function generateChatAnswer(
+  input: {
+    evidence: ChatRetrievalEvidence[];
+    query: string;
+    retrieval: RetrievalAnswerInput;
+    route: RetrievalChatRoute;
+    workspaceId: string;
+  },
+  options: GenerateChatAnswerOptions = {},
+): Promise<ChatAnswer> {
+  const deterministic: ChatAnswer = {
+    content: buildRetrievalAnswer(input.route, input.retrieval),
+    mode: "deterministic",
+  };
+
+  // Only synthesize when there is real evidence to ground the answer in;
+  // error and missing-evidence replies stay deterministic by design.
+  if (input.retrieval.retrievalError || input.retrieval.citations.length === 0) {
+    return deterministic;
+  }
+
+  const getApiKey = options.getApiKey ?? getWorkspaceLlmApiKeyForEnrichment;
+  let key: { apiKey: string; provider: LlmProviderId } | null;
+  try {
+    key = await getApiKey(input.workspaceId);
+  } catch {
+    return deterministic;
+  }
+
+  if (!key) {
+    return deterministic;
+  }
+
+  const provider = getLlmProvider(key.provider);
+  const callProvider = options.callProvider ?? callChatAnswerProvider;
+  const prompt = buildChatAnswerPrompt({
+    evidence: input.evidence,
+    query: input.query,
+    ragDiscovery: input.retrieval.ragUsedForDiscoveryOnly === true,
+    route: input.route,
+  });
+
+  try {
+    const rawText = await callProvider({
+      apiKey: key.apiKey,
+      model: provider.model,
+      prompt,
+      provider: provider.id,
+    });
+    const payload = parseAnswerPayload(rawText);
+
+    if (!payload.supported) {
+      return {
+        content: buildNotDirectlyAnsweredReply(input.route),
+        mode: "llm",
+        model: provider.model,
+        provider: provider.id,
+      };
+    }
+
+    const answer = payload.answer.trim();
+
+    if (
+      !answer ||
+      !hasValidCitationMarkers(answer, input.retrieval.citations.length)
+    ) {
+      // An uncited or miscited synthesis is worse than the citation echo:
+      // the echo can only quote real evidence, so fall back rather than
+      // risk presenting unverifiable prose.
+      return deterministic;
+    }
+
+    return {
+      content: answer,
+      mode: "llm",
+      model: provider.model,
+      provider: provider.id,
+    };
+  } catch {
+    return deterministic;
+  }
+}
+
+export function buildChatAnswerPrompt(input: {
+  evidence: ChatRetrievalEvidence[];
+  query: string;
+  ragDiscovery?: boolean;
+  route: RetrievalChatRoute;
+}): string {
+  const evidenceBlocks = input.evidence.map((item) => {
+    const pages =
+      item.pageStart === item.pageEnd
+        ? `page ${item.pageStart}`
+        : `pages ${item.pageStart}-${item.pageEnd}`;
+    const sourceLabel =
+      item.sourceType === "okf" ? "approved knowledge" : "raw document text";
+
+    return `[${item.index}] ${item.documentTitle} (${pages}, ${sourceLabel})\n${item.text}`;
+  });
+
+  return [
+    "You answer technical questions for a document knowledge base.",
+    "Rules:",
+    "- Use ONLY the numbered evidence excerpts below. Do not use outside knowledge.",
+    "- Every sentence that states a fact must end with inline bracketed evidence markers like [1] or [2][3].",
+    "- An answer containing no [n] markers is invalid and will be rejected.",
+    "- Never cite a number that is not in the evidence list.",
+    "- Preserve exact technical values, names, limits, and procedure wording from the evidence.",
+    "- Be concise: a short direct answer first, then supporting detail only if needed.",
+    '- If the evidence does not directly answer the question, return {"answer": "", "supported": false}.',
+    'Return strict JSON: {"answer": string, "supported": boolean}',
+    'Example: {"answer": "The refund window is 14 days [1]. Requests are handled by support [2].", "supported": true}',
+    "",
+    `Question: ${input.query}`,
+    input.ragDiscovery
+      ? "No approved knowledge matched this question. All evidence is raw indexed document text that has not been human-reviewed: present the answer as unreviewed discovery from the documents, never as official or approved guidance."
+      : evidenceContextForRoute(input.route),
+    "",
+    "Evidence:",
+    evidenceBlocks.join("\n\n"),
+  ].join("\n");
+}
+
+export function hasValidCitationMarkers(
+  content: string,
+  citationCount: number,
+): boolean {
+  const markers = parseCitationMarkers(content).filter(
+    (segment) => segment.type === "citation",
+  );
+
+  return (
+    markers.length > 0 &&
+    markers.every(
+      (segment) =>
+        segment.type === "citation" &&
+        segment.index >= 1 &&
+        segment.index <= citationCount,
+    )
+  );
+}
+
+export function buildNotDirectlyAnsweredReply(route: RetrievalChatRoute): string {
+  if (route === "okf_only") {
+    return "The approved knowledge base has related content, but it does not directly answer this question. The retrieved sources are listed for reference.";
+  }
+
+  if (route === "rag_only") {
+    return "The indexed documents have related content, but none of it directly answers this question. The retrieved sources are listed for reference.";
+  }
+
+  return "The approved knowledge base and indexed documents have related content, but none of it directly answers this question. The retrieved sources are listed for reference.";
+}
+
+function evidenceContextForRoute(route: RetrievalChatRoute): string {
+  if (route === "okf_only") {
+    return "All evidence comes from the human-approved knowledge base.";
+  }
+
+  if (route === "rag_only") {
+    return "All evidence comes from raw indexed document text that has not necessarily been human-reviewed.";
+  }
+
+  return "Evidence entries are labeled approved knowledge or raw document text. If they conflict, prefer approved knowledge and say the raw text disagrees.";
+}
+
+function parseAnswerPayload(rawText: string): {
+  answer: string;
+  supported: boolean;
+} {
+  const parsed = JSON.parse(rawText) as { answer?: unknown; supported?: unknown };
+
+  if (typeof parsed.answer !== "string" || typeof parsed.supported !== "boolean") {
+    throw new Error("chat_answer_malformed_response");
+  }
+
+  return { answer: parsed.answer, supported: parsed.supported };
+}
+
+async function callChatAnswerProvider(input: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+  provider: LlmProviderId;
+}): Promise<string> {
+  if (input.provider === "anthropic") {
+    return callAnthropic(input);
+  }
+
+  return callOpenAi(input);
+}
+
+async function callAnthropic(input: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+}): Promise<string> {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    body: JSON.stringify({
+      max_tokens: ANSWER_MAX_TOKENS,
+      messages: [{ content: input.prompt, role: "user" }],
+      model: input.model,
+      system:
+        "You answer questions strictly from supplied evidence. Return only JSON.",
+      temperature: 0,
+    }),
+    headers: {
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+      "x-api-key": input.apiKey,
+    },
+    method: "POST",
+  });
+  const rawResponse = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`anthropic_request_failed:${response.status}`);
+  }
+
+  const parsed = JSON.parse(rawResponse) as {
+    content?: Array<{ text?: string; type?: string }>;
+  };
+  const text = parsed.content?.find((part) => part.type === "text")?.text;
+
+  if (!text) {
+    throw new Error("chat_answer_malformed_response");
+  }
+
+  return text;
+}
+
+async function callOpenAi(input: {
+  apiKey: string;
+  model: string;
+  prompt: string;
+}): Promise<string> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    body: JSON.stringify({
+      messages: [
+        {
+          content:
+            "You answer questions strictly from supplied evidence. Return only JSON.",
+          role: "system",
+        },
+        { content: input.prompt, role: "user" },
+      ],
+      model: input.model,
+      response_format: { type: "json_object" },
+      temperature: 0,
+    }),
+    headers: {
+      authorization: `Bearer ${input.apiKey}`,
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+  const rawResponse = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`openai_request_failed:${response.status}`);
+  }
+
+  const parsed = JSON.parse(rawResponse) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const text = parsed.choices?.[0]?.message?.content;
+
+  if (!text) {
+    throw new Error("chat_answer_malformed_response");
+  }
+
+  return text;
+}

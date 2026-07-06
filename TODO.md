@@ -1,0 +1,76 @@
+# AV-OKF TODO
+
+## Chat Source Clarity
+
+- [x] Add a clear answer-source badge to each assistant response:
+  - `Answered from OKF`
+  - `Answered from raw documents`
+  - `Answered from OKF + raw documents`
+  - `No evidence found`
+- [x] Base the answer-source badge on actual retrieved source types, not only the router decision.
+- [ ] Separate router intent from evidence actually used in the trace:
+  - `Router decision`
+  - `Evidence used`
+- [x] Replace internal source labels with user-facing labels:
+  - `okf_topic` -> `Approved OKF topic`
+  - `raw_extraction` -> `Raw PDF extraction`
+- [ ] Keep review status visible on each source:
+  - `Approved`
+  - `Unreviewed`
+  - `Needs review`
+- [x] Add evidence trust styling:
+  - Green for approved OKF
+  - Yellow for raw extracted document text
+  - Gray/red for no usable evidence or unsupported answers
+- [x] Show explicit fallback messaging when OKF-first routing falls back to raw RAG:
+  - `No approved OKF topic matched. Answered from raw document evidence instead.`
+- [ ] Make answer citation markers clickable and link them to matching source cards.
+- [ ] Add `Open PDF page` for raw PDF/RAG evidence so users can verify the answer against the original source document.
+- [ ] Add a compact `Why this answer?` panel showing:
+  - Route selected
+  - Evidence retrieved
+  - OKF vs raw RAG trust level
+  - LLM answer vs deterministic fallback
+- [ ] Warn when an answer is based only on unreviewed raw extraction:
+  - `This answer is based on unreviewed extracted document text. Verify against the source PDF before operational use.`
+- [ ] Add tests for:
+  - OKF-only answer displays `Answered from OKF`
+  - RAG-only answer displays `Answered from raw documents`
+  - Hybrid answer displays `Answered from OKF + raw documents`
+  - OKF route with RAG fallback displays fallback notice
+  - Source labels are user-friendly while preserving raw source type internally
+
+## OKF Bundle Retriever
+
+- [ ] Treat the OKF bundle under `knowledge/` as the reviewed knowledge source of truth for OKF-routed chat answers.
+- [ ] Build an `OkfBundleRetriever` that reads `AV_OKF_KNOWLEDGE_ROOT` directly.
+- [ ] Parse bundle files from Markdown/YAML instead of requiring approved OKF topics to be embedded into the RAG database.
+- [ ] Read reserved bundle files:
+  - `index.md`
+  - `source_manifest.md`
+  - `log.md`
+- [ ] Read concept files and normalize:
+  - filename/path
+  - frontmatter `type`
+  - `title`
+  - `description`
+  - `review_status`
+  - `source_file`
+  - `source_pages`
+  - `relations`
+  - `covered_rag_chunk_ids`
+  - body excerpt
+- [ ] Update chat OKF retrieval so `okf_only` calls the bundle retriever first.
+- [ ] Keep raw RAG retrieval for:
+  - `rag_only`
+  - `hybrid` supporting context
+  - explicit OKF-miss discovery fallback
+- [ ] Mark the existing `syncApprovedTopicsToRag` admin flow as legacy/optional cache, not the primary agent retrieval path.
+- [ ] Update admin copy for OKF-to-RAG sync so it does not imply OKF must be ingested into RAG.
+- [ ] Add tests:
+  - OKF retriever reads a temp bundle and returns approved topics.
+  - OKF retriever ignores non-approved concept files.
+  - OKF retriever ignores/resists unsafe paths.
+  - `okf_only` chat route can answer from bundle files without RAG DB `okf_topic` chunks.
+  - OKF miss falls back to raw RAG discovery and shows the raw evidence card.
+  - Hybrid returns OKF bundle evidence plus raw RAG supporting evidence.

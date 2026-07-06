@@ -1,12 +1,19 @@
 import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import { generateChatAnswer, type ChatAnswer } from "./chat-answer.ts";
+import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
 import {
   buildStage6aRouterReply,
   buildStage6aRouterTrace,
   isRetrievalRoute,
-  routeChatQuestion,
+  routeChatQuestionWithFallback,
 } from "./chat-router.ts";
-import { buildRetrievalAnswer, runChatRetrieval, type ChatRetrievalFn } from "./chat-retrieval.ts";
+import type { ChatRouterDecision, ChatRouterInput } from "./chat-router.ts";
+import {
+  resolveEvidenceStatus,
+  runChatRetrieval,
+  type ChatRetrievalFn,
+} from "./chat-retrieval.ts";
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
 import {
   createPostgresChatRepository,
@@ -26,11 +33,17 @@ export type ProductionChatService = {
   ): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }>;
 };
 
+// How many prior messages ride along as router conversation context;
+// query-router.md says this "can be minimal" for MVP.
+const CONVERSATION_CONTEXT_TURNS = 6;
+
 let cachedService: ProductionChatService | null = null;
 
 type ProductionChatServiceOptions = {
+  generateAnswer?: typeof generateChatAnswer;
   getContext?: () => Promise<AuthWorkspaceContext>;
   retrieve?: ChatRetrievalFn;
+  routeQuestion?: (input: ChatRouterInput) => Promise<ChatRouterDecision>;
 };
 
 export function getProductionChatService(): ProductionChatService {
@@ -50,6 +63,8 @@ export function createProductionChatService(
   }
 
   const retrieve = options.retrieve ?? runChatRetrieval;
+  const generateAnswer = options.generateAnswer ?? generateChatAnswer;
+  const routeQuestion = options.routeQuestion ?? routeChatQuestionWithFallback;
 
   return {
     async createSession(title?: string) {
@@ -82,20 +97,64 @@ export function createProductionChatService(
 
     async sendMessage(sessionId: string, content: string) {
       const context = await getContext();
-      const decision = routeChatQuestion(content);
+      // Recent turns give the router (and its future LLM-fallback/agent
+      // implementation) the conversation_context input from query-router.md.
+      const history = await repository.getSessionWithMessages({
+        context,
+        sessionId,
+      });
+      const conversationContext = history.messages
+        .slice(-CONVERSATION_CONTEXT_TURNS)
+        .map((message) => `${message.role}: ${message.content}`);
+      const decision = await routeQuestion({
+        conversationContext,
+        question: content,
+        workspaceId: context.workspaceId,
+      });
       const retrieval = isRetrievalRoute(decision.route)
         ? await retrieve({ decision, query: content, workspaceId: context.workspaceId })
-        : { citations: [], retrievalError: false, retrievalToolsCalled: [], sourcesRead: [] };
-      const assistantContent = isRetrievalRoute(decision.route)
-        ? buildRetrievalAnswer(decision.route, retrieval)
-        : buildStage6aRouterReply(decision);
+        : {
+            approvedOkfAvailable: false,
+            citations: [],
+            evidence: [],
+            ragUsedForDiscoveryOnly: false,
+            retrievalError: false,
+            retrievalToolsCalled: [],
+            sourcesRead: [],
+          };
+      const answer: ChatAnswer = isRetrievalRoute(decision.route)
+        ? await generateAnswer({
+            evidence: retrieval.evidence,
+            query: content,
+            retrieval,
+            route: decision.route,
+            workspaceId: context.workspaceId,
+          })
+        : { content: buildStage6aRouterReply(decision), mode: "deterministic" };
+      const assistantTrace = {
+        ...buildStage6aRouterTrace(decision),
+        answerMode: answer.mode,
+        ...(answer.model ? { answerModel: answer.model } : {}),
+        ...(answer.provider ? { answerProvider: answer.provider } : {}),
+        ...(isRetrievalRoute(decision.route)
+          ? {
+              approvedOkfAvailable: retrieval.approvedOkfAvailable,
+              finalEvidenceStatus: resolveEvidenceStatus(retrieval),
+              ragUsedForDiscoveryOnly: retrieval.ragUsedForDiscoveryOnly,
+            }
+          : {}),
+        retrievalToolsCalled: retrieval.retrievalToolsCalled,
+        sourcesRead: retrieval.sourcesRead,
+      };
 
       return repository.appendUserMessageAndAssistantReply({
-        assistantContent,
+        assistantContent: answer.content,
         assistantTrace: {
-          ...buildStage6aRouterTrace(decision),
-          retrievalToolsCalled: retrieval.retrievalToolsCalled,
-          sourcesRead: retrieval.sourcesRead,
+          ...assistantTrace,
+          answerEvidenceProfile: buildAnswerEvidenceProfile({
+            citations: retrieval.citations,
+            trace: assistantTrace,
+          }),
         },
         citations: retrieval.citations,
         content,

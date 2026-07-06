@@ -17,6 +17,17 @@ import {
 
 const RAW_EXTRACTION_SOURCE_TYPE = "raw_extraction";
 const OKF_TOPIC_SOURCE_TYPE = "okf_topic";
+// A whole natural-language question is almost never a literal substring of a
+// chunk, so keyword search previously matched nothing for real questions
+// (only exact-phrase queries). Matching per significant term instead lets it
+// contribute real recall to the hybrid search.
+const KEYWORD_CANDIDATE_CAP = 2000;
+const KEYWORD_STOPWORDS = new Set([
+  "a", "an", "and", "are", "at", "be", "by", "can", "could", "do", "does",
+  "for", "from", "how", "in", "is", "it", "of", "on", "or", "please", "should",
+  "that", "the", "this", "to", "was", "were", "what", "which", "who", "whom",
+  "will", "with", "would",
+]);
 
 type PrismaLike = ReturnType<typeof getPrisma>;
 
@@ -321,13 +332,25 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       });
     },
 
-    async searchKeyword(input: {
-      documentIds?: string[];
-      query: string;
-      topK: number;
-      workspaceId: string;
-    }): Promise<RetrievalResult[]> {
-      const documentIds = normalizeDocumentIds(input.documentIds);
+      async searchKeyword(input: {
+        documentIds?: string[];
+        filters?: {
+          reviewStatus?: string[];
+          sourceTypes?: string[];
+        };
+        query: string;
+        topK: number;
+        workspaceId: string;
+      }): Promise<RetrievalResult[]> {
+        const documentIds = normalizeDocumentIds(input.documentIds);
+        const sourceTypes = normalizeFilterValues(input.filters?.sourceTypes);
+        const reviewStatuses = normalizeFilterValues(input.filters?.reviewStatus);
+        const terms = extractKeywordTerms(input.query);
+
+      if (terms.length === 0) {
+        return [];
+      }
+
       const rows = await db.ragChunk.findMany({
         include: { document: true },
         orderBy: [
@@ -335,22 +358,39 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           { pageStart: "asc" },
           { chunkOrdinal: "asc" },
         ],
-        take: input.topK,
+        // Ranking by relevance happens after this fetch, so the candidate
+        // pool must not be capped near topK here: common terms can match
+        // hundreds of chunks, and a small take() would silently drop the
+        // most relevant one before it's ever scored (verified against real
+        // data - a 5x multiplier still excluded the correct chunk).
+        take: KEYWORD_CANDIDATE_CAP,
         where: {
-          ...(documentIds.length > 0
-            ? { documentId: { in: documentIds } }
-            : {}),
-          isActive: true,
-          text: { contains: input.query, mode: "insensitive" },
+            ...(documentIds.length > 0
+              ? { documentId: { in: documentIds } }
+              : {}),
+            ...(sourceTypes.length > 0 ? { sourceType: { in: sourceTypes } } : {}),
+            ...(reviewStatuses.length > 0
+              ? { reviewStatus: { in: reviewStatuses } }
+              : {}),
+            isActive: true,
+            OR: terms.map((term) => ({
+            text: { contains: term, mode: "insensitive" as const },
+          })),
           workspaceId: input.workspaceId,
         },
       });
+      // Array#sort is stable, so rows tying on matchCount keep the
+      // deterministic documentId/pageStart/chunkOrdinal order from above.
+      const ranked = rows
+        .map((row) => ({ matchCount: countMatchingTerms(row.text, terms), row }))
+        .sort((left, right) => right.matchCount - left.matchCount)
+        .slice(0, input.topK);
       const coverage = await getCoverageByChunkId(db, {
-        chunkIds: rows.map((row) => row.id),
+        chunkIds: ranked.map(({ row }) => row.id),
         workspaceId: input.workspaceId,
       });
 
-      return rows.map((row, index) => ({
+      return ranked.map(({ matchCount, row }) => ({
         chunkId: row.id,
         coveredByOkfConceptIds: coverage.get(row.id) ?? [],
         documentId: row.documentId,
@@ -359,23 +399,31 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         pageStart: row.pageStart,
         retrievalMode: "keyword",
         reviewStatus: row.reviewStatus,
-        score: 1 / (index + 1),
+        score: matchCount / terms.length,
         sourcePageNumbers: row.sourcePageNumbers,
         sourceType: row.sourceType,
         text: row.text,
       }));
     },
 
-    async searchVector(input: {
-      documentIds?: string[];
-      embedding: number[];
-      query: string;
-      topK: number;
-      workspaceId: string;
-    }): Promise<RetrievalResult[]> {
-      void input.query;
-      const documentIds = normalizeDocumentIds(input.documentIds);
-      const hasDocumentFilter = documentIds.length > 0;
+      async searchVector(input: {
+        documentIds?: string[];
+        embedding: number[];
+        filters?: {
+          reviewStatus?: string[];
+          sourceTypes?: string[];
+        };
+        query: string;
+        topK: number;
+        workspaceId: string;
+      }): Promise<RetrievalResult[]> {
+        void input.query;
+        const documentIds = normalizeDocumentIds(input.documentIds);
+        const sourceTypes = normalizeFilterValues(input.filters?.sourceTypes);
+        const reviewStatuses = normalizeFilterValues(input.filters?.reviewStatus);
+        const hasDocumentFilter = documentIds.length > 0;
+        const hasSourceTypeFilter = sourceTypes.length > 0;
+        const hasReviewStatusFilter = reviewStatuses.length > 0;
       const rows = await db.$queryRaw<
         Array<{
           chunkId: string;
@@ -404,11 +452,13 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         FROM "RagEmbedding" e
         INNER JOIN "RagChunk" c ON c."id" = e."chunkId"
         INNER JOIN "Document" d ON d."id" = c."documentId"
-        WHERE c."workspaceId" = ${input.workspaceId}
-          AND c."isActive" = true
-          AND (${hasDocumentFilter} = false OR c."documentId" = ANY(${documentIds}::text[]))
-        ORDER BY e."embedding" <=> ${vectorLiteral(input.embedding)}::vector ASC
-        LIMIT ${input.topK}
+          WHERE c."workspaceId" = ${input.workspaceId}
+            AND c."isActive" = true
+            AND (${hasDocumentFilter} = false OR c."documentId" = ANY(${documentIds}::text[]))
+            AND (${hasSourceTypeFilter} = false OR c."sourceType" = ANY(${sourceTypes}::text[]))
+            AND (${hasReviewStatusFilter} = false OR c."reviewStatus" = ANY(${reviewStatuses}::text[]))
+          ORDER BY e."embedding" <=> ${vectorLiteral(input.embedding)}::vector ASC
+          LIMIT ${input.topK}
       `;
       const coverage = await getCoverageByChunkId(db, {
         chunkIds: rows.map((row) => row.chunkId),
@@ -867,4 +917,22 @@ function vectorLiteral(embedding: number[]) {
 
 function normalizeDocumentIds(documentIds?: string[]) {
   return documentIds?.filter((documentId) => documentId.trim().length > 0) ?? [];
+}
+
+function normalizeFilterValues(values?: string[]) {
+  return values?.map((value) => value.trim()).filter(Boolean) ?? [];
+}
+
+function extractKeywordTerms(query: string): string[] {
+  const terms = query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((term) => term.length > 2 && !KEYWORD_STOPWORDS.has(term));
+
+  return [...new Set(terms)];
+}
+
+function countMatchingTerms(text: string, terms: string[]): number {
+  const normalized = text.toLowerCase();
+  return terms.reduce((count, term) => (normalized.includes(term) ? count + 1 : count), 0);
 }

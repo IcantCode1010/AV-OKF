@@ -2,10 +2,14 @@ import type { Stage6aRouterTrace } from "./chat-router.ts";
 
 export type ChatRole = "user" | "assistant";
 
-// Provisional, for-display-only shape — not backed by real retrieval yet.
-// Loosely mirrors RetrievalResult (rag-types.ts) so a future retrieval pass
-// can map onto this cleanly.
+// Persisted, render-facing projection of a RetrievalResult (rag-types.ts):
+// text is a short excerpt sized for citation chips and stored trace JSON,
+// not the full retrieved chunk (see ChatRetrievalEvidence for that).
 export type ChatCitation = {
+  // Approved OKF concepts governing this chunk via coverage links; optional
+  // because citations persisted before coverage threading lack it. Stage 7
+  // validation treats a covering OKF concept as the controlling source.
+  coveredByOkfConceptIds?: string[];
   documentTitle: string;
   index: number;
   pageEnd: number;

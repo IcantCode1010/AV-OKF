@@ -38,7 +38,6 @@ export async function sendChatMessageAction(formData: FormData) {
   await sendChatMessage(sessionId, content);
 
   revalidatePath(`/chat/${sessionId}`);
-  redirect(`/chat/${sessionId}`);
 }
 
 function getFormString(formData: FormData, key: string) {

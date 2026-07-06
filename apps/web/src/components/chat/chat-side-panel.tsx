@@ -52,6 +52,13 @@ export function ChatSidePanelContent({
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{formatRoute(trace.route)}</Badge>
                 <Badge variant="outline">{trace.confidence} confidence</Badge>
+                {trace.answerMode ? (
+                  <Badge variant="outline">
+                    {trace.answerMode === "llm"
+                      ? `LLM answer${trace.answerModel ? ` · ${trace.answerModel}` : ""}`
+                      : "Excerpt answer"}
+                  </Badge>
+                ) : null}
               </div>
               <TraceRow label="Category" value={formatLabel(trace.queryCategory)} />
               <TraceRow label="Rationale" value={trace.rationale} />
