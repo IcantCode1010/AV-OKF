@@ -2,10 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
-import { ChatComposer } from "@/components/chat/chat-composer";
+import { ChatConversationPanel } from "@/components/chat/chat-conversation-panel";
 import { ChatSidePanelSheet } from "@/components/chat/chat-side-panel-sheet";
 import { ChatSidePanelContent } from "@/components/chat/chat-side-panel";
-import { ChatThread } from "@/components/chat/chat-thread";
 import { Button } from "@/components/ui/button";
 import { getChatSessionWithMessages, isChatAvailable } from "@/lib/chat-backend";
 
@@ -52,13 +51,7 @@ export default async function ChatSessionPage({
           </ChatSidePanelSheet>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4">
-          <ChatThread messages={messages} />
-        </div>
-
-        <div className="shrink-0 border-t border-border bg-background/95 p-3">
-          <ChatComposer sessionId={session.id} />
-        </div>
+        <ChatConversationPanel messages={messages} sessionId={session.id} />
       </div>
 
       <aside className="hidden min-h-0 lg:block">
