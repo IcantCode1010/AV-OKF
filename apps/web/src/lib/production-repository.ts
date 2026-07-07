@@ -187,7 +187,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         extractionLogs: { orderBy: { timestamp: "asc" } },
         objects: { orderBy: { createdAt: "asc" } },
       },
-      where: { id: documentId, workspaceId },
+      where: { deletedAt: null, id: documentId, workspaceId },
     });
 
     if (!record) {
@@ -523,7 +523,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async getDocumentMetrics(context: AuthWorkspaceContext) {
       const documents = await db.document.findMany({
-        where: { workspaceId: context.workspaceId },
+        where: { deletedAt: null, workspaceId: context.workspaceId },
       });
       return {
         processing: documents.filter(
@@ -549,7 +549,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           objects: { orderBy: { createdAt: "asc" } },
         },
         orderBy: { updatedAt: "desc" },
-        where: { workspaceId: context.workspaceId },
+        where: { deletedAt: null, workspaceId: context.workspaceId },
       });
       return documents.map(mapDocument);
     },

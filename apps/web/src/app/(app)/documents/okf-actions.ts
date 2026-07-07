@@ -14,6 +14,10 @@ import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
 import { getDefaultKnowledgeRoot } from "@/lib/knowledge-root";
 import { isRecoverableOkfExportError } from "@/lib/okf-export-errors";
+import {
+  buildOkfLifecycleFilename,
+  markOkfConceptLifecycle,
+} from "@/lib/okf-lifecycle";
 import type { TopicRelation } from "@/lib/okf-relation-types";
 
 export async function exportTopicToOkfAction(formData: FormData) {
@@ -116,6 +120,85 @@ export async function updateTopicRelationsAction(formData: FormData) {
   redirect(`/documents/${documentId}`);
 }
 
+export async function markOkfConceptLifecycleAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const status = getLifecycleStatus(getFormString(formData, "lifecycleStatus"));
+  const reason = getFormString(formData, "reason");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+
+  assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "okf_lifecycle_workspace_mismatch",
+  });
+
+  if (!isProductionBackend()) {
+    redirect(
+      `/documents/${documentId}?panel=topics&topic=${topicId}&lifecycleError=${encodeURIComponent(
+        "lifecycle_requires_production_backend",
+      )}`,
+    );
+  }
+
+  const [document, topics] = await Promise.all([
+    getDocumentById(documentId),
+    getTopicRecordsByDocumentId(documentId),
+  ]);
+
+  if (!document) {
+    throw new Error("document_not_found");
+  }
+
+  const topic = topics.find((candidate) => candidate.id === topicId);
+
+  if (!topic || topic.documentId !== document.id) {
+    throw new Error("topic_not_found");
+  }
+
+  if (topic.reviewStatus !== "approved") {
+    throw new Error("okf_lifecycle_requires_approved_topic");
+  }
+
+  try {
+    await markOkfConceptLifecycle({
+      actorId: context.userId,
+      filePath: buildOkfLifecycleFilename({
+        document,
+        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
+        topic,
+      }),
+      knowledgeRoot: getDefaultKnowledgeRoot(),
+      reason,
+      status,
+      topicId,
+      workspaceId: context.workspaceId,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "okf_lifecycle_reason_required" ||
+        error.message.startsWith("okf_export_missing_document_metadata"))
+    ) {
+      redirect(
+        `/documents/${documentId}?panel=topics&topic=${topicId}&lifecycleError=${encodeURIComponent(
+          error.message,
+        )}`,
+      );
+    }
+
+    throw error;
+  }
+
+  revalidatePath(`/documents/${documentId}`);
+  revalidatePath("/knowledge");
+  revalidatePath("/knowledge/bundle");
+  redirect(`/documents/${documentId}?panel=topics&topic=${topicId}`);
+}
+
 function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
@@ -155,4 +238,12 @@ function buildRelationFromForm(formData: FormData): TopicRelation {
     targetType: getFormString(formData, "targetType") || targetTypeFromTarget || null,
     reason: getFormString(formData, "reason"),
   };
+}
+
+function getLifecycleStatus(value: string): "archived" | "retracted" {
+  if (value === "archived" || value === "retracted") {
+    return value;
+  }
+
+  throw new Error("okf_lifecycle_status_invalid");
 }

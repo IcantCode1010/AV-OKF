@@ -19,12 +19,14 @@ import {
   approveTopicContentAction,
   enrichTopicAction,
   generateTopicsAction,
+  softDeleteDocumentAction,
   updateDocumentMetadataAction,
   updateTopicContentAction,
   updateTopicReviewStatusAction,
 } from "@/app/(app)/documents/actions";
 import {
   exportTopicToOkfAction,
+  markOkfConceptLifecycleAction,
   updateTopicRelationsAction,
 } from "@/app/(app)/documents/okf-actions";
 import {
@@ -37,6 +39,7 @@ import type { OkfBundleFile } from "@/lib/okf-bundle";
 type TopicPanelProps = {
   allowedRelations: string[];
   document: Document;
+  lifecycleError: string | null;
   enrichmentError: string | null;
   okfExportError: string | null;
   relationError: string | null;
@@ -110,7 +113,13 @@ export function DocumentSummaryPanel({
   );
 }
 
-export function DocumentMetadataPanel({ document }: { document: Document }) {
+export function DocumentMetadataPanel({
+  deleteError,
+  document,
+}: {
+  deleteError: string | null;
+  document: Document;
+}) {
   return (
     <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
       <Card>
@@ -184,19 +193,20 @@ export function DocumentMetadataPanel({ document }: { document: Document }) {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Edit metadata</CardTitle>
-          <CardDescription>
-            Metadata remains editable while extraction records are stored
-            separately.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            action={updateDocumentMetadataAction}
-            className="grid gap-4 lg:grid-cols-2"
-          >
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit metadata</CardTitle>
+            <CardDescription>
+              Metadata remains editable while extraction records are stored
+              separately.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              action={updateDocumentMetadataAction}
+              className="grid gap-4 lg:grid-cols-2"
+            >
             <input type="hidden" name="id" value={document.id} />
             <div className="space-y-2">
               <Label htmlFor="title">Title</Label>
@@ -316,9 +326,45 @@ export function DocumentMetadataPanel({ document }: { document: Document }) {
                 Save metadata
               </PendingSubmitButton>
             </div>
-          </form>
-        </CardContent>
-      </Card>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="border-red-400/30">
+          <CardHeader>
+            <CardTitle>Lifecycle</CardTitle>
+            <CardDescription>
+              Soft-delete hides the document and deactivates raw RAG chunks.
+              Documents with approved OKF concepts are blocked until those
+              concepts are archived or retracted.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {deleteError ? (
+              <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+                {deleteError}
+              </div>
+            ) : null}
+            <form action={softDeleteDocumentAction} className="space-y-3">
+              <input type="hidden" name="id" value={document.id} />
+              <div className="space-y-2">
+                <Label htmlFor="delete-reason">Delete reason</Label>
+                <textarea
+                  id="delete-reason"
+                  name="reason"
+                  rows={3}
+                  className={textareaClassName}
+                  placeholder="Why this source document should be removed from active use"
+                  required
+                />
+              </div>
+              <PendingSubmitButton pendingLabel="Deleting...">
+                Soft-delete document
+              </PendingSubmitButton>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -445,6 +491,7 @@ export function TopicWorkflowPanel({
   okfExportError,
   relationError,
   relationTargets,
+  lifecycleError,
   topic,
   topicsGeneratedCount,
 }: TopicPanelProps) {
@@ -489,6 +536,7 @@ export function TopicWorkflowPanel({
             allowedRelations={allowedRelations}
             documentId={document.id}
             enrichmentError={enrichmentError}
+            lifecycleError={lifecycleError}
             relationError={relationError}
             relationTargets={relationTargets}
             topic={topic}
@@ -509,6 +557,7 @@ function SelectedTopicPanel({
   allowedRelations,
   documentId,
   enrichmentError,
+  lifecycleError,
   relationError,
   relationTargets,
   topic,
@@ -516,6 +565,7 @@ function SelectedTopicPanel({
   allowedRelations: string[];
   documentId: string;
   enrichmentError: string | null;
+  lifecycleError: string | null;
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord;
@@ -749,6 +799,7 @@ function SelectedTopicPanel({
       ) : null}
 
       {topic.reviewStatus === "approved" ? (
+        <div className="space-y-4">
         <div className="space-y-3 rounded-md border border-border p-3">
           <div>
             <p className="text-sm font-medium">Typed relations</p>
@@ -842,6 +893,45 @@ function SelectedTopicPanel({
               </Button>
             )}
           </form>
+        </div>
+        <div className="space-y-3 rounded-md border border-red-400/30 p-3">
+          <div>
+            <p className="text-sm font-medium">OKF lifecycle</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Archive historical concepts or retract invalid concepts. Trusted
+              chat retrieval excludes both states.
+            </p>
+          </div>
+          {lifecycleError ? (
+            <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+              {lifecycleError}
+            </div>
+          ) : null}
+          <form
+            action={markOkfConceptLifecycleAction}
+            className="grid gap-3 lg:grid-cols-[160px_1fr_auto]"
+          >
+            <input type="hidden" name="documentId" value={documentId} />
+            <input type="hidden" name="topicId" value={topic.id} />
+            <select
+              aria-label="Lifecycle status"
+              className={selectClassName}
+              name="lifecycleStatus"
+            >
+              <option value="archived">Archive</option>
+              <option value="retracted">Retract</option>
+            </select>
+            <Input
+              aria-label="Lifecycle reason"
+              name="reason"
+              placeholder="Reason required for lifecycle audit log"
+              required
+            />
+            <PendingSubmitButton pendingLabel="Saving...">
+              Apply
+            </PendingSubmitButton>
+          </form>
+        </div>
         </div>
       ) : null}
     </div>

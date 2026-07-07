@@ -313,6 +313,77 @@ Architecture note:
 
 - [Query Router](../architecture/query-router.md)
 
+## Stage 6.6: Knowledge Lifecycle Management
+
+Purpose: define what happens when documents, topics, OKF files, coverage links, and chat citations are deleted, retracted, archived, restored, or superseded.
+
+Every prior stage answered how knowledge gets created or updated. This stage answers what happens when knowledge is removed from one layer of the derived-data chain:
+
+```text
+document -> extraction -> topics -> OKF concepts -> RAG chunks -> coverage links -> chat citations
+```
+
+Scope rule:
+
+- This stage is design and decisions first, code second.
+- Submit the lifecycle design doc for review before writing deletion logic.
+- Do not bundle lifecycle behavior into unrelated implementation work. Deletion touches every layer and needs its own reviewable slice.
+
+Deliverables:
+
+- Document deletion policy and cascade rules.
+- Uploaded object deletion policy for disk/S3 storage.
+- Extracted-page cleanup policy.
+- Topic deletion, rejection, and orphaning policy.
+- RAG chunk and embedding cleanup policy.
+- Approved OKF concept protection policy when its source document is deleted.
+- OKF file lifecycle states such as `approved`, `retracted`, and `archived`.
+- Supersession derived from the existing `supersedes` typed relation, not a separate lifecycle source of truth.
+- Multi-bundle lifecycle states deferred until multi-bundle support exists.
+- Runtime guard for broken typed relations during live OKF bundle retrieval.
+- Coverage-link cleanup or stale-link marking rules.
+- Explicit soft-delete versus hard-delete decision by data type.
+- Append-only lifecycle entries in `log.md`.
+- Agent retrieval rules that exclude deleted, retracted, archived, superseded, or invalid lifecycle states from trusted evidence.
+
+Design questions that must be answered before implementation:
+
+1. When a document is deleted, what happens to the uploaded source file, extracted pages, topic records, RAG chunks, embeddings, coverage links, activity records, and chat citations?
+2. If a document has an approved OKF concept derived from it, does deletion block, require confirmation, or mark the OKF concept's source as orphaned?
+3. If a topic is deleted or rejected after OKF export, is the exported concept retracted, archived, superseded, or left active?
+4. If a relation target is deleted after CI passed, does the live OKF bundle retriever skip the broken relation, degrade safely, or fail the query?
+5. When either side of a RAG-chunk-to-OKF-concept coverage link is removed, is the link deleted or marked stale?
+6. Which data types use soft-delete versus hard-delete, and why?
+
+Default recommendation:
+
+- Soft-delete source documents, topic records, exported OKF concepts, and audit-bearing objects.
+- Hard-delete or rebuild derived indexes such as RAG chunks and embeddings when safe, because they are search projections rather than records of truth.
+- Block deletion of a source document that has approved OKF concepts until the reviewer explicitly retracts, supersedes, or archives those concepts.
+- Reconcile OKF-to-RAG coverage links through an explicit trigger, not as a hidden side effect of RAG reindex.
+
+Test plan:
+
+- Unit tests for every cascade decision.
+- End-to-end test for deleting a document that has an approved OKF concept, confirming the chosen behavior.
+- Runtime test for a broken relation target during live OKF retrieval.
+- Race-style test where a referenced file changes during chat retrieval and chat degrades without crashing.
+- Regression:
+  - `pnpm --dir apps/web test`
+  - `pnpm --dir apps/web lint`
+  - `pnpm --dir apps/web build`
+  - `python tools/okf_relation_lint.py --manifest okf-base.yaml`
+
+Exit criteria:
+
+- The project has a reviewed lifecycle design covering document deletion, OKF concept retirement, relation breakage, coverage cleanup, and chat-citation history.
+- No implementation path can silently leave trusted agent evidence pointing at deleted, missing, or retracted sources.
+- The agent retriever treats lifecycle state as part of trust, not just file existence.
+
+Architecture note:
+
+- [Knowledge Lifecycle Management](../architecture/knowledge-lifecycle.md)
+
 ## Stage 7: Validation
 
 Purpose: prevent unsupported or misleading answers by validating generated claims against citations, source authority, review status, and domain rules.

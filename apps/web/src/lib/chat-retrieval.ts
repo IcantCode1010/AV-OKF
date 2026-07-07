@@ -9,6 +9,7 @@ import {
   retrieveOkfBundleEvidence,
   type OkfBundleEvidence,
 } from "./okf-bundle-retriever.ts";
+import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
 import { retrieveDocuments } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 
@@ -59,10 +60,21 @@ export type OkfBundleRetrievalFn = (input: {
   workspaceId: string;
 }) => Promise<OkfBundleEvidence[]>;
 
+async function retrieveOkfBundleEvidenceWithLifecycle(input: {
+  query: string;
+  topK: number;
+  workspaceId: string;
+}): Promise<OkfBundleEvidence[]> {
+  return retrieveOkfBundleEvidence({
+    ...input,
+    lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
+  });
+}
+
 export async function runChatRetrieval(
   input: { decision: ChatRouterDecision; query: string; workspaceId: string },
   retrieve: typeof retrieveDocuments = retrieveDocuments,
-  retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleEvidence,
+  retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleEvidenceWithLifecycle,
 ): Promise<ChatRetrievalResult> {
   const { decision, query, workspaceId } = input;
 

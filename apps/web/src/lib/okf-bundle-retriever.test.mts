@@ -476,6 +476,69 @@ test("body-only matches do not qualify approved OKF evidence", async () => {
   }
 });
 
+test("lifecycle lookup excludes retracted and archived approved topics", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-lifecycle-"));
+
+  try {
+    await writeTopic(root, "active.md", { title: "Active Brake System" });
+    await writeTopic(root, "retracted.md", { title: "Retracted Brake System" });
+    await writeTopic(root, "archived.md", { title: "Archived Brake System" });
+
+    const results = await retrieveOkfBundleEvidence({
+      knowledgeRoot: root,
+      lifecycleLookup: async ({ filePath }) => {
+        if (filePath === "retracted.md") {
+          return { status: "retracted", reason: "Incorrect source mapping" };
+        }
+        if (filePath === "archived.md") {
+          return { status: "archived", reason: "Historical revision" };
+        }
+        return { status: "active" };
+      },
+      query: "brake",
+      workspaceId: "wrk_1",
+    });
+
+    assert.deepEqual(
+      results.map((result) => result.filePath),
+      ["active.md"],
+    );
+    assert.equal(results[0]?.lifecycleStatus, "active");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("broken relation targets add lifecycle warnings without dropping source evidence", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-relation-warning-"));
+
+  try {
+    await writeTopic(root, "brakes.md", {
+      extraFrontmatter: [
+        "relations:",
+        '  - relation: "references"',
+        '    target: "missing.md"',
+        '    target_type: "system_topic"',
+        '    reason: "Background context."',
+      ],
+      title: "Brake System",
+    });
+
+    const [result] = await retrieveOkfBundleEvidence({
+      knowledgeRoot: root,
+      query: "brake",
+      workspaceId: "wrk_1",
+    });
+
+    assert.equal(result?.filePath, "brakes.md");
+    assert.deepEqual(result?.lifecycleWarnings, [
+      "relation_target_missing:0:missing.md",
+    ]);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 async function writeTopic(
   root: string,
   filename: string,

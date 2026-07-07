@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
@@ -21,6 +21,8 @@ export type OkfBundleEvidence = {
   matchedTerms: string[];
   matchReason: string;
   matchStrength: "strong" | "medium";
+  lifecycleStatus: OkfConceptLifecycleStatus;
+  lifecycleWarnings: string[];
   pageEnd: number;
   pageStart: number;
   relations: TopicRelation[];
@@ -33,8 +35,26 @@ export type OkfBundleEvidence = {
   type: string;
 };
 
+export type OkfConceptLifecycleStatus =
+  | "active"
+  | "archived"
+  | "deleted"
+  | "retracted";
+
+export type OkfConceptLifecycleRecord = {
+  reason?: string | null;
+  status: OkfConceptLifecycleStatus;
+};
+
+export type OkfConceptLifecycleLookup = (input: {
+  filePath: string;
+  knowledgeRoot: string;
+  workspaceId: string;
+}) => Promise<OkfConceptLifecycleRecord | null | undefined>;
+
 export type OkfBundleRetrievalInput = {
   knowledgeRoot?: string;
+  lifecycleLookup?: OkfConceptLifecycleLookup;
   query: string;
   topK?: number;
   workspaceId: string;
@@ -129,7 +149,24 @@ export async function retrieveOkfBundleEvidence(
     }
 
     const markdown = await readFile(fullPath, "utf8");
-    const evidence = buildEvidenceCandidate(filePath, markdown, queryTerms);
+    const lifecycle = await resolveLifecycleStatus({
+      filePath,
+      knowledgeRoot: root,
+      lifecycleLookup: input.lifecycleLookup,
+      workspaceId: input.workspaceId,
+    });
+
+    if (lifecycle.status !== "active") {
+      continue;
+    }
+
+    const evidence = await buildEvidenceCandidate(
+      root,
+      filePath,
+      markdown,
+      queryTerms,
+      lifecycle.status,
+    );
 
     if (evidence && evidence.score > 0) {
       candidates.push(evidence);
@@ -168,11 +205,13 @@ async function collectMarkdownFiles(root: string, directory: string): Promise<st
   return files;
 }
 
-function buildEvidenceCandidate(
+async function buildEvidenceCandidate(
+  root: string,
   filePath: string,
   markdown: string,
   queryTerms: string[],
-): OkfBundleEvidence | null {
+  lifecycleStatus: OkfConceptLifecycleStatus,
+): Promise<OkfBundleEvidence | null> {
   const parsed = parseOkfMarkdown(markdown);
   const type = getFrontmatterScalar(parsed.frontmatter, "type");
   const reviewStatus = getFrontmatterScalar(parsed.frontmatter, "review_status");
@@ -227,6 +266,12 @@ function buildEvidenceCandidate(
     description,
     excerpt: truncateExcerpt([description, parsed.body].join("\n\n")),
     filePath,
+    lifecycleStatus,
+    lifecycleWarnings: await buildRelationWarnings(
+      root,
+      filePath,
+      getFrontmatterRelations(parsed.frontmatter),
+    ),
     matchedTerms: match.matchedTerms,
     matchReason: match.reason,
     matchStrength: match.strength,
@@ -241,6 +286,62 @@ function buildEvidenceCandidate(
     title,
     type,
   };
+}
+
+async function resolveLifecycleStatus(input: {
+  filePath: string;
+  knowledgeRoot: string;
+  lifecycleLookup?: OkfConceptLifecycleLookup;
+  workspaceId: string;
+}): Promise<OkfConceptLifecycleRecord> {
+  if (!input.lifecycleLookup) {
+    return { status: "active" };
+  }
+
+  return (
+    (await input.lifecycleLookup({
+      filePath: input.filePath,
+      knowledgeRoot: input.knowledgeRoot,
+      workspaceId: input.workspaceId,
+    })) ?? { status: "active" }
+  );
+}
+
+async function buildRelationWarnings(
+  root: string,
+  filePath: string,
+  relations: TopicRelation[],
+): Promise<string[]> {
+  const warnings: string[] = [];
+
+  for (let index = 0; index < relations.length; index += 1) {
+    const relation = relations[index]!;
+    const target = relation.target.trim();
+
+    if (!target || !target.endsWith(".md") || target.includes("\\")) {
+      warnings.push(`relation_target_invalid:${index}:${relation.target}`);
+      continue;
+    }
+
+    const targetPath = path.resolve(
+      root,
+      path.dirname(filePath),
+      target.replaceAll("/", path.sep),
+    );
+
+    if (targetPath !== root && !targetPath.startsWith(`${root}${path.sep}`)) {
+      warnings.push(`relation_target_invalid:${index}:${relation.target}`);
+      continue;
+    }
+
+    try {
+      await access(targetPath);
+    } catch {
+      warnings.push(`relation_target_missing:${index}:${relation.target}`);
+    }
+  }
+
+  return warnings;
 }
 
 function qualifyCandidate(input: {

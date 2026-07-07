@@ -45,6 +45,8 @@ function makeOkfEvidence(
     description: "GEN OFF BUS dispatch guidance.",
     excerpt: "GEN OFF BUS light indicates a generator bus fault.",
     filePath: "24-gen-off-bus-abc123.md",
+    lifecycleStatus: "active",
+    lifecycleWarnings: [],
     matchedTerms: ["gen", "off", "bus"],
     matchReason: "strong title phrase match",
     matchStrength: "strong",

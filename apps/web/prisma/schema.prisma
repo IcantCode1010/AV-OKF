@@ -65,6 +65,7 @@ model Workspace {
   activityEvents  ActivityEvent[]
   llmSetting      WorkspaceLlmSetting?
   chatSessions    ChatSession[]
+  okfConceptLifecycles OkfConceptLifecycle[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 }
@@ -110,6 +111,9 @@ model Document {
   effectivity      String?
   sourceAuthority  String?
   revision         String?
+  deletedAt        DateTime?
+  deletedBy        String?
+  deleteReason     String?                  @db.Text
   ragStatus        String                   @default("not_indexed")
   ragIndexVersion  Int                      @default(0)
   originalFilename String?
@@ -279,6 +283,24 @@ model OkfConceptChunkLink {
 
   @@unique([workspaceId, okfConceptId, chunkId])
   @@index([workspaceId, chunkId])
+}
+
+model OkfConceptLifecycle {
+  id          String    @id @default(cuid())
+  workspaceId String
+  filePath    String
+  topicId     String?
+  status      String    @default("active")
+  reason      String?   @db.Text
+  changedBy   String?
+  changedAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, filePath])
+  @@index([workspaceId, status])
+  @@index([workspaceId, topicId])
 }
 
 model TopicRecord {

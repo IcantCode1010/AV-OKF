@@ -30,6 +30,7 @@ import {
   approveTopicContentSource,
   enrichTopic,
 } from "@/lib/topic-enrichment";
+import { softDeleteDocument } from "@/lib/okf-lifecycle";
 
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
@@ -229,6 +230,54 @@ export async function updateDocumentMetadataAction(formData: FormData) {
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
   redirect(`/documents/${id}`);
+}
+
+export async function softDeleteDocumentAction(formData: FormData) {
+  const id = getFormString(formData, "id");
+  const reason = getFormString(formData, "reason");
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(id);
+
+  assertActionDocumentWorkspace({
+    // Local Stage 1 JSON-vault records may predate workspace metadata.
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "document_workspace_mismatch",
+  });
+
+  if (!isProductionBackend()) {
+    redirect(
+      `/documents/${id}?deleteError=${encodeURIComponent(
+        "lifecycle_requires_production_backend",
+      )}`,
+    );
+  }
+
+  try {
+    await softDeleteDocument({
+      actorId: context.userId,
+      documentId: id,
+      reason,
+      workspaceId: context.workspaceId,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "document_delete_blocked_by_approved_okf" ||
+        error.message === "document_delete_reason_required")
+    ) {
+      redirect(
+        `/documents/${id}?deleteError=${encodeURIComponent(error.message)}`,
+      );
+    }
+
+    throw error;
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/documents");
+  redirect("/documents");
 }
 
 function getFormString(formData: FormData, key: string) {

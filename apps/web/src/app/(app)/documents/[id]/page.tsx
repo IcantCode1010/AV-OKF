@@ -38,7 +38,9 @@ export default async function DocumentDetailPage({
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{
+    deleteError?: string;
     enrichmentError?: string;
+    lifecycleError?: string;
     okfExportError?: string;
     panel?: string;
     relationError?: string;
@@ -48,7 +50,9 @@ export default async function DocumentDetailPage({
 }) {
   const { id } = await params;
   const {
+    deleteError,
     enrichmentError,
+    lifecycleError,
     okfExportError,
     panel,
     relationError,
@@ -82,6 +86,8 @@ export default async function DocumentDetailPage({
       : null;
   const relationErrorMessage = formatRelationError(relationError);
   const enrichmentErrorMessage = formatEnrichmentError(enrichmentError);
+  const deleteErrorMessage = formatDeleteError(deleteError);
+  const lifecycleErrorMessage = formatLifecycleError(lifecycleError);
   const okfExportErrorMessage = formatOkfExportError(okfExportError);
 
   return (
@@ -151,7 +157,12 @@ export default async function DocumentDetailPage({
 
   function renderPanel(selectedPanel: string) {
     if (selectedPanel === "metadata") {
-      return <DocumentMetadataPanel document={currentDocument} />;
+      return (
+        <DocumentMetadataPanel
+          deleteError={deleteErrorMessage}
+          document={currentDocument}
+        />
+      );
     }
 
     if (selectedPanel === "extraction") {
@@ -168,6 +179,7 @@ export default async function DocumentDetailPage({
           allowedRelations={allowedRelations}
           document={currentDocument}
           enrichmentError={enrichmentErrorMessage}
+          lifecycleError={lifecycleErrorMessage}
           okfExportError={okfExportErrorMessage}
           relationError={relationErrorMessage}
           relationTargets={relationTargets}
@@ -281,4 +293,44 @@ function formatEnrichmentError(raw: string | undefined) {
   }
 
   return "Topic enrichment could not start.";
+}
+
+function formatDeleteError(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  if (raw === "document_delete_blocked_by_approved_okf") {
+    return "This document has approved OKF concepts. Retract or archive those concepts before deleting the source document.";
+  }
+
+  if (raw === "document_delete_reason_required") {
+    return "Enter a reason before deleting this document.";
+  }
+
+  if (raw === "lifecycle_requires_production_backend") {
+    return "Lifecycle actions are only available on the production database backend.";
+  }
+
+  return "Document deletion could not be completed.";
+}
+
+function formatLifecycleError(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  if (raw === "okf_lifecycle_reason_required") {
+    return "Enter a reason before changing this OKF concept lifecycle.";
+  }
+
+  if (raw.startsWith("okf_export_missing_document_metadata")) {
+    return "Complete the document OKF metadata before changing this exported concept lifecycle.";
+  }
+
+  if (raw === "lifecycle_requires_production_backend") {
+    return "Lifecycle actions are only available on the production database backend.";
+  }
+
+  return "OKF lifecycle change could not be completed.";
 }
