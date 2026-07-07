@@ -6,9 +6,9 @@ import { formatOkfExportError } from "./okf-export-errors.ts";
 test("formatOkfExportError names missing document metadata fields clearly", () => {
   assert.equal(
     formatOkfExportError(
-      "okf_export_missing_document_metadata: ata, effectivity, sourceAuthority",
+      "okf_export_missing_document_metadata: classificationCode, effectivity, sourceAuthority",
     ),
-    "Add missing OKF metadata before export: ATA, effectivity, source authority.",
+    "Add missing OKF metadata before export: classification code, effectivity, source authority.",
   );
 });
 

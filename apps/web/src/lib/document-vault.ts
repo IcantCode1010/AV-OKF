@@ -128,6 +128,7 @@ export type TopicRecord = {
   reviewStatus: TopicReviewStatus;
   relations: TopicRelation[];
   sourcePageNumbers: number[];
+  exportedFilePath: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -150,9 +151,9 @@ export type Document = {
   originalFilename: string | null;
   mimeType: string;
   customProperties: CustomProperty[];
-  aircraftFamily: string | null;
-  manualType: string | null;
-  ata: string | null;
+  subjectFamily: string | null;
+  documentType: string | null;
+  classificationCode: string | null;
   effectivity: string | null;
   sourceAuthority: string | null;
   revision: string | null;
@@ -193,11 +194,11 @@ type UploadMetadata = {
 };
 
 type UpdateMetadata = {
-  aircraftFamily: string | null;
-  ata: string | null;
+  subjectFamily: string | null;
+  classificationCode: string | null;
   description: string;
   effectivity: string | null;
-  manualType: string | null;
+  documentType: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
@@ -256,9 +257,9 @@ const seedDocuments: Document[] = [
       { key: "Manual family", value: "AMM" },
       { key: "ATA chapter", value: "24" },
     ],
-    aircraftFamily: "Boeing 737NG",
-    manualType: "AMM",
-    ata: "24",
+    subjectFamily: "Boeing 737NG",
+    documentType: "AMM",
+    classificationCode: "24",
     effectivity: "737NG",
     sourceAuthority: "Boeing Aircraft Maintenance Manual",
     revision: "Seeded",
@@ -283,9 +284,9 @@ const seedDocuments: Document[] = [
     originalFilename: "elt-system-training-notes.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Training reference" }],
-    aircraftFamily: "Boeing 737NG",
-    manualType: "Training",
-    ata: "23",
+    subjectFamily: "Boeing 737NG",
+    documentType: "Training",
+    classificationCode: "23",
     effectivity: "737NG",
     sourceAuthority: "Training reference",
     revision: "Seeded",
@@ -310,9 +311,9 @@ const seedDocuments: Document[] = [
     originalFilename: "technical-publications-control-policy.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Quality" }],
-    aircraftFamily: null,
-    manualType: "Policy",
-    ata: null,
+    subjectFamily: null,
+    documentType: "Policy",
+    classificationCode: null,
     effectivity: "Company-wide",
     sourceAuthority: "Quality",
     revision: "Seeded",
@@ -337,9 +338,9 @@ const seedDocuments: Document[] = [
     originalFilename: "apu-fault-route-reference.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Route type", value: "Fault isolation" }],
-    aircraftFamily: "Boeing 737NG",
-    manualType: "Fault Route",
-    ata: "49",
+    subjectFamily: "Boeing 737NG",
+    documentType: "Fault Route",
+    classificationCode: "49",
     effectivity: "737NG",
     sourceAuthority: "Engineering",
     revision: "Seeded",
@@ -364,9 +365,9 @@ const seedDocuments: Document[] = [
     originalFilename: "vendor-onboarding-handbook.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Operations" }],
-    aircraftFamily: null,
-    manualType: "Handbook",
-    ata: null,
+    subjectFamily: null,
+    documentType: "Handbook",
+    classificationCode: null,
     effectivity: "Company-wide",
     sourceAuthority: "Operations",
     revision: "Seeded",
@@ -391,9 +392,9 @@ const seedDocuments: Document[] = [
     originalFilename: "mel-dispatch-gate-examples.pdf",
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Example only" }],
-    aircraftFamily: "Boeing 737NG",
-    manualType: "MEL",
-    ata: null,
+    subjectFamily: "Boeing 737NG",
+    documentType: "MEL",
+    classificationCode: null,
     effectivity: "737NG",
     sourceAuthority: "Example only",
     revision: "Seeded",
@@ -610,9 +611,9 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         originalFilename: input.originalFilename,
         mimeType: "application/pdf",
         customProperties: [],
-        aircraftFamily: null,
-        manualType: null,
-        ata: null,
+        subjectFamily: null,
+        documentType: null,
+        classificationCode: null,
         effectivity: null,
         sourceAuthority: null,
         revision: null,
@@ -644,9 +645,11 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const document = getStoreDocument(store, id);
 
       document.title = input.title.trim() || document.title;
-      document.aircraftFamily = normalizeOptionalMetadata(input.aircraftFamily);
-      document.manualType = normalizeOptionalMetadata(input.manualType);
-      document.ata = normalizeOptionalMetadata(input.ata);
+      document.subjectFamily = normalizeOptionalMetadata(input.subjectFamily);
+      document.documentType = normalizeOptionalMetadata(input.documentType);
+      document.classificationCode = normalizeOptionalMetadata(
+        input.classificationCode,
+      );
       document.effectivity = normalizeOptionalMetadata(input.effectivity);
       document.sourceAuthority = normalizeOptionalMetadata(input.sourceAuthority);
       document.revision = normalizeOptionalMetadata(input.revision);
@@ -815,6 +818,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           editedBy: null,
           reviewStatus: "needs_review",
           relations: [],
+          exportedFilePath: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         }));
@@ -860,6 +864,20 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       }
 
       topic.relations = relations;
+      topic.updatedAt = formatTimestamp(new Date());
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function updateTopicExportedFilePath(
+    topicId: string,
+    exportedFilePath: string,
+  ) {
+    return mutateStore(async (store) => {
+      store.topicRecords ??= [];
+      const topic = getStoreTopic(store, topicId);
+
+      topic.exportedFilePath = exportedFilePath;
       topic.updatedAt = formatTimestamp(new Date());
       return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
@@ -1057,6 +1075,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     startExtraction,
     updateTopicReviewStatus,
     updateTopicRelations,
+    updateTopicExportedFilePath,
     updateTopicContent,
     updateDocumentMetadata,
   };
@@ -1131,6 +1150,13 @@ export async function updateTopicRelations(
   relations: TopicRelation[],
 ) {
   return defaultVault.updateTopicRelations(topicId, relations);
+}
+
+export async function updateTopicExportedFilePath(
+  topicId: string,
+  exportedFilePath: string,
+) {
+  return defaultVault.updateTopicExportedFilePath(topicId, exportedFilePath);
 }
 
 export async function updateTopicContent(
@@ -1251,6 +1277,7 @@ function normalizeTopicRecord(
   topic.enrichedSummary ??= null;
   topic.enrichmentStatus ??= "none";
   topic.approvedContentSource ??= null;
+  topic.exportedFilePath ??= null;
   const topicAudits = audits
     .filter((audit) => audit.topicId === topic.id)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
@@ -1328,9 +1355,9 @@ function calculateDocumentMetrics(documents: Document[]): DocumentMetrics {
 
 function normalizeDocument(document: Document): Document {
   document.extraction = normalizeExtraction(document.extraction);
-  document.aircraftFamily ??= null;
-  document.manualType ??= null;
-  document.ata ??= null;
+  document.subjectFamily ??= null;
+  document.documentType ??= null;
+  document.classificationCode ??= null;
   document.effectivity ??= null;
   document.sourceAuthority ??= null;
   document.revision ??= null;

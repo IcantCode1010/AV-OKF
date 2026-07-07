@@ -26,6 +26,32 @@ test("production topic content edit rejects cross-workspace topics", async () =>
   );
 });
 
+test("production updateTopicExportedFilePath persists the real exported filename", async () => {
+  const updateCalls: unknown[] = [];
+  const repository = createPostgresDocumentRepository({
+    topicRecord: {
+      findFirst: async () => ({ id: "topic_1" }),
+      update: async (input: unknown) => {
+        updateCalls.push(input);
+        return { id: "topic_1" };
+      },
+    },
+  });
+
+  await repository.updateTopicExportedFilePath({
+    context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+    exportedFilePath: "29-air-ground-position-95ac0bd3c2.md",
+    topicId: "topic_1",
+  });
+
+  assert.deepEqual(updateCalls, [
+    {
+      data: { exportedFilePath: "29-air-ground-position-95ac0bd3c2.md" },
+      where: { id: "topic_1" },
+    },
+  ]);
+});
+
 test("production document reads exclude soft-deleted documents", async () => {
   const findManyCalls: unknown[] = [];
   const findFirstCalls: unknown[] = [];

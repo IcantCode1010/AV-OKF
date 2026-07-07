@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import {
   applyOkfBundleLifecycle,
   getDefaultKnowledgeRoot,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/okf-bundle";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { getOkfConceptLifecycleByFile } from "@/lib/okf-lifecycle";
+import { deleteOkfBundleFilesAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -45,9 +47,9 @@ const GROUPS: Array<{
 export default async function KnowledgeBundlePage({
   searchParams,
 }: {
-  searchParams: Promise<{ file?: string }>;
+  searchParams: Promise<{ deleteError?: string; deleted?: string; file?: string }>;
 }) {
-  const { file } = await searchParams;
+  const { deleteError, deleted, file } = await searchParams;
   const knowledgeRoot = getDefaultKnowledgeRoot();
   const [context, rawSummary] = await Promise.all([
     requireAuthWorkspaceContext(),
@@ -97,20 +99,50 @@ export default async function KnowledgeBundlePage({
             <CardTitle>Bundle structure</CardTitle>
             <CardDescription>
               Folder groups are derived from reserved filenames and OKF
-              frontmatter.
+              frontmatter. Select files below to mark them deleted — they
+              stay on disk and are hidden from chat retrieval, and can be
+              restored later.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {GROUPS.map((groupConfig) => (
-              <BundleGroupSection
-                key={groupConfig.group}
-                config={groupConfig}
-                files={summary.files.filter(
-                  (bundleFile) => bundleFile.group === groupConfig.group,
-                )}
-                selectedName={selectedName}
-              />
-            ))}
+            {deleteError ? (
+              <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+                {deleteError}
+              </div>
+            ) : null}
+            {deleted ? (
+              <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
+                Marked {deleted} file{deleted === "1" ? "" : "s"} as deleted.
+              </div>
+            ) : null}
+            <form action={deleteOkfBundleFilesAction} className="space-y-5">
+              {GROUPS.map((groupConfig) => (
+                <BundleGroupSection
+                  key={groupConfig.group}
+                  config={groupConfig}
+                  files={summary.files.filter(
+                    (bundleFile) => bundleFile.group === groupConfig.group,
+                  )}
+                  selectedName={selectedName}
+                />
+              ))}
+              <div className="space-y-2 border-t border-border pt-4">
+                <label className="text-sm font-medium" htmlFor="reason">
+                  Reason for deleting selected files
+                </label>
+                <textarea
+                  id="reason"
+                  name="reason"
+                  rows={2}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="Why these OKF topics should be marked deleted"
+                  required
+                />
+                <PendingSubmitButton pendingLabel="Deleting...">
+                  Delete selected files
+                </PendingSubmitButton>
+              </div>
+            </form>
           </CardContent>
         </Card>
 
@@ -143,36 +175,51 @@ function BundleGroupSection({
       <div className="space-y-1">
         {files.length > 0 ? (
           files.map((bundleFile) => (
-            <Button
+            <div
               key={bundleFile.filename}
-              asChild
-              className="h-auto w-full justify-start px-3 py-2"
-              variant={
-                bundleFile.filename === selectedName ? "secondary" : "ghost"
-              }
+              className="flex items-center gap-2"
             >
-              <Link
-                href={`/knowledge/bundle?file=${encodeURIComponent(
-                  bundleFile.filename,
-                )}`}
+              {bundleFile.isReserved ? (
+                <span className="w-4 shrink-0" />
+              ) : (
+                <input
+                  aria-label={`Select ${bundleFile.filename} for deletion`}
+                  className="h-4 w-4 shrink-0"
+                  name="filenames"
+                  type="checkbox"
+                  value={bundleFile.filename}
+                />
+              )}
+              <Button
+                asChild
+                className="h-auto w-full justify-start px-3 py-2"
+                variant={
+                  bundleFile.filename === selectedName ? "secondary" : "ghost"
+                }
               >
-                <FileText className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 text-left">
-                  <span className="block truncate text-sm">
-                    {bundleFile.title}
+                <Link
+                  href={`/knowledge/bundle?file=${encodeURIComponent(
+                    bundleFile.filename,
+                  )}`}
+                >
+                  <FileText className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block truncate text-sm">
+                      {bundleFile.title}
+                    </span>
+                    <span className="block truncate font-mono text-xs text-muted-foreground">
+                      {bundleFile.filename}
+                    </span>
                   </span>
-                  <span className="block truncate font-mono text-xs text-muted-foreground">
-                    {bundleFile.filename}
-                  </span>
-                </span>
-                {bundleFile.lifecycleStatus &&
-                bundleFile.lifecycleStatus !== "active" ? (
-                  <Badge variant="destructive" className="capitalize">
-                    {bundleFile.lifecycleStatus}
-                  </Badge>
-                ) : null}
-              </Link>
-            </Button>
+                  {bundleFile.lifecycleStatus &&
+                  bundleFile.lifecycleStatus !== "active" ? (
+                    <Badge variant="destructive" className="capitalize">
+                      {bundleFile.lifecycleStatus}
+                    </Badge>
+                  ) : null}
+                </Link>
+              </Button>
+            </div>
           ))
         ) : (
           <div className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">

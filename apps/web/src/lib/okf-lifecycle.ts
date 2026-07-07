@@ -1,8 +1,7 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
-import { buildOkfSystemTopic } from "./okf-export.ts";
 import { getPrisma } from "./prisma.ts";
 import type {
   OkfConceptLifecycleLookup,
@@ -13,9 +12,11 @@ import type {
 const ACTIVE_LIFECYCLE: OkfConceptLifecycleRecord = { status: "active" };
 
 type LifecycleClient = {
+  activityEvent?: {
+    create(input: unknown): Promise<unknown>;
+  };
   document?: {
-    findUnique?(input: unknown): Promise<LifecycleFilenameDocument | null>;
-    delete(input: unknown): Promise<unknown>;
+    update(input: unknown): Promise<{ title: string }>;
   };
   okfConceptLifecycle?: {
     findMany?(
@@ -24,29 +25,9 @@ type LifecycleClient = {
     findUnique?(input: unknown): Promise<{ reason: string | null; status: string } | null>;
     upsert(input: unknown): Promise<unknown>;
   };
-  topicRecord?: {
-    findMany?(input: unknown): Promise<LifecycleFilenameTopic[]>;
+  ragChunk?: {
+    updateMany(input: unknown): Promise<unknown>;
   };
-};
-
-type LifecycleFilenameDocument = {
-  aircraftFamily: string | null;
-  ata: string | null;
-  effectivity: string | null;
-  manualType: string | null;
-  revision: string | null;
-  sourceAuthority: string | null;
-  title: string;
-};
-
-type LifecycleFilenameTopic = {
-  id: string;
-  pageEnd: number;
-  pageStart: number;
-  reviewStatus: string;
-  sourcePageNumbers: number[];
-  summary: string;
-  title: string;
 };
 
 export function normalizeOkfConceptLifecycleStatus(
@@ -132,24 +113,11 @@ export async function getOkfConceptLifecycleByFile(input: {
   return lifecycles;
 }
 
-export function buildOkfLifecycleFilename(input: {
-  document: LifecycleFilenameDocument;
-  knowledgeVersion: string;
-  topic: LifecycleFilenameTopic;
-}): string {
-  return buildOkfSystemTopic({
-    document: input.document,
-    knowledgeVersion: input.knowledgeVersion,
-    topic: { ...input.topic, reviewStatus: "approved" },
-  }).filename;
-}
-
 export async function softDeleteDocument(input: {
   actorId: string;
   client?: LifecycleClient;
   deletedAt?: Date;
   documentId: string;
-  knowledgeRoot?: string;
   reason: string;
   workspaceId: string;
 }): Promise<void> {
@@ -161,198 +129,38 @@ export async function softDeleteDocument(input: {
     throw new Error("document_delete_reason_required");
   }
 
-  await removeDerivedKnowledgeProducts({
-    actorId: input.actorId,
-    changedAt: deletedAt,
-    client,
-    documentId: input.documentId,
-    knowledgeRoot: input.knowledgeRoot,
-    reason,
-    workspaceId: input.workspaceId,
-  });
-
-  await client.document!.delete({
+  const document = await client.document!.update({
+    data: {
+      deleteReason: reason,
+      deletedAt,
+      deletedBy: input.actorId,
+    },
+    select: { title: true },
     where: { id: input.documentId, workspaceId: input.workspaceId },
   });
-}
 
-async function removeDerivedKnowledgeProducts(input: {
-  actorId: string;
-  changedAt: Date;
-  client: LifecycleClient;
-  documentId: string;
-  knowledgeRoot?: string;
-  reason: string;
-  workspaceId: string;
-}) {
-  const documentTopics = await input.client.topicRecord!.findMany!({
+  // Only raw-extraction chunks are tied to the deleted source document.
+  // okf_topic chunks index the exported OKF bundle files, which are left
+  // in place, so they stay active and searchable.
+  await client.ragChunk!.updateMany({
+    data: { isActive: false },
     where: {
       documentId: input.documentId,
+      sourceType: "raw_extraction",
       workspaceId: input.workspaceId,
     },
   });
 
-  const document = await input.client.document!.findUnique!({
-    select: {
-      aircraftFamily: true,
-      ata: true,
-      effectivity: true,
-      manualType: true,
-      revision: true,
-      sourceAuthority: true,
-      title: true,
-    },
-    where: { id: input.documentId, workspaceId: input.workspaceId },
-  });
-
-  if (!document) {
-    throw new Error("document_not_found");
-  }
-
-  if (documentTopics.length > 0) {
-    const exportedFilenames = documentTopics.map((topic) =>
-      buildOkfLifecycleFilename({
-        document,
-        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
-        topic,
-      }),
-    );
-
-    await removeDeletedDocumentFromKnowledgeBundle({
+  await client.activityEvent!.create({
+    data: {
+      documentId: input.documentId,
       documentTitle: document.title,
-      filenames: exportedFilenames,
-      knowledgeRoot: input.knowledgeRoot ?? getDefaultKnowledgeRoot(),
-    });
-  }
-
-  await appendDocumentDeleteLogEntry({
-    actorId: input.actorId,
-    changedAt: input.changedAt,
-    conceptCount: documentTopics.length,
-    documentTitle: document.title,
-    knowledgeRoot: input.knowledgeRoot ?? getDefaultKnowledgeRoot(),
-    reason: input.reason,
+      label: `Document soft-deleted: ${reason}`,
+      status: "blocked",
+      timestamp: "Just now",
+      workspaceId: input.workspaceId,
+    },
   });
-}
-
-async function removeDeletedDocumentFromKnowledgeBundle(input: {
-  documentTitle: string;
-  filenames: string[];
-  knowledgeRoot: string;
-}) {
-  const root = path.resolve(input.knowledgeRoot);
-
-  for (const filename of input.filenames) {
-    const target = path.resolve(root, filename);
-    if (target !== root && target.startsWith(`${root}${path.sep}`)) {
-      await rm(/*turbopackIgnore: true*/ target, { force: true });
-    }
-  }
-
-  await removeIndexEntries({
-    filenames: input.filenames,
-    knowledgeRoot: root,
-  });
-  await removeSourceManifestEntry({
-    documentTitle: input.documentTitle,
-    knowledgeRoot: root,
-  });
-}
-
-async function removeIndexEntries(input: {
-  filenames: string[];
-  knowledgeRoot: string;
-}) {
-  const indexPath = path.join(input.knowledgeRoot, "index.md");
-  let existing = "";
-
-  try {
-    existing = await readFile(/*turbopackIgnore: true*/ indexPath, "utf8");
-  } catch {
-    return;
-  }
-
-  const filenameSet = new Set(input.filenames);
-  const filtered = existing
-    .split(/\r?\n/)
-    .filter((line) => {
-      return !Array.from(filenameSet).some((filename) =>
-        line.includes(`](${filename})`),
-      );
-    });
-
-  await writeFile(
-    /*turbopackIgnore: true*/ indexPath,
-    `${filtered.join("\n").trimEnd()}\n`,
-    "utf8",
-  );
-}
-
-async function removeSourceManifestEntry(input: {
-  documentTitle: string;
-  knowledgeRoot: string;
-}) {
-  const manifestPath = path.join(input.knowledgeRoot, "source_manifest.md");
-  let existing = "";
-
-  try {
-    existing = await readFile(/*turbopackIgnore: true*/ manifestPath, "utf8");
-  } catch {
-    return;
-  }
-
-  const lines = existing.split(/\r?\n/);
-  const filtered: string[] = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]!;
-    if (line.trim() !== `- ${input.documentTitle}`) {
-      filtered.push(line);
-      continue;
-    }
-
-    while (index + 1 < lines.length && lines[index + 1]!.startsWith("  - ")) {
-      index += 1;
-    }
-  }
-
-  await writeFile(
-    /*turbopackIgnore: true*/ manifestPath,
-    `${filtered.join("\n").trimEnd()}\n`,
-    "utf8",
-  );
-}
-
-async function appendDocumentDeleteLogEntry(input: {
-  actorId: string;
-  changedAt: Date;
-  conceptCount: number;
-  documentTitle: string;
-  knowledgeRoot: string;
-  reason: string;
-}) {
-  const logPath = path.join(input.knowledgeRoot, "log.md");
-  const entry = [
-    `- ${toIsoDate(input.changedAt)} - delete-document`,
-    `source: ${input.documentTitle}`,
-    `actor: ${input.actorId}`,
-    `topics_removed: ${input.conceptCount}`,
-    `reason: ${input.reason}`,
-  ].join(" - ");
-  let existing = "";
-
-  try {
-    existing = await readFile(/*turbopackIgnore: true*/ logPath, "utf8");
-  } catch {
-    existing = "";
-  }
-
-  const base = existing.trimEnd() || "# Change Log";
-  await writeFile(
-    /*turbopackIgnore: true*/ logPath,
-    `${base}\n\n${entry}\n`,
-    "utf8",
-  );
 }
 
 export async function markOkfConceptLifecycle(input: {
@@ -362,7 +170,7 @@ export async function markOkfConceptLifecycle(input: {
   filePath: string;
   knowledgeRoot?: string;
   reason: string;
-  status: Exclude<OkfConceptLifecycleStatus, "active" | "deleted">;
+  status: Exclude<OkfConceptLifecycleStatus, "active">;
   topicId?: string | null;
   workspaceId: string;
 }): Promise<void> {
@@ -413,7 +221,7 @@ async function appendLifecycleLogEntry(input: {
   filePath: string;
   knowledgeRoot: string;
   reason: string;
-  status: "archived" | "retracted";
+  status: Exclude<OkfConceptLifecycleStatus, "active">;
 }) {
   const logPath = path.join(input.knowledgeRoot, "log.md");
   const entry = `- ${toIsoDate(input.changedAt)} - ${input.status} - ${input.filePath} - ${input.reason}`;

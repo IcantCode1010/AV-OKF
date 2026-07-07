@@ -9,8 +9,14 @@ import { uploadDocumentAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function DocumentsPage() {
+export default async function DocumentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ uploadError?: string }>;
+}) {
+  const { uploadError } = await searchParams;
   const documents = await getDocuments();
+  const uploadErrorMessage = formatUploadError(uploadError);
 
   return (
     <>
@@ -33,6 +39,11 @@ export default async function DocumentsPage() {
           <CardTitle>Upload PDF</CardTitle>
         </CardHeader>
         <CardContent>
+          {uploadErrorMessage ? (
+            <div className="mb-4 rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+              {uploadErrorMessage}
+            </div>
+          ) : null}
           <form
             action={uploadDocumentAction}
             className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]"
@@ -105,4 +116,28 @@ export default async function DocumentsPage() {
       <DocumentLibrary documents={documents} />
     </>
   );
+}
+
+function formatUploadError(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  if (raw === "missing_pdf_file") {
+    return "Choose a PDF file before uploading.";
+  }
+
+  if (raw === "only_pdf_uploads_supported") {
+    return "Only PDF uploads are supported.";
+  }
+
+  if (raw === "upload_exceeds_25mb_limit") {
+    return "File exceeds the 25 MB upload limit.";
+  }
+
+  if (raw === "invalid_pdf_magic_bytes") {
+    return "This file isn't a valid PDF. Choose a different file and try again.";
+  }
+
+  return "Upload could not be completed.";
 }

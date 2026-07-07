@@ -40,14 +40,14 @@ type UploadRecordInput = {
 };
 
 type UpdateMetadataInput = {
-  aircraftFamily: string | null;
-  ata: string | null;
+  subjectFamily: string | null;
+  classificationCode: string | null;
   context: AuthWorkspaceContext;
   customProperties: CustomProperty[];
   description: string;
   documentId: string;
   effectivity: string | null;
-  manualType: string | null;
+  documentType: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
@@ -95,8 +95,8 @@ type DbExtractionLog = {
 };
 
 type DbDocumentRecord = {
-  aircraftFamily: string | null;
-  ata: string | null;
+  subjectFamily: string | null;
+  classificationCode: string | null;
   customProperties?: DbCustomProperty[];
   description: string;
   effectivity: string | null;
@@ -105,7 +105,7 @@ type DbDocumentRecord = {
   extractionLogs?: DbExtractionLog[];
   fileType: string;
   id: string;
-  manualType: string | null;
+  documentType: string | null;
   mimeType: string;
   objects?: DbDocumentObject[];
   originalFilename: string | null;
@@ -142,6 +142,7 @@ type DbTopicRecord = {
   enrichedTitle: string | null;
   enrichmentAudits?: DbTopicEnrichmentAudit[];
   enrichmentStatus: string;
+  exportedFilePath: string | null;
   id: string;
   originalSummary: string;
   originalTitle: string;
@@ -821,14 +822,14 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       const document = await db.document.update({
         data: {
-          aircraftFamily: normalizeOptionalMetadata(input.aircraftFamily),
-          ata: normalizeOptionalMetadata(input.ata),
+          subjectFamily: normalizeOptionalMetadata(input.subjectFamily),
+          classificationCode: normalizeOptionalMetadata(input.classificationCode),
           customProperties: {
             create: input.customProperties,
           },
           description: input.description.trim(),
           effectivity: normalizeOptionalMetadata(input.effectivity),
-          manualType: normalizeOptionalMetadata(input.manualType),
+          documentType: normalizeOptionalMetadata(input.documentType),
           owner: input.owner.trim() || "Unassigned",
           revision: normalizeOptionalMetadata(input.revision),
           sourceAuthority: normalizeOptionalMetadata(input.sourceAuthority),
@@ -900,6 +901,18 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
 
       const topic = await db.topicRecord.update({
         data: { relations: input.relations as unknown as Prisma.InputJsonValue },
+        where: { id: input.topicId },
+      });
+      return mapTopicRecord(topic);
+    },
+    async updateTopicExportedFilePath(input: {
+      context: AuthWorkspaceContext;
+      exportedFilePath: string;
+      topicId: string;
+    }) {
+      await assertTopicInWorkspace(db, input.topicId, input.context.workspaceId);
+      const topic = await db.topicRecord.update({
+        data: { exportedFilePath: input.exportedFilePath },
         where: { id: input.topicId },
       });
       return mapTopicRecord(topic);
@@ -978,8 +991,8 @@ function mapDocument(record: DbDocumentRecord): Document {
   );
 
   return {
-    aircraftFamily: record.aircraftFamily,
-    ata: record.ata,
+    subjectFamily: record.subjectFamily,
+    classificationCode: record.classificationCode,
     customProperties: (record.customProperties ?? []).map((property) => ({
       key: property.key,
       value: property.value,
@@ -1002,7 +1015,7 @@ function mapDocument(record: DbDocumentRecord): Document {
     fileType: record.fileType,
     id: record.id,
     workspaceId: record.workspaceId,
-    manualType: record.manualType,
+    documentType: record.documentType,
     mimeType: record.mimeType,
     originalFilename: record.originalFilename,
     owner: record.owner,
@@ -1068,6 +1081,7 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
         : null,
     enrichmentModel: latestSuccess?.model ?? null,
     enrichmentStatus: normalizeTopicEnrichmentStatus(record.enrichmentStatus),
+    exportedFilePath: record.exportedFilePath,
     id: record.id,
     originalSummary: record.originalSummary ?? record.summary,
     originalTitle: record.originalTitle ?? record.title,

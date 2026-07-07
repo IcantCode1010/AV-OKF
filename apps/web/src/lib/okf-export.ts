@@ -23,18 +23,18 @@ type ExportTopic = {
 
 type ExportDocument = {
   title: string;
-  aircraftFamily: string | null;
-  manualType: string | null;
-  ata: string | null;
+  subjectFamily: string | null;
+  documentType: string | null;
+  classificationCode: string | null;
   effectivity: string | null;
   sourceAuthority: string | null;
   revision: string | null;
 };
 
 type RequiredDocumentMetadata = {
-  aircraftFamily: string;
-  manualType: string;
-  ata: string;
+  subjectFamily: string;
+  documentType: string;
+  classificationCode: string;
   effectivity: string;
   sourceAuthority: string;
   revision: string;
@@ -58,9 +58,9 @@ type ExportTopicToKnowledgeInput = BuildOkfSystemTopicInput & {
 };
 
 const REQUIRED_DOCUMENT_METADATA = [
-  "aircraftFamily",
-  "manualType",
-  "ata",
+  "subjectFamily",
+  "documentType",
+  "classificationCode",
   "effectivity",
   "sourceAuthority",
   "revision",
@@ -80,16 +80,16 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   const metadata = getRequiredDocumentMetadata(input.document);
   const relations = normalizeTopicRelations(input.topic.relations);
 
-  const filename = buildFilename(metadata.ata, input.topic);
+  const filename = buildFilename(metadata.classificationCode, input.topic);
   const lastVerified = toIsoDate(input.exportedAt ?? new Date());
   const frontmatterFields: FrontmatterFields = {
     type: "system_topic",
     review_status: "approved",
     title: input.topic.title,
     description: input.topic.summary,
-    aircraft_family: metadata.aircraftFamily,
-    manual_type: metadata.manualType,
-    ata: metadata.ata,
+    subject_family: metadata.subjectFamily,
+    document_type: metadata.documentType,
+    classification_code: metadata.classificationCode,
     effectivity: metadata.effectivity,
     source_authority: metadata.sourceAuthority,
     revision: metadata.revision,
@@ -327,9 +327,9 @@ function getRequiredDocumentMetadata(
   }
 
   return {
-    aircraftFamily: document.aircraftFamily!,
-    manualType: document.manualType!,
-    ata: document.ata!,
+    subjectFamily: document.subjectFamily!,
+    documentType: document.documentType!,
+    classificationCode: document.classificationCode!,
     effectivity: document.effectivity!,
     sourceAuthority: document.sourceAuthority!,
     revision: document.revision!,
@@ -341,10 +341,10 @@ function formatSourceManifestEntry(document: ExportDocument) {
 
   return [
     `- ${document.title}`,
-    `  - aircraft_family: ${metadata.aircraftFamily}`,
+    `  - subject_family: ${metadata.subjectFamily}`,
     `  - source_authority: ${metadata.sourceAuthority}`,
-    `  - manual_type: ${metadata.manualType}`,
-    `  - ata: ${metadata.ata}`,
+    `  - document_type: ${metadata.documentType}`,
+    `  - classification_code: ${metadata.classificationCode}`,
     `  - effectivity: ${metadata.effectivity}`,
     `  - revision: ${metadata.revision}`,
   ].join("\n");
@@ -426,7 +426,7 @@ function slugify(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-function buildFilename(ata: string, topic: ExportTopic) {
+function buildFilename(classificationCode: string, topic: ExportTopic) {
   if (!topic.id) {
     throw new Error("okf_export_requires_topic_id");
   }
@@ -442,7 +442,7 @@ function buildFilename(ata: string, topic: ExportTopic) {
     .digest("hex")
     .slice(0, TOPIC_ID_FRAGMENT_LENGTH);
 
-  return `${slugify(ata)}-${cappedSlug}-${topicIdFragment}.md`;
+  return `${slugify(classificationCode)}-${cappedSlug}-${topicIdFragment}.md`;
 }
 
 function capSlug(slug: string, maxLength: number) {

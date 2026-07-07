@@ -23,15 +23,17 @@ export function assertActionDocumentWorkspace(input: {
   }
 }
 
-export function normalizeAtaMetadata(value: string | null): string | null {
+const MAX_CLASSIFICATION_CODE_LENGTH = 64;
+
+export function normalizeClassificationCode(value: string | null): string | null {
   const normalized = value?.trim() ?? "";
 
   if (normalized.length === 0) {
     return null;
   }
 
-  if (!/^\d{2}(-\d{2}){0,2}$/.test(normalized)) {
-    throw new Error("invalid_ata_format");
+  if (normalized.length > MAX_CLASSIFICATION_CODE_LENGTH) {
+    throw new Error("classification_code_too_long");
   }
 
   return normalized;

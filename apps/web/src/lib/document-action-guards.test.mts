@@ -3,7 +3,7 @@ import test from "node:test";
 
 import {
   assertActionDocumentWorkspace,
-  normalizeAtaMetadata,
+  normalizeClassificationCode,
 } from "./document-action-guards.ts";
 
 test("assertActionDocumentWorkspace rejects metadata updates for another workspace", () => {
@@ -88,19 +88,21 @@ test("assertActionDocumentWorkspace rejects typed relation updates for another w
   );
 });
 
-test("normalizeAtaMetadata accepts ATA chapter, section, and subject formats", () => {
-  assert.equal(normalizeAtaMetadata("32"), "32");
-  assert.equal(normalizeAtaMetadata("32-41"), "32-41");
-  assert.equal(normalizeAtaMetadata("32-41-11"), "32-41-11");
+test("normalizeClassificationCode accepts ATA-style and free-form codes", () => {
+  assert.equal(normalizeClassificationCode("32"), "32");
+  assert.equal(normalizeClassificationCode("32-41-11"), "32-41-11");
+  assert.equal(normalizeClassificationCode("Section 4.2"), "Section 4.2");
+  assert.equal(normalizeClassificationCode("N/A"), "N/A");
 });
 
-test("normalizeAtaMetadata rejects malformed ATA values", () => {
-  for (const value of ["3", "32-411", "abc"]) {
-    assert.throws(() => normalizeAtaMetadata(value), /invalid_ata_format/);
-  }
+test("normalizeClassificationCode rejects overly long values", () => {
+  assert.throws(
+    () => normalizeClassificationCode("x".repeat(65)),
+    /classification_code_too_long/,
+  );
 });
 
-test("normalizeAtaMetadata keeps empty ATA metadata nullable", () => {
-  assert.equal(normalizeAtaMetadata(""), null);
-  assert.equal(normalizeAtaMetadata(null), null);
+test("normalizeClassificationCode keeps empty classification code nullable", () => {
+  assert.equal(normalizeClassificationCode(""), null);
+  assert.equal(normalizeClassificationCode(null), null);
 });

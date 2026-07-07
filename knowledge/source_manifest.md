@@ -9,9 +9,9 @@ last_verified: "2026-07-02"
 
 # Source Manifest
 - 737NG AMM 32 Landing Gear
-  - aircraft_family: Boeing 737NG
+  - subject_family: Boeing 737NG
   - source_authority: Boeing Aircraft Maintenance Manual
-  - manual_type: AMM
-  - ata: 32
+  - document_type: AMM
+  - classification_code: 32
   - effectivity: 737-700/800/900
   - revision: 2026-06

@@ -234,9 +234,9 @@ async function buildEvidenceCandidate(
   const searchableMetadata = [
     type,
     sourceFile,
-    getFrontmatterScalar(parsed.frontmatter, "aircraft_family"),
-    getFrontmatterScalar(parsed.frontmatter, "manual_type"),
-    getFrontmatterScalar(parsed.frontmatter, "ata"),
+    getFrontmatterScalar(parsed.frontmatter, "subject_family"),
+    getFrontmatterScalar(parsed.frontmatter, "document_type"),
+    getFrontmatterScalar(parsed.frontmatter, "classification_code"),
     getFrontmatterScalar(parsed.frontmatter, "effectivity"),
     getFrontmatterScalar(parsed.frontmatter, "source_authority"),
     getFrontmatterScalar(parsed.frontmatter, "revision"),

@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import {
-  buildOkfLifecycleFilename,
   getOkfConceptLifecycleByFile,
   getOkfConceptLifecycleForFile,
   markOkfConceptLifecycle,
@@ -26,207 +25,77 @@ test("normalizeOkfConceptLifecycleStatus defaults unknown or missing values to a
   assert.equal(normalizeOkfConceptLifecycleStatus(undefined), "active");
 });
 
-test("softDeleteDocument removes all derived bundle products and hard-deletes the document", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "av-okf-soft-delete-"));
+test("softDeleteDocument soft-deletes the document, deactivates only raw-extraction RAG chunks, and leaves OKF bundle files untouched", async () => {
+  const deletedAt = new Date("2026-07-07T18:00:00.000Z");
   const calls: unknown[] = [];
-  const deletedAt = new Date("2026-07-06T18:00:00.000Z");
-  let exportedFilename = "";
-  let rejectedExportedFilename = "";
   const client = {
-    document: {
-      async findUnique(input: unknown) {
-        calls.push(["document.findUnique", input]);
-        return {
-          aircraftFamily: "Boeing 737NG",
-          ata: "29",
-          effectivity: "737-700/800/900",
-          manualType: "AMM",
-          revision: "2026-06",
-          sourceAuthority: "Boeing Aircraft Maintenance Manual",
-          title: "737NG AMM 29 Air Ground",
-        };
+    activityEvent: {
+      async create(input: unknown) {
+        calls.push(["activityEvent.create", input]);
       },
-      async delete(input: unknown) {
-        calls.push(["document.delete", input]);
+    },
+    document: {
+      async update(input: unknown) {
+        calls.push(["document.update", input]);
+        return { title: "737NG AMM 29 Air Ground" };
       },
     },
     okfConceptLifecycle: {
       async upsert() {
-        assert.fail("source document hard-delete must not create lifecycle retractions");
+        assert.fail("soft-deleting a document must not touch OKF lifecycle records");
       },
     },
-    topicRecord: {
-      async findMany(input: unknown) {
-        calls.push(["topicRecord.findMany", input]);
-        return [
-          {
-            id: "topic_air_ground",
-            pageEnd: 4,
-            pageStart: 3,
-            reviewStatus: "approved",
-            sourcePageNumbers: [3, 4],
-            summary: "Air ground position summary.",
-            title: "AIR/GROUND - POSITION",
-          },
-          {
-            id: "topic_air_ground_system",
-            pageEnd: 7,
-            pageStart: 5,
-            reviewStatus: "rejected",
-            sourcePageNumbers: [5, 6, 7],
-            summary: "Air ground system summary.",
-            title: "AIR/GROUND SYSTEM",
-          },
-        ];
+    ragChunk: {
+      async updateMany(input: unknown) {
+        calls.push(["ragChunk.updateMany", input]);
       },
     },
   };
 
-  try {
-    exportedFilename = buildOkfLifecycleFilename({
-      document: {
-        aircraftFamily: "Boeing 737NG",
-        ata: "29",
-        effectivity: "737-700/800/900",
-        manualType: "AMM",
-        revision: "2026-06",
-        sourceAuthority: "Boeing Aircraft Maintenance Manual",
-        title: "737NG AMM 29 Air Ground",
-      },
-      knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
-      topic: {
-        id: "topic_air_ground",
-        pageEnd: 4,
-        pageStart: 3,
-        reviewStatus: "approved",
-        sourcePageNumbers: [3, 4],
-        summary: "Air ground position summary.",
-        title: "AIR/GROUND - POSITION",
-      },
-    });
-    rejectedExportedFilename = buildOkfLifecycleFilename({
-      document: {
-        aircraftFamily: "Boeing 737NG",
-        ata: "29",
-        effectivity: "737-700/800/900",
-        manualType: "AMM",
-        revision: "2026-06",
-        sourceAuthority: "Boeing Aircraft Maintenance Manual",
-        title: "737NG AMM 29 Air Ground",
-      },
-      knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
-      topic: {
-        id: "topic_air_ground_system",
-        pageEnd: 7,
-        pageStart: 5,
-        reviewStatus: "rejected",
-        sourcePageNumbers: [5, 6, 7],
-        summary: "Air ground system summary.",
-        title: "AIR/GROUND SYSTEM",
-      },
-    });
-    await writeFile(
-      path.join(root, exportedFilename),
-      "---\ntype: system_topic\nreview_status: approved\n---\n",
-      "utf8",
-    );
-    await writeFile(
-      path.join(root, rejectedExportedFilename),
-      "---\ntype: system_topic\nreview_status: approved\n---\n",
-      "utf8",
-    );
-    await writeFile(
-      path.join(root, "index.md"),
-      `# AV-OKF Knowledge Bundle\n- [AIR/GROUND - POSITION](${exportedFilename}) - Air ground position summary.\n- [AIR/GROUND SYSTEM](${rejectedExportedFilename}) - Air ground system summary.\n\nBundle notes.\n`,
-      "utf8",
-    );
-    await writeFile(
-      path.join(root, "source_manifest.md"),
-      [
-        "---",
-        'type: "source_manifest"',
-        "---",
-        "",
-        "# Source Manifest",
-        "- 737NG AMM 29 Air Ground",
-        "  - aircraft_family: Boeing 737NG",
-        "  - source_authority: Boeing Aircraft Maintenance Manual",
-        "  - manual_type: AMM",
-        "  - ata: 29",
-        "  - effectivity: 737-700/800/900",
-        "  - revision: 2026-06",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
+  await softDeleteDocument({
+    actorId: "user_1",
+    client,
+    deletedAt,
+    documentId: "doc_1",
+    reason: "Duplicate upload",
+    workspaceId: "wrk_1",
+  });
 
-    await softDeleteDocument({
-      actorId: "user_1",
-      client,
-      deletedAt,
-      documentId: "doc_1",
-      knowledgeRoot: root,
-      reason: "Duplicate upload",
-      workspaceId: "wrk_1",
-    });
-
-    await assert.rejects(
-      () => readFile(path.join(root, exportedFilename), "utf8"),
-      (error) =>
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT",
-    );
-    await assert.rejects(
-      () => readFile(path.join(root, rejectedExportedFilename), "utf8"),
-      (error) =>
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT",
-    );
-    const index = await readFile(path.join(root, "index.md"), "utf8");
-    assert.doesNotMatch(index, new RegExp(exportedFilename));
-    assert.doesNotMatch(index, new RegExp(rejectedExportedFilename));
-    const manifest = await readFile(path.join(root, "source_manifest.md"), "utf8");
-    assert.doesNotMatch(manifest, /737NG AMM 29 Air Ground/);
-    const log = await readFile(path.join(root, "log.md"), "utf8");
-    assert.match(
-      log,
-      /- 2026-07-06 - delete-document - source: 737NG AMM 29 Air Ground - actor: user_1 - topics_removed: 2 - reason: Duplicate upload/,
-    );
-  } finally {
-    await rm(root, { force: true, recursive: true });
-  }
-
-  assert.deepEqual(calls[0], [
-    "topicRecord.findMany",
-    {
-      where: {
-        documentId: "doc_1",
-        workspaceId: "wrk_1",
-      },
-    },
-  ]);
-  assert.deepEqual(calls[1], [
-    "document.findUnique",
-    {
-      select: {
-        aircraftFamily: true,
-        ata: true,
-        effectivity: true,
-        manualType: true,
-        revision: true,
-        sourceAuthority: true,
-        title: true,
-      },
-      where: { id: "doc_1", workspaceId: "wrk_1" },
-    },
-  ]);
-  assert.deepEqual(calls.slice(2), [
+  assert.deepEqual(calls, [
     [
-      "document.delete",
+      "document.update",
       {
+        data: {
+          deleteReason: "Duplicate upload",
+          deletedAt,
+          deletedBy: "user_1",
+        },
+        select: { title: true },
         where: { id: "doc_1", workspaceId: "wrk_1" },
+      },
+    ],
+    [
+      "ragChunk.updateMany",
+      {
+        data: { isActive: false },
+        where: {
+          documentId: "doc_1",
+          sourceType: "raw_extraction",
+          workspaceId: "wrk_1",
+        },
+      },
+    ],
+    [
+      "activityEvent.create",
+      {
+        data: {
+          documentId: "doc_1",
+          documentTitle: "737NG AMM 29 Air Ground",
+          label: "Document soft-deleted: Duplicate upload",
+          status: "blocked",
+          timestamp: "Just now",
+          workspaceId: "wrk_1",
+        },
       },
     ],
   ]);
@@ -235,13 +104,8 @@ test("softDeleteDocument removes all derived bundle products and hard-deletes th
 test("softDeleteDocument requires a reason", async () => {
   const client = {
     document: {
-      async delete() {
-        assert.fail("document.delete should not run without a reason");
-      },
-    },
-    topicRecord: {
-      async findMany() {
-        assert.fail("topicRecord.findMany should not run without a reason");
+      async update() {
+        assert.fail("document.update should not run without a reason");
       },
     },
   };
@@ -257,32 +121,6 @@ test("softDeleteDocument requires a reason", async () => {
       }),
     /document_delete_reason_required/,
   );
-});
-
-test("buildOkfLifecycleFilename derives the exported concept filename", () => {
-  const filename = buildOkfLifecycleFilename({
-    document: {
-      aircraftFamily: "Boeing 737NG",
-      ata: "32",
-      effectivity: "737-700/800/900",
-      manualType: "AMM",
-      revision: "2026-06",
-      sourceAuthority: "Boeing Aircraft Maintenance Manual",
-      title: "737NG AMM 32 Landing Gear",
-    },
-    knowledgeVersion: "0.1.0",
-    topic: {
-      id: "topic_lifecycle_filename",
-      pageEnd: 4,
-      pageStart: 3,
-      reviewStatus: "approved",
-      sourcePageNumbers: [3, 4],
-      summary: "Brake system operation and inspection requirements.",
-      title: "Main Gear Brake System",
-    },
-  });
-
-  assert.match(filename, /^32-main-gear-brake-system-[a-f0-9]{10}\.md$/);
 });
 
 test("getOkfConceptLifecycleForFile returns projected lifecycle state", async () => {
@@ -432,6 +270,46 @@ test("markOkfConceptLifecycle requires a reason and appends a lifecycle log entr
     assert.match(
       log,
       /- 2026-07-06 - retracted - 32-brakes\.md - Incorrect source mapping/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("markOkfConceptLifecycle accepts the deleted status", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-lifecycle-deleted-"));
+  const changedAt = new Date("2026-07-07T12:00:00.000Z");
+  const calls: unknown[] = [];
+  const client = {
+    okfConceptLifecycle: {
+      async upsert(input: unknown) {
+        calls.push(input);
+      },
+    },
+  };
+
+  try {
+    await markOkfConceptLifecycle({
+      actorId: "user_1",
+      changedAt,
+      client,
+      filePath: "32-brakes.md",
+      knowledgeRoot: root,
+      reason: "Superseded by revision 2026-07",
+      status: "deleted",
+      topicId: "topic_1",
+      workspaceId: "wrk_1",
+    });
+
+    assert.equal(
+      (calls[0] as { create: { status: string } }).create.status,
+      "deleted",
+    );
+
+    const log = await readFile(path.join(root, "log.md"), "utf8");
+    assert.match(
+      log,
+      /- 2026-07-07 - deleted - 32-brakes\.md - Superseded by revision 2026-07/,
     );
   } finally {
     await rm(root, { force: true, recursive: true });

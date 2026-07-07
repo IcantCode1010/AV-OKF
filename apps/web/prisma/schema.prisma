@@ -105,9 +105,9 @@ model Document {
   sourceType       String
   pages            Int                      @default(0)
   description      String                   @default("")
-  aircraftFamily   String?
-  manualType       String?
-  ata              String?
+  subjectFamily    String?
+  documentType     String?
+  classificationCode String?
   effectivity      String?
   sourceAuthority  String?
   revision         String?
@@ -326,6 +326,7 @@ model TopicRecord {
   reviewStatus      String
   relations         Json      @default("[]")
   sourcePageNumbers Int[]
+  exportedFilePath  String?
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   document          Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
   enrichmentAudits  TopicEnrichmentAudit[]

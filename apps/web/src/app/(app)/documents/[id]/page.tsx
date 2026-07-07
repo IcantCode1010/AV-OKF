@@ -21,10 +21,7 @@ import {
   type Document,
   type TopicRecord,
 } from "@/lib/document-backend";
-import {
-  buildOkfLifecycleFilename,
-  getOkfConceptLifecycleByFile,
-} from "@/lib/okf-lifecycle";
+import { getOkfConceptLifecycleByFile } from "@/lib/okf-lifecycle";
 import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
 import {
   getDefaultKnowledgeRoot,
@@ -48,6 +45,7 @@ export default async function DocumentDetailPage({
     enrichmentError?: string;
     lifecycleError?: string;
     lifecycleUpdated?: string;
+    metadataError?: string;
     okfExportError?: string;
     panel?: string;
     relationError?: string;
@@ -61,6 +59,7 @@ export default async function DocumentDetailPage({
     enrichmentError,
     lifecycleError,
     lifecycleUpdated,
+    metadataError,
     okfExportError,
     panel,
     relationError,
@@ -102,6 +101,7 @@ export default async function DocumentDetailPage({
   const relationErrorMessage = formatRelationError(relationError);
   const enrichmentErrorMessage = formatEnrichmentError(enrichmentError);
   const deleteErrorMessage = formatDeleteError(deleteError);
+  const metadataErrorMessage = formatMetadataError(metadataError);
   const lifecycleErrorMessage = formatLifecycleError(lifecycleError);
   const lifecycleUpdatedMessage = formatLifecycleUpdated(lifecycleUpdated);
   const okfExportErrorMessage = formatOkfExportError(okfExportError);
@@ -177,6 +177,7 @@ export default async function DocumentDetailPage({
       return (
         <DocumentMetadataPanel
           deleteError={deleteErrorMessage}
+          metadataError={metadataErrorMessage}
           document={currentDocument}
         />
       );
@@ -232,38 +233,27 @@ async function resolveTopicLifecycles({
 
   const filenameByTopicId = new Map<string, string>();
   for (const topic of topics) {
-    if (topic.reviewStatus !== "approved") {
+    if (topic.reviewStatus !== "approved" || !topic.exportedFilePath) {
       continue;
     }
 
-    filenameByTopicId.set(
-      topic.id,
-      buildOkfLifecycleFilename({
-        document,
-        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
-        topic,
-      }),
-    );
+    filenameByTopicId.set(topic.id, topic.exportedFilePath);
   }
 
   if (filenameByTopicId.size === 0) {
     return lifecycleByTopicId;
   }
 
-  try {
-    const lifecycleByFile = await getOkfConceptLifecycleByFile({
-      filePaths: Array.from(filenameByTopicId.values()),
-      workspaceId: document.workspaceId,
-    });
+  const lifecycleByFile = await getOkfConceptLifecycleByFile({
+    filePaths: Array.from(filenameByTopicId.values()),
+    workspaceId: document.workspaceId,
+  });
 
-    for (const [topicId, filePath] of filenameByTopicId) {
-      lifecycleByTopicId.set(
-        topicId,
-        lifecycleByFile.get(filePath) ?? { status: "active" },
-      );
-    }
-  } catch {
-    return new Map();
+  for (const [topicId, filePath] of filenameByTopicId) {
+    lifecycleByTopicId.set(
+      topicId,
+      lifecycleByFile.get(filePath) ?? { status: "active" },
+    );
   }
 
   return lifecycleByTopicId;
@@ -364,6 +354,22 @@ function formatEnrichmentError(raw: string | undefined) {
   }
 
   return "Topic enrichment could not start.";
+}
+
+function formatMetadataError(raw: string | undefined) {
+  if (!raw) {
+    return null;
+  }
+
+  if (raw === "classification_code_too_long") {
+    return "Classification code is too long (64 characters max).";
+  }
+
+  if (raw === "document_workspace_mismatch") {
+    return "This document belongs to a different workspace.";
+  }
+
+  return "Document metadata could not be saved.";
 }
 
 function formatDeleteError(raw: string | undefined) {

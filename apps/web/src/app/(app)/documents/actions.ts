@@ -23,7 +23,7 @@ import {
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import {
   assertActionDocumentWorkspace,
-  normalizeAtaMetadata,
+  normalizeClassificationCode,
 } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
 import {
@@ -32,25 +32,41 @@ import {
 } from "@/lib/topic-enrichment";
 import { softDeleteDocument } from "@/lib/okf-lifecycle";
 
+const RECOVERABLE_UPLOAD_ERRORS = new Set([
+  "missing_pdf_file",
+  "only_pdf_uploads_supported",
+  "upload_exceeds_25mb_limit",
+  "invalid_pdf_magic_bytes",
+]);
+
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
+  let document: Awaited<ReturnType<typeof createUploadedDocument>>;
 
-  if (!(file instanceof File)) {
-    throw new Error("missing_pdf_file");
+  try {
+    if (!(file instanceof File)) {
+      throw new Error("missing_pdf_file");
+    }
+
+    assertPdfUpload(file);
+
+    document = await createUploadedDocument({
+      bytes: Buffer.from(await file.arrayBuffer()),
+      description: getFormString(formData, "description"),
+      originalFilename: file.name,
+      owner: getFormString(formData, "owner"),
+      sourceType: getSourceType(getFormString(formData, "sourceType")),
+      tags: parseTags(getFormString(formData, "tags")),
+      title: getFormString(formData, "title"),
+      type: file.type,
+    });
+  } catch (error) {
+    if (error instanceof Error && RECOVERABLE_UPLOAD_ERRORS.has(error.message)) {
+      redirect(`/documents?uploadError=${encodeURIComponent(error.message)}`);
+    }
+
+    throw error;
   }
-
-  assertPdfUpload(file);
-
-  const document = await createUploadedDocument({
-    bytes: Buffer.from(await file.arrayBuffer()),
-    description: getFormString(formData, "description"),
-    originalFilename: file.name,
-    owner: getFormString(formData, "owner"),
-    sourceType: getSourceType(getFormString(formData, "sourceType")),
-    tags: parseTags(getFormString(formData, "tags")),
-    title: getFormString(formData, "title"),
-    type: file.type,
-  });
 
   await requestExtraction(document.id);
 
@@ -195,36 +211,54 @@ export async function updateTopicContentAction(formData: FormData) {
   redirect(`/documents/${documentId}`);
 }
 
+const RECOVERABLE_METADATA_ERRORS = new Set([
+  "classification_code_too_long",
+  "document_workspace_mismatch",
+]);
+
 export async function updateDocumentMetadataAction(formData: FormData) {
   const id = getFormString(formData, "id");
-  const context = await requireAuthWorkspaceContext();
-  const workspaceId = await getDocumentWorkspaceId(id);
 
-  assertActionDocumentWorkspace({
-    // Local Stage 1 JSON-vault records may predate workspace metadata.
-    allowMissingWorkspace: !isProductionBackend(),
-    context,
-    document: { workspaceId },
-    mismatchError: "document_workspace_mismatch",
-  });
+  try {
+    const context = await requireAuthWorkspaceContext();
+    const workspaceId = await getDocumentWorkspaceId(id);
 
-  await updateDocumentMetadata(id, {
-    aircraftFamily: getNullableFormString(formData, "aircraftFamily"),
-    ata: normalizeAtaMetadata(getNullableFormString(formData, "ata")),
-    customProperties: parseCustomProperties(
-      getFormString(formData, "customProperties"),
-    ),
-    description: getFormString(formData, "description"),
-    effectivity: getNullableFormString(formData, "effectivity"),
-    manualType: getNullableFormString(formData, "manualType"),
-    owner: getFormString(formData, "owner"),
-    revision: getNullableFormString(formData, "revision"),
-    sourceAuthority: getNullableFormString(formData, "sourceAuthority"),
-    sourceType: getSourceType(getFormString(formData, "sourceType")),
-    status: getDocumentStatus(getFormString(formData, "status")),
-    tags: parseTags(getFormString(formData, "tags")),
-    title: getFormString(formData, "title"),
-  });
+    assertActionDocumentWorkspace({
+      // Local Stage 1 JSON-vault records may predate workspace metadata.
+      allowMissingWorkspace: !isProductionBackend(),
+      context,
+      document: { workspaceId },
+      mismatchError: "document_workspace_mismatch",
+    });
+
+    await updateDocumentMetadata(id, {
+      subjectFamily: getNullableFormString(formData, "subjectFamily"),
+      classificationCode: normalizeClassificationCode(
+        getNullableFormString(formData, "classificationCode"),
+      ),
+      customProperties: parseCustomProperties(
+        getFormString(formData, "customProperties"),
+      ),
+      description: getFormString(formData, "description"),
+      effectivity: getNullableFormString(formData, "effectivity"),
+      documentType: getNullableFormString(formData, "documentType"),
+      owner: getFormString(formData, "owner"),
+      revision: getNullableFormString(formData, "revision"),
+      sourceAuthority: getNullableFormString(formData, "sourceAuthority"),
+      sourceType: getSourceType(getFormString(formData, "sourceType")),
+      status: getDocumentStatus(getFormString(formData, "status")),
+      tags: parseTags(getFormString(formData, "tags")),
+      title: getFormString(formData, "title"),
+    });
+  } catch (error) {
+    if (error instanceof Error && RECOVERABLE_METADATA_ERRORS.has(error.message)) {
+      redirect(
+        `/documents/${id}?panel=metadata&metadataError=${encodeURIComponent(error.message)}`,
+      );
+    }
+
+    throw error;
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");

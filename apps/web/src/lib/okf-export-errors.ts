@@ -1,12 +1,12 @@
 const MISSING_METADATA_PREFIX = "okf_export_missing_document_metadata:";
 
 const FIELD_LABELS: Record<string, string> = {
-  aircraftFamily: "aircraft family",
-  ata: "ATA",
+  classificationCode: "classification code",
+  documentType: "document type",
   effectivity: "effectivity",
-  manualType: "manual type",
   revision: "revision",
   sourceAuthority: "source authority",
+  subjectFamily: "subject family",
 };
 
 export function isRecoverableOkfExportError(error: unknown): error is Error {

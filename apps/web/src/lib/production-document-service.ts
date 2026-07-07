@@ -40,11 +40,11 @@ type UploadMetadata = {
 };
 
 type UpdateMetadata = {
-  aircraftFamily: string | null;
-  ata: string | null;
+  subjectFamily: string | null;
+  classificationCode: string | null;
   description: string;
   effectivity: string | null;
-  manualType: string | null;
+  documentType: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
@@ -77,6 +77,10 @@ export type ProductionDocumentService = {
   updateTopicRelations(
     topicId: string,
     relations: TopicRelation[],
+  ): Promise<TopicRecord>;
+  updateTopicExportedFilePath(
+    topicId: string,
+    exportedFilePath: string,
   ): Promise<TopicRecord>;
   updateTopicContent(
     topicId: string,
@@ -243,14 +247,14 @@ export function createProductionDocumentService(
       input: UpdateMetadata,
     ): Promise<Document> {
       return repository.updateDocumentMetadata({
-        aircraftFamily: input.aircraftFamily,
-        ata: input.ata,
+        subjectFamily: input.subjectFamily,
+        classificationCode: input.classificationCode,
         context: await requireAuthWorkspaceContext(),
         customProperties: input.customProperties,
         description: input.description,
         documentId,
         effectivity: input.effectivity,
-        manualType: input.manualType,
+        documentType: input.documentType,
         owner: input.owner,
         revision: input.revision,
         sourceAuthority: input.sourceAuthority,
@@ -277,6 +281,16 @@ export function createProductionDocumentService(
       return repository.updateTopicRelations({
         context: await requireAuthWorkspaceContext(),
         relations,
+        topicId,
+      });
+    },
+    async updateTopicExportedFilePath(
+      topicId: string,
+      exportedFilePath: string,
+    ): Promise<TopicRecord> {
+      return repository.updateTopicExportedFilePath({
+        context: await requireAuthWorkspaceContext(),
+        exportedFilePath,
         topicId,
       });
     },

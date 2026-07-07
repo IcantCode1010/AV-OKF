@@ -35,9 +35,9 @@ const approvedTopic = {
 
 const exportDocument = {
   title: "737NG AMM 32 Landing Gear",
-  aircraftFamily: "Boeing 737NG",
-  manualType: "AMM",
-  ata: "32",
+  subjectFamily: "Boeing 737NG",
+  documentType: "AMM",
+  classificationCode: "32",
   effectivity: "737-700/800/900",
   sourceAuthority: "Boeing Aircraft Maintenance Manual",
   revision: "2026-06",
@@ -80,20 +80,20 @@ test("buildOkfSystemTopic reports missing document metadata fields", () => {
       buildOkfSystemTopic({
         document: {
           ...exportDocument,
-          aircraftFamily: null,
+          subjectFamily: null,
           effectivity: null,
           sourceAuthority: null,
         },
         knowledgeVersion: "0.1.0",
         topic: approvedTopic,
       }),
-    /okf_export_missing_document_metadata: aircraftFamily, effectivity, sourceAuthority/,
+    /okf_export_missing_document_metadata: subjectFamily, effectivity, sourceAuthority/,
   );
 });
 
-test("buildOkfSystemTopic creates deterministic safe ATA-prefixed filenames", () => {
+test("buildOkfSystemTopic creates deterministic safe classification-code-prefixed filenames", () => {
   const exported = buildOkfSystemTopic({
-    document: { ...exportDocument, ata: "32-41" },
+    document: { ...exportDocument, classificationCode: "32-41" },
     knowledgeVersion: "0.1.0",
     topic: { ...approvedTopic, title: "Main Gear / Brake System?" },
   });
@@ -135,7 +135,7 @@ test("buildOkfSystemTopic caps long title slugs without trailing hyphen", () => 
   assert.equal(slug.endsWith("-"), false);
 });
 
-test("buildOkfSystemTopic avoids collisions for matching titles and ATA", () => {
+test("buildOkfSystemTopic avoids collisions for matching titles and classification code", () => {
   const first = buildOkfSystemTopic({
     document: exportDocument,
     knowledgeVersion: "0.1.0",
@@ -297,8 +297,8 @@ test("buildOkfSourceManifest emits every required source_manifest frontmatter fi
     );
   }
   for (const field of [
-    "aircraft_family",
-    "manual_type",
+    "subject_family",
+    "document_type",
     "effectivity",
     "source_authority",
     "revision",
@@ -316,9 +316,9 @@ test("exportTopicToKnowledge writes bundle-level source_manifest with idempotent
   const a320Document = {
     ...exportDocument,
     title: "A320 AMM 27 Flight Controls",
-    aircraftFamily: "Airbus A320",
-    manualType: "AMM",
-    ata: "27",
+    subjectFamily: "Airbus A320",
+    documentType: "AMM",
+    classificationCode: "27",
     effectivity: "A320-200",
     sourceAuthority: "Airbus Aircraft Maintenance Manual",
     revision: "2026-05",
@@ -369,16 +369,16 @@ test("exportTopicToKnowledge writes bundle-level source_manifest with idempotent
 
     assert.equal(entryCount, 1);
     assert.deepEqual(frontmatter, beforeFrontmatter);
-    assert.equal(Object.hasOwn(frontmatter, "aircraft_family"), false);
-    assert.equal(Object.hasOwn(frontmatter, "manual_type"), false);
+    assert.equal(Object.hasOwn(frontmatter, "subject_family"), false);
+    assert.equal(Object.hasOwn(frontmatter, "document_type"), false);
     assert.equal(Object.hasOwn(frontmatter, "effectivity"), false);
     assert.equal(Object.hasOwn(frontmatter, "source_authority"), false);
     assert.equal(Object.hasOwn(frontmatter, "revision"), false);
     assert.match(manifest, /- 737NG AMM 32 Landing Gear/);
-    assert.match(manifest, /  - aircraft_family: Boeing 737NG/);
+    assert.match(manifest, /  - subject_family: Boeing 737NG/);
     assert.match(manifest, /  - source_authority: Boeing Aircraft Maintenance Manual/);
     assert.match(manifest, /- A320 AMM 27 Flight Controls/);
-    assert.match(manifest, /  - aircraft_family: Airbus A320/);
+    assert.match(manifest, /  - subject_family: Airbus A320/);
     assert.match(manifest, /  - source_authority: Airbus Aircraft Maintenance Manual/);
   } finally {
     await rm(root, { force: true, recursive: true });

@@ -23,6 +23,7 @@ import {
   markTopicEnrichmentPending as markLocalTopicEnrichmentPending,
   updateDocumentMetadata as updateLocalDocumentMetadata,
   updateTopicContent as updateLocalTopicContent,
+  updateTopicExportedFilePath as updateLocalTopicExportedFilePath,
   updateTopicRelations as updateLocalTopicRelations,
   updateTopicReviewStatus as updateLocalTopicReviewStatus,
   type ActivityEvent,
@@ -198,6 +199,20 @@ export async function updateTopicRelations(
   }
 
   return updateLocalTopicRelations(topicId, relations);
+}
+
+export async function updateTopicExportedFilePath(
+  topicId: string,
+  exportedFilePath: string,
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().updateTopicExportedFilePath(
+      topicId,
+      exportedFilePath,
+    );
+  }
+
+  return updateLocalTopicExportedFilePath(topicId, exportedFilePath);
 }
 
 export async function updateTopicContent(

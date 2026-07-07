@@ -7,6 +7,7 @@ import {
   getDocumentById,
   getDocumentWorkspaceId,
   getTopicRecordsByDocumentId,
+  updateTopicExportedFilePath,
   updateTopicRelations,
 } from "@/lib/document-backend";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
@@ -14,10 +15,7 @@ import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
 import { getDefaultKnowledgeRoot } from "@/lib/knowledge-root";
 import { isRecoverableOkfExportError } from "@/lib/okf-export-errors";
-import {
-  buildOkfLifecycleFilename,
-  markOkfConceptLifecycle,
-} from "@/lib/okf-lifecycle";
+import { markOkfConceptLifecycle } from "@/lib/okf-lifecycle";
 import type { TopicRelation } from "@/lib/okf-relation-types";
 
 export async function exportTopicToOkfAction(formData: FormData) {
@@ -47,11 +45,12 @@ export async function exportTopicToOkfAction(formData: FormData) {
     "@/lib/okf-export-service"
   );
   try {
-    await exportApprovedTopicForDocument({
+    const exported = await exportApprovedTopicForDocument({
       document,
       topicId,
       topics,
     });
+    await updateTopicExportedFilePath(topicId, exported.filename);
   } catch (error) {
     if (isRecoverableOkfExportError(error)) {
       redirect(
@@ -144,18 +143,10 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
     );
   }
 
-  const [document, topics] = await Promise.all([
-    getDocumentById(documentId),
-    getTopicRecordsByDocumentId(documentId),
-  ]);
-
-  if (!document) {
-    throw new Error("document_not_found");
-  }
-
+  const topics = await getTopicRecordsByDocumentId(documentId);
   const topic = topics.find((candidate) => candidate.id === topicId);
 
-  if (!topic || topic.documentId !== document.id) {
+  if (!topic || topic.documentId !== documentId) {
     throw new Error("topic_not_found");
   }
 
@@ -163,14 +154,14 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
     throw new Error("okf_lifecycle_requires_approved_topic");
   }
 
+  if (!topic.exportedFilePath) {
+    throw new Error("okf_lifecycle_requires_exported_topic");
+  }
+
   try {
     await markOkfConceptLifecycle({
       actorId: context.userId,
-      filePath: buildOkfLifecycleFilename({
-        document,
-        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
-        topic,
-      }),
+      filePath: topic.exportedFilePath,
       knowledgeRoot: getDefaultKnowledgeRoot(),
       reason,
       status,
@@ -180,8 +171,7 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
   } catch (error) {
     if (
       error instanceof Error &&
-      (error.message === "okf_lifecycle_reason_required" ||
-        error.message.startsWith("okf_export_missing_document_metadata"))
+      error.message === "okf_lifecycle_reason_required"
     ) {
       redirect(
         `/documents/${documentId}?panel=topics&topic=${topicId}&lifecycleError=${encodeURIComponent(

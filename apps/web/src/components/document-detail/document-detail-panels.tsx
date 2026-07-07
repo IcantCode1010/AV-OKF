@@ -118,9 +118,11 @@ export function DocumentSummaryPanel({
 
 export function DocumentMetadataPanel({
   deleteError,
+  metadataError,
   document,
 }: {
   deleteError: string | null;
+  metadataError: string | null;
   document: Document;
 }) {
   return (
@@ -146,14 +148,17 @@ export function DocumentMetadataPanel({
           <div className="space-y-2">
             <p className="text-muted-foreground">OKF source metadata</p>
             <MetadataRow
-              label="Aircraft family"
-              value={document.aircraftFamily ?? "Missing"}
+              label="Subject family"
+              value={document.subjectFamily ?? "Missing"}
             />
             <MetadataRow
-              label="Manual type"
-              value={document.manualType ?? "Missing"}
+              label="Document type"
+              value={document.documentType ?? "Missing"}
             />
-            <MetadataRow label="ATA" value={document.ata ?? "Missing"} />
+            <MetadataRow
+              label="Classification code"
+              value={document.classificationCode ?? "Missing"}
+            />
             <MetadataRow
               label="Effectivity"
               value={document.effectivity ?? "Missing"}
@@ -206,6 +211,11 @@ export function DocumentMetadataPanel({
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {metadataError ? (
+              <div className="mb-4 rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+                {metadataError}
+              </div>
+            ) : null}
             <form
               action={updateDocumentMetadataAction}
               className="grid gap-4 lg:grid-cols-2"
@@ -220,24 +230,28 @@ export function DocumentMetadataPanel({
               <Input id="owner" name="owner" defaultValue={document.owner} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="aircraftFamily">Aircraft family</Label>
+              <Label htmlFor="subjectFamily">Subject family</Label>
               <Input
-                id="aircraftFamily"
-                name="aircraftFamily"
-                defaultValue={document.aircraftFamily ?? ""}
+                id="subjectFamily"
+                name="subjectFamily"
+                defaultValue={document.subjectFamily ?? ""}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="manualType">Manual type</Label>
+              <Label htmlFor="documentType">Document type</Label>
               <Input
-                id="manualType"
-                name="manualType"
-                defaultValue={document.manualType ?? ""}
+                id="documentType"
+                name="documentType"
+                defaultValue={document.documentType ?? ""}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="ata">ATA</Label>
-              <Input id="ata" name="ata" defaultValue={document.ata ?? ""} />
+              <Label htmlFor="classificationCode">Classification code</Label>
+              <Input
+                id="classificationCode"
+                name="classificationCode"
+                defaultValue={document.classificationCode ?? ""}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="effectivity">Effectivity</Label>
@@ -337,9 +351,10 @@ export function DocumentMetadataPanel({
           <CardHeader>
             <CardTitle>Lifecycle</CardTitle>
             <CardDescription>
-              Soft-delete hides the document and deactivates raw RAG chunks.
-              Documents with approved OKF concepts are blocked until those
-              concepts are archived or retracted.
+              Soft-delete hides the document and deactivates its raw RAG
+              chunks. Exported OKF topic bundles are left untouched — manage
+              those separately from the Knowledge Bundle page. This is
+              reversible at the database level.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
