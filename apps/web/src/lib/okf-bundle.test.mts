@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  applyOkfBundleLifecycle,
   getOkfBundleSummary,
   listOkfBundleFiles,
   readOkfBundleFile,
@@ -144,6 +145,48 @@ test("getOkfBundleSummary returns empty summary for missing knowledge root", asy
     routing_rule: 0,
     system_topic: 0,
   });
+});
+
+test("applyOkfBundleLifecycle overlays retracted status without changing raw review status", () => {
+  const files = applyOkfBundleLifecycle(
+    [
+      {
+        filename: "29-air-ground-position-95ac0bd3c2.md",
+        group: "system_topic",
+        isReserved: false,
+        reviewStatus: "approved",
+        title: "AIR/GROUND - POSITION",
+        type: "system_topic",
+      },
+      {
+        filename: "32-brakes.md",
+        group: "system_topic",
+        isReserved: false,
+        reviewStatus: "approved",
+        title: "Main Gear Brake System",
+        type: "system_topic",
+      },
+    ],
+    new Map([
+      [
+        "29-air-ground-position-95ac0bd3c2.md",
+        { reason: "not needed", status: "retracted" },
+      ],
+    ]),
+  );
+
+  assert.deepEqual(files[0], {
+    filename: "29-air-ground-position-95ac0bd3c2.md",
+    group: "system_topic",
+    isReserved: false,
+    lifecycleReason: "not needed",
+    lifecycleStatus: "retracted",
+    reviewStatus: "approved",
+    title: "AIR/GROUND - POSITION",
+    type: "system_topic",
+  });
+  assert.equal(files[1]?.lifecycleStatus, "active");
+  assert.equal(files[1]?.reviewStatus, "approved");
 });
 
 test("readOkfBundleFile reads only markdown files inside the bundle root", async () => {

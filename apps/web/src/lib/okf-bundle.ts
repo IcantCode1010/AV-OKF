@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import type { OkfConceptLifecycleRecord } from "./okf-bundle-retriever.ts";
 
 export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 
@@ -16,6 +17,8 @@ export type OkfBundleFile = {
   filename: string;
   group: OkfBundleGroup;
   isReserved: boolean;
+  lifecycleReason?: string | null;
+  lifecycleStatus?: OkfConceptLifecycleRecord["status"];
   modifiedAt?: string;
   reviewStatus: string;
   title: string;
@@ -107,6 +110,21 @@ export async function readOkfBundleFile(
     isReserved: isReservedBundleFile(filenameInBundle),
     ...frontmatter,
   };
+}
+
+export function applyOkfBundleLifecycle<T extends OkfBundleFile>(
+  files: T[],
+  lifecycleByFile: Map<string, OkfConceptLifecycleRecord>,
+): T[] {
+  return files.map((file) => {
+    const lifecycle = lifecycleByFile.get(file.filename) ?? { status: "active" as const };
+
+    return {
+      ...file,
+      lifecycleReason: lifecycle.reason,
+      lifecycleStatus: lifecycle.status,
+    };
+  });
 }
 
 export function getBundleFileGroup(

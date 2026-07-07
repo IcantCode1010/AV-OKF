@@ -35,11 +35,14 @@ import {
   type TopicRecord,
 } from "@/lib/document-backend";
 import type { OkfBundleFile } from "@/lib/okf-bundle";
+import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
 
 type TopicPanelProps = {
   allowedRelations: string[];
   document: Document;
   lifecycleError: string | null;
+  lifecycleStatus: OkfConceptLifecycleRecord;
+  lifecycleUpdated: string | null;
   enrichmentError: string | null;
   okfExportError: string | null;
   relationError: string | null;
@@ -492,6 +495,8 @@ export function TopicWorkflowPanel({
   relationError,
   relationTargets,
   lifecycleError,
+  lifecycleStatus,
+  lifecycleUpdated,
   topic,
   topicsGeneratedCount,
 }: TopicPanelProps) {
@@ -537,6 +542,8 @@ export function TopicWorkflowPanel({
             documentId={document.id}
             enrichmentError={enrichmentError}
             lifecycleError={lifecycleError}
+            lifecycleStatus={lifecycleStatus}
+            lifecycleUpdated={lifecycleUpdated}
             relationError={relationError}
             relationTargets={relationTargets}
             topic={topic}
@@ -558,6 +565,8 @@ function SelectedTopicPanel({
   documentId,
   enrichmentError,
   lifecycleError,
+  lifecycleStatus,
+  lifecycleUpdated,
   relationError,
   relationTargets,
   topic,
@@ -566,6 +575,8 @@ function SelectedTopicPanel({
   documentId: string;
   enrichmentError: string | null;
   lifecycleError: string | null;
+  lifecycleStatus: OkfConceptLifecycleRecord;
+  lifecycleUpdated: string | null;
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord;
@@ -896,12 +907,32 @@ function SelectedTopicPanel({
         </div>
         <div className="space-y-3 rounded-md border border-red-400/30 p-3">
           <div>
-            <p className="text-sm font-medium">OKF lifecycle</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium">OKF lifecycle</p>
+              <Badge
+                variant={
+                  lifecycleStatus.status === "active" ? "outline" : "secondary"
+                }
+                className="capitalize"
+              >
+                {lifecycleStatus.status}
+              </Badge>
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               Archive historical concepts or retract invalid concepts. Trusted
               chat retrieval excludes both states.
             </p>
+            {lifecycleStatus.reason ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Current reason: {lifecycleStatus.reason}
+              </p>
+            ) : null}
           </div>
+          {lifecycleUpdated ? (
+            <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-200">
+              {lifecycleUpdated}
+            </div>
+          ) : null}
           {lifecycleError ? (
             <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
               {lifecycleError}

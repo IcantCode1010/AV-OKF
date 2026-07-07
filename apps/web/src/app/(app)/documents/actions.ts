@@ -264,8 +264,7 @@ export async function softDeleteDocumentAction(formData: FormData) {
   } catch (error) {
     if (
       error instanceof Error &&
-      (error.message === "document_delete_blocked_by_approved_okf" ||
-        error.message === "document_delete_reason_required")
+      error.message === "document_delete_reason_required"
     ) {
       redirect(
         `/documents/${id}?deleteError=${encodeURIComponent(error.message)}`,
@@ -277,6 +276,8 @@ export async function softDeleteDocumentAction(formData: FormData) {
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");
+  revalidatePath("/knowledge");
+  revalidatePath("/knowledge/bundle");
   redirect("/documents");
 }
 

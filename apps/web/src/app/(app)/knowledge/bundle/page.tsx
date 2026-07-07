@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  applyOkfBundleLifecycle,
   getDefaultKnowledgeRoot,
   getOkfBundleSummary,
   type OkfBundleFile,
@@ -24,6 +25,8 @@ import {
   type OkfBundleGroup,
   readOkfBundleFile,
 } from "@/lib/okf-bundle";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { getOkfConceptLifecycleByFile } from "@/lib/okf-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -46,10 +49,24 @@ export default async function KnowledgeBundlePage({
 }) {
   const { file } = await searchParams;
   const knowledgeRoot = getDefaultKnowledgeRoot();
-  const summary = await getOkfBundleSummary(knowledgeRoot);
+  const [context, rawSummary] = await Promise.all([
+    requireAuthWorkspaceContext(),
+    getOkfBundleSummary(knowledgeRoot),
+  ]);
+  const lifecycleByFile = await getOkfConceptLifecycleByFile({
+    filePaths: rawSummary.files.map((bundleFile) => bundleFile.filename),
+    workspaceId: context.workspaceId,
+  });
+  const summary = {
+    ...rawSummary,
+    files: applyOkfBundleLifecycle(rawSummary.files, lifecycleByFile),
+  };
   const selectedName = getSelectedFilename(summary.files, summary.defaultFile, file);
   const selectedFile = selectedName
-    ? await readOkfBundleFile(knowledgeRoot, selectedName)
+    ? applyOkfBundleLifecycle(
+        [await readOkfBundleFile(knowledgeRoot, selectedName)],
+        lifecycleByFile,
+      )[0]
     : null;
 
   return (
@@ -148,6 +165,12 @@ function BundleGroupSection({
                     {bundleFile.filename}
                   </span>
                 </span>
+                {bundleFile.lifecycleStatus &&
+                bundleFile.lifecycleStatus !== "active" ? (
+                  <Badge variant="destructive" className="capitalize">
+                    {bundleFile.lifecycleStatus}
+                  </Badge>
+                ) : null}
               </Link>
             </Button>
           ))
@@ -176,10 +199,22 @@ function BundlePreview({ file }: { file: OkfBundleFileContent | null }) {
           {file ? (
             <div className="flex flex-wrap gap-2">
               <Badge variant="secondary">{file.type}</Badge>
-              <Badge variant="outline">{file.reviewStatus}</Badge>
+              <Badge variant="outline">review {file.reviewStatus}</Badge>
+              {file.lifecycleStatus && file.lifecycleStatus !== "active" ? (
+                <Badge variant="destructive" className="capitalize">
+                  {file.lifecycleStatus}
+                </Badge>
+              ) : (
+                <Badge variant="outline">active</Badge>
+              )}
             </div>
           ) : null}
         </div>
+        {file?.lifecycleReason ? (
+          <p className="text-xs text-muted-foreground">
+            Lifecycle reason: {file.lifecycleReason}
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent>
         {file ? (

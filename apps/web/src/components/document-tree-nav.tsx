@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 type DocumentTreeTopic = {
   id: string;
+  lifecycleStatus?: string;
   title: string;
   reviewStatus: string;
 };
@@ -118,20 +119,34 @@ export function DocumentTreeNav({
           </CollapsibleTrigger>
           <CollapsibleContent className="ml-3 border-l border-border pl-2">
             {topics.length > 0 ? (
-              topics.map((topic) => (
-                <TreeLeafLink
-                  href={topicHref(documentId, topic.id)}
-                  key={topic.id}
-                  selected={
-                    activePanel === "topics" && activeTopicId === topic.id
-                  }
-                >
-                  <span className="min-w-0 flex-1 truncate">{topic.title}</span>
-                  <Badge variant="secondary" className="capitalize">
-                    {topic.reviewStatus.replace("_", " ")}
-                  </Badge>
-                </TreeLeafLink>
-              ))
+              topics.map((topic) => {
+                const displayStatus = getTopicDisplayStatus(topic);
+
+                return (
+                  <TreeLeafLink
+                    href={topicHref(documentId, topic.id)}
+                    key={topic.id}
+                    selected={
+                      activePanel === "topics" && activeTopicId === topic.id
+                    }
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {topic.title}
+                    </span>
+                    <Badge
+                      variant={
+                        topic.lifecycleStatus &&
+                        topic.lifecycleStatus !== "active"
+                          ? "destructive"
+                          : "secondary"
+                      }
+                      className="capitalize"
+                    >
+                      {displayStatus.replace("_", " ")}
+                    </Badge>
+                  </TreeLeafLink>
+                );
+              })
             ) : (
               <p className="px-3 py-2 text-xs text-muted-foreground">
                 No topics yet
@@ -220,6 +235,14 @@ function firstTopicHref(documentId: string, topics: DocumentTreeTopic[]) {
   }
 
   return panelHref(documentId, "topics");
+}
+
+function getTopicDisplayStatus(topic: DocumentTreeTopic) {
+  if (topic.lifecycleStatus && topic.lifecycleStatus !== "active") {
+    return topic.lifecycleStatus;
+  }
+
+  return topic.reviewStatus;
 }
 
 function panelHref(documentId: string, panel: string) {

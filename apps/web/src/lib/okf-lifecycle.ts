@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
@@ -15,17 +15,22 @@ const RAW_EXTRACTION_SOURCE_TYPE = "raw_extraction";
 
 type LifecycleClient = {
   document?: {
+    findUnique?(input: unknown): Promise<LifecycleFilenameDocument | null>;
     update(input: unknown): Promise<unknown>;
   };
   okfConceptLifecycle?: {
+    findMany?(
+      input: unknown,
+    ): Promise<Array<{ filePath: string; reason: string | null; status: string }>>;
     findUnique?(input: unknown): Promise<{ reason: string | null; status: string } | null>;
     upsert(input: unknown): Promise<unknown>;
   };
   ragChunk?: {
-    updateMany(input: unknown): Promise<unknown>;
+    deleteMany(input: unknown): Promise<unknown>;
   };
   topicRecord?: {
-    count(input: unknown): Promise<number>;
+    findMany?(input: unknown): Promise<LifecycleFilenameTopic[]>;
+    updateMany?(input: unknown): Promise<unknown>;
   };
 };
 
@@ -67,24 +72,69 @@ export function createPostgresOkfConceptLifecycleLookup(
   db = getPrisma(),
 ): OkfConceptLifecycleLookup {
   return async ({ filePath, workspaceId }) => {
-    const record = await db.okfConceptLifecycle.findUnique({
-      where: {
-        workspaceId_filePath: {
-          filePath,
-          workspaceId,
-        },
-      },
+    return getOkfConceptLifecycleForFile({
+      client: db,
+      filePath,
+      workspaceId,
     });
+  };
+}
 
-    if (!record) {
-      return ACTIVE_LIFECYCLE;
-    }
+export async function getOkfConceptLifecycleForFile(input: {
+  client?: LifecycleClient;
+  filePath: string;
+  workspaceId: string;
+}): Promise<OkfConceptLifecycleRecord> {
+  const client = input.client ?? getPrisma();
+  const record = await client.okfConceptLifecycle!.findUnique!({
+    where: {
+      workspaceId_filePath: {
+        filePath: input.filePath,
+        workspaceId: input.workspaceId,
+      },
+    },
+  });
 
-    return {
+  if (!record) {
+    return ACTIVE_LIFECYCLE;
+  }
+
+  return {
+    reason: record.reason,
+    status: normalizeOkfConceptLifecycleStatus(record.status),
+  };
+}
+
+export async function getOkfConceptLifecycleByFile(input: {
+  client?: LifecycleClient;
+  filePaths: string[];
+  workspaceId: string;
+}): Promise<Map<string, OkfConceptLifecycleRecord>> {
+  const uniqueFilePaths = Array.from(new Set(input.filePaths));
+  const lifecycles = new Map<string, OkfConceptLifecycleRecord>(
+    uniqueFilePaths.map((filePath) => [filePath, ACTIVE_LIFECYCLE]),
+  );
+
+  if (uniqueFilePaths.length === 0) {
+    return lifecycles;
+  }
+
+  const client = input.client ?? getPrisma();
+  const records = await client.okfConceptLifecycle!.findMany!({
+    where: {
+      filePath: { in: uniqueFilePaths },
+      workspaceId: input.workspaceId,
+    },
+  });
+
+  for (const record of records) {
+    lifecycles.set(record.filePath, {
       reason: record.reason,
       status: normalizeOkfConceptLifecycleStatus(record.status),
-    };
-  };
+    });
+  }
+
+  return lifecycles;
 }
 
 export function buildOkfLifecycleFilename(input: {
@@ -95,27 +145,8 @@ export function buildOkfLifecycleFilename(input: {
   return buildOkfSystemTopic({
     document: input.document,
     knowledgeVersion: input.knowledgeVersion,
-    topic: input.topic,
+    topic: { ...input.topic, reviewStatus: "approved" },
   }).filename;
-}
-
-export async function assertDocumentCanBeSoftDeleted(input: {
-  client?: LifecycleClient;
-  documentId: string;
-  workspaceId: string;
-}): Promise<void> {
-  const client = input.client ?? getPrisma();
-  const approvedTopicCount = await client.topicRecord!.count({
-    where: {
-      documentId: input.documentId,
-      reviewStatus: "approved",
-      workspaceId: input.workspaceId,
-    },
-  });
-
-  if (approvedTopicCount > 0) {
-    throw new Error("document_delete_blocked_by_approved_okf");
-  }
 }
 
 export async function softDeleteDocument(input: {
@@ -123,6 +154,7 @@ export async function softDeleteDocument(input: {
   client?: LifecycleClient;
   deletedAt?: Date;
   documentId: string;
+  knowledgeRoot?: string;
   reason: string;
   workspaceId: string;
 }): Promise<void> {
@@ -134,9 +166,13 @@ export async function softDeleteDocument(input: {
     throw new Error("document_delete_reason_required");
   }
 
-  await assertDocumentCanBeSoftDeleted({
+  await rejectDerivedTopicsAndRetractApprovedOkf({
+    actorId: input.actorId,
+    changedAt: deletedAt,
     client,
     documentId: input.documentId,
+    knowledgeRoot: input.knowledgeRoot,
+    reason,
     workspaceId: input.workspaceId,
   });
 
@@ -150,14 +186,182 @@ export async function softDeleteDocument(input: {
     where: { id: input.documentId, workspaceId: input.workspaceId },
   });
 
-  await client.ragChunk!.updateMany({
-    data: { isActive: false },
+  await client.ragChunk!.deleteMany({
     where: {
       documentId: input.documentId,
       sourceType: RAW_EXTRACTION_SOURCE_TYPE,
       workspaceId: input.workspaceId,
     },
   });
+}
+
+async function rejectDerivedTopicsAndRetractApprovedOkf(input: {
+  actorId: string;
+  changedAt: Date;
+  client: LifecycleClient;
+  documentId: string;
+  knowledgeRoot?: string;
+  reason: string;
+  workspaceId: string;
+}) {
+  const documentTopics = await input.client.topicRecord!.findMany!({
+    where: {
+      documentId: input.documentId,
+      workspaceId: input.workspaceId,
+    },
+  });
+  const approvedTopics = documentTopics.filter(
+    (topic) => topic.reviewStatus === "approved",
+  );
+
+  if (documentTopics.length > 0) {
+    const document = await input.client.document!.findUnique!({
+      select: {
+        aircraftFamily: true,
+        ata: true,
+        effectivity: true,
+        manualType: true,
+        revision: true,
+        sourceAuthority: true,
+        title: true,
+      },
+      where: { id: input.documentId, workspaceId: input.workspaceId },
+    });
+
+    if (!document) {
+      throw new Error("document_not_found");
+    }
+
+    const exportedFilenames = documentTopics.map((topic) =>
+      buildOkfLifecycleFilename({
+        document,
+        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
+        topic,
+      }),
+    );
+    for (const topic of approvedTopics) {
+      const filePath = buildOkfLifecycleFilename({
+        document,
+        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
+        topic,
+      });
+      exportedFilenames.push(filePath);
+
+      await markOkfConceptLifecycle({
+        actorId: input.actorId,
+        changedAt: input.changedAt,
+        client: input.client,
+        filePath,
+        knowledgeRoot: input.knowledgeRoot,
+        reason: `Source document soft-deleted: ${input.reason}`,
+        status: "retracted",
+        topicId: topic.id,
+        workspaceId: input.workspaceId,
+      });
+    }
+
+    await removeDeletedDocumentFromKnowledgeBundle({
+      documentTitle: document.title,
+      filenames: exportedFilenames,
+      knowledgeRoot: input.knowledgeRoot ?? getDefaultKnowledgeRoot(),
+    });
+  }
+
+  await input.client.topicRecord!.updateMany!({
+    data: { reviewStatus: "rejected" },
+    where: {
+      documentId: input.documentId,
+      workspaceId: input.workspaceId,
+    },
+  });
+}
+
+async function removeDeletedDocumentFromKnowledgeBundle(input: {
+  documentTitle: string;
+  filenames: string[];
+  knowledgeRoot: string;
+}) {
+  const root = path.resolve(input.knowledgeRoot);
+
+  for (const filename of input.filenames) {
+    const target = path.resolve(root, filename);
+    if (target !== root && target.startsWith(`${root}${path.sep}`)) {
+      await rm(/*turbopackIgnore: true*/ target, { force: true });
+    }
+  }
+
+  await removeIndexEntries({
+    filenames: input.filenames,
+    knowledgeRoot: root,
+  });
+  await removeSourceManifestEntry({
+    documentTitle: input.documentTitle,
+    knowledgeRoot: root,
+  });
+}
+
+async function removeIndexEntries(input: {
+  filenames: string[];
+  knowledgeRoot: string;
+}) {
+  const indexPath = path.join(input.knowledgeRoot, "index.md");
+  let existing = "";
+
+  try {
+    existing = await readFile(/*turbopackIgnore: true*/ indexPath, "utf8");
+  } catch {
+    return;
+  }
+
+  const filenameSet = new Set(input.filenames);
+  const filtered = existing
+    .split(/\r?\n/)
+    .filter((line) => {
+      return !Array.from(filenameSet).some((filename) =>
+        line.includes(`](${filename})`),
+      );
+    });
+
+  await writeFile(
+    /*turbopackIgnore: true*/ indexPath,
+    `${filtered.join("\n").trimEnd()}\n`,
+    "utf8",
+  );
+}
+
+async function removeSourceManifestEntry(input: {
+  documentTitle: string;
+  knowledgeRoot: string;
+}) {
+  const manifestPath = path.join(input.knowledgeRoot, "source_manifest.md");
+  let existing = "";
+
+  try {
+    existing = await readFile(/*turbopackIgnore: true*/ manifestPath, "utf8");
+  } catch {
+    return;
+  }
+
+  const lines = existing.split(/\r?\n/);
+  const filtered: string[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (line.trim() !== `- ${input.documentTitle}`) {
+      filtered.push(line);
+      continue;
+    }
+
+    while (index + 1 < lines.length && lines[index + 1]!.startsWith("  - ")) {
+      index += 1;
+    }
+  }
+
+  await writeFile(
+    /*turbopackIgnore: true*/ manifestPath,
+    `${filtered.join("\n").trimEnd()}\n`,
+    "utf8",
+  );
 }
 
 export async function markOkfConceptLifecycle(input: {

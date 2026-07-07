@@ -19,7 +19,13 @@ import {
   getDocumentById,
   getTopicRecordsByDocumentId,
   type Document,
+  type TopicRecord,
 } from "@/lib/document-backend";
+import {
+  buildOkfLifecycleFilename,
+  getOkfConceptLifecycleByFile,
+} from "@/lib/okf-lifecycle";
+import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
 import {
   getDefaultKnowledgeRoot,
   listOkfBundleFiles,
@@ -41,6 +47,7 @@ export default async function DocumentDetailPage({
     deleteError?: string;
     enrichmentError?: string;
     lifecycleError?: string;
+    lifecycleUpdated?: string;
     okfExportError?: string;
     panel?: string;
     relationError?: string;
@@ -53,6 +60,7 @@ export default async function DocumentDetailPage({
     deleteError,
     enrichmentError,
     lifecycleError,
+    lifecycleUpdated,
     okfExportError,
     panel,
     relationError,
@@ -84,10 +92,18 @@ export default async function DocumentDetailPage({
         topicRecords[0] ??
         null
       : null;
+  const topicLifecycleById = await resolveTopicLifecycles({
+    document: currentDocument,
+    topics: topicRecords,
+  });
+  const selectedTopicLifecycle = selectedTopic
+    ? topicLifecycleById.get(selectedTopic.id) ?? { status: "active" as const }
+    : { status: "active" as const };
   const relationErrorMessage = formatRelationError(relationError);
   const enrichmentErrorMessage = formatEnrichmentError(enrichmentError);
   const deleteErrorMessage = formatDeleteError(deleteError);
   const lifecycleErrorMessage = formatLifecycleError(lifecycleError);
+  const lifecycleUpdatedMessage = formatLifecycleUpdated(lifecycleUpdated);
   const okfExportErrorMessage = formatOkfExportError(okfExportError);
 
   return (
@@ -144,6 +160,7 @@ export default async function DocumentDetailPage({
               key={`${activePanel}-${selectedTopic?.id ?? "none"}`}
               topics={topicRecords.map((topic) => ({
                 id: topic.id,
+                lifecycleStatus: topicLifecycleById.get(topic.id)?.status,
                 reviewStatus: topic.reviewStatus,
                 title: topic.title,
               }))}
@@ -180,6 +197,8 @@ export default async function DocumentDetailPage({
           document={currentDocument}
           enrichmentError={enrichmentErrorMessage}
           lifecycleError={lifecycleErrorMessage}
+          lifecycleStatus={selectedTopicLifecycle}
+          lifecycleUpdated={lifecycleUpdatedMessage}
           okfExportError={okfExportErrorMessage}
           relationError={relationErrorMessage}
           relationTargets={relationTargets}
@@ -196,6 +215,58 @@ export default async function DocumentDetailPage({
       />
     );
   }
+}
+
+async function resolveTopicLifecycles({
+  document,
+  topics,
+}: {
+  document: Document;
+  topics: TopicRecord[];
+}) {
+  const lifecycleByTopicId = new Map<string, OkfConceptLifecycleRecord>();
+
+  if (!document.workspaceId) {
+    return lifecycleByTopicId;
+  }
+
+  const filenameByTopicId = new Map<string, string>();
+  for (const topic of topics) {
+    if (topic.reviewStatus !== "approved") {
+      continue;
+    }
+
+    filenameByTopicId.set(
+      topic.id,
+      buildOkfLifecycleFilename({
+        document,
+        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
+        topic,
+      }),
+    );
+  }
+
+  if (filenameByTopicId.size === 0) {
+    return lifecycleByTopicId;
+  }
+
+  try {
+    const lifecycleByFile = await getOkfConceptLifecycleByFile({
+      filePaths: Array.from(filenameByTopicId.values()),
+      workspaceId: document.workspaceId,
+    });
+
+    for (const [topicId, filePath] of filenameByTopicId) {
+      lifecycleByTopicId.set(
+        topicId,
+        lifecycleByFile.get(filePath) ?? { status: "active" },
+      );
+    }
+  } catch {
+    return new Map();
+  }
+
+  return lifecycleByTopicId;
 }
 
 async function getRelationTargets(knowledgeRoot: string) {
@@ -300,10 +371,6 @@ function formatDeleteError(raw: string | undefined) {
     return null;
   }
 
-  if (raw === "document_delete_blocked_by_approved_okf") {
-    return "This document has approved OKF concepts. Retract or archive those concepts before deleting the source document.";
-  }
-
   if (raw === "document_delete_reason_required") {
     return "Enter a reason before deleting this document.";
   }
@@ -333,4 +400,16 @@ function formatLifecycleError(raw: string | undefined) {
   }
 
   return "OKF lifecycle change could not be completed.";
+}
+
+function formatLifecycleUpdated(raw: string | undefined) {
+  if (raw === "archived") {
+    return "OKF concept archived. Trusted chat retrieval will no longer use it by default.";
+  }
+
+  if (raw === "retracted") {
+    return "OKF concept retracted. Trusted chat retrieval will no longer use it.";
+  }
+
+  return null;
 }

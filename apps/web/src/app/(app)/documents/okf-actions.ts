@@ -196,7 +196,9 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
   revalidatePath(`/documents/${documentId}`);
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/bundle");
-  redirect(`/documents/${documentId}?panel=topics&topic=${topicId}`);
+  redirect(
+    `/documents/${documentId}?panel=topics&topic=${topicId}&lifecycleUpdated=${status}`,
+  );
 }
 
 function getFormString(formData: FormData, key: string) {
