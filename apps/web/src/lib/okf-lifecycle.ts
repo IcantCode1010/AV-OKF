@@ -336,7 +336,7 @@ async function appendDocumentDeleteLogEntry(input: {
     `- ${toIsoDate(input.changedAt)} - delete-document`,
     `source: ${input.documentTitle}`,
     `actor: ${input.actorId}`,
-    `concepts_removed: ${input.conceptCount}`,
+    `topics_removed: ${input.conceptCount}`,
     `reason: ${input.reason}`,
   ].join(" - ");
   let existing = "";

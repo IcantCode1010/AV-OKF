@@ -192,7 +192,7 @@ test("softDeleteDocument removes all derived bundle products and hard-deletes th
     const log = await readFile(path.join(root, "log.md"), "utf8");
     assert.match(
       log,
-      /- 2026-07-06 - delete-document - source: 737NG AMM 29 Air Ground - actor: user_1 - concepts_removed: 2 - reason: Duplicate upload/,
+      /- 2026-07-06 - delete-document - source: 737NG AMM 29 Air Ground - actor: user_1 - topics_removed: 2 - reason: Duplicate upload/,
     );
   } finally {
     await rm(root, { force: true, recursive: true });
