@@ -26,7 +26,7 @@ test("normalizeOkfConceptLifecycleStatus defaults unknown or missing values to a
   assert.equal(normalizeOkfConceptLifecycleStatus(undefined), "active");
 });
 
-test("softDeleteDocument rejects derived topics and retracts approved OKF concepts", async () => {
+test("softDeleteDocument removes all derived bundle products and hard-deletes the document", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-soft-delete-"));
   const calls: unknown[] = [];
   const deletedAt = new Date("2026-07-06T18:00:00.000Z");
@@ -46,18 +46,13 @@ test("softDeleteDocument rejects derived topics and retracts approved OKF concep
           title: "737NG AMM 29 Air Ground",
         };
       },
-      async update(input: unknown) {
-        calls.push(["document.update", input]);
+      async delete(input: unknown) {
+        calls.push(["document.delete", input]);
       },
     },
     okfConceptLifecycle: {
-      async upsert(input: unknown) {
-        calls.push(["okfConceptLifecycle.upsert", input]);
-      },
-    },
-    ragChunk: {
-      async deleteMany(input: unknown) {
-        calls.push(["ragChunk.deleteMany", input]);
+      async upsert() {
+        assert.fail("source document hard-delete must not create lifecycle retractions");
       },
     },
     topicRecord: {
@@ -83,9 +78,6 @@ test("softDeleteDocument rejects derived topics and retracts approved OKF concep
             title: "AIR/GROUND SYSTEM",
           },
         ];
-      },
-      async updateMany(input: unknown) {
-        calls.push(["topicRecord.updateMany", input]);
       },
     },
   };
@@ -197,6 +189,11 @@ test("softDeleteDocument rejects derived topics and retracts approved OKF concep
     assert.doesNotMatch(index, new RegExp(rejectedExportedFilename));
     const manifest = await readFile(path.join(root, "source_manifest.md"), "utf8");
     assert.doesNotMatch(manifest, /737NG AMM 29 Air Ground/);
+    const log = await readFile(path.join(root, "log.md"), "utf8");
+    assert.match(
+      log,
+      /- 2026-07-06 - delete-document - source: 737NG AMM 29 Air Ground - actor: user_1 - concepts_removed: 2 - reason: Duplicate upload/,
+    );
   } finally {
     await rm(root, { force: true, recursive: true });
   }
@@ -225,65 +222,11 @@ test("softDeleteDocument rejects derived topics and retracts approved OKF concep
       where: { id: "doc_1", workspaceId: "wrk_1" },
     },
   ]);
-  assert.deepEqual(calls[2], [
-    "okfConceptLifecycle.upsert",
-    {
-      create: {
-        changedAt: deletedAt,
-        changedBy: "user_1",
-        filePath: calls[2][1].create.filePath,
-        reason: "Source document soft-deleted: Duplicate upload",
-        status: "retracted",
-        topicId: "topic_air_ground",
-        workspaceId: "wrk_1",
-      },
-      update: {
-        changedAt: deletedAt,
-        changedBy: "user_1",
-        reason: "Source document soft-deleted: Duplicate upload",
-        status: "retracted",
-        topicId: "topic_air_ground",
-      },
-      where: {
-        workspaceId_filePath: {
-          filePath: calls[2][1].create.filePath,
-          workspaceId: "wrk_1",
-        },
-      },
-    },
-  ]);
-  assert.match(calls[2][1].create.filePath, /^29-air-ground-position-[a-f0-9]{10}\.md$/);
-  assert.deepEqual(calls[3], [
-    "topicRecord.updateMany",
-    {
-      data: { reviewStatus: "rejected" },
-      where: {
-        documentId: "doc_1",
-        workspaceId: "wrk_1",
-      },
-    },
-  ]);
-  assert.deepEqual(calls.slice(4), [
+  assert.deepEqual(calls.slice(2), [
     [
-      "document.update",
+      "document.delete",
       {
-        data: {
-          deletedAt,
-          deletedBy: "user_1",
-          deleteReason: "Duplicate upload",
-          status: "deleted",
-        },
         where: { id: "doc_1", workspaceId: "wrk_1" },
-      },
-    ],
-    [
-      "ragChunk.deleteMany",
-      {
-        where: {
-          documentId: "doc_1",
-          sourceType: "raw_extraction",
-          workspaceId: "wrk_1",
-        },
       },
     ],
   ]);
@@ -292,21 +235,13 @@ test("softDeleteDocument rejects derived topics and retracts approved OKF concep
 test("softDeleteDocument requires a reason", async () => {
   const client = {
     document: {
-      async update() {
-        assert.fail("document.update should not run without a reason");
-      },
-    },
-    ragChunk: {
-      async deleteMany() {
-        assert.fail("ragChunk.deleteMany should not run without a reason");
+      async delete() {
+        assert.fail("document.delete should not run without a reason");
       },
     },
     topicRecord: {
       async findMany() {
         assert.fail("topicRecord.findMany should not run without a reason");
-      },
-      async updateMany() {
-        assert.fail("topicRecord.updateMany should not run without a reason");
       },
     },
   };

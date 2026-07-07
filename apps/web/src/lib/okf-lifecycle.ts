@@ -11,12 +11,11 @@ import type {
 } from "./okf-bundle-retriever.ts";
 
 const ACTIVE_LIFECYCLE: OkfConceptLifecycleRecord = { status: "active" };
-const RAW_EXTRACTION_SOURCE_TYPE = "raw_extraction";
 
 type LifecycleClient = {
   document?: {
     findUnique?(input: unknown): Promise<LifecycleFilenameDocument | null>;
-    update(input: unknown): Promise<unknown>;
+    delete(input: unknown): Promise<unknown>;
   };
   okfConceptLifecycle?: {
     findMany?(
@@ -25,12 +24,8 @@ type LifecycleClient = {
     findUnique?(input: unknown): Promise<{ reason: string | null; status: string } | null>;
     upsert(input: unknown): Promise<unknown>;
   };
-  ragChunk?: {
-    deleteMany(input: unknown): Promise<unknown>;
-  };
   topicRecord?: {
     findMany?(input: unknown): Promise<LifecycleFilenameTopic[]>;
-    updateMany?(input: unknown): Promise<unknown>;
   };
 };
 
@@ -166,7 +161,7 @@ export async function softDeleteDocument(input: {
     throw new Error("document_delete_reason_required");
   }
 
-  await rejectDerivedTopicsAndRetractApprovedOkf({
+  await removeDerivedKnowledgeProducts({
     actorId: input.actorId,
     changedAt: deletedAt,
     client,
@@ -176,26 +171,12 @@ export async function softDeleteDocument(input: {
     workspaceId: input.workspaceId,
   });
 
-  await client.document!.update({
-    data: {
-      deletedAt,
-      deletedBy: input.actorId,
-      deleteReason: reason,
-      status: "deleted",
-    },
+  await client.document!.delete({
     where: { id: input.documentId, workspaceId: input.workspaceId },
-  });
-
-  await client.ragChunk!.deleteMany({
-    where: {
-      documentId: input.documentId,
-      sourceType: RAW_EXTRACTION_SOURCE_TYPE,
-      workspaceId: input.workspaceId,
-    },
   });
 }
 
-async function rejectDerivedTopicsAndRetractApprovedOkf(input: {
+async function removeDerivedKnowledgeProducts(input: {
   actorId: string;
   changedAt: Date;
   client: LifecycleClient;
@@ -210,28 +191,25 @@ async function rejectDerivedTopicsAndRetractApprovedOkf(input: {
       workspaceId: input.workspaceId,
     },
   });
-  const approvedTopics = documentTopics.filter(
-    (topic) => topic.reviewStatus === "approved",
-  );
+
+  const document = await input.client.document!.findUnique!({
+    select: {
+      aircraftFamily: true,
+      ata: true,
+      effectivity: true,
+      manualType: true,
+      revision: true,
+      sourceAuthority: true,
+      title: true,
+    },
+    where: { id: input.documentId, workspaceId: input.workspaceId },
+  });
+
+  if (!document) {
+    throw new Error("document_not_found");
+  }
 
   if (documentTopics.length > 0) {
-    const document = await input.client.document!.findUnique!({
-      select: {
-        aircraftFamily: true,
-        ata: true,
-        effectivity: true,
-        manualType: true,
-        revision: true,
-        sourceAuthority: true,
-        title: true,
-      },
-      where: { id: input.documentId, workspaceId: input.workspaceId },
-    });
-
-    if (!document) {
-      throw new Error("document_not_found");
-    }
-
     const exportedFilenames = documentTopics.map((topic) =>
       buildOkfLifecycleFilename({
         document,
@@ -239,26 +217,6 @@ async function rejectDerivedTopicsAndRetractApprovedOkf(input: {
         topic,
       }),
     );
-    for (const topic of approvedTopics) {
-      const filePath = buildOkfLifecycleFilename({
-        document,
-        knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
-        topic,
-      });
-      exportedFilenames.push(filePath);
-
-      await markOkfConceptLifecycle({
-        actorId: input.actorId,
-        changedAt: input.changedAt,
-        client: input.client,
-        filePath,
-        knowledgeRoot: input.knowledgeRoot,
-        reason: `Source document soft-deleted: ${input.reason}`,
-        status: "retracted",
-        topicId: topic.id,
-        workspaceId: input.workspaceId,
-      });
-    }
 
     await removeDeletedDocumentFromKnowledgeBundle({
       documentTitle: document.title,
@@ -267,12 +225,13 @@ async function rejectDerivedTopicsAndRetractApprovedOkf(input: {
     });
   }
 
-  await input.client.topicRecord!.updateMany!({
-    data: { reviewStatus: "rejected" },
-    where: {
-      documentId: input.documentId,
-      workspaceId: input.workspaceId,
-    },
+  await appendDocumentDeleteLogEntry({
+    actorId: input.actorId,
+    changedAt: input.changedAt,
+    conceptCount: documentTopics.length,
+    documentTitle: document.title,
+    knowledgeRoot: input.knowledgeRoot ?? getDefaultKnowledgeRoot(),
+    reason: input.reason,
   });
 }
 
@@ -360,6 +319,38 @@ async function removeSourceManifestEntry(input: {
   await writeFile(
     /*turbopackIgnore: true*/ manifestPath,
     `${filtered.join("\n").trimEnd()}\n`,
+    "utf8",
+  );
+}
+
+async function appendDocumentDeleteLogEntry(input: {
+  actorId: string;
+  changedAt: Date;
+  conceptCount: number;
+  documentTitle: string;
+  knowledgeRoot: string;
+  reason: string;
+}) {
+  const logPath = path.join(input.knowledgeRoot, "log.md");
+  const entry = [
+    `- ${toIsoDate(input.changedAt)} - delete-document`,
+    `source: ${input.documentTitle}`,
+    `actor: ${input.actorId}`,
+    `concepts_removed: ${input.conceptCount}`,
+    `reason: ${input.reason}`,
+  ].join(" - ");
+  let existing = "";
+
+  try {
+    existing = await readFile(/*turbopackIgnore: true*/ logPath, "utf8");
+  } catch {
+    existing = "";
+  }
+
+  const base = existing.trimEnd() || "# Change Log";
+  await writeFile(
+    /*turbopackIgnore: true*/ logPath,
+    `${base}\n\n${entry}\n`,
     "utf8",
   );
 }

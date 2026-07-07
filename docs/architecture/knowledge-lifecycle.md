@@ -10,13 +10,13 @@ AV-OKF is a chain of derived data:
 Document -> extracted pages -> topic records -> OKF files -> RAG chunks -> coverage links -> chat citations
 ```
 
-Deletion cannot be treated as a single database operation. A source document, an approved OKF concept, a RAG chunk, and a historical chat citation have different trust and audit responsibilities.
+Deletion has one product rule for source documents: deleting a source document hard-deletes that document and all derived products. A standalone OKF concept lifecycle event such as retraction or archive is reserved for reviewer-driven trust changes, not source-document deletion.
 
-This document is design first. No deletion implementation should proceed until these policies are reviewed.
+This document records the current Stage 6.6 product policy and implementation boundaries.
 
 ## Current State
 
-The current production schema uses `onDelete: Cascade` from `Document` to several dependent records, including document objects, extraction jobs, extracted pages, extraction logs, RAG index jobs, RAG chunks, and topic records. That database behavior is convenient, but it is not sufficient as product policy because it can remove audit-bearing records and trusted evidence without an explicit lifecycle decision.
+The current production schema uses `onDelete: Cascade` from `Document` to dependent records including document objects, extraction jobs, extracted pages, extraction logs, RAG index jobs, RAG chunks, and topic records. Stage 6.6 now intentionally uses that cascade for source-document deletion. The app cleans filesystem OKF bundle artifacts first, writes a minimal append-only audit line to `log.md`, then deletes the `Document` row so database-owned derived rows are removed by FK cascade.
 
 RAG chunks already have an `isActive` flag. That pattern is appropriate for search projections, but not enough for approved OKF knowledge. RAG chunks and embeddings are derived indexes; OKF files and approved topic records are reviewed knowledge artifacts.
 
@@ -30,7 +30,7 @@ Stage 6.6 remains single-bundle only. Bundle-level states such as `retired`, `ar
 
 `active` means the record or file is current and available for normal use.
 
-`deleted` means the app hides the record from normal workflows. For audit-bearing objects this is a soft-delete state, not immediate physical removal.
+`deleted` means the source document and its derived database products have been physically removed. Stage 6.6 no longer keeps a source-document tombstone row.
 
 `retracted` means reviewed knowledge is known wrong, unsafe, or no longer valid. Retracted OKF concepts are excluded from trusted agent retrieval.
 
@@ -42,30 +42,32 @@ Supersession is not an independent lifecycle source of truth. It derives from th
 
 | Layer | Delete behavior | Restore behavior | Agent trust behavior |
 | --- | --- | --- | --- |
-| Document | Soft-delete by default. Block deletion if approved/exported OKF concepts depend on it. | Restore metadata if dependencies are consistent. Source object must still exist or document must return to re-extraction-needed state. | Deleted documents cannot produce new trusted evidence. |
-| Uploaded object | Retain while approved OKF depends on it. Physical deletion only after trusted dependencies are resolved. | Restore only if object still exists in storage. | Missing source object lowers trust and should surface as source-unavailable. |
-| Extracted pages | May be removed with a deleted document after approved OKF dependencies are resolved. | Restore if retained; otherwise re-extraction is required. | Extracted pages are source support, not approved knowledge. |
-| Topic record | Draft/unapproved topics may be deleted or rejected. Approved topics are not silently deleted. | Restored topics keep their explicit review/lifecycle state; trust is not silently restored. | Only active approved topics may export trusted OKF. |
-| OKF file | Active OKF files can be retracted or archived through a reviewed lifecycle action. Do not silently remove approved files. | Not silently reactivated. Reviewer must re-export or mark current after review. | Active approved only. Retracted, archived, and superseded targets are not trusted by default. |
-| RAG chunk and embedding | May be hard-deleted or rebuilt because they are derived search projections. | Not restored automatically; reindex required. | Raw RAG remains discovery/supporting evidence only. |
-| Coverage link | Explicitly delete or mark stale when either side is removed. Do not rely on accidental FK behavior. | Recompute from OKF frontmatter through explicit reconciliation. | Coverage projections help validation but do not override OKF frontmatter. |
-| Chat citation | Historical messages are not rewritten. | Not applicable. | Show lifecycle notice if cited source is later retracted or archived. |
+| Document | Hard-delete the `Document` row. No block for approved/exported OKF. | No automatic restore. Re-upload/re-ingest is required. | Deleted documents cannot produce new evidence. |
+| Uploaded object | Deleted by database cascade from `DocumentObject`; physical object-store cleanup remains a storage-adapter responsibility. | No automatic restore. | Missing source object is not trusted evidence. |
+| Extracted pages | Deleted by database cascade. | Re-extraction required after re-upload. | Extracted pages are source support, not approved knowledge. |
+| Topic record | Deleted by database cascade regardless of review status. | No automatic restore. | Deleted topics cannot export or serve trusted OKF. |
+| OKF file | Derived exported files for every topic from the document are removed from `knowledge/`; `index.md` and `source_manifest.md` references are removed. | Re-export after re-upload/re-review. | Removed files are unavailable to the live OKF retriever. |
+| RAG chunk and embedding | Hard-deleted by database cascade because they are derived search projections. | Reindex required after re-upload. | Raw RAG remains discovery/supporting evidence only. |
+| Coverage link | Deleted by database cascade through the explicit `OkfConceptChunkLink.chunkId -> RagChunk.id` foreign key when linked chunks are deleted. | Recompute from OKF frontmatter through explicit reconciliation. | Coverage projections help validation but do not override OKF frontmatter. |
+| Chat citation | Historical chat messages are not rewritten; citation JSON remains on the message. | Not applicable. | Historical citations may point to removed sources and should render without crashing, but are not current authority. |
 
 ## Document Deletion
 
-Source documents use soft-delete.
+Source-document deletion is a hard delete.
 
-Deleting a document is blocked when any approved or exported OKF concept traces back to it. The reviewer must first retract the approved concept, archive it, or create a current concept that supersedes it.
+When a user deletes a source document, the app:
 
-If no approved OKF concept depends on the document, deletion may proceed by:
+1. loads every topic for that document, regardless of review status,
+2. derives and removes every exported OKF topic file for those topics from the active `knowledge/` root,
+3. removes those filenames from `knowledge/index.md`,
+4. removes the source document entry from `knowledge/source_manifest.md`,
+5. appends one minimal audit line to `knowledge/log.md` with actor, timestamp, source title, reason, and concept count removed,
+6. deletes the `Document` row,
+7. relies on `onDelete: Cascade` to remove document-owned database products: objects, extracted pages, extraction logs/jobs, topics, RAG jobs, RAG chunks, embeddings through chunks, and dependent coverage projections through `RagChunk` deletion.
 
-1. marking the document deleted,
-2. hiding it from normal document lists and retrieval,
-3. removing or deactivating raw RAG chunks and embeddings,
-4. preserving audit events where practical,
-5. retaining storage objects until the deletion retention policy allows physical removal.
+No OKF lifecycle retraction is written for this path. Retraction and archive remain reviewer trust actions. Source-document deletion means the derived product is gone, not demoted.
 
-This policy intentionally replaces accidental database cascades with explicit product behavior.
+This policy intentionally has no approved-OKF blocking gate. Deleted source means all derived OKF and RAG products are removed regardless of review status.
 
 ## Topic And OKF Concept Lifecycle
 
@@ -125,36 +127,17 @@ Future validation treats those citations as historical evidence only, not curren
 
 ## Restore Rules
 
-Soft-delete enables restore, but restore is not a blanket trust reset.
+Source-document deletion is not restorable in place. To restore removed knowledge, the user must re-upload the source document, re-run extraction/RAG indexing, regenerate/review topics, and re-export OKF.
 
-Document restore:
-
-- restores document metadata,
-- restores references to the uploaded object only if the object still exists,
-- keeps extraction records if retained,
-- requires re-extraction if extracted pages were removed,
-- requires RAG reindex because chunks and embeddings are derived,
-- does not silently reactivate retracted or archived OKF files.
-
-Topic restore:
-
-- restores the topic record if it was soft-deleted,
-- preserves its lifecycle/review state,
-- does not silently mark it trusted.
-
-OKF restore:
-
-- requires reviewer action,
-- should re-export or explicitly mark the concept current,
-- must append `log.md`.
+Reviewer-driven OKF lifecycle states such as `archived` or `retracted` may have future restore/reactivation workflows, but source-document deletion does not create those lifecycle states.
 
 ## Agent And Validation Rules
 
-Current trusted retrieval includes only active approved OKF concepts.
+Current trusted retrieval includes only existing active approved OKF concepts. Deleted source-document products are removed from the live bundle and cannot be retrieved.
 
 Normal agent answers exclude:
 
-- deleted sources,
+- deleted or missing source products,
 - retracted OKF files,
 - archived OKF files,
 - superseded targets,
@@ -171,7 +154,7 @@ Stage 6.6A: design doc only.
 
 Stage 6.6B: add schema/projection fields and read-path lifecycle filtering.
 
-Stage 6.6C: add document and topic lifecycle actions.
+Stage 6.6C: add hard-delete document action and topic/OKF cleanup.
 
 Stage 6.6D: add OKF retraction, archive, and supersession workflows.
 
@@ -183,15 +166,17 @@ Coverage-link reconciliation is a separate explicit path, not part of RAG reinde
 
 Future implementation slices must include:
 
-- document deletion blocked when approved/exported OKF concepts depend on it,
-- document deletion succeeds for documents with no approved OKF concepts,
+- document hard-delete succeeds even when approved/exported OKF concepts depend on it,
+- document hard-delete cascades document objects, extracted pages, extraction jobs/logs, topic records, RAG chunks/embeddings, and coverage projections,
+- exported OKF Markdown files and `index.md` / `source_manifest.md` references are removed for approved, needs-review, and rejected topics,
+- historical chat messages with citation JSON still render after the cited document is deleted,
 - retraction requires reason, actor, timestamp, and lifecycle log entry,
 - archived and retracted OKF files excluded from trusted chat retrieval,
 - supersession derived from `supersedes` relations,
 - broken relation targets during live retrieval do not crash chat,
 - coverage projections cleaned or marked stale intentionally,
-- restore test for document metadata, source object availability, RAG reindex requirement, and OKF trust not silently restored,
-- past chat citation shows retraction/archive notice after cited source lifecycle changes.
+- no in-place restore for hard-deleted source documents; re-upload is required,
+- past chat citation remains visible after cited source deletion.
 
 Regression commands:
 

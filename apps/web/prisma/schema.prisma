@@ -249,6 +249,7 @@ model RagChunk {
   document          Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
   indexJob          RagIndexJob   @relation(fields: [indexJobId], references: [id], onDelete: Cascade)
   embedding         RagEmbedding?
+  okfConceptLinks   OkfConceptChunkLink[]
 
   @@unique([documentId, indexVersion, chunkOrdinal])
   @@index([workspaceId, documentId, isActive])
@@ -280,6 +281,7 @@ model OkfConceptChunkLink {
   coverageType String
   source       String   @default("okf_frontmatter")
   syncedAt     DateTime @default(now())
+  chunk        RagChunk @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, okfConceptId, chunkId])
   @@index([workspaceId, chunkId])
