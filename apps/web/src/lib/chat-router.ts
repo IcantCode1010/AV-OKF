@@ -43,6 +43,18 @@ export type ChatRouterDecision = {
   routerMode?: ChatRouterMode;
 };
 
+export type ChatContextField =
+  | "subject_or_entity"
+  | "applicable_scope_or_version"
+  | "source_authority"
+  | "intended_action";
+
+export type ChatContextAssumption = {
+  basis: "conversation" | "safe_default";
+  field: ChatContextField;
+  value: string;
+};
+
 export type ChatRouterMode = "rules" | "llm_fallback";
 
 // Evidence outcome of a routed answer, per the query-router.md trace
@@ -79,6 +91,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerMode?: "llm" | "deterministic";
   answerModel?: string;
   answerProvider?: string;
+  queryUnderstanding?: ChatQueryUnderstandingTrace;
   approvedOkfAvailable?: boolean;
   finalEvidenceStatus?: ChatEvidenceStatus;
   ragUsedForDiscoveryOnly?: boolean;
@@ -91,9 +104,27 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
 // The rules below only read the question today; the wider shape is the seam
 // the LLM-fallback classifier and eventual agent router will consume.
 export type ChatRouterInput = {
+  clarificationAlreadyAsked?: boolean;
   conversationContext?: string[];
   question: string;
   workspaceId?: string;
+};
+
+export type ChatQueryUnderstandingTrace = {
+  ambiguityLevel: "low" | "medium" | "high";
+  assumptions: ChatContextAssumption[];
+  clarifyingQuestion?: string;
+  detectedEntities: string[];
+  originalQuestion: string;
+  retrievalQuery: string;
+  rewriteMode: "fallback_original" | "llm" | "not_needed";
+  routeConflict?: {
+    optimizedRequiresGraphTraversal: boolean;
+    optimizedRoute: ChatRoute;
+    originalRequiresGraphTraversal: boolean;
+    originalRoute: ChatRoute;
+  };
+  warnings: string[];
 };
 
 export type ChatRouterFallbackInput = ChatRouterInput & {
@@ -117,11 +148,11 @@ export function isRetrievalRoute(route: ChatRoute): route is RetrievalChatRoute 
   return route === "okf_only" || route === "rag_only" || route === "hybrid";
 }
 
-const MISSING_OPERATIONAL_CONTEXT = [
-  "aircraft_family",
-  "effectivity",
+const MISSING_DECISION_CONTEXT: ChatContextField[] = [
+  "subject_or_entity",
+  "applicable_scope_or_version",
   "source_authority",
-  "operational_context",
+  "intended_action",
 ];
 
 export function routeChatQuestion(
@@ -139,6 +170,8 @@ function routeChatQuestionBase(
   input: string | ChatRouterInput,
 ): ChatRouterDecision {
   const question = typeof input === "string" ? input : input.question;
+  const clarificationAlreadyAsked =
+    typeof input === "string" ? false : input.clarificationAlreadyAsked === true;
   const normalized = normalizeQuestion(question);
 
   const hasKnowledgeSignal =
@@ -160,26 +193,32 @@ function routeChatQuestionBase(
     };
   }
 
-  if (matchesAny(normalized, MISSING_CONTEXT_PATTERNS)) {
+  const highRisk = matchesAny(normalized, HIGH_RISK_DOMAIN_PATTERNS);
+  if (
+    !clarificationAlreadyAsked &&
+    (matchesAny(normalized, MISSING_CONTEXT_PATTERNS) || highRisk)
+  ) {
     return {
       confidence: "high",
       constraints: { approvedOnly: true, includeUnreviewed: false },
       queryCategory: "missing_context",
       rationale:
-        "The question asks for an operational decision without enough aircraft, source, or situation context.",
-      requiredContext: MISSING_OPERATIONAL_CONTEXT,
+        highRisk
+          ? "The question concerns a high-risk action and needs one combined context check before retrieval."
+          : "The question asks for a decision or recommendation without enough subject, scope, source, or intended-action context.",
+      requiredContext: MISSING_DECISION_CONTEXT,
       route: "missing_context",
     };
   }
 
-  if (matchesAny(normalized, HIGH_RISK_DOMAIN_PATTERNS)) {
+  if (highRisk) {
     return {
       confidence: "medium",
       constraints: { approvedOnly: true, includeUnreviewed: false },
       queryCategory: "high_risk_domain",
       rationale:
         "The question concerns a high-risk operational scenario and requires reviewed source material before any answer is attempted.",
-      requiredContext: [],
+      requiredContext: clarificationAlreadyAsked ? MISSING_DECISION_CONTEXT : [],
       route: "okf_only",
     };
   }
@@ -232,6 +271,18 @@ function routeChatQuestionBase(
       rationale:
         "The question asks directly about a concept or system, which should be answered from approved knowledge first.",
       requiredContext: [],
+      route: "okf_only",
+    };
+  }
+
+  if (clarificationAlreadyAsked) {
+    return {
+      confidence: "medium",
+      constraints: { approvedOnly: true, includeUnreviewed: false },
+      queryCategory: "canonical_definition",
+      rationale:
+        "The session already used its clarification round, so the question proceeds through approved knowledge first with disclosed bounded assumptions when needed.",
+      requiredContext: MISSING_DECISION_CONTEXT,
       route: "okf_only",
     };
   }
@@ -353,7 +404,11 @@ export function buildStage6aRouterReply(decision: ChatRouterDecision): string {
 }
 
 function inferOkfCategory(normalized: string): ChatQueryCategory {
-  if (/\b(manual path|source|authority|authoritative)\b/.test(normalized)) {
+  if (
+    /\b(manual path|source|authority|authoritative|citation|reference|origin|where documented)\b/.test(
+      normalized,
+    )
+  ) {
     return "source_lookup";
   }
 
@@ -393,7 +448,7 @@ function buildRouterFallbackPrompt(input: ChatRouterFallbackInput): string {
     "Use okf_only for stable official reviewed knowledge.",
     "Use rag_only for broad search, summaries, comparisons, or discovery over raw documents.",
     "Use hybrid only when the question needs approved knowledge plus raw supporting examples.",
-    "Use missing_context when a safe answer requires more aircraft/source/intent context.",
+    "Use missing_context when a safe answer requires more subject, scope, source, version, jurisdiction, or intent context.",
     "Use unsupported for live data, external systems, or requests static documents cannot answer.",
     'Return strict JSON: {"route": string, "queryCategory": string, "confidence": string, "rationale": string, "requiredContext": string[]}',
     "",
@@ -484,11 +539,9 @@ const LIVE_OR_EXTERNAL_PATTERNS = [
 ];
 
 const MISSING_CONTEXT_PATTERNS = [
-  /^can we dispatch\??$/,
-  /^can i dispatch\??$/,
-  /\bcan we dispatch\b/,
   /\bshould i\b/,
   /\bshould we\b/,
+  /^can (?:i|we) (?:approve|publish|sign|send|release|delete|change|proceed|act|rely|use|do|dispatch)\b/,
   /^what procedure should i use\??$/,
   /^which procedure should i use\??$/,
 ];
@@ -519,6 +572,9 @@ const CANONICAL_QUESTION_PATTERNS = [
 ];
 
 const HIGH_RISK_DOMAIN_PATTERNS = [
+  /\b(safety|emergency|fire|hazard|injury|medical|clinical|legal|regulatory|compliance|financial|payment|security|privacy|data breach|access control)\b.*\b(action|decision|procedure|response|approval|requirement|advice|treatment|shutdown|report)\b/,
+  /\b(action|decision|procedure|response|approval|requirement|advice|treatment|shutdown|report)\b.*\b(safety|emergency|fire|hazard|injury|medical|clinical|legal|regulatory|compliance|financial|payment|security|privacy|data breach|access control)\b/,
+  /\b(administer medication|wire transfer|delete production data|sign (?:the |a )?contract|emergency shutdown)\b/,
   /\b(engine|apu|fuel|hydraulic|electrical|flight control|brake|landing gear)\b.*\b(fire|failure|fault|emergency|in flight|in-flight)\b/,
   /\b(fire|failure|fault|emergency|in flight|in-flight)\b.*\b(engine|apu|fuel|hydraulic|electrical|flight control|brake|landing gear)\b/,
 ];
@@ -529,7 +585,7 @@ const GRAPH_TRAVERSAL_PATTERNS = [
   /\bconnected to\b/,
   /\bhow does .* affect\b/,
   /\bimpact of .* on\b/,
-  /\bacross (?:the )?(?:systems|concepts|procedures|manuals)\b/,
+  /\bacross (?:the )?(?:systems|concepts|procedures|policies|contracts|reports|records|manuals|documents)\b/,
   /\btrace (?:the )?(?:path|relationship|chain)\b/,
 ];
 
@@ -544,4 +600,6 @@ const OKF_PATTERNS = [
   /\bsource authority\b/,
   /\bauthoritative\b/,
   /\bmanual path\b/,
+  /\bgoverning (?:policy|rule|standard|document)\b/,
+  /\b(policy|contract|standard) requirement\b/,
 ];

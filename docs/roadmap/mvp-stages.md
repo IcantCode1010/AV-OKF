@@ -419,7 +419,7 @@ Agent policy:
 - Pull RAG chunks through existing `OkfConceptChunkLink` coverage links for concepts visited during traversal.
 - Use open raw RAG discovery only when graph-linked evidence is still incomplete or when graph traversal is not required.
 - Run validation on every path and label answers as direct OKF, OKF via graph, mixed supported evidence, raw RAG discovery, partial with limitations, clarification needed, or unsupported with a next step.
-- Never dead-stop without explaining what was searched and offering a useful clarification or next action; never fill missing evidence with a guess.
+- Never dead-stop without explaining what was searched and offering a useful clarification or next action. Ask for missing context at most once per session; after that, only bounded retrieval-scope assumptions are allowed, and every assumption must be disclosed in the visible answer. Evidence gaps must never be filled with invented facts.
 
 Stage 7B deliverables:
 
@@ -428,7 +428,7 @@ Stage 7B deliverables:
 - Coverage-linked RAG retrieval for visited approved concepts.
 - Deterministic `requiresGraphTraversal` signal added to the existing router decision; deterministic rules remain first and LLM fallback remains limited to low-confidence routing.
 - Trace and evidence-card support for `direct_okf`, `okf_via_graph`, `mixed_supported`, `rag_discovery`, `partial_with_limitations`, `clarification_needed`, and `unsupported_with_next_step`.
-- Helpful bounded query reformulation and targeted clarification behavior.
+- Helpful bounded query reformulation, mixed-domain identifier preservation, and one-round clarification behavior with disclosed fallback assumptions.
 - Tool contracts ready for Vercel AI SDK integration: `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
 
 Stage 7B exit criteria:

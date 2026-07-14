@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildChatAnswerPrompt,
   buildNotDirectlyAnsweredReply,
+  discloseChatAssumptions,
   generateChatAnswer,
   hasValidCitationMarkers,
 } from "./chat-answer.ts";
@@ -32,6 +33,26 @@ function makeEvidence(index: number): ChatRetrievalEvidence {
     text: "GEN OFF BUS light indicates a generator bus fault. Reset the generator per QRH 6.2.",
   };
 }
+
+test("discloseChatAssumptions names each assumed field and value", () => {
+  const answer = discloseChatAssumptions("Supported answer [1].", [
+    {
+      basis: "conversation",
+      field: "applicable_scope_or_version",
+      value: "version 2",
+    },
+    {
+      basis: "safe_default",
+      field: "intended_action",
+      value: "informational guidance only, not authorization to act",
+    },
+  ]);
+
+  assert.match(answer, /applicable scope or version: version 2/i);
+  assert.match(answer, /intended action: informational guidance only/i);
+  assert.match(answer, /Supported answer \[1\]/);
+  assert.equal(discloseChatAssumptions("No assumptions.", []), "No assumptions.");
+});
 
 const WORKSPACE_ID = "wrk_1";
 const QUERY = "What does the GEN OFF BUS light indicate?";

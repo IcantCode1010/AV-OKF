@@ -1,8 +1,18 @@
 import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
-import { generateChatAnswer, type ChatAnswer } from "./chat-answer.ts";
+import {
+  discloseChatAssumptions,
+  generateChatAnswer,
+  type ChatAnswer,
+} from "./chat-answer.ts";
 import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
 import { validateChatAnswerEvidence } from "./chat-validation.ts";
+import {
+  buildSkippedQueryUnderstanding,
+  shouldRunQueryUnderstanding,
+  understandChatQuery,
+  type ChatQueryUnderstandingFn,
+} from "./chat-query-understanding.ts";
 import {
   buildStage6aRouterReply,
   buildStage6aRouterTrace,
@@ -46,6 +56,7 @@ type ProductionChatServiceOptions = {
   getContext?: () => Promise<AuthWorkspaceContext>;
   retrieve?: ChatRetrievalFn;
   routeQuestion?: (input: ChatRouterInput) => Promise<ChatRouterDecision>;
+  understandQuery?: ChatQueryUnderstandingFn;
 };
 
 export function getProductionChatService(): ProductionChatService {
@@ -67,6 +78,7 @@ export function createProductionChatService(
   const retrieve = options.retrieve ?? runChatRetrieval;
   const generateAnswer = options.generateAnswer ?? generateChatAnswer;
   const routeQuestion = options.routeQuestion ?? routeChatQuestionWithFallback;
+  const understandQuery = options.understandQuery ?? understandChatQuery;
 
   return {
     async createSession(title?: string) {
@@ -108,13 +120,34 @@ export function createProductionChatService(
       const conversationContext = history.messages
         .slice(-CONVERSATION_CONTEXT_TURNS)
         .map((message) => `${message.role}: ${message.content}`);
+      const clarification = getClarificationState(history.messages);
       const decision = await routeQuestion({
+        clarificationAlreadyAsked: clarification.alreadyAsked,
         conversationContext,
         question: content,
         workspaceId: context.workspaceId,
       });
+      const queryUnderstanding = shouldRunQueryUnderstanding({
+        clarificationAlreadyAsked: clarification.alreadyAsked,
+        decision,
+        question: content,
+      })
+        ? await understandQuery({
+            clarificationAlreadyAsked: clarification.alreadyAsked,
+            clarificationOriginQuestion: clarification.originQuestion,
+            conversationContext,
+            decision,
+            question: content,
+            workspaceId: context.workspaceId,
+          })
+        : buildSkippedQueryUnderstanding(content);
+      const retrievalQuery = queryUnderstanding.retrievalQuery;
       const retrieval = isRetrievalRoute(decision.route)
-        ? await retrieve({ decision, query: content, workspaceId: context.workspaceId })
+        ? await retrieve({
+            decision,
+            query: retrievalQuery,
+            workspaceId: context.workspaceId,
+          })
         : {
             approvedOkfAvailable: false,
             citations: [],
@@ -127,17 +160,26 @@ export function createProductionChatService(
       const answer: ChatAnswer = isRetrievalRoute(decision.route)
         ? await generateAnswer({
             evidence: retrieval.evidence,
-            query: content,
+            query: retrievalQuery,
             retrieval,
             route: decision.route,
             workspaceId: context.workspaceId,
           })
-        : { content: buildStage6aRouterReply(decision), mode: "deterministic" };
+        : {
+            content:
+              decision.route === "missing_context" &&
+              queryUnderstanding.rewriteMode === "llm" &&
+              queryUnderstanding.clarifyingQuestion
+                ? queryUnderstanding.clarifyingQuestion
+                : buildStage6aRouterReply(decision),
+            mode: "deterministic" as const,
+          };
       const assistantTrace = {
         ...buildStage6aRouterTrace(decision),
         answerMode: answer.mode,
         ...(answer.model ? { answerModel: answer.model } : {}),
         ...(answer.provider ? { answerProvider: answer.provider } : {}),
+        queryUnderstanding,
         ...(isRetrievalRoute(decision.route)
           ? {
               approvedOkfAvailable: retrieval.approvedOkfAvailable,
@@ -163,12 +205,19 @@ export function createProductionChatService(
               mode: "deterministic" as const,
             }
           : answer;
+      const disclosedAnswer = {
+        ...safeAnswer,
+        content: discloseChatAssumptions(
+          safeAnswer.content,
+          queryUnderstanding.assumptions,
+        ),
+      };
 
       return repository.appendUserMessageAndAssistantReply({
-        assistantContent: safeAnswer.content,
+        assistantContent: disclosedAnswer.content,
         assistantTrace: {
           ...assistantTrace,
-          answerMode: safeAnswer.mode,
+          answerMode: disclosedAnswer.mode,
           answerEvidenceProfile: buildAnswerEvidenceProfile({
             citations: retrieval.citations,
             trace: assistantTrace,
@@ -182,4 +231,27 @@ export function createProductionChatService(
       });
     },
   };
+}
+
+export function getClarificationState(messages: ChatMessage[]): {
+  alreadyAsked: boolean;
+  originQuestion?: string;
+} {
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message?.role !== "assistant" || message.trace?.route !== "missing_context") {
+      continue;
+    }
+
+    for (let originIndex = index - 1; originIndex >= 0; originIndex -= 1) {
+      const origin = messages[originIndex];
+      if (origin?.role === "user") {
+        return { alreadyAsked: true, originQuestion: origin.content };
+      }
+    }
+
+    return { alreadyAsked: true };
+  }
+
+  return { alreadyAsked: false };
 }

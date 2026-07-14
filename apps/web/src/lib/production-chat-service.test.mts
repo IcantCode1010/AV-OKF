@@ -4,9 +4,15 @@ import test from "node:test";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { generateChatAnswer } from "./chat-answer.ts";
 import type { ChatRetrievalResult } from "./chat-retrieval.ts";
-import type { Stage6aRouterTrace } from "./chat-router.ts";
+import type {
+  ChatQueryUnderstandingTrace,
+  Stage6aRouterTrace,
+} from "./chat-router.ts";
 import type { ChatCitation, ChatMessage } from "./chat-types.ts";
-import { createProductionChatService } from "./production-chat-service.ts";
+import {
+  createProductionChatService,
+  getClarificationState,
+} from "./production-chat-service.ts";
 
 // Runs the real answer builder but hermetically: no workspace key lookup,
 // so it always takes the deterministic fallback path.
@@ -28,7 +34,7 @@ type AppendCall = {
   sessionId: string;
 };
 
-function createRepositoryStub() {
+function createRepositoryStub(initialMessages: ChatMessage[] = []) {
   const appendCalls: AppendCall[] = [];
 
   return {
@@ -63,7 +69,7 @@ function createRepositoryStub() {
         throw new Error("not_used");
       },
       getSessionWithMessages: async () => ({
-        messages: [] as ChatMessage[],
+        messages: initialMessages,
         session: {
           createdAt: "2026-07-04T00:00:00.000Z",
           id: "session_1",
@@ -76,6 +82,54 @@ function createRepositoryStub() {
       getSessionWorkspaceId: async () => "wrk_1",
       getSessions: async () => [],
     },
+  };
+}
+
+function fallbackQueryUnderstanding(
+  question: string,
+  overrides: Partial<ChatQueryUnderstandingTrace> = {},
+): ChatQueryUnderstandingTrace {
+  return {
+    ambiguityLevel: "high",
+    assumptions: [],
+    detectedEntities: [],
+    originalQuestion: question,
+    retrievalQuery: question,
+    rewriteMode: "fallback_original",
+    warnings: [],
+    ...overrides,
+  };
+}
+
+function historyMessage(input: {
+  content: string;
+  id: string;
+  role: "assistant" | "user";
+  route?: Stage6aRouterTrace["route"];
+}): ChatMessage {
+  return {
+    citations: [],
+    content: input.content,
+    createdAt: "2026-07-04T00:00:00.000Z",
+    id: input.id,
+    role: input.role,
+    sessionId: "session_1",
+    trace:
+      input.role === "assistant" && input.route
+        ? {
+            confidence: "high",
+            constraints: { approvedOnly: true, includeUnreviewed: false },
+            queryCategory: input.route === "missing_context"
+              ? "missing_context"
+              : "canonical_definition",
+            rationale: "test trace",
+            requiredContext: [],
+            retrievalToolsCalled: [],
+            route: input.route,
+            sourcesRead: [],
+            stage: "router",
+          }
+        : null,
   };
 }
 
@@ -259,6 +313,7 @@ test("sendMessage does not run retrieval for missing-context routes", async () =
   const { appendCalls, repository } = createRepositoryStub();
   const service = createProductionChatService(repository, {
     getContext: async () => context,
+    understandQuery: async ({ question }) => fallbackQueryUnderstanding(question),
     retrieve: async () => {
       throw new Error("retrieve_should_not_be_called");
     },
@@ -279,6 +334,7 @@ test("sendMessage can use an LLM fallback router decision for low-confidence que
   const service = createProductionChatService(repository, {
     generateAnswer: generateAnswerWithoutKey,
     getContext: async () => context,
+    understandQuery: async ({ question }) => fallbackQueryUnderstanding(question),
     retrieve: async (input) => {
       assert.equal(input.decision.route, "rag_only");
       return {
@@ -330,4 +386,227 @@ test("sendMessage can use an LLM fallback router decision for low-confidence que
     "raw_rag",
   );
   assert.equal(result.assistantMessage.citations[0]?.sourceType, "rag");
+});
+
+test("sendMessage uses the optimized query internally while preserving user input", async () => {
+  const { appendCalls, repository } = createRepositoryStub();
+  let retrievalQuery = "";
+  let answerQuery = "";
+  const originalQuestion = "GEN OFF BUS reset";
+  const service = createProductionChatService(repository, {
+    generateAnswer: async (input) => {
+      answerQuery = input.query;
+      return {
+        content: "The generator bus reset is described in the source [1].",
+        mode: "llm",
+        model: "test-model",
+        provider: "openai",
+      };
+    },
+    getContext: async () => context,
+    retrieve: async (input) => {
+      retrievalQuery = input.query;
+      return citedRetrievalResult();
+    },
+    routeQuestion: async () => ({
+      confidence: "medium",
+      constraints: { approvedOnly: true, includeUnreviewed: false },
+      queryCategory: "canonical_definition",
+      rationale: "LLM fallback retained approved-first routing.",
+      requiredContext: [],
+      route: "okf_only",
+      routerMode: "llm_fallback",
+    }),
+    understandQuery: async ({ question }) =>
+      fallbackQueryUnderstanding(question, {
+        ambiguityLevel: "medium",
+        detectedEntities: ["GEN", "OFF", "BUS"],
+        retrievalQuery: "GEN OFF BUS generator reset procedure",
+        rewriteMode: "llm",
+      }),
+  });
+
+  await service.sendMessage("session_1", originalQuestion);
+
+  assert.equal(appendCalls[0]?.content, originalQuestion);
+  assert.equal(retrievalQuery, "GEN OFF BUS generator reset procedure");
+  assert.equal(answerQuery, "GEN OFF BUS generator reset procedure");
+  assert.equal(
+    appendCalls[0]?.assistantTrace.queryUnderstanding?.retrievalQuery,
+    "GEN OFF BUS generator reset procedure",
+  );
+});
+
+test("first vague question asks one combined generic clarification without retrieval", async () => {
+  const { repository } = createRepositoryStub();
+  const service = createProductionChatService(repository, {
+    getContext: async () => context,
+    retrieve: async () => {
+      throw new Error("retrieve_should_not_be_called");
+    },
+    understandQuery: async ({ question }) =>
+      fallbackQueryUnderstanding(question, {
+        clarifyingQuestion:
+          "Which subject, scope or version, source authority, and intended action apply?",
+        rewriteMode: "llm",
+      }),
+  });
+
+  const result = await service.sendMessage("session_1", "Can we approve this?");
+
+  assert.equal(
+    result.assistantMessage.content,
+    "Which subject, scope or version, source authority, and intended action apply?",
+  );
+});
+
+test("clarification history resolves the originating user question", () => {
+  const messages = [
+    historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Please provide more context.",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+  ];
+
+  assert.deepEqual(getClarificationState(messages), {
+    alreadyAsked: true,
+    originQuestion: "Can we approve this?",
+  });
+  assert.deepEqual(getClarificationState([]), { alreadyAsked: false });
+});
+
+test("complete clarification follow-up routes normally without assumption text", async () => {
+  const history = [
+    historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Please provide more context.",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+  ];
+  const { repository } = createRepositoryStub(history);
+  let retrievalQuery = "";
+  const service = createProductionChatService(repository, {
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async (input) => {
+      retrievalQuery = input.query;
+      return citedRetrievalResult();
+    },
+    understandQuery: async (input) => {
+      assert.equal(input.clarificationAlreadyAsked, true);
+      assert.equal(input.clarificationOriginQuestion, "Can we approve this?");
+      return fallbackQueryUnderstanding(input.question, {
+        ambiguityLevel: "low",
+        assumptions: [],
+        retrievalQuery: "Policy POL-SEC-104 version 2 employee access approval",
+        rewriteMode: "llm",
+      });
+    },
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "Policy POL-SEC-104 version 2 for employee access.",
+  );
+
+  assert.match(retrievalQuery, /POL-SEC-104/);
+  assert.doesNotMatch(result.assistantMessage.content, /Assumptions used/);
+});
+
+test("incomplete follow-up retrieves once with specific visible assumptions", async () => {
+  const history = [
+    historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Please provide more context.",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+  ];
+  const { repository } = createRepositoryStub(history);
+  let retrievalQuery = "";
+  const service = createProductionChatService(repository, {
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async (input) => {
+      retrievalQuery = input.query;
+      return citedRetrievalResult();
+    },
+    understandQuery: async ({ question }) =>
+      fallbackQueryUnderstanding(question, {
+        assumptions: [
+          {
+            basis: "conversation",
+            field: "applicable_scope_or_version",
+            value: "version 2",
+          },
+          {
+            basis: "safe_default",
+            field: "intended_action",
+            value: "informational guidance only, not authorization to act",
+          },
+        ],
+        retrievalQuery: "approval policy version 2",
+        rewriteMode: "llm",
+      }),
+  });
+
+  const result = await service.sendMessage("session_1", "Use version 2.");
+
+  assert.equal(result.assistantMessage.trace?.route, "okf_only");
+  assert.match(retrievalQuery, /version 2/);
+  assert.match(result.assistantMessage.content, /applicable scope or version: version 2/i);
+  assert.match(
+    result.assistantMessage.content,
+    /intended action: informational guidance only, not authorization to act/i,
+  );
+});
+
+test("a third ambiguous message in the same session cannot request clarification again", async () => {
+  const history = [
+    historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Please provide more context.",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+    historyMessage({ content: "Use version 2.", id: "u2", role: "user" }),
+    historyMessage({
+      content: "Assuming version 2, no evidence was found.",
+      id: "a2",
+      role: "assistant",
+      route: "okf_only",
+    }),
+  ];
+  const { repository } = createRepositoryStub(history);
+  let retrievalCalls = 0;
+  const service = createProductionChatService(repository, {
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async () => {
+      retrievalCalls += 1;
+      return citedRetrievalResult();
+    },
+    understandQuery: async ({ question }) =>
+      fallbackQueryUnderstanding(question, {
+        assumptions: [
+          {
+            basis: "safe_default",
+            field: "subject_or_entity",
+            value: "all subjects represented in the workspace",
+          },
+        ],
+      }),
+  });
+
+  const result = await service.sendMessage("session_1", "What about that?");
+
+  assert.notEqual(result.assistantMessage.trace?.route, "missing_context");
+  assert.equal(retrievalCalls, 1);
 });

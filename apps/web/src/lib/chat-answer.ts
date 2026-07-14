@@ -7,7 +7,10 @@ import {
   type ChatRetrievalEvidence,
   type RetrievalAnswerInput,
 } from "./chat-retrieval.ts";
-import type { RetrievalChatRoute } from "./chat-router.ts";
+import type {
+  ChatContextAssumption,
+  RetrievalChatRoute,
+} from "./chat-router.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import {
   getLlmProvider,
@@ -23,6 +26,28 @@ export type ChatAnswer = {
   model?: string;
   provider?: LlmProviderId;
 };
+
+export function discloseChatAssumptions(
+  content: string,
+  assumptions: ChatContextAssumption[],
+): string {
+  if (assumptions.length === 0) {
+    return content;
+  }
+
+  const details = assumptions
+    .map(
+      (assumption) =>
+        `${formatContextField(assumption.field)}: ${assumption.value}`,
+    )
+    .join("; ");
+
+  return `Assumptions used for this search: ${details}. Correct any of these details if they do not apply.\n\n${content}`;
+}
+
+function formatContextField(field: ChatContextAssumption["field"]): string {
+  return field.replaceAll("_", " ");
+}
 
 export type ChatAnswerProviderFn = (input: {
   apiKey: string;
@@ -139,13 +164,13 @@ export function buildChatAnswerPrompt(input: {
   });
 
   return [
-    "You answer technical questions for a document knowledge base.",
+    "You answer questions from a mixed-domain document knowledge base.",
     "Rules:",
     "- Use ONLY the numbered evidence excerpts below. Do not use outside knowledge.",
     "- Every sentence that states a fact must end with inline bracketed evidence markers like [1] or [2][3].",
     "- An answer containing no [n] markers is invalid and will be rejected.",
     "- Never cite a number that is not in the evidence list.",
-    "- Preserve exact technical values, names, limits, and procedure wording from the evidence.",
+    "- Preserve exact names, dates, versions, citations, identifiers, values, limits, and source wording from the evidence.",
     "- Be concise: a short direct answer first, then supporting detail only if needed.",
     '- If the evidence does not directly answer the question, return {"answer": "", "supported": false}.',
     'Return strict JSON: {"answer": string, "supported": boolean}',

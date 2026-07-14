@@ -42,16 +42,16 @@ test("routes official answers plus examples to hybrid", () => {
   assert.equal(decision.confidence, "medium");
 });
 
-test("routes vague dispatch questions to missing context", () => {
-  const decision = routeChatQuestion("Can we dispatch?");
+test("routes vague action questions to domain-neutral missing context", () => {
+  const decision = routeChatQuestion("Can we approve this?");
 
   assert.equal(decision.route, "missing_context");
   assert.equal(decision.queryCategory, "missing_context");
   assert.deepEqual(decision.requiredContext, [
-    "aircraft_family",
-    "effectivity",
+    "subject_or_entity",
+    "applicable_scope_or_version",
     "source_authority",
-    "operational_context",
+    "intended_action",
   ]);
 });
 
@@ -71,8 +71,25 @@ test("routes current official policy questions to approved OKF", () => {
   assert.equal(decision.confidence, "high");
 });
 
-test("marks high-risk operational questions for reviewed OKF handling", () => {
-  const decision = routeChatQuestion("What is the procedure for an engine fire in flight?");
+test("mixed-domain high-risk action questions request one combined clarification", () => {
+  for (const question of [
+    "What is the emergency response procedure for a data breach?",
+    "What is the procedure for an engine fire in flight?",
+    "Should we approve this medical treatment?",
+  ]) {
+    const decision = routeChatQuestion(question);
+
+    assert.equal(decision.route, "missing_context", question);
+    assert.equal(decision.queryCategory, "missing_context", question);
+    assert.equal(decision.confidence, "high", question);
+  }
+});
+
+test("high-risk questions use approved-first retrieval after clarification was used", () => {
+  const decision = routeChatQuestion({
+    clarificationAlreadyAsked: true,
+    question: "Should we approve this medical treatment?",
+  });
 
   assert.equal(decision.route, "okf_only");
   assert.equal(decision.queryCategory, "high_risk_domain");
@@ -82,9 +99,9 @@ test("marks high-risk operational questions for reviewed OKF handling", () => {
 test("routes plain interrogative questions to OKF at medium confidence", () => {
   for (const question of [
     "what is DC generation",
-    "How does the flap skew detection system work?",
-    "Explain the thrust reverser control system",
-    "where are the flap skew sensors",
+    "How does customer onboarding work?",
+    "Explain the software release workflow",
+    "where are the contract renewal terms",
   ]) {
     const decision = routeChatQuestion(question);
 
@@ -97,12 +114,12 @@ test("routes plain interrogative questions to OKF at medium confidence", () => {
 test("accepts the structured router input object and routes on its question", () => {
   const decision = routeChatQuestion({
     conversationContext: ["user: hi", "assistant: hello"],
-    question: "what is DC generation",
+    question: "what is the retention policy",
     workspaceId: "wrk_1",
   });
 
   assert.equal(decision.route, "okf_only");
-  assert.deepEqual(decision, routeChatQuestion("what is DC generation"));
+  assert.deepEqual(decision, routeChatQuestion("what is the retention policy"));
 });
 
 test("explicit keyword questions still outrank the interrogative heuristic", () => {
@@ -117,7 +134,7 @@ test("buildStage6aRouterReply asks for missing context instead of implying retri
   const reply = buildStage6aRouterReply(decision);
 
   assert.match(reply, /need a little more context/i);
-  assert.match(reply, /aircraft family/i);
+  assert.match(reply, /subject or entity/i);
   assert.doesNotMatch(reply, /retrieval will be added/i);
 });
 

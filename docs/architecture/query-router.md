@@ -12,7 +12,7 @@ The router is a control point. It prevents the system from blindly running both 
 Canonical question -> OKF
 Open-ended question -> RAG
 Mixed question -> Hybrid
-Missing or ambiguous context -> Ask a targeted question or return missing evidence
+Missing or ambiguous context -> Ask one combined clarification, then continue with disclosed bounded assumptions if needed
 ```
 
 Hybrid is not the default. Hybrid is used only when the answer needs both a curated concept and supporting raw evidence.
@@ -164,12 +164,12 @@ Use missing context when the answer depends on information the user has not supp
 Examples:
 
 ```text
-Can we dispatch?
+Can we approve this?
 What procedure should I use?
 Is this covered?
 ```
 
-For aviation, these may require aircraft type, effectivity, manual authority, operator source, or intent.
+Across mixed document domains, these may require the subject or entity, applicable scope or version, source authority, or intended action. High-risk action questions use the same combined context check before retrieval.
 
 Router output:
 
@@ -178,9 +178,22 @@ Router output:
   "route": "missing_context",
   "query_category": "missing_context",
   "confidence": "high",
-  "required_context": ["aircraft_family", "intent"]
+  "required_context": [
+    "subject_or_entity",
+    "applicable_scope_or_version",
+    "source_authority",
+    "intended_action"
+  ]
 }
 ```
+
+### One-Round Clarification Policy
+
+Clarification is capped at one assistant request per chat session. The service determines whether that round was used by inspecting persisted assistant traces for `route: "missing_context"`; no counter column is required.
+
+If the next reply supplies enough context, routing and retrieval use those values normally. If context is still incomplete, the router cannot return `missing_context` again. It proceeds through the best available retrieval path, defaulting uncertain decision and high-risk questions to approved OKF first.
+
+Any remaining assumptions are bounded retrieval policy, not invented facts. Conversation-grounded values may refine the search query. Safe defaults may only widen scope to all available subjects/scopes, prefer approved OKF over labeled raw discovery, and limit the intended action to informational guidance. Every assumption used is stated in the visible answer so the user can correct it.
 
 ### Unsupported
 
@@ -206,7 +219,9 @@ Router output:
 
 ## Fallback Rules
 
-If router confidence is `low`, ask a targeted clarification question instead of retrieving broadly.
+If router confidence is `low` and the session has not clarified yet, ask one combined clarification question instead of retrieving broadly. After that round, continue with the original question, follow-up context, and disclosed bounded assumptions rather than asking again.
+
+Query optimization runs only for genuinely ambiguous, missing-context, or LLM-fallback routes. Clear high-confidence questions skip the provider call. There is no per-workspace daily optimization counter.
 
 If the route is `okf_only` but no approved OKF object exists, return missing evidence or downgrade to `rag_only` only for discovery. Do not present RAG as official truth.
 
@@ -257,4 +272,3 @@ can we/should I/procedure/dispatch without context -> Missing Context
 Use an LLM classifier only when rules do not produce a high-confidence route.
 
 The first router does not need to be perfect. It needs to be inspectable, traceable, and conservative.
-

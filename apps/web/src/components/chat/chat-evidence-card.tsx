@@ -164,7 +164,7 @@ function evidenceCardCopy(profile: ChatAnswerEvidenceProfile) {
     return {
       Icon: FileText,
       containerClass: "border-amber-500/45 bg-amber-500/5",
-      description: "Unreviewed extracts - verify before operational use",
+      description: "Unreviewed extracts - verify against the source before relying on them",
       detailTitle: "Raw document sources",
       iconClass: "text-amber-400",
       label: "Raw document",

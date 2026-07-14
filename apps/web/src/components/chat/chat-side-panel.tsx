@@ -62,6 +62,37 @@ export function ChatSidePanelContent({
               </div>
               <TraceRow label="Category" value={formatLabel(trace.queryCategory)} />
               <TraceRow label="Rationale" value={trace.rationale} />
+              {trace.queryUnderstanding ? (
+                <>
+                  <TraceRow
+                    label="Query handling"
+                    value={formatLabel(trace.queryUnderstanding.rewriteMode)}
+                  />
+                  {trace.queryUnderstanding.retrievalQuery !==
+                  trace.queryUnderstanding.originalQuestion ? (
+                    <TraceRow
+                      label="Optimized search query"
+                      value={trace.queryUnderstanding.retrievalQuery}
+                    />
+                  ) : null}
+                  <TraceRow
+                    label="Ambiguity"
+                    value={formatLabel(trace.queryUnderstanding.ambiguityLevel)}
+                  />
+                  {trace.queryUnderstanding.detectedEntities.length > 0 ? (
+                    <TraceRow
+                      label="Preserved entities"
+                      value={trace.queryUnderstanding.detectedEntities.join(", ")}
+                    />
+                  ) : null}
+                  {trace.queryUnderstanding.routeConflict ? (
+                    <TraceRow
+                      label="Route conflict"
+                      value={`Kept ${formatRoute(trace.queryUnderstanding.routeConflict.originalRoute)}; optimized query suggested ${formatRoute(trace.queryUnderstanding.routeConflict.optimizedRoute)}.`}
+                    />
+                  ) : null}
+                </>
+              ) : null}
               {trace.requiredContext.length > 0 ? (
                 <TraceRow
                   label="Required context"
