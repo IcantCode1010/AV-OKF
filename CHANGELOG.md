@@ -50,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- Added `docs/debug/e2e-provider-layer-2026-07-14.log`, the Docker-backed end-to-end verification log for the Vercel AI SDK provider-layer migration. The run rebuilt the current web/worker images, verified service health, uploaded a real PDF, completed extraction/topic generation/enrichment/approval/export, confirmed the Knowledge bundle output, exercised raw RAG search, and tested chat evidence cards for approved OKF, raw document, and no-evidence answers. The run also captured two follow-up UX findings: real QRC topic extraction still produces weak/junk topic titles, and the OKF export button can remain visually stuck in `Exporting...` until a hard refresh even after the server action succeeds.
 - Noted a known Stage 2 limitation in `docs/roadmap/mvp-stages.md`: text extraction does not detect multi-column page layout, which can corrupt both extracted text and Stage 3 heading detection.
 - Added `docs/superpowers/plans/2026-07-02-stage-5-coverage-links.md`, scoping the still-unimplemented OKF-to-RAG coverage link work (the `OkfConceptChunkLink` table and `coveredByOkfConceptIds` field already exist from Stage 4 but nothing populates or reads them yet).
 - Updated the Stage 5 roadmap entry and MVP demo flow to describe the bundle-first Knowledge page and folder-style OKF bundle explorer.
