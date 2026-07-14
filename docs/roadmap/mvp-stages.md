@@ -384,32 +384,75 @@ Architecture note:
 
 - [Knowledge Lifecycle Management](../architecture/knowledge-lifecycle.md)
 
-## Stage 7: Validation
+## Stage 7: Answer Evidence Validation
 
-Purpose: prevent unsupported or misleading answers by validating generated claims against citations, source authority, review status, and domain rules.
+Purpose: keep the agent honest about where an answer came from. The agent searches approved wiki-style OKF articles first across the active knowledge bundle(s). If approved OKF fully answers the question, it answers from OKF. If OKF is missing or incomplete, raw RAG may provide supporting discovery context, but it is always labeled unreviewed. If neither source provides evidence, the agent says it cannot answer.
 
-Deliverables:
+Stage 7 is intentionally smaller than the original Validation Agent design. It does not attempt to prove every sentence semantically yet. It validates the evidence contract around the answer and creates real failure data for a later claim-level validator.
 
-- Claim extraction
-- Claim typing and risk classification
-- Citation validation
-- Evidence-to-claim matching
-- Source-access validation
-- Review-status validation
-- Domain rule hooks
-- Source authority matrix
-- Confidence thresholds
-- Blocked claim reporting
-- Safe answer modes: release, rewrite with limitations, missing evidence, clarify, or refuse
-- Agent trace persistence
+Stage 7A deliverables:
 
-Exit criteria:
+- Deterministic post-answer evidence validation.
+- Citation index, source detail, page-range, and citation-marker checks.
+- OKF-first policy check: raw RAG fallback must be explicitly labeled.
+- Lifecycle-aware source status checks through the existing retrieval path.
+- Safe fallback to a cited evidence response when generated output fails validation.
+- Persisted validation result in the existing chat trace.
+- Evidence modes: approved OKF, raw RAG, mixed, or no evidence.
 
-- Unsupported claims are blocked or clearly labeled, and every answer has an inspectable trace.
-- Validation reports show extracted claims, claim types, supporting sources, authority results, confidence, and blocked claims.
-- High-risk claims require direct support from approved authoritative sources.
-- When approved OKF conflicts with raw RAG evidence, the validator trusts approved OKF and records the RAG conflict.
-- Validation distinguishes route, support, reference, supersession, and conflict links instead of treating all Markdown links as equal.
+Stage 7A exit criteria:
+
+- Every evidence-backed answer has valid citations and an inspectable validation result.
+- Invalid or uncited generated answers fall back to cited retrieved evidence.
+- No-evidence answers do not invent citations and are clearly blocked from being treated as authoritative.
+- Approved OKF remains controlling when raw RAG is also present.
+
+Stage 7B: Agent-Ready OKF Graph Retrieval
+
+Purpose: make the agent useful for questions that require more than one approved OKF concept, without turning raw or automatically discovered relationships into trusted knowledge.
+
+Agent policy:
+
+- Search approved, active-lifecycle OKF concepts first.
+- Answer directly when one concept provides a high-confidence complete answer.
+- When the question requires cross-concept reasoning, traverse the existing typed OKF relation graph with a bounded hop count.
+- Pull RAG chunks through existing `OkfConceptChunkLink` coverage links for concepts visited during traversal.
+- Use open raw RAG discovery only when graph-linked evidence is still incomplete or when graph traversal is not required.
+- Run validation on every path and label answers as direct OKF, OKF via graph, mixed supported evidence, raw RAG discovery, partial with limitations, clarification needed, or unsupported with a next step.
+- Never dead-stop without explaining what was searched and offering a useful clarification or next action; never fill missing evidence with a guess.
+
+Stage 7B deliverables:
+
+- Bounded `followOkfRelation` traversal over existing typed relations.
+- Cycle prevention, visited-file tracking, safe-path checks, lifecycle filtering, and broken-target warnings.
+- Coverage-linked RAG retrieval for visited approved concepts.
+- Deterministic `requiresGraphTraversal` signal added to the existing router decision; deterministic rules remain first and LLM fallback remains limited to low-confidence routing.
+- Trace and evidence-card support for `direct_okf`, `okf_via_graph`, `mixed_supported`, `rag_discovery`, `partial_with_limitations`, `clarification_needed`, and `unsupported_with_next_step`.
+- Helpful bounded query reformulation and targeted clarification behavior.
+- Tool contracts ready for Vercel AI SDK integration: `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
+
+Stage 7B exit criteria:
+
+- Direct OKF questions answer from approved bundle evidence without RAG.
+- Multi-concept questions can traverse approved relations and cite the concepts and source pages used.
+- Coverage-linked RAG is preferred before broad raw RAG discovery.
+- Missing evidence produces a useful clarification or limitation response rather than an unsupported answer.
+- Traversal cannot loop, escape the bundle root, or surface inactive/retracted/archived concepts as current authority.
+
+Deferred from Stage 7B:
+
+- Automatic LLM extraction of a second graph from raw documents.
+- Neo4j or another dedicated graph database.
+- Automatic approval of derived relationships.
+- Multi-agent swarms and unrestricted autonomous loops.
+
+Deferred Stage 7 work:
+
+- LLM-based atomic claim extraction and claim typing.
+- Semantic claim-to-evidence judging.
+- Aviation-specific authority rules and risk thresholds.
+- Automatic rewriting or refusal of individual unsupported claims.
+- Detailed claim-level validation reports.
 
 Architecture note:
 

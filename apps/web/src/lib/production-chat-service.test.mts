@@ -198,6 +198,35 @@ test("sendMessage stores the LLM answer and records answer mode in the trace", a
   );
 });
 
+test("sendMessage falls back when a generated answer violates the evidence contract", async () => {
+  const { appendCalls, repository } = createRepositoryStub();
+  const service = createProductionChatService(repository, {
+    generateAnswer: async () => ({
+      content: "The system is operational without a citation.",
+      mode: "llm" as const,
+      model: "test-model",
+      provider: "openai" as const,
+    }),
+    getContext: async () => context,
+    retrieve: async () => citedRetrievalResult(),
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the official manual path for GEN OFF BUS?",
+  );
+
+  assert.equal(appendCalls[0]?.assistantTrace.answerMode, "deterministic");
+  assert.equal(appendCalls[0]?.assistantTrace.answerValidation?.status, "fail");
+  assert.ok(
+    appendCalls[0]?.assistantTrace.answerValidation?.violations.includes(
+      "answer_missing_valid_citation_marker",
+    ),
+  );
+  assert.match(result.assistantMessage.content, /generator bus fault/i);
+  assert.match(result.assistantMessage.content, /\[1\]/);
+});
+
 test("sendMessage falls back to the deterministic answer when the LLM call fails", async () => {
   const { appendCalls, repository } = createRepositoryStub();
   const service = createProductionChatService(repository, {

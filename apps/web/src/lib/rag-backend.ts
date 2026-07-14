@@ -43,6 +43,32 @@ export async function retrieveDocuments(
   return mergeHybridResults(keywordResults, vectorResults, request.topK);
 }
 
+export async function retrieveDocumentsByChunkIds(input: {
+  chunkIds: string[];
+  topK: number;
+  workspaceId: string;
+}): Promise<RetrievalResult[]> {
+  if (process.env.AV_OKF_BACKEND !== "production") {
+    return [];
+  }
+
+  const repository = createRagRepository() as ReturnType<typeof createRagRepository> & {
+    getChunksByIds?(input: {
+      chunkIds: string[];
+      workspaceId: string;
+    }): Promise<RetrievalResult[]>;
+  };
+
+  if (!repository.getChunksByIds) {
+    return [];
+  }
+
+  return (await repository.getChunksByIds({
+    chunkIds: input.chunkIds,
+    workspaceId: input.workspaceId,
+  })).slice(0, input.topK);
+}
+
 async function searchVector(
   repository: VectorSearchRepository,
   request: RetrievalRequest,

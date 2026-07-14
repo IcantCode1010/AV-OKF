@@ -32,6 +32,7 @@ export type ChatRouterDecision = {
   rationale: string;
   requiredContext: string[];
   route: ChatRoute;
+  requiresGraphTraversal?: boolean;
   routerMode?: ChatRouterMode;
 };
 
@@ -53,6 +54,7 @@ export type ChatAnswerEvidenceProfile = {
   evidenceKind: ChatAnswerEvidenceKind;
   evidenceUsed: Array<"okf" | "rag">;
   fallbackReason?: string;
+  okfEvidenceMode?: "direct" | "graph";
   requiresUserVerification: boolean;
   sourceCounts: {
     okf: number;
@@ -66,6 +68,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   // Optional because traces persisted before each field existed don't carry
   // them; absent means the reply predates that tracking.
   answerEvidenceProfile?: ChatAnswerEvidenceProfile;
+  answerValidation?: import("./chat-validation.ts").ChatValidationResult;
   answerMode?: "llm" | "deterministic";
   answerModel?: string;
   answerProvider?: string;
@@ -115,6 +118,17 @@ const MISSING_OPERATIONAL_CONTEXT = [
 ];
 
 export function routeChatQuestion(
+  input: string | ChatRouterInput,
+): ChatRouterDecision {
+  const decision = routeChatQuestionBase(input);
+  const question = typeof input === "string" ? input : input.question;
+
+  return requiresGraphTraversal(question)
+    ? { ...decision, requiresGraphTraversal: true }
+    : decision;
+}
+
+function routeChatQuestionBase(
   input: string | ChatRouterInput,
 ): ChatRouterDecision {
   const question = typeof input === "string" ? input : input.question;
@@ -233,7 +247,13 @@ export async function routeChatQuestionWithFallback(
       return rulesOnly;
     }
 
-    return { ...fallbackDecision, routerMode: "llm_fallback" };
+    return {
+      ...fallbackDecision,
+      ...(requiresGraphTraversal(normalizedInput.question)
+        ? { requiresGraphTraversal: true }
+        : {}),
+      routerMode: "llm_fallback",
+    };
   } catch {
     return rulesOnly;
   }
@@ -330,6 +350,10 @@ function normalizeQuestion(question: string): string {
 
 function normalizeRouterInput(input: string | ChatRouterInput): ChatRouterInput {
   return typeof input === "string" ? { question: input } : input;
+}
+
+function requiresGraphTraversal(question: string): boolean {
+  return matchesAny(normalizeQuestion(question), GRAPH_TRAVERSAL_PATTERNS);
 }
 
 function matchesAny(value: string, patterns: RegExp[]): boolean {
@@ -565,6 +589,16 @@ const CANONICAL_QUESTION_PATTERNS = [
   /^where (is|are)\b/,
   /^explain\b/,
   /^describe\b/,
+];
+
+const GRAPH_TRAVERSAL_PATTERNS = [
+  /\brelated to\b/,
+  /\brelationship between\b/,
+  /\bconnected to\b/,
+  /\bhow does .* affect\b/,
+  /\bimpact of .* on\b/,
+  /\bacross (?:the )?(?:systems|concepts|procedures|manuals)\b/,
+  /\btrace (?:the )?(?:path|relationship|chain)\b/,
 ];
 
 const OKF_PATTERNS = [

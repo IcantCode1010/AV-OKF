@@ -15,6 +15,7 @@ import {
   retrieveOkfBundleEvidence,
   type OkfBundleEvidence,
 } from "./okf-bundle-retriever.ts";
+import type { OkfGraphTraversalResult } from "./okf-graph-retriever.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 
 function makeResult(overrides: Partial<RetrievalResult>): RetrievalResult {
@@ -94,6 +95,63 @@ test("okf_only route reads approved OKF bundle evidence and calls okf_retrieval"
   assert.equal(result.citations[0]?.sourceFile, "737NG QRH");
   assert.equal(result.citations[0]?.index, 1);
   assert.deepEqual(result.sourcesRead, ["GEN OFF BUS (737NG QRH p. 12)"]);
+});
+
+test("graph questions traverse approved OKF relations and label graph evidence", async () => {
+  const decision = routeChatQuestion(
+    "How does the brake control unit affect alternate braking?",
+  );
+  assert.equal(decision.requiresGraphTraversal, true);
+
+  const graphResult: OkfGraphTraversalResult = {
+    concepts: [
+      makeOkfEvidence({
+        coveredRagChunkIds: ["chunk_covered"],
+        filePath: "32-alternate-braking.md",
+        title: "Alternate Braking",
+      }),
+    ],
+    paths: [
+      {
+        files: ["32-brakes.md", "32-alternate-braking.md"],
+        relationTypes: ["references"],
+      },
+    ],
+    warnings: [],
+  };
+
+  const result = await runChatRetrieval(
+    { decision, query: "brake control unit alternate braking", workspaceId: "wrk_1" },
+    async () => {
+      throw new Error("rag_should_not_be_called");
+    },
+    async () => [makeOkfEvidence({ filePath: "32-brakes.md" })],
+    async (request) => {
+      assert.deepEqual(request.seedFiles, ["32-brakes.md"]);
+      return graphResult;
+    },
+    async (request) => {
+      assert.deepEqual(request.chunkIds, ["chunk_covered"]);
+      return [
+        makeResult({
+          chunkId: "chunk_covered",
+          text: "The source manual describes alternate braking on page 12.",
+        }),
+      ];
+    },
+  );
+
+  assert.equal(result.okfEvidenceMode, "graph");
+  assert.deepEqual(result.retrievalToolsCalled, [
+    "okf_retrieval",
+    "okf_relation_traversal",
+    "okf_coverage_rag",
+  ]);
+  assert.deepEqual(
+    result.citations.map((citation) => citation.okfEvidenceMode),
+    ["graph", "graph", undefined],
+  );
+  assert.equal(result.citations[2]?.sourceType, "rag");
 });
 
 test("okf_only downgrades to labeled RAG discovery when no approved OKF evidence exists", async () => {

@@ -9,8 +9,12 @@ import {
   retrieveOkfBundleEvidence,
   type OkfBundleEvidence,
 } from "./okf-bundle-retriever.ts";
+import {
+  traverseOkfRelations,
+  type OkfGraphTraversalResult,
+} from "./okf-graph-retriever.ts";
 import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
-import { retrieveDocuments } from "./rag-backend.ts";
+import { retrieveDocuments, retrieveDocumentsByChunkIds } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 
 const OKF_TOP_K = 4;
@@ -25,6 +29,7 @@ const EVIDENCE_EXCERPT_MAX_CHARS = 1500;
 export type ChatRetrievalEvidence = {
   documentTitle: string;
   index: number;
+  okfEvidenceMode?: "direct" | "graph";
   okfFilePath?: string;
   pageEnd: number;
   pageStart: number;
@@ -43,6 +48,7 @@ export type ChatRetrievalResult = {
   // discovery, either a rag_only answer or an OKF route downgraded because
   // no approved evidence existed. Never true when OKF evidence is present.
   ragUsedForDiscoveryOnly: boolean;
+  okfEvidenceMode?: "direct" | "graph";
   retrievalError: boolean;
   retrievalToolsCalled: string[];
   sourcesRead: string[];
@@ -60,6 +66,18 @@ export type OkfBundleRetrievalFn = (input: {
   workspaceId: string;
 }) => Promise<OkfBundleEvidence[]>;
 
+export type OkfGraphTraversalFn = (input: {
+  seedFiles: string[];
+  workspaceId: string;
+  maxHops?: number;
+}) => Promise<OkfGraphTraversalResult>;
+
+export type CoveredRagRetrievalFn = (input: {
+  chunkIds: string[];
+  topK: number;
+  workspaceId: string;
+}) => Promise<RetrievalResult[]>;
+
 async function retrieveOkfBundleEvidenceWithLifecycle(input: {
   query: string;
   topK: number;
@@ -71,10 +89,23 @@ async function retrieveOkfBundleEvidenceWithLifecycle(input: {
   });
 }
 
+async function traverseOkfRelationsWithLifecycle(input: {
+  seedFiles: string[];
+  workspaceId: string;
+  maxHops?: number;
+}): Promise<OkfGraphTraversalResult> {
+  return traverseOkfRelations({
+    ...input,
+    lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
+  });
+}
+
 export async function runChatRetrieval(
   input: { decision: ChatRouterDecision; query: string; workspaceId: string },
   retrieve: typeof retrieveDocuments = retrieveDocuments,
   retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleEvidenceWithLifecycle,
+  traverseGraph: OkfGraphTraversalFn = traverseOkfRelationsWithLifecycle,
+  retrieveCoveredRag: CoveredRagRetrievalFn = retrieveDocumentsByChunkIds,
 ): Promise<ChatRetrievalResult> {
   const { decision, query, workspaceId } = input;
 
@@ -101,6 +132,70 @@ export async function runChatRetrieval(
       });
 
       if (okfResults.length > 0) {
+        if (decision.requiresGraphTraversal) {
+          const graph = await traverseGraph({
+            seedFiles: okfResults.map((result) => result.filePath),
+            workspaceId,
+            maxHops: 2,
+          });
+          const graphResults = graph.concepts.filter(
+            (result) => !okfResults.some((direct) => direct.filePath === result.filePath),
+          );
+
+          if (graphResults.length > 0) {
+            const coveredRag = await retrieveCoveredRag({
+              chunkIds: uniqueChunkIds(graphResults),
+              topK: RAG_TOP_K,
+              workspaceId,
+            });
+            const graphOkfResults = [...okfResults, ...graphResults].slice(0, OKF_TOP_K);
+
+            if (coveredRag.length > 0) {
+              return buildCombinedRetrievalResult(
+                graphOkfResults,
+                coveredRag,
+                [...toolsForRoute, "okf_relation_traversal", "okf_coverage_rag"],
+                {
+                  approvedOkfAvailable: true,
+                  okfEvidenceMode: "graph",
+                  ragUsedForDiscoveryOnly: false,
+                },
+                "graph",
+              );
+            }
+
+            return buildOkfBundleRetrievalResult(
+              graphOkfResults,
+              [...toolsForRoute, "okf_relation_traversal"],
+              {
+                approvedOkfAvailable: true,
+                okfEvidenceMode: "graph",
+                ragUsedForDiscoveryOnly: false,
+              },
+              "graph",
+            );
+          }
+
+          const discoveryResults = await fetchBySourceType(retrieve, {
+            approvedOnly: false,
+            query,
+            sourceType: "raw_extraction",
+            topK: RAG_TOP_K,
+            workspaceId,
+          });
+          return buildCombinedRetrievalResult(
+            okfResults,
+            discoveryResults,
+            [...toolsForRoute, "okf_relation_traversal", "rag_retrieval"],
+            {
+              approvedOkfAvailable: true,
+              okfEvidenceMode: "direct",
+              ragUsedForDiscoveryOnly: false,
+            },
+            "direct",
+          );
+        }
+
         return buildOkfBundleRetrievalResult(okfResults, toolsForRoute, {
           approvedOkfAvailable: true,
           ragUsedForDiscoveryOnly: false,
@@ -239,13 +334,17 @@ function buildRetrievalResult(
 function buildOkfBundleRetrievalResult(
   results: OkfBundleEvidence[],
   retrievalToolsCalled: string[],
-  flags: Pick<ChatRetrievalResult, "approvedOkfAvailable" | "ragUsedForDiscoveryOnly">,
+  flags: Pick<
+    ChatRetrievalResult,
+    "approvedOkfAvailable" | "okfEvidenceMode" | "ragUsedForDiscoveryOnly"
+  >,
+  okfEvidenceMode: "direct" | "graph" = "direct",
 ): ChatRetrievalResult {
   const citations = results.map((result, index) =>
-    okfBundleToChatCitation(result, index + 1),
+    okfBundleToChatCitation(result, index + 1, okfEvidenceMode),
   );
   const evidence = results.map((result, index) =>
-    okfBundleToEvidence(result, index + 1),
+    okfBundleToEvidence(result, index + 1, okfEvidenceMode),
   );
   const sourcesRead = Array.from(
     new Set(
@@ -263,6 +362,7 @@ function buildOkfBundleRetrievalResult(
     retrievalError: false,
     retrievalToolsCalled,
     sourcesRead,
+    okfEvidenceMode,
   };
 }
 
@@ -270,16 +370,20 @@ function buildCombinedRetrievalResult(
   okfResults: OkfBundleEvidence[],
   ragResults: RetrievalResult[],
   retrievalToolsCalled: string[],
-  flags: Pick<ChatRetrievalResult, "approvedOkfAvailable" | "ragUsedForDiscoveryOnly">,
+  flags: Pick<
+    ChatRetrievalResult,
+    "approvedOkfAvailable" | "okfEvidenceMode" | "ragUsedForDiscoveryOnly"
+  >,
+  okfEvidenceMode: "direct" | "graph" = "direct",
 ): ChatRetrievalResult {
   const okfCitations = okfResults.map((result, index) =>
-    okfBundleToChatCitation(result, index + 1),
+    okfBundleToChatCitation(result, index + 1, okfEvidenceMode),
   );
   const ragCitations = ragResults.map((result, index) =>
     toChatCitation(result, okfCitations.length + index + 1),
   );
   const okfEvidence = okfResults.map((result, index) =>
-    okfBundleToEvidence(result, index + 1),
+    okfBundleToEvidence(result, index + 1, okfEvidenceMode),
   );
   const ragEvidence = ragResults.map((result, index) =>
     toEvidence(result, okfEvidence.length + index + 1),
@@ -306,6 +410,12 @@ function buildCombinedRetrievalResult(
   };
 }
 
+function uniqueChunkIds(results: OkfBundleEvidence[]): string[] {
+  return Array.from(
+    new Set(results.flatMap((result) => result.coveredRagChunkIds)),
+  );
+}
+
 function toChatCitation(result: RetrievalResult, index: number): ChatCitation {
   return {
     coveredByOkfConceptIds: result.coveredByOkfConceptIds,
@@ -321,11 +431,13 @@ function toChatCitation(result: RetrievalResult, index: number): ChatCitation {
 function okfBundleToChatCitation(
   result: OkfBundleEvidence,
   index: number,
+  okfEvidenceMode: "direct" | "graph" = "direct",
 ): ChatCitation {
   return {
     coveredByOkfConceptIds: [],
     documentTitle: result.title,
     index,
+    okfEvidenceMode,
     okfFilePath: result.filePath,
     pageEnd: result.pageEnd,
     pageStart: result.pageStart,
@@ -349,10 +461,12 @@ function toEvidence(result: RetrievalResult, index: number): ChatRetrievalEviden
 function okfBundleToEvidence(
   result: OkfBundleEvidence,
   index: number,
+  okfEvidenceMode: "direct" | "graph" = "direct",
 ): ChatRetrievalEvidence {
   return {
     documentTitle: result.title,
     index,
+    okfEvidenceMode,
     okfFilePath: result.filePath,
     pageEnd: result.pageEnd,
     pageStart: result.pageStart,

@@ -2,6 +2,7 @@ import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { generateChatAnswer, type ChatAnswer } from "./chat-answer.ts";
 import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
+import { validateChatAnswerEvidence } from "./chat-validation.ts";
 import {
   buildStage6aRouterReply,
   buildStage6aRouterTrace,
@@ -10,6 +11,7 @@ import {
 } from "./chat-router.ts";
 import type { ChatRouterDecision, ChatRouterInput } from "./chat-router.ts";
 import {
+  buildRetrievalAnswer,
   resolveEvidenceStatus,
   runChatRetrieval,
   type ChatRetrievalFn,
@@ -146,15 +148,32 @@ export function createProductionChatService(
         retrievalToolsCalled: retrieval.retrievalToolsCalled,
         sourcesRead: retrieval.sourcesRead,
       };
+      const answerValidation = validateChatAnswerEvidence({
+        answerContent: answer.content,
+        citations: retrieval.citations,
+        retrievalError: retrieval.retrievalError,
+        route: decision.route,
+        trace: assistantTrace,
+      });
+      const safeAnswer =
+        answerValidation.status === "fail" && isRetrievalRoute(decision.route)
+          ? {
+              ...answer,
+              content: buildRetrievalAnswer(decision.route, retrieval),
+              mode: "deterministic" as const,
+            }
+          : answer;
 
       return repository.appendUserMessageAndAssistantReply({
-        assistantContent: answer.content,
+        assistantContent: safeAnswer.content,
         assistantTrace: {
           ...assistantTrace,
+          answerMode: safeAnswer.mode,
           answerEvidenceProfile: buildAnswerEvidenceProfile({
             citations: retrieval.citations,
             trace: assistantTrace,
           }),
+          answerValidation,
         },
         citations: retrieval.citations,
         content,

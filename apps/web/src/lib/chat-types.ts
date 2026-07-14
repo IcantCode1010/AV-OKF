@@ -2,6 +2,8 @@ import type { Stage6aRouterTrace } from "./chat-router.ts";
 
 export type ChatRole = "user" | "assistant";
 
+export type ChatOkfEvidenceMode = "direct" | "graph";
+
 // Persisted, render-facing projection of a RetrievalResult (rag-types.ts):
 // text is a short excerpt sized for citation chips and stored trace JSON,
 // not the full retrieved chunk (see ChatRetrievalEvidence for that).
@@ -12,6 +14,7 @@ export type ChatCitation = {
   coveredByOkfConceptIds?: string[];
   documentTitle: string;
   index: number;
+  okfEvidenceMode?: ChatOkfEvidenceMode;
   okfFilePath?: string;
   pageEnd: number;
   pageStart: number;

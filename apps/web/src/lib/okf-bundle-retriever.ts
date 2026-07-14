@@ -60,6 +60,13 @@ export type OkfBundleRetrievalInput = {
   workspaceId: string;
 };
 
+export type OkfBundleFileReadInput = {
+  filePath: string;
+  knowledgeRoot?: string;
+  lifecycleLookup?: OkfConceptLifecycleLookup;
+  workspaceId: string;
+};
+
 const RESERVED_BUNDLE_FILES = new Set([
   "index.md",
   "log.md",
@@ -185,6 +192,44 @@ export async function retrieveOkfBundleEvidence(
     .slice(0, input.topK ?? DEFAULT_TOP_K);
 }
 
+export async function readOkfBundleEvidenceByPath(
+  input: OkfBundleFileReadInput,
+): Promise<OkfBundleEvidence | null> {
+  const root = path.resolve(input.knowledgeRoot ?? getDefaultKnowledgeRoot());
+  const filePath = normalizeBundleFilePath(input.filePath);
+
+  if (!filePath || RESERVED_BUNDLE_FILES.has(filePath)) {
+    return null;
+  }
+
+  const fullPath = resolveBundlePath(root, filePath);
+  if (!fullPath) {
+    return null;
+  }
+
+  try {
+    const markdown = await readFile(fullPath, "utf8");
+    const lifecycle = await resolveLifecycleStatus({
+      filePath,
+      knowledgeRoot: root,
+      lifecycleLookup: input.lifecycleLookup,
+      workspaceId: input.workspaceId,
+    });
+
+    if (lifecycle.status !== "active") {
+      return null;
+    }
+
+    return buildEvidenceCandidate(root, filePath, markdown, null, lifecycle.status);
+  } catch (error) {
+    if (isMissingDirectoryError(error) || isMissingFileError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
 async function collectMarkdownFiles(root: string, directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const files: string[] = [];
@@ -209,7 +254,7 @@ async function buildEvidenceCandidate(
   root: string,
   filePath: string,
   markdown: string,
-  queryTerms: string[],
+  queryTerms: string[] | null,
   lifecycleStatus: OkfConceptLifecycleStatus,
 ): Promise<OkfBundleEvidence | null> {
   const parsed = parseOkfMarkdown(markdown);
@@ -245,14 +290,16 @@ async function buildEvidenceCandidate(
   ]
     .filter((value): value is string => Boolean(value))
     .join(" ");
-  const match = qualifyCandidate({
-    body: parsed.body,
-    description,
-    metadata: searchableMetadata,
-    queryTerms,
-    title,
-  });
-  if (!match) {
+  const match = queryTerms
+    ? qualifyCandidate({
+        body: parsed.body,
+        description,
+        metadata: searchableMetadata,
+        queryTerms,
+        title,
+      })
+    : null;
+  if (queryTerms && !match) {
     return null;
   }
 
@@ -272,14 +319,14 @@ async function buildEvidenceCandidate(
       filePath,
       getFrontmatterRelations(parsed.frontmatter),
     ),
-    matchedTerms: match.matchedTerms,
-    matchReason: match.reason,
-    matchStrength: match.strength,
+    matchedTerms: match?.matchedTerms ?? [],
+    matchReason: match?.reason ?? "approved relation target",
+    matchStrength: match?.strength ?? "medium",
     pageEnd: Math.max(...sourcePages),
     pageStart: Math.min(...sourcePages),
     relations: getFrontmatterRelations(parsed.frontmatter),
     reviewStatus: "approved",
-    score: match.score,
+    score: match?.score ?? 0,
     sourceFile,
     sourcePages,
     sourceType: "okf_bundle",
@@ -304,6 +351,31 @@ async function resolveLifecycleStatus(input: {
       knowledgeRoot: input.knowledgeRoot,
       workspaceId: input.workspaceId,
     })) ?? { status: "active" }
+  );
+}
+
+function normalizeBundleFilePath(value: string): string | null {
+  const normalized = value.trim().replaceAll("\\", "/");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("../")) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function resolveBundlePath(root: string, filePath: string): string | null {
+  const fullPath = path.resolve(root, filePath.replaceAll("/", path.sep));
+  return fullPath === root || fullPath.startsWith(`${root}${path.sep}`)
+    ? fullPath
+    : null;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "ENOENT",
   );
 }
 

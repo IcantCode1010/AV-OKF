@@ -16,6 +16,13 @@ export function buildAnswerEvidenceProfile(input: {
   ).length;
   const total = input.citations.length;
   const sourceCounts = { okf: okfCount, rag: ragCount, total };
+  const okfEvidenceMode = input.citations.some(
+    (citation) => citation.okfEvidenceMode === "graph",
+  )
+    ? "graph"
+    : okfCount > 0
+      ? "direct"
+      : undefined;
 
   if (okfCount > 0 && ragCount > 0) {
     return {
@@ -24,6 +31,7 @@ export function buildAnswerEvidenceProfile(input: {
       requiresUserVerification: true,
       sourceCounts,
       trustLevel: "medium",
+      ...(okfEvidenceMode ? { okfEvidenceMode } : {}),
     };
   }
 
@@ -34,6 +42,7 @@ export function buildAnswerEvidenceProfile(input: {
       requiresUserVerification: false,
       sourceCounts,
       trustLevel: "high",
+      ...(okfEvidenceMode ? { okfEvidenceMode } : {}),
     };
   }
 

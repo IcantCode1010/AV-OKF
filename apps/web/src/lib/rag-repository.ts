@@ -406,7 +406,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       }));
     },
 
-      async searchVector(input: {
+    async searchVector(input: {
         documentIds?: string[];
         embedding: number[];
         filters?: {
@@ -475,6 +475,45 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         retrievalMode: "vector",
         reviewStatus: row.reviewStatus,
         score: row.score,
+        sourcePageNumbers: row.sourcePageNumbers,
+        sourceType: row.sourceType,
+        text: row.text,
+      }));
+    },
+
+    async getChunksByIds(input: {
+      chunkIds: string[];
+      workspaceId: string;
+    }): Promise<RetrievalResult[]> {
+      if (input.chunkIds.length === 0) {
+        return [];
+      }
+
+      const rows = await db.ragChunk.findMany({
+        include: { document: true },
+        orderBy: { id: "asc" },
+        where: {
+          id: { in: input.chunkIds },
+          isActive: true,
+          sourceType: RAW_EXTRACTION_SOURCE_TYPE,
+          workspaceId: input.workspaceId,
+        },
+      });
+      const coverage = await getCoverageByChunkId(db, {
+        chunkIds: rows.map((row) => row.id),
+        workspaceId: input.workspaceId,
+      });
+
+      return rows.map((row) => ({
+        chunkId: row.id,
+        coveredByOkfConceptIds: coverage.get(row.id) ?? [],
+        documentId: row.documentId,
+        documentTitle: row.document.title,
+        pageEnd: row.pageEnd,
+        pageStart: row.pageStart,
+        retrievalMode: "keyword",
+        reviewStatus: row.reviewStatus,
+        score: 1,
         sourcePageNumbers: row.sourcePageNumbers,
         sourceType: row.sourceType,
         text: row.text,
