@@ -166,7 +166,10 @@ test("sendMessage stores the LLM answer and records answer mode in the trace", a
     generateAnswer: async (input) =>
       generateChatAnswer(input, {
         callProvider: async () =>
-          '{"answer": "The GEN OFF BUS light indicates a generator bus fault [1].", "supported": true}',
+          ({
+            answer: "The GEN OFF BUS light indicates a generator bus fault [1].",
+            supported: true,
+          }),
         getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
       }),
     getContext: async () => context,

@@ -1,3 +1,6 @@
+import { generateText, Output } from "ai";
+import { z } from "zod";
+
 import { parseCitationMarkers } from "./chat-citation-markers.ts";
 import {
   buildRetrievalAnswer,
@@ -6,7 +9,11 @@ import {
 } from "./chat-retrieval.ts";
 import type { RetrievalChatRoute } from "./chat-router.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
-import { getLlmProvider, type LlmProviderId } from "./llm-providers.ts";
+import {
+  getLlmProvider,
+  getSdkModel,
+  type LlmProviderId,
+} from "./llm-providers.ts";
 
 const ANSWER_MAX_TOKENS = 1024;
 
@@ -22,7 +29,7 @@ export type ChatAnswerProviderFn = (input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
-}) => Promise<string>;
+}) => Promise<unknown>;
 
 type GenerateChatAnswerOptions = {
   callProvider?: ChatAnswerProviderFn;
@@ -74,13 +81,13 @@ export async function generateChatAnswer(
   });
 
   try {
-    const rawText = await callProvider({
+    const structuredOutput = await callProvider({
       apiKey: key.apiKey,
       model: provider.model,
       prompt,
       provider: provider.id,
     });
-    const payload = parseAnswerPayload(rawText);
+    const payload = parseAnswerPayload(structuredOutput);
 
     if (!payload.supported) {
       return {
@@ -197,17 +204,22 @@ function evidenceContextForRoute(route: RetrievalChatRoute): string {
   return "Evidence entries are labeled approved knowledge or raw document text. If they conflict, prefer approved knowledge and say the raw text disagrees.";
 }
 
-function parseAnswerPayload(rawText: string): {
+const chatAnswerSchema = z.object({
+  answer: z.string(),
+  supported: z.boolean(),
+});
+
+function parseAnswerPayload(rawOutput: unknown): {
   answer: string;
   supported: boolean;
 } {
-  const parsed = JSON.parse(rawText) as { answer?: unknown; supported?: unknown };
+  const parsed = chatAnswerSchema.safeParse(rawOutput);
 
-  if (typeof parsed.answer !== "string" || typeof parsed.supported !== "boolean") {
+  if (!parsed.success) {
     throw new Error("chat_answer_malformed_response");
   }
 
-  return { answer: parsed.answer, supported: parsed.supported };
+  return parsed.data;
 }
 
 async function callChatAnswerProvider(input: {
@@ -215,92 +227,16 @@ async function callChatAnswerProvider(input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
-}): Promise<string> {
-  if (input.provider === "anthropic") {
-    return callAnthropic(input);
-  }
-
-  return callOpenAi(input);
-}
-
-async function callAnthropic(input: {
-  apiKey: string;
-  model: string;
-  prompt: string;
-}): Promise<string> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    body: JSON.stringify({
-      max_tokens: ANSWER_MAX_TOKENS,
-      messages: [{ content: input.prompt, role: "user" }],
-      model: input.model,
-      system:
-        "You answer questions strictly from supplied evidence. Return only JSON.",
-      temperature: 0,
-    }),
-    headers: {
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-      "x-api-key": input.apiKey,
-    },
-    method: "POST",
+}): Promise<unknown> {
+  const result = await generateText({
+    model: getSdkModel(input.provider, input.apiKey),
+    output: Output.object({ schema: chatAnswerSchema }),
+    prompt: input.prompt,
+    system:
+      "You answer questions strictly from supplied evidence. Return only the requested structured object.",
+    maxOutputTokens: ANSWER_MAX_TOKENS,
+    temperature: 0,
   });
-  const rawResponse = await response.text();
 
-  if (!response.ok) {
-    throw new Error(`anthropic_request_failed:${response.status}`);
-  }
-
-  const parsed = JSON.parse(rawResponse) as {
-    content?: Array<{ text?: string; type?: string }>;
-  };
-  const text = parsed.content?.find((part) => part.type === "text")?.text;
-
-  if (!text) {
-    throw new Error("chat_answer_malformed_response");
-  }
-
-  return text;
-}
-
-async function callOpenAi(input: {
-  apiKey: string;
-  model: string;
-  prompt: string;
-}): Promise<string> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    body: JSON.stringify({
-      messages: [
-        {
-          content:
-            "You answer questions strictly from supplied evidence. Return only JSON.",
-          role: "system",
-        },
-        { content: input.prompt, role: "user" },
-      ],
-      model: input.model,
-      response_format: { type: "json_object" },
-      temperature: 0,
-    }),
-    headers: {
-      authorization: `Bearer ${input.apiKey}`,
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-  const rawResponse = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`openai_request_failed:${response.status}`);
-  }
-
-  const parsed = JSON.parse(rawResponse) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const text = parsed.choices?.[0]?.message?.content;
-
-  if (!text) {
-    throw new Error("chat_answer_malformed_response");
-  }
-
-  return text;
+  return result.output;
 }

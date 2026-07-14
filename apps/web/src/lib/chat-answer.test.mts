@@ -96,7 +96,7 @@ test("generateChatAnswer never calls the provider for empty or failed retrieval"
   const options = {
     callProvider: async () => {
       providerCalls += 1;
-      return '{"answer": "x [1]", "supported": true}';
+      return { answer: "x [1]", supported: true };
     },
     getApiKey: anthropicKey,
   };
@@ -140,7 +140,10 @@ test("generateChatAnswer uses the LLM answer when it is supported and correctly 
     },
     {
       callProvider: async () =>
-        '{"answer": "The GEN OFF BUS light indicates a generator bus fault [1].", "supported": true}',
+        ({
+          answer: "The GEN OFF BUS light indicates a generator bus fault [1].",
+          supported: true,
+        }),
       getApiKey: anthropicKey,
     },
   );
@@ -161,7 +164,7 @@ test("generateChatAnswer rejects answers citing evidence that does not exist", a
     { evidence: [makeEvidence(1)], query: QUERY, retrieval, route: "okf_only", workspaceId: WORKSPACE_ID },
     {
       callProvider: async () =>
-        '{"answer": "Generator bus fault [1], and also [4].", "supported": true}',
+        ({ answer: "Generator bus fault [1], and also [4].", supported: true }),
       getApiKey: anthropicKey,
     },
   );
@@ -177,7 +180,7 @@ test("generateChatAnswer rejects uncited answers", async () => {
     { evidence: [makeEvidence(1)], query: QUERY, retrieval, route: "okf_only", workspaceId: WORKSPACE_ID },
     {
       callProvider: async () =>
-        '{"answer": "It indicates a generator bus fault.", "supported": true}',
+        ({ answer: "It indicates a generator bus fault.", supported: true }),
       getApiKey: anthropicKey,
     },
   );
@@ -195,7 +198,7 @@ test("generateChatAnswer reports not-directly-answered when the model says evide
       workspaceId: WORKSPACE_ID,
     },
     {
-      callProvider: async () => '{"answer": "", "supported": false}',
+      callProvider: async () => ({ answer: "", supported: false }),
       getApiKey: anthropicKey,
     },
   );

@@ -435,14 +435,9 @@ test("workspace Anthropic setting still selects the Anthropic provider implement
 });
 
 test("OpenAI provider reports malformed JSON fields like Anthropic", async () => {
-  const provider = createOpenAiTopicEnrichmentProvider(async () =>
-    new Response(
-      JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ title: "Only title" }) } }],
-      }),
-      { status: 200 },
-    ),
-  );
+  const provider = createOpenAiTopicEnrichmentProvider(async () => ({
+    title: "Only title",
+  }));
 
   await assert.rejects(
     () =>

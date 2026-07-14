@@ -1,5 +1,12 @@
+import { generateText, Output } from "ai";
+import { z } from "zod";
+
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
-import { getLlmProvider, type LlmProviderId } from "./llm-providers.ts";
+import {
+  getLlmProvider,
+  getSdkModel,
+  type LlmProviderId,
+} from "./llm-providers.ts";
 
 export type ChatRoute =
   | "okf_only"
@@ -102,7 +109,7 @@ export type ChatRouterProviderFn = (input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
-}) => Promise<string>;
+}) => Promise<unknown>;
 
 export type RetrievalChatRoute = "okf_only" | "rag_only" | "hybrid";
 
@@ -300,14 +307,14 @@ export async function classifyChatRouteWithLlm(
 
   const provider = getLlmProvider(key.provider);
   const prompt = buildRouterFallbackPrompt(input);
-  const rawText = await (options.callProvider ?? callRouterProvider)({
+  const structuredOutput = await (options.callProvider ?? callRouterProvider)({
     apiKey: key.apiKey,
     model: provider.model,
     prompt,
     provider: provider.id,
   });
 
-  return parseRouterFallbackPayload(rawText);
+  return parseRouterFallbackPayload(structuredOutput);
 }
 
 export function buildStage6aRouterTrace(
@@ -399,33 +406,40 @@ function buildRouterFallbackPrompt(input: ChatRouterFallbackInput): string {
   ].join("\n");
 }
 
-function parseRouterFallbackPayload(rawText: string): ChatRouterDecision | null {
-  const parsed = JSON.parse(rawText) as {
-    confidence?: unknown;
-    queryCategory?: unknown;
-    rationale?: unknown;
-    requiredContext?: unknown;
-    route?: unknown;
-  };
+const routerFallbackSchema = z.object({
+  confidence: z.enum(["high", "medium", "low"]),
+  queryCategory: z.enum([
+    "canonical_definition",
+    "policy_or_process",
+    "source_lookup",
+    "open_ended_discovery",
+    "cross_document_summary",
+    "comparison",
+    "high_risk_domain",
+    "live_or_fresh_data",
+    "missing_context",
+    "unsupported",
+  ]),
+  rationale: z.string(),
+  requiredContext: z.array(z.string()),
+  route: z.enum(["okf_only", "rag_only", "hybrid", "missing_context", "unsupported"]),
+});
 
-  if (
-    !isChatRoute(parsed.route) ||
-    !isQueryCategory(parsed.queryCategory) ||
-    !isRouterConfidence(parsed.confidence) ||
-    typeof parsed.rationale !== "string" ||
-    !Array.isArray(parsed.requiredContext) ||
-    !parsed.requiredContext.every((item) => typeof item === "string")
-  ) {
+function parseRouterFallbackPayload(rawOutput: unknown): ChatRouterDecision | null {
+  const parsed = routerFallbackSchema.safeParse(rawOutput);
+
+  if (!parsed.success) {
     return null;
   }
 
   return {
-    confidence: parsed.confidence,
-    constraints: constraintsForRoute(parsed.route),
-    queryCategory: parsed.queryCategory,
-    rationale: parsed.rationale.trim() || "LLM fallback classified the query.",
-    requiredContext: parsed.requiredContext,
-    route: parsed.route,
+    confidence: parsed.data.confidence,
+    constraints: constraintsForRoute(parsed.data.route),
+    queryCategory: parsed.data.queryCategory,
+    rationale:
+      parsed.data.rationale.trim() || "LLM fallback classified the query.",
+    requiredContext: parsed.data.requiredContext,
+    route: parsed.data.route,
   };
 }
 
@@ -441,128 +455,22 @@ function constraintsForRoute(route: ChatRoute): ChatRouterDecision["constraints"
   return { approvedOnly: false, includeUnreviewed: false };
 }
 
-function isChatRoute(value: unknown): value is ChatRoute {
-  return (
-    value === "okf_only" ||
-    value === "rag_only" ||
-    value === "hybrid" ||
-    value === "missing_context" ||
-    value === "unsupported"
-  );
-}
-
-function isQueryCategory(value: unknown): value is ChatQueryCategory {
-  return (
-    value === "canonical_definition" ||
-    value === "policy_or_process" ||
-    value === "source_lookup" ||
-    value === "open_ended_discovery" ||
-    value === "cross_document_summary" ||
-    value === "comparison" ||
-    value === "high_risk_domain" ||
-    value === "live_or_fresh_data" ||
-    value === "missing_context" ||
-    value === "unsupported"
-  );
-}
-
-function isRouterConfidence(value: unknown): value is ChatRouterConfidence {
-  return value === "high" || value === "medium" || value === "low";
-}
-
 async function callRouterProvider(input: {
   apiKey: string;
   model: string;
   prompt: string;
   provider: LlmProviderId;
-}): Promise<string> {
-  if (input.provider === "anthropic") {
-    return callAnthropicRouter(input);
-  }
-
-  return callOpenAiRouter(input);
-}
-
-async function callAnthropicRouter(input: {
-  apiKey: string;
-  model: string;
-  prompt: string;
-}): Promise<string> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    body: JSON.stringify({
-      max_tokens: 500,
-      messages: [{ content: input.prompt, role: "user" }],
-      model: input.model,
-      system:
-        "You classify chat questions for a document retrieval router. Return only JSON.",
-      temperature: 0,
-    }),
-    headers: {
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-      "x-api-key": input.apiKey,
-    },
-    method: "POST",
+}): Promise<unknown> {
+  const result = await generateText({
+    model: getSdkModel(input.provider, input.apiKey),
+    output: Output.object({ schema: routerFallbackSchema }),
+    prompt: input.prompt,
+    system:
+      "You classify chat questions for a document retrieval router. Return only the requested structured object.",
+    temperature: 0,
   });
-  const rawResponse = await response.text();
 
-  if (!response.ok) {
-    throw new Error(`anthropic_router_failed:${response.status}`);
-  }
-
-  const parsed = JSON.parse(rawResponse) as {
-    content?: Array<{ text?: string; type?: string }>;
-  };
-  const text = parsed.content?.find((part) => part.type === "text")?.text;
-
-  if (!text) {
-    throw new Error("chat_router_malformed_response");
-  }
-
-  return text;
-}
-
-async function callOpenAiRouter(input: {
-  apiKey: string;
-  model: string;
-  prompt: string;
-}): Promise<string> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    body: JSON.stringify({
-      messages: [
-        {
-          content:
-            "You classify chat questions for a document retrieval router. Return only JSON.",
-          role: "system",
-        },
-        { content: input.prompt, role: "user" },
-      ],
-      model: input.model,
-      response_format: { type: "json_object" },
-      temperature: 0,
-    }),
-    headers: {
-      authorization: `Bearer ${input.apiKey}`,
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-  const rawResponse = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`openai_router_failed:${response.status}`);
-  }
-
-  const parsed = JSON.parse(rawResponse) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const text = parsed.choices?.[0]?.message?.content;
-
-  if (!text) {
-    throw new Error("chat_router_malformed_response");
-  }
-
-  return text;
+  return result.output;
 }
 
 const LIVE_OR_EXTERNAL_PATTERNS = [

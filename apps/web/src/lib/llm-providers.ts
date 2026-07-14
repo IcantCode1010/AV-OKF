@@ -1,3 +1,7 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
+import type { LanguageModel } from "ai";
+
 export type LlmProviderId = "anthropic" | "openai";
 
 export const LLM_PROVIDERS: {
@@ -29,4 +33,17 @@ export function getLlmProvider(id: string) {
   }
 
   return provider;
+}
+
+export function getSdkModel(
+  providerId: LlmProviderId,
+  apiKey: string,
+): LanguageModel {
+  const provider = getLlmProvider(providerId);
+
+  if (provider.id === "anthropic") {
+    return createAnthropic({ apiKey }).languageModel(provider.model);
+  }
+
+  return createOpenAI({ apiKey }).chat(provider.model);
 }

@@ -181,3 +181,47 @@ test("router fallback keeps the conservative rule result when no workspace key e
   assert.equal(decision.routerMode, "rules");
   assert.equal(providerCalls, 0);
 });
+
+test("router fallback consumes structured provider output and rejects invalid shapes", async () => {
+  const rulesDecision = routeChatQuestion("generator bus reset");
+  let prompt = "";
+
+  const classified = await classifyChatRouteWithLlm(
+    {
+      question: "generator bus reset",
+      rulesDecision,
+      workspaceId: "wrk_1",
+    },
+    {
+      getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+      callProvider: async (input) => {
+        prompt = input.prompt;
+        return {
+          confidence: "medium",
+          queryCategory: "open_ended_discovery",
+          rationale: "The user is searching indexed documents.",
+          requiredContext: [],
+          route: "rag_only",
+        };
+      },
+    },
+  );
+
+  assert.equal(classified?.route, "rag_only");
+  assert.match(prompt, /generator bus reset/);
+  assert.doesNotMatch(prompt, /sk-test/);
+
+  const malformed = await classifyChatRouteWithLlm(
+    {
+      question: "generator bus reset",
+      rulesDecision,
+      workspaceId: "wrk_1",
+    },
+    {
+      getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+      callProvider: async () => ({ route: "not_a_route" }),
+    },
+  );
+
+  assert.equal(malformed, null);
+});
