@@ -63,6 +63,22 @@ test("routes live data requests to unsupported", () => {
   assert.equal(decision.confidence, "high");
 });
 
+test("routes current official policy questions to approved OKF", () => {
+  const decision = routeChatQuestion("What is the current official policy?");
+
+  assert.equal(decision.route, "okf_only");
+  assert.equal(decision.queryCategory, "policy_or_process");
+  assert.equal(decision.confidence, "high");
+});
+
+test("marks high-risk operational questions for reviewed OKF handling", () => {
+  const decision = routeChatQuestion("What is the procedure for an engine fire in flight?");
+
+  assert.equal(decision.route, "okf_only");
+  assert.equal(decision.queryCategory, "high_risk_domain");
+  assert.equal(decision.confidence, "medium");
+});
+
 test("routes plain interrogative questions to OKF at medium confidence", () => {
   for (const question of [
     "what is DC generation",

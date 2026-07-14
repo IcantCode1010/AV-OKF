@@ -134,7 +134,14 @@ function routeChatQuestionBase(
   const question = typeof input === "string" ? input : input.question;
   const normalized = normalizeQuestion(question);
 
-  if (matchesAny(normalized, LIVE_OR_EXTERNAL_PATTERNS)) {
+  const hasKnowledgeSignal =
+    matchesAny(normalized, OKF_PATTERNS) ||
+    matchesAny(normalized, HYBRID_PATTERNS);
+
+  if (
+    matchesAny(normalized, LIVE_OR_EXTERNAL_PATTERNS) &&
+    !hasKnowledgeSignal
+  ) {
     return {
       confidence: "high",
       constraints: { approvedOnly: false, includeUnreviewed: false },
@@ -155,6 +162,18 @@ function routeChatQuestionBase(
         "The question asks for an operational decision without enough aircraft, source, or situation context.",
       requiredContext: MISSING_OPERATIONAL_CONTEXT,
       route: "missing_context",
+    };
+  }
+
+  if (matchesAny(normalized, HIGH_RISK_DOMAIN_PATTERNS)) {
+    return {
+      confidence: "medium",
+      constraints: { approvedOnly: true, includeUnreviewed: false },
+      queryCategory: "high_risk_domain",
+      rationale:
+        "The question concerns a high-risk operational scenario and requires reviewed source material before any answer is attempted.",
+      requiredContext: [],
+      route: "okf_only",
     };
   }
 
@@ -589,6 +608,11 @@ const CANONICAL_QUESTION_PATTERNS = [
   /^where (is|are)\b/,
   /^explain\b/,
   /^describe\b/,
+];
+
+const HIGH_RISK_DOMAIN_PATTERNS = [
+  /\b(engine|apu|fuel|hydraulic|electrical|flight control|brake|landing gear)\b.*\b(fire|failure|fault|emergency|in flight|in-flight)\b/,
+  /\b(fire|failure|fault|emergency|in flight|in-flight)\b.*\b(engine|apu|fuel|hydraulic|electrical|flight control|brake|landing gear)\b/,
 ];
 
 const GRAPH_TRAVERSAL_PATTERNS = [

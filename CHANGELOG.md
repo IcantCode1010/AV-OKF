@@ -31,6 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Removed the obsolete 737NG landing-gear OKF fixture from `knowledge/` after its source document was deleted. The stale topic file, index entry, and source-manifest entry are gone; current forklift, printer, and hydraulic-pump bundle content is unchanged.
+- Fixed router precedence for questions such as "What is the current official policy?": the live-data guard no longer overrides explicit approved-knowledge signals. Added minimal high-risk-domain classification for operational questions such as engine-fire procedures, routing them to reviewed OKF at medium confidence.
+- Centralized OKF bundle path resolution through real-path boundary checks. Bundle preview, relation validation, live bundle retrieval, and relation warnings now reject existing symlinks that resolve outside the knowledge root while preserving the expected missing-target behavior.
 - Chat submissions now show an immediate animated pending state while the app searches OKF/RAG evidence and writes the answer. The pending row includes the user's submitted message, a pulsing assistant activity indicator, bouncing dots, and a short minimum visible duration so fast replies still feel active instead of appearing all at once.
 - Native browser dropdowns now stay readable in the dark UI. Global select/option styling sets the dark color scheme and OKF app color tokens so upload, settings, reindex, metadata, topic-review, and typed-relation dropdowns no longer open as white menus with low-contrast text.
 - Chat sends now refresh the active conversation immediately after the Server Action persists the user/assistant messages. `sendChatMessageAction` revalidates and redirects back to the current `/chat/[sessionId]`, fixing the browser-tested case where the response was saved to Postgres but did not appear until a manual reload.

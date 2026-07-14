@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import { resolveKnowledgePath } from "./knowledge-root.ts";
 export { getAllowedRelations } from "./okf-relation-vocabulary.ts";
 import { getAllowedRelations } from "./okf-relation-vocabulary.ts";
 export { normalizeTopicRelations } from "./okf-relation-types.ts";
@@ -43,7 +44,7 @@ export async function validateTopicRelations(
       throwViolation(index, "relation_type_not_allowed");
     }
 
-    const targetPath = resolveRelationTarget(relation.target, root);
+    const targetPath = await resolveRelationTarget(relation.target, root);
     if (!targetPath) {
       throwViolation(index, "relation_target_invalid");
     }
@@ -76,7 +77,7 @@ export async function validateTopicRelations(
   }
 }
 
-function resolveRelationTarget(target: string, root: string) {
+async function resolveRelationTarget(target: string, root: string) {
   if (
     target.trim().length === 0 ||
     target.includes("\\") ||
@@ -87,13 +88,10 @@ function resolveRelationTarget(target: string, root: string) {
     return null;
   }
 
-  const resolved = path.resolve(root, target);
-
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    return null;
-  }
-
-  return resolved;
+  return resolveKnowledgePath({
+    knowledgeRoot: root,
+    relativePath: target,
+  });
 }
 
 function throwViolation(

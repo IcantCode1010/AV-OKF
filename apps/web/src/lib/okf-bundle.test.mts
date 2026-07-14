@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -211,5 +211,35 @@ test("readOkfBundleFile reads only markdown files inside the bundle root", async
     );
   } finally {
     await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("readOkfBundleFile rejects a symlink that escapes the knowledge root", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-symlink-root-"));
+  const outside = await mkdtemp(path.join(tmpdir(), "av-okf-symlink-outside-"));
+
+  try {
+    await writeFile(path.join(outside, "outside.md"), "outside");
+    try {
+      await symlink(
+        path.join(outside, "outside.md"),
+        path.join(root, "escaped.md"),
+        "file",
+      );
+    } catch (error) {
+      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EPERM") {
+        t.skip("symlink creation is unavailable in this environment");
+        return;
+      }
+      throw error;
+    }
+
+    await assert.rejects(
+      () => readOkfBundleFile(root, "escaped.md"),
+      /okf_preview_path_escapes_root/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+    await rm(outside, { force: true, recursive: true });
   }
 });

@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import { resolveKnowledgePath } from "./knowledge-root.ts";
 import type { OkfConceptLifecycleRecord } from "./okf-bundle-retriever.ts";
 
 export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
@@ -93,9 +94,12 @@ export async function readOkfBundleFile(
 ): Promise<OkfBundleFileContent> {
   assertMarkdownFilename(filename);
   const root = path.resolve(knowledgeRoot);
-  const target = path.resolve(root, filename);
+  const target = await resolveKnowledgePath({
+    knowledgeRoot: root,
+    relativePath: filename,
+  });
 
-  if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+  if (!target) {
     throw new Error("okf_preview_path_escapes_root");
   }
 

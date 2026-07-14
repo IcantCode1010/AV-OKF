@@ -1,7 +1,10 @@
 import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
+import {
+  getDefaultKnowledgeRoot,
+  resolveKnowledgePath,
+} from "./knowledge-root.ts";
 import {
   getFrontmatterNumberArray,
   getFrontmatterRelations,
@@ -150,8 +153,11 @@ export async function retrieveOkfBundleEvidence(
       continue;
     }
 
-    const fullPath = path.resolve(root, filePath);
-    if (fullPath !== root && !fullPath.startsWith(`${root}${path.sep}`)) {
+    const fullPath = await resolveKnowledgePath({
+      knowledgeRoot: root,
+      relativePath: filePath,
+    });
+    if (!fullPath) {
       continue;
     }
 
@@ -202,7 +208,10 @@ export async function readOkfBundleEvidenceByPath(
     return null;
   }
 
-  const fullPath = resolveBundlePath(root, filePath);
+  const fullPath = await resolveKnowledgePath({
+    knowledgeRoot: root,
+    relativePath: filePath,
+  });
   if (!fullPath) {
     return null;
   }
@@ -355,19 +364,18 @@ async function resolveLifecycleStatus(input: {
 }
 
 function normalizeBundleFilePath(value: string): string | null {
-  const normalized = value.trim().replaceAll("\\", "/");
-  if (!normalized || normalized.startsWith("/") || normalized.includes("../")) {
+  const normalized = path.posix.normalize(value.trim().replaceAll("\\", "/"));
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("/") ||
+    normalized.startsWith("../")
+  ) {
     return null;
   }
 
   return normalized;
-}
-
-function resolveBundlePath(root: string, filePath: string): string | null {
-  const fullPath = path.resolve(root, filePath.replaceAll("/", path.sep));
-  return fullPath === root || fullPath.startsWith(`${root}${path.sep}`)
-    ? fullPath
-    : null;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -395,13 +403,13 @@ async function buildRelationWarnings(
       continue;
     }
 
-    const targetPath = path.resolve(
-      root,
-      path.dirname(filePath),
-      target.replaceAll("/", path.sep),
-    );
+    const targetPath = await resolveKnowledgePath({
+      basePath: path.resolve(root, path.dirname(filePath)),
+      knowledgeRoot: root,
+      relativePath: target,
+    });
 
-    if (targetPath !== root && !targetPath.startsWith(`${root}${path.sep}`)) {
+    if (!targetPath) {
       warnings.push(`relation_target_invalid:${index}:${relation.target}`);
       continue;
     }
