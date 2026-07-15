@@ -478,6 +478,64 @@ test("clarification history resolves the originating user question", () => {
   assert.deepEqual(getClarificationState([]), { alreadyAsked: false });
 });
 
+test("completed clarification history does not reuse the old origin question", () => {
+  const messages = [
+    historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Please provide more context.",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+    historyMessage({ content: "Use version 2.", id: "u2", role: "user" }),
+    historyMessage({
+      content: "Version 2 is covered by approved knowledge.",
+      id: "a2",
+      role: "assistant",
+      route: "okf_only",
+    }),
+  ];
+
+  assert.deepEqual(getClarificationState(messages), { alreadyAsked: true });
+});
+
+test("a clear later question skips optimization and assumption disclosure", async () => {
+  const history = [
+    historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Please provide more context.",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+    historyMessage({ content: "Use version 2.", id: "u2", role: "user" }),
+    historyMessage({
+      content: "Version 2 is covered by approved knowledge.",
+      id: "a2",
+      role: "assistant",
+      route: "okf_only",
+    }),
+  ];
+  const { repository } = createRepositoryStub(history);
+  const service = createProductionChatService(repository, {
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async () => citedRetrievalResult(),
+    understandQuery: async () => {
+      throw new Error("query_understanding_should_not_run");
+    },
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What does ground leveling mean in the forklift manual?",
+  );
+
+  assert.equal(result.assistantMessage.trace?.queryUnderstanding?.rewriteMode, "not_needed");
+  assert.deepEqual(result.assistantMessage.trace?.queryUnderstanding?.assumptions, []);
+  assert.doesNotMatch(result.assistantMessage.content, /Assumptions used/);
+});
+
 test("complete clarification follow-up routes normally without assumption text", async () => {
   const history = [
     historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),

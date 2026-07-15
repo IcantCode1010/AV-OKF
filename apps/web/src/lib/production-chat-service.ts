@@ -129,6 +129,7 @@ export function createProductionChatService(
       });
       const queryUnderstanding = shouldRunQueryUnderstanding({
         clarificationAlreadyAsked: clarification.alreadyAsked,
+        clarificationOriginQuestion: clarification.originQuestion,
         decision,
         question: content,
       })
@@ -237,21 +238,31 @@ export function getClarificationState(messages: ChatMessage[]): {
   alreadyAsked: boolean;
   originQuestion?: string;
 } {
+  let alreadyAsked = false;
+
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
     if (message?.role !== "assistant" || message.trace?.route !== "missing_context") {
       continue;
     }
 
-    for (let originIndex = index - 1; originIndex >= 0; originIndex -= 1) {
-      const origin = messages[originIndex];
-      if (origin?.role === "user") {
-        return { alreadyAsked: true, originQuestion: origin.content };
-      }
-    }
-
-    return { alreadyAsked: true };
+    alreadyAsked = true;
   }
 
-  return { alreadyAsked: false };
+  const latestMessage = messages.at(-1);
+  if (
+    latestMessage?.role !== "assistant" ||
+    latestMessage.trace?.route !== "missing_context"
+  ) {
+    return { alreadyAsked };
+  }
+
+  for (let originIndex = messages.length - 2; originIndex >= 0; originIndex -= 1) {
+    const origin = messages[originIndex];
+    if (origin?.role === "user") {
+      return { alreadyAsked: true, originQuestion: origin.content };
+    }
+  }
+
+  return { alreadyAsked: true };
 }

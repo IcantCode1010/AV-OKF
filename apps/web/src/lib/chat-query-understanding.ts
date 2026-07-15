@@ -67,11 +67,12 @@ const queryUnderstandingSchema = z.object({
 
 export function shouldRunQueryUnderstanding(input: {
   clarificationAlreadyAsked?: boolean;
+  clarificationOriginQuestion?: string;
   decision: ChatRouterDecision;
   question: string;
 }): boolean {
   if (
-    input.clarificationAlreadyAsked ||
+    Boolean(input.clarificationOriginQuestion) ||
     input.decision.confidence === "low" ||
     input.decision.route === "missing_context" ||
     input.decision.routerMode === "llm_fallback"
@@ -133,7 +134,8 @@ export async function understandChatQuery(
     key = await (options.getApiKey ?? getWorkspaceLlmApiKeyForEnrichment)(
       input.workspaceId,
     );
-  } catch {
+  } catch (error) {
+    console.error("query_understanding_key_unavailable", error);
     return fallback("query_understanding_key_unavailable");
   }
 
@@ -157,8 +159,16 @@ export async function understandChatQuery(
       return fallback("query_understanding_malformed_response");
     }
 
+    const requiredAssumptionFields = new Set(
+      input.decision.requiredContext.filter(isChatContextField),
+    );
     const assumptions = input.clarificationAlreadyAsked
-      ? validateAssumptions(parsed.data.assumptions, sourceText)
+      ? validateAssumptions(
+          parsed.data.assumptions.filter((assumption) =>
+            requiredAssumptionFields.has(assumption.field),
+          ),
+          sourceText,
+        )
       : [];
     if (!assumptions) {
       return fallback("query_understanding_invalid_assumptions");
@@ -217,7 +227,8 @@ export async function understandChatQuery(
       rewriteMode: "llm",
       warnings: [],
     };
-  } catch {
+  } catch (error) {
+    console.error("query_understanding_provider_failed", error);
     return fallback("query_understanding_provider_failed");
   }
 }
@@ -261,12 +272,8 @@ function buildSafeDefaultAssumptions(
   requiredContext: string[],
 ): ChatContextAssumption[] {
   const requestedFields = new Set(requiredContext.filter(isChatContextField));
-  const fields =
-    requestedFields.size > 0
-      ? [...requestedFields]
-      : (Object.keys(SAFE_CONTEXT_DEFAULTS) as ChatContextField[]);
 
-  return fields.map((field) => ({
+  return [...requestedFields].map((field) => ({
     basis: "safe_default",
     field,
     value: SAFE_CONTEXT_DEFAULTS[field],

@@ -88,7 +88,8 @@ export async function generateChatAnswer(
   let key: { apiKey: string; provider: LlmProviderId } | null;
   try {
     key = await getApiKey(input.workspaceId);
-  } catch {
+  } catch (error) {
+    console.error("chat_answer_api_key_lookup_failed", error);
     return deterministic;
   }
 
@@ -141,7 +142,8 @@ export async function generateChatAnswer(
       model: provider.model,
       provider: provider.id,
     };
-  } catch {
+  } catch (error) {
+    console.error("chat_answer_synthesis_failed", error);
     return deterministic;
   }
 }

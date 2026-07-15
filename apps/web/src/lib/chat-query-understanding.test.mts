@@ -237,8 +237,23 @@ test("missing key and malformed provider output fail safely", async () => {
   assert.deepEqual(malformed.warnings, ["query_understanding_malformed_response"]);
 });
 
-test("a used clarification round always enables query understanding", () => {
+test("an immediate clarification response enables query understanding", () => {
   const question = "Version 2.";
+  const decision = routeChatQuestion({ clarificationAlreadyAsked: true, question });
+
+  assert.equal(
+    shouldRunQueryUnderstanding({
+      clarificationAlreadyAsked: true,
+      clarificationOriginQuestion: "Can we approve this policy?",
+      decision,
+      question,
+    }),
+    true,
+  );
+});
+
+test("a prior clarification does not optimize every later clear question", () => {
+  const question = "What does ground leveling mean in the forklift manual?";
   const decision = routeChatQuestion({ clarificationAlreadyAsked: true, question });
 
   assert.equal(
@@ -247,6 +262,35 @@ test("a used clarification round always enables query understanding", () => {
       decision,
       question,
     }),
-    true,
+    false,
   );
+});
+
+test("empty required context never expands into every safe default", async () => {
+  const question = "What does ground leveling mean in this forklift manual?";
+  const decision = routeChatQuestion({ clarificationAlreadyAsked: true, question });
+  const result = await understandChatQuery(
+    {
+      clarificationAlreadyAsked: true,
+      decision,
+      question,
+      workspaceId: "wrk_1",
+    },
+    {
+      callProvider: async () =>
+        providerOutput({
+          assumptions: [
+            {
+              basis: "safe_default",
+              field: "source_authority",
+              value: "approved OKF first, with raw documents only as labeled discovery",
+            },
+          ],
+          retrievalQuery: "ground leveling forklift manual",
+        }),
+      getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    },
+  );
+
+  assert.deepEqual(result.assumptions, []);
 });
