@@ -23,13 +23,14 @@ import {
 } from "@/lib/document-backend";
 import { getOkfConceptLifecycleByFile } from "@/lib/okf-lifecycle";
 import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
-import {
-  getDefaultKnowledgeRoot,
-  listOkfBundleFiles,
-} from "@/lib/okf-bundle";
+import { listOkfBundleFiles } from "@/lib/okf-bundle";
 import { formatOkfExportError } from "@/lib/okf-export-errors";
-import { getAllowedRelations } from "@/lib/okf-relation-vocabulary";
 import { runExtractionAction } from "../actions";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import {
+  getKnowledgeBundleByIdentity,
+  resolveKnowledgeBundleRoot,
+} from "@/lib/knowledge-bundles";
 
 export const dynamic = "force-dynamic";
 
@@ -66,20 +67,29 @@ export default async function DocumentDetailPage({
     topic: topicId,
     topicsGenerated,
   } = await searchParams;
-  const knowledgeRoot = getDefaultKnowledgeRoot();
-  const [document, topicRecords, allowedRelations, relationTargets] =
-    await Promise.all([
-      getDocumentById(id),
-      getTopicRecordsByDocumentId(id),
-      getAllowedRelations(),
-      getRelationTargets(knowledgeRoot),
-    ]);
+  const context = await requireAuthWorkspaceContext();
+  const [document, topicRecords] = await Promise.all([
+    getDocumentById(id),
+    getTopicRecordsByDocumentId(id),
+  ]);
 
   if (!document) {
     notFound();
   }
 
   const currentDocument = document;
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: currentDocument.knowledgeBundleId,
+    workspaceId: context.workspaceId,
+  });
+  if (!bundle) notFound();
+  const currentBundle = bundle;
+  const knowledgeRoot = resolveKnowledgeBundleRoot({
+    bundleId: currentBundle.id,
+    workspaceId: context.workspaceId,
+  });
+  const [relationTargets] = await Promise.all([getRelationTargets(knowledgeRoot)]);
+  const allowedRelations = currentBundle.profile.relations;
   const activePanel = resolvePanel(
     panel,
     topicRecords.length,
@@ -108,7 +118,10 @@ export default async function DocumentDetailPage({
 
   return (
     <>
-      <DocumentExtractionPoller status={currentDocument.extraction.status} />
+      <DocumentExtractionPoller
+        status={currentDocument.extraction.status}
+        topicDiscoveryStatus={currentDocument.topicDiscovery?.status}
+      />
       <div className="space-y-4">
         <Button asChild variant="ghost" className="w-fit px-0">
           <Link href="/documents">
@@ -127,6 +140,10 @@ export default async function DocumentDetailPage({
                   extraction {currentDocument.extraction.status}
                 </Badge>
                 <Badge variant="outline">{topicRecords.length} topics</Badge>
+                <Badge variant="outline" className="capitalize">
+                  discovery {currentDocument.topicDiscovery?.status ?? "not started"}
+                </Badge>
+                <Badge variant="outline">{currentBundle.name}</Badge>
               </div>
               <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
                 {currentDocument.title}
@@ -201,6 +218,7 @@ export default async function DocumentDetailPage({
           lifecycleStatus={selectedTopicLifecycle}
           lifecycleUpdated={lifecycleUpdatedMessage}
           okfExportError={okfExportErrorMessage}
+          profile={currentBundle.profile}
           relationError={relationErrorMessage}
           relationTargets={relationTargets}
           topic={selectedTopic}
@@ -246,6 +264,7 @@ async function resolveTopicLifecycles({
 
   const lifecycleByFile = await getOkfConceptLifecycleByFile({
     filePaths: Array.from(filenameByTopicId.values()),
+    knowledgeBundleId: document.knowledgeBundleId,
     workspaceId: document.workspaceId,
   });
 
@@ -325,6 +344,7 @@ function parseTopicsGeneratedCount(raw: string | undefined) {
     return null;
   }
 
+  if (raw === "queued") return "queued" as const;
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }

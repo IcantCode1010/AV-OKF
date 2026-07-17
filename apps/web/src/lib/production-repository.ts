@@ -30,6 +30,7 @@ type UploadRecordInput = {
   context: AuthWorkspaceContext;
   description: string;
   documentId: string;
+  knowledgeBundleId: string;
   objectKey: string;
   originalFilename: string;
   owner: string;
@@ -94,6 +95,14 @@ type DbExtractionLog = {
   timestamp: Date;
 };
 
+type DbTopicDiscoveryJob = {
+  completedWindows: number;
+  errorMessage: string | null;
+  estimatedInputTokens: number;
+  status: string;
+  totalWindows: number;
+};
+
 type DbDocumentRecord = {
   subjectFamily: string | null;
   classificationCode: string | null;
@@ -103,8 +112,10 @@ type DbDocumentRecord = {
   extractedPages?: DbExtractedPage[];
   extractionJobs?: DbExtractionJob[];
   extractionLogs?: DbExtractionLog[];
+  topicDiscoveryJobs?: DbTopicDiscoveryJob[];
   fileType: string;
   id: string;
+  knowledgeBundleId: string;
   documentType: string | null;
   mimeType: string;
   objects?: DbDocumentObject[];
@@ -139,11 +150,16 @@ type DbTopicRecord = {
   editedAt: Date | null;
   editedBy: string | null;
   enrichedSummary: string | null;
+  enrichedBody: string | null;
+  proposedSourcePageNumbers: number[];
+  discoveryMetadata: Prisma.JsonValue;
   enrichedTitle: string | null;
   enrichmentAudits?: DbTopicEnrichmentAudit[];
   enrichmentStatus: string;
   exportedFilePath: string | null;
   id: string;
+  knowledgeBundleId: string;
+  okfMetadata: Prisma.JsonValue;
   originalSummary: string;
   originalTitle: string;
   pageEnd: number;
@@ -186,6 +202,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         extractedPages: { orderBy: { pageNumber: "asc" } },
         extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
         extractionLogs: { orderBy: { timestamp: "asc" } },
+        topicDiscoveryJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
         objects: { orderBy: { createdAt: "asc" } },
       },
       where: { deletedAt: null, id: documentId, workspaceId },
@@ -321,6 +338,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             description: input.description.trim(),
             fileType: "PDF",
             id: input.documentId,
+            knowledgeBundleId: input.knowledgeBundleId,
             mimeType: "application/pdf",
             originalFilename: input.originalFilename,
             owner: input.owner.trim() || "Unassigned",
@@ -457,11 +475,16 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             approvedContentSource: null,
             confidence: topic.confidence,
             documentId: input.documentId,
+            knowledgeBundleId: document.knowledgeBundleId,
             enrichedSummary: null,
             enrichedTitle: null,
+            enrichedBody: null,
+            proposedSourcePageNumbers: [],
+            discoveryMetadata: { version: "legacy-heading-v1" },
             enrichmentStatus: "none",
             originalSummary: topic.summary,
             originalTitle: topic.title,
+            okfMetadata: {},
             pageEnd: topic.pageEnd,
             pageStart: topic.pageStart,
             reviewStatus: "needs_review",
@@ -617,7 +640,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         orderBy: { pageNumber: "asc" },
         where: {
           documentId: topic.documentId,
-          pageNumber: { in: topic.sourcePageNumbers },
+          pageNumber: {
+            gte: Math.max(1, topic.pageStart - 2),
+            lte: topic.pageEnd + 2,
+          },
           workspaceId: input.context.workspaceId,
         },
       });
@@ -659,6 +685,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       context: AuthWorkspaceContext;
       enrichedSummary: string;
       enrichedTitle: string;
+      enrichedBody?: string;
+      proposedSourcePageNumbers?: number[];
       model: string;
       promptSent: string;
       provider: string;
@@ -684,6 +712,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           data: {
             enrichedSummary: input.enrichedSummary,
             enrichedTitle: input.enrichedTitle,
+            enrichedBody: input.enrichedBody ?? input.enrichedSummary,
+            proposedSourcePageNumbers: input.proposedSourcePageNumbers ?? [],
             enrichmentStatus: "completed",
           },
           include: {
@@ -966,11 +996,51 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
 
       return mapTopicRecord(topic);
     },
+    async createTopicDiscoveryJobAfterExtraction(input: {
+      documentId: string;
+      workspaceId: string;
+    }) {
+      return db.topicDiscoveryJob.create({
+        data: {
+          documentId: input.documentId,
+          status: "queued",
+          workspaceId: input.workspaceId,
+        },
+        select: { documentId: true, id: true, workspaceId: true },
+      });
+    },
+    async getQueuedTopicDiscoveryJobs(limit = 100) {
+      return db.topicDiscoveryJob.findMany({
+        orderBy: { queuedAt: "asc" },
+        select: { documentId: true, id: true, workspaceId: true },
+        take: limit,
+        where: { status: { in: ["queued", "analyzing", "consolidating"] } },
+      });
+    },
+    async updateTopicOkfMetadata(input: {
+      context: AuthWorkspaceContext;
+      okfMetadata: Record<string, unknown>;
+      topicId: string;
+    }) {
+      const existing = await db.topicRecord.findFirst({
+        where: { id: input.topicId, workspaceId: input.context.workspaceId },
+      });
+      if (!existing) throw new Error("topic_not_found");
+      if (existing.reviewStatus === "approved") {
+        throw new Error("topic_metadata_edit_requires_unapproved_topic");
+      }
+      const topic = await db.topicRecord.update({
+        data: { okfMetadata: input.okfMetadata as Prisma.InputJsonValue },
+        where: { id: input.topicId },
+      });
+      return mapTopicRecord(topic);
+    },
   };
 }
 
 function mapDocument(record: DbDocumentRecord): Document {
   const latestJob = record.extractionJobs?.[0];
+  const latestDiscoveryJob = record.topicDiscoveryJobs?.[0];
   const pageRecords: ExtractedPageRecord[] = (record.extractedPages ?? []).map(
     (page) => ({
       charCount: page.charCount,
@@ -1014,6 +1084,7 @@ function mapDocument(record: DbDocumentRecord): Document {
     },
     fileType: record.fileType,
     id: record.id,
+    knowledgeBundleId: record.knowledgeBundleId,
     workspaceId: record.workspaceId,
     documentType: record.documentType,
     mimeType: record.mimeType,
@@ -1029,6 +1100,21 @@ function mapDocument(record: DbDocumentRecord): Document {
     storageKey: primaryObject?.objectKey ?? null,
     tags: record.tags ?? [],
     title: record.title,
+    topicDiscovery: latestDiscoveryJob
+      ? {
+          completedWindows: latestDiscoveryJob.completedWindows,
+          errorMessage: latestDiscoveryJob.errorMessage,
+          estimatedInputTokens: latestDiscoveryJob.estimatedInputTokens,
+          status: normalizeTopicDiscoveryStatus(latestDiscoveryJob.status),
+          totalWindows: latestDiscoveryJob.totalWindows,
+        }
+      : {
+          completedWindows: 0,
+          errorMessage: null,
+          estimatedInputTokens: 0,
+          status: "not_started",
+          totalWindows: 0,
+        },
     updatedAt: record.updatedLabel,
   };
 }
@@ -1074,6 +1160,9 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     editedBy: record.editedBy,
     enrichedAt: latestSuccess ? formatTimestamp(latestSuccess.createdAt) : null,
     enrichedSummary: record.enrichedSummary,
+    enrichedBody: record.enrichedBody,
+    proposedSourcePageNumbers: record.proposedSourcePageNumbers,
+    discoveryMetadata: normalizeOkfMetadata(record.discoveryMetadata),
     enrichedTitle: record.enrichedTitle,
     enrichmentErrorMessage:
       normalizeTopicEnrichmentStatus(record.enrichmentStatus) === "failed"
@@ -1083,8 +1172,10 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     enrichmentStatus: normalizeTopicEnrichmentStatus(record.enrichmentStatus),
     exportedFilePath: record.exportedFilePath,
     id: record.id,
+    knowledgeBundleId: record.knowledgeBundleId,
     originalSummary: record.originalSummary ?? record.summary,
     originalTitle: record.originalTitle ?? record.title,
+    okfMetadata: normalizeOkfMetadata(record.okfMetadata),
     pageEnd: record.pageEnd,
     pageStart: record.pageStart,
     relations: normalizeTopicRelations(record.relations),
@@ -1095,6 +1186,28 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     topicType: record.topicType,
     updatedAt: formatTimestamp(record.updatedAt),
   };
+}
+
+function normalizeTopicDiscoveryStatus(value: string | undefined) {
+  const statuses = [
+    "queued",
+    "analyzing",
+    "consolidating",
+    "completed",
+    "awaiting_provider",
+    "failed",
+  ] as const;
+  return statuses.includes(value as (typeof statuses)[number])
+    ? (value as (typeof statuses)[number])
+    : "not_started";
+}
+
+function normalizeOkfMetadata(value: Prisma.JsonValue): Record<string, unknown> {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return {};
+  }
+
+  return value as Record<string, unknown>;
 }
 
 async function assertTopicInWorkspace(

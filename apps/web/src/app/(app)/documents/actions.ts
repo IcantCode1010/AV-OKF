@@ -7,6 +7,7 @@ import {
   assertPdfUpload,
   createUploadedDocument,
   generateTopicRecords,
+  getDocumentById,
   getDocumentWorkspaceId,
   getTopicRecordsByDocumentId,
   parseCustomProperties,
@@ -14,6 +15,7 @@ import {
   requestExtraction,
   type ApprovedContentSource,
   updateTopicContent,
+  updateTopicOkfMetadata,
   updateTopicReviewStatus,
   updateDocumentMetadata,
   type DocumentStatus,
@@ -31,6 +33,8 @@ import {
   enrichTopic,
 } from "@/lib/topic-enrichment";
 import { softDeleteDocument } from "@/lib/okf-lifecycle";
+import { getKnowledgeBundle, getKnowledgeBundleByIdentity } from "@/lib/knowledge-bundles";
+import { requestTopicDiscovery, resolveProposedTopicPages } from "@/lib/topic-discovery-actions";
 
 const RECOVERABLE_UPLOAD_ERRORS = new Set([
   "missing_pdf_file",
@@ -41,6 +45,8 @@ const RECOVERABLE_UPLOAD_ERRORS = new Set([
 
 export async function uploadDocumentAction(formData: FormData) {
   const file = formData.get("file");
+  const context = await requireAuthWorkspaceContext();
+  const knowledgeBundleId = getFormString(formData, "knowledgeBundleId");
   let document: Awaited<ReturnType<typeof createUploadedDocument>>;
 
   try {
@@ -50,9 +56,15 @@ export async function uploadDocumentAction(formData: FormData) {
 
     assertPdfUpload(file);
 
+    const bundle = await getKnowledgeBundle({ bundleId: knowledgeBundleId, context });
+    if (!bundle) {
+      throw new Error("knowledge_bundle_not_found");
+    }
+
     document = await createUploadedDocument({
       bytes: Buffer.from(await file.arrayBuffer()),
       description: getFormString(formData, "description"),
+      knowledgeBundleId: bundle.id,
       originalFilename: file.name,
       owner: getFormString(formData, "owner"),
       sourceType: getSourceType(getFormString(formData, "sourceType")),
@@ -88,13 +100,20 @@ export async function runExtractionAction(formData: FormData) {
 
 export async function generateTopicsAction(formData: FormData) {
   const id = getFormString(formData, "id");
-
-  const topics = await generateTopicRecords(id);
+  let result = "queued";
+  if (isProductionBackend()) {
+    await requestTopicDiscovery({
+      context: await requireAuthWorkspaceContext(),
+      documentId: id,
+    });
+  } else {
+    result = String((await generateTopicRecords(id)).length);
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
-  redirect(`/documents/${id}?panel=topics&topicsGenerated=${topics.length}`);
+  redirect(`/documents/${id}?panel=topics&topicsGenerated=${result}`);
 }
 
 export async function updateTopicReviewStatusAction(formData: FormData) {
@@ -209,6 +228,57 @@ export async function updateTopicContentAction(formData: FormData) {
 
   revalidatePath(`/documents/${documentId}`);
   redirect(`/documents/${documentId}`);
+}
+
+export async function resolveProposedTopicPagesAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  await resolveProposedTopicPages({
+    accept: getFormString(formData, "decision") === "accept",
+    context: await requireAuthWorkspaceContext(),
+    topicId: getFormString(formData, "topicId"),
+  });
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=topics&topic=${getFormString(formData, "topicId")}`);
+}
+
+export async function updateTopicOkfMetadataAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const context = await requireAuthWorkspaceContext();
+  const [document, topics] = await Promise.all([
+    getDocumentById(documentId),
+    getTopicRecordsByDocumentId(documentId),
+  ]);
+  if (!document) throw new Error("document_not_found");
+  assertActionDocumentWorkspace({
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document,
+    mismatchError: "document_workspace_mismatch",
+  });
+  const topic = topics.find((candidate) => candidate.id === topicId);
+  if (!topic) throw new Error("topic_not_found");
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: document.knowledgeBundleId,
+    workspaceId: context.workspaceId,
+  });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const metadata: Record<string, unknown> = {};
+  for (const [field, definition] of Object.entries(bundle.profile.fields)) {
+    if (["title", "description", "updated"].includes(field)) continue;
+    const raw = getFormString(formData, `okfField__${field}`).trim();
+    if (!raw) continue;
+    metadata[field] = definition.type === "string_array"
+      ? raw.split(",").map((value) => value.trim()).filter(Boolean)
+      : definition.type === "number_array"
+        ? raw.split(",").map((value) => Number(value.trim())).filter(Number.isFinite)
+        : definition.type === "number"
+          ? Number(raw)
+          : raw;
+  }
+  await updateTopicOkfMetadata(topicId, metadata);
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=topics&topic=${topicId}`);
 }
 
 const RECOVERABLE_METADATA_ERRORS = new Set([

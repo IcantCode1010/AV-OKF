@@ -24,7 +24,7 @@ relations:
   - depends_on
 profile:
   date_fields:
-  - last_verified
+  - updated
   - approved_at
   - deprecated_at
   types:
@@ -36,7 +36,7 @@ profile:
       - description
       - aircraft_family
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - relations
@@ -67,7 +67,7 @@ profile:
       - source_authority
       - revision
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - effectivity
@@ -97,7 +97,7 @@ profile:
       - aircraft_family
       - ata
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - manual_type
       - source_authority
@@ -132,7 +132,7 @@ profile:
       - source_file
       - source_pages
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - relations
@@ -167,7 +167,7 @@ profile:
       - source_file
       - source_pages
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - relations
@@ -201,7 +201,7 @@ profile:
       - source_pages
       - related_topics
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - manual_type
@@ -238,7 +238,7 @@ profile:
       - source_pages
       - task_numbers
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - relations
@@ -272,7 +272,7 @@ profile:
       - source_file
       - source_pages
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - relations
@@ -306,7 +306,7 @@ profile:
       - source_file
       - source_pages
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - relations
@@ -340,7 +340,7 @@ profile:
       - source_file
       - source_pages
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - revision
@@ -367,7 +367,7 @@ profile:
       - title
       - description
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - relations
       - related_topics
@@ -393,7 +393,7 @@ profile:
       - aircraft_family
       - source_authority
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_variant
       - manual_type
@@ -423,7 +423,7 @@ profile:
       - title
       - description
       - knowledge_version
-      - last_verified
+      - updated
       optional:
       - aircraft_family
       - aircraft_variant

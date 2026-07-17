@@ -17,6 +17,7 @@ export type OkfGraphTraversalResult = {
 };
 
 export type OkfGraphTraversalInput = {
+  knowledgeBundleId: string;
   knowledgeRoot?: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
   maxHops?: number;
@@ -43,6 +44,7 @@ export async function traverseOkfRelations(
 
     const seed = await readOkfBundleEvidenceByPath({
       filePath: normalizedSeed,
+      knowledgeBundleId: input.knowledgeBundleId,
       knowledgeRoot: input.knowledgeRoot,
       lifecycleLookup: input.lifecycleLookup,
       workspaceId: input.workspaceId,
@@ -106,6 +108,7 @@ async function walk(input: {
 
     const concept = await readOkfBundleEvidenceByPath({
       filePath: target,
+      knowledgeBundleId: input.input.knowledgeBundleId,
       knowledgeRoot: input.input.knowledgeRoot,
       lifecycleLookup: input.input.lifecycleLookup,
       workspaceId: input.input.workspaceId,

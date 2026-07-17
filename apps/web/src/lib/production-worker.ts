@@ -26,6 +26,10 @@ type ProductionExtractionRepository = {
     indexVersion: number;
     workspaceId: string;
   }>;
+  createTopicDiscoveryJobAfterExtraction?(input: {
+    documentId: string;
+    workspaceId: string;
+  }): Promise<{ documentId: string; id: string; workspaceId: string }>;
   failExtractionJob(input: {
     documentId: string;
     error: ExtractionError;
@@ -52,6 +56,13 @@ type RunProductionExtractionJobOptions = {
       indexJobId: string;
       indexVersion: number;
       mode?: "initial" | "reindex";
+      workspaceId: string;
+    }): Promise<void>;
+  };
+  topicDiscoveryQueue?: {
+    enqueue(input: {
+      documentId: string;
+      topicDiscoveryJobId: string;
       workspaceId: string;
     }): Promise<void>;
   };
@@ -91,6 +102,25 @@ export async function runProductionExtractionJob(
       } catch (error) {
         console.error(
           "RAG index enqueue failed; queued job remains in Postgres.",
+          error,
+        );
+      }
+    }
+    if (
+      options.topicDiscoveryQueue &&
+      options.repository.createTopicDiscoveryJobAfterExtraction
+    ) {
+      try {
+        const discoveryJob =
+          await options.repository.createTopicDiscoveryJobAfterExtraction(payload);
+        await options.topicDiscoveryQueue.enqueue({
+          documentId: discoveryJob.documentId,
+          topicDiscoveryJobId: discoveryJob.id,
+          workspaceId: discoveryJob.workspaceId,
+        });
+      } catch (error) {
+        console.error(
+          "Topic discovery enqueue failed; queued job remains in Postgres.",
           error,
         );
       }

@@ -19,6 +19,10 @@ type ExportTopic = {
   sourcePageNumbers: number[];
   coveredRagChunkIds?: string[];
   coverageType?: string;
+  okfMetadata?: Record<string, unknown>;
+  topicType?: string;
+  approvedContentSource?: string | null;
+  enrichedBody?: string | null;
 };
 
 type ExportDocument = {
@@ -29,15 +33,6 @@ type ExportDocument = {
   effectivity: string | null;
   sourceAuthority: string | null;
   revision: string | null;
-};
-
-type RequiredDocumentMetadata = {
-  subjectFamily: string;
-  documentType: string;
-  classificationCode: string;
-  effectivity: string;
-  sourceAuthority: string;
-  revision: string;
 };
 
 type BuildOkfSystemTopicInput = {
@@ -54,17 +49,9 @@ type BuildOkfSourceManifestInput = {
 };
 
 type ExportTopicToKnowledgeInput = BuildOkfSystemTopicInput & {
+  directory?: string;
   knowledgeRoot?: string;
 };
-
-const REQUIRED_DOCUMENT_METADATA = [
-  "subjectFamily",
-  "documentType",
-  "classificationCode",
-  "effectivity",
-  "sourceAuthority",
-  "revision",
-] as const;
 
 const MAX_TOPIC_SLUG_LENGTH = 80;
 const TOPIC_ID_FRAGMENT_LENGTH = 10;
@@ -77,27 +64,40 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
     throw new Error("okf_export_requires_approved_topic");
   }
 
-  const metadata = getRequiredDocumentMetadata(input.document);
   const relations = normalizeTopicRelations(input.topic.relations);
 
-  const filename = buildFilename(metadata.classificationCode, input.topic);
-  const lastVerified = toIsoDate(input.exportedAt ?? new Date());
+  const type = normalizeConceptType(
+    typeof input.topic.okfMetadata?.type === "string"
+      ? input.topic.okfMetadata.type
+      : "system_topic",
+  );
+  const filename = buildFilename(
+    input.document.classificationCode ?? type,
+    input.topic,
+  );
+  const updated = toIsoDate(input.exportedAt ?? new Date());
   const frontmatterFields: FrontmatterFields = {
-    type: "system_topic",
+    type,
     review_status: "approved",
     title: input.topic.title,
     description: input.topic.summary,
-    subject_family: metadata.subjectFamily,
-    document_type: metadata.documentType,
-    classification_code: metadata.classificationCode,
-    effectivity: metadata.effectivity,
-    source_authority: metadata.sourceAuthority,
-    revision: metadata.revision,
     source_file: input.document.title,
     source_pages: input.topic.sourcePageNumbers,
     knowledge_version: input.knowledgeVersion,
-    last_verified: lastVerified,
+    updated,
   };
+
+  addOptionalField(frontmatterFields, "subject_family", input.document.subjectFamily);
+  addOptionalField(frontmatterFields, "document_type", input.document.documentType);
+  addOptionalField(
+    frontmatterFields,
+    "classification_code",
+    input.document.classificationCode,
+  );
+  addOptionalField(frontmatterFields, "effectivity", input.document.effectivity);
+  addOptionalField(frontmatterFields, "source_authority", input.document.sourceAuthority);
+  addOptionalField(frontmatterFields, "revision", input.document.revision);
+  addCustomMetadata(frontmatterFields, input.topic.okfMetadata);
 
   if (relations.length > 0) {
     frontmatterFields.relations = relations;
@@ -113,9 +113,13 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
     input.topic.pageStart === input.topic.pageEnd
       ? `page ${input.topic.pageStart}`
       : `pages ${input.topic.pageStart}-${input.topic.pageEnd}`;
+  const body =
+    input.topic.approvedContentSource === "enriched" && input.topic.enrichedBody
+      ? input.topic.enrichedBody
+      : input.topic.summary;
 
   return {
-    content: `---\n${frontmatter}---\n\n# ${input.topic.title}\n\n${input.topic.summary}\n\n## Source\n\n- ${input.document.title}, ${pageRange}\n`,
+    content: `---\n${frontmatter}---\n\n# ${input.topic.title}\n\n${body}\n\n## Source\n\n- ${input.document.title}, ${pageRange}\n`,
     filename,
   };
 }
@@ -124,14 +128,14 @@ export function buildOkfSourceManifest(input: BuildOkfSourceManifestInput): {
   content: string;
   filename: string;
 } {
-  const lastVerified = toIsoDate(input.exportedAt ?? new Date());
+  const updated = toIsoDate(input.exportedAt ?? new Date());
   const frontmatter = stringifyFrontmatter({
     type: "source_manifest",
     review_status: "approved",
     title: "Source Manifest",
     description: "Approved source documents represented in this OKF bundle.",
     knowledge_version: input.knowledgeVersion,
-    last_verified: lastVerified,
+    updated,
   });
   const entry = formatSourceManifestEntry(input.document);
 
@@ -152,10 +156,16 @@ export async function exportTopicToKnowledge(
     await validateTopicRelations(relations, knowledgeRoot);
   }
 
-  const exported = buildOkfSystemTopic(input);
+  const built = buildOkfSystemTopic(input);
+  const exported = {
+    ...built,
+    filename: input.directory
+      ? path.posix.join(input.directory, built.filename)
+      : built.filename,
+  };
   const topicPath = path.join(knowledgeRoot, exported.filename);
 
-  await mkdir(/*turbopackIgnore: true*/ knowledgeRoot, { recursive: true });
+  await mkdir(/*turbopackIgnore: true*/ path.dirname(topicPath), { recursive: true });
   const isReExport = await fileExists(topicPath);
   await writeFile(/*turbopackIgnore: true*/ topicPath, exported.content, "utf8");
   await upsertIndexEntry({
@@ -314,40 +324,71 @@ function normalizeReservedIndexLines(lines: string[]) {
   });
 }
 
-function getRequiredDocumentMetadata(
-  document: ExportDocument,
-): RequiredDocumentMetadata {
-  const missing = REQUIRED_DOCUMENT_METADATA.filter((field) => {
-    const value = document[field];
-    return value === null || value.trim().length === 0;
-  });
-
-  if (missing.length > 0) {
-    throw new Error(`okf_export_missing_document_metadata: ${missing.join(", ")}`);
-  }
-
-  return {
-    subjectFamily: document.subjectFamily!,
-    documentType: document.documentType!,
-    classificationCode: document.classificationCode!,
-    effectivity: document.effectivity!,
-    sourceAuthority: document.sourceAuthority!,
-    revision: document.revision!,
-  };
-}
-
 function formatSourceManifestEntry(document: ExportDocument) {
-  const metadata = getRequiredDocumentMetadata(document);
-
   return [
     `- ${document.title}`,
-    `  - subject_family: ${metadata.subjectFamily}`,
-    `  - source_authority: ${metadata.sourceAuthority}`,
-    `  - document_type: ${metadata.documentType}`,
-    `  - classification_code: ${metadata.classificationCode}`,
-    `  - effectivity: ${metadata.effectivity}`,
-    `  - revision: ${metadata.revision}`,
+    ...optionalManifestMetadata(document),
   ].join("\n");
+}
+
+function optionalManifestMetadata(document: ExportDocument): string[] {
+  return [
+    ["subject_family", document.subjectFamily],
+    ["document_type", document.documentType],
+    ["classification_code", document.classificationCode],
+    ["effectivity", document.effectivity],
+    ["source_authority", document.sourceAuthority],
+    ["revision", document.revision],
+  ].flatMap(([key, value]) =>
+    value && value.trim().length > 0 ? [`  - ${key}: ${value}`] : [],
+  );
+}
+
+function addOptionalField(
+  fields: FrontmatterFields,
+  key: string,
+  value: string | null,
+) {
+  if (value && value.trim().length > 0) fields[key] = value.trim();
+}
+
+function addCustomMetadata(
+  fields: FrontmatterFields,
+  metadata: Record<string, unknown> | undefined,
+) {
+  if (!metadata) return;
+
+  const protectedFields = new Set([
+    "type",
+    "title",
+    "description",
+    "updated",
+    "review_status",
+    "source_file",
+    "source_pages",
+    "source_authority",
+    "knowledge_version",
+    "relations",
+  ]);
+  for (const [key, value] of Object.entries(metadata)) {
+    if (protectedFields.has(key)) continue;
+    if (typeof value === "string" && value.trim().length > 0) {
+      fields[key] = value.trim();
+    } else if (
+      Array.isArray(value) &&
+      value.every((item) => typeof item === "string" && item.trim().length > 0)
+    ) {
+      fields[key] = value.map((item) => item.trim());
+    }
+  }
+}
+
+function normalizeConceptType(value: string) {
+  const normalized = value.trim().toLowerCase().replaceAll("-", "_");
+  if (!/^[a-z][a-z0-9_]*$/.test(normalized)) {
+    throw new Error("okf_export_invalid_type");
+  }
+  return normalized;
 }
 
 function removeSourceManifestEntry(lines: string[], title: string) {

@@ -41,6 +41,7 @@ export async function resolveOkfCoverage(input: {
 export async function syncOkfConceptCoverage(input: {
   chunkIds: string[];
   coverageType: string;
+  knowledgeBundleId?: string;
   okfConceptId: string;
   repository?: OkfCoverageRepository;
   workspaceId: string;
@@ -50,6 +51,7 @@ export async function syncOkfConceptCoverage(input: {
   await repository.syncOkfConceptChunkLinks({
     chunkIds: input.chunkIds,
     coverageType: input.coverageType,
+    ...(input.knowledgeBundleId ? { knowledgeBundleId: input.knowledgeBundleId } : {}),
     okfConceptId: input.okfConceptId,
     workspaceId: input.workspaceId,
   });

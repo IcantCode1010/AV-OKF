@@ -56,7 +56,7 @@ dispatch_reference:
     - source_file
     - source_pages
     - knowledge_version
-    - last_verified
+    - updated
 ```
 
 Typed relation fields are allowed in the profile:

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+import { LOCAL_GENERAL_BUNDLE_ID } from "./knowledge-bundles.ts";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { generateTopicCandidates } from "./topic-records.ts";
@@ -78,6 +80,23 @@ export type DocumentExtraction = {
 
 export type TopicConfidence = "low" | "medium" | "high";
 
+export type TopicDiscoveryStatus =
+  | "not_started"
+  | "queued"
+  | "analyzing"
+  | "consolidating"
+  | "completed"
+  | "awaiting_provider"
+  | "failed";
+
+export type DocumentTopicDiscovery = {
+  completedWindows: number;
+  errorMessage: string | null;
+  estimatedInputTokens: number;
+  status: TopicDiscoveryStatus;
+  totalWindows: number;
+};
+
 export type TopicReviewStatus =
   | "needs_review"
   | "needs_cleanup"
@@ -107,6 +126,7 @@ export type TopicEnrichmentAudit = {
 
 export type TopicRecord = {
   id: string;
+  knowledgeBundleId: string;
   documentId: string;
   originalTitle: string;
   originalSummary: string;
@@ -115,6 +135,9 @@ export type TopicRecord = {
   summary: string;
   enrichedTitle: string | null;
   enrichedSummary: string | null;
+  enrichedBody: string | null;
+  proposedSourcePageNumbers: number[];
+  discoveryMetadata: Record<string, unknown>;
   enrichmentStatus: TopicEnrichmentStatus;
   approvedContentSource: ApprovedContentSource | null;
   enrichedAt: string | null;
@@ -129,6 +152,7 @@ export type TopicRecord = {
   relations: TopicRelation[];
   sourcePageNumbers: number[];
   exportedFilePath: string | null;
+  okfMetadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 };
@@ -136,6 +160,7 @@ export type TopicRecord = {
 export type Document = {
   id: string;
   workspaceId?: string;
+  knowledgeBundleId: string;
   title: string;
   fileType: string;
   size: string;
@@ -158,6 +183,7 @@ export type Document = {
   sourceAuthority: string | null;
   revision: string | null;
   extraction: DocumentExtraction;
+  topicDiscovery?: DocumentTopicDiscovery;
 };
 
 export type DocumentMetrics = {
@@ -185,6 +211,7 @@ type VaultStore = {
 type UploadMetadata = {
   bytes: Buffer;
   description: string;
+  knowledgeBundleId: string;
   originalFilename: string;
   owner: string;
   sourceType: SourceType;
@@ -238,6 +265,7 @@ const seedDocuments: Document[] = [
   {
     id: "doc-737ng-amm-24",
     workspaceId: workspace.id,
+    knowledgeBundleId: LOCAL_GENERAL_BUNDLE_ID,
     title: "737NG AMM Electrical Power - ATA 24",
     fileType: "PDF",
     size: "42.8 MB",
@@ -268,6 +296,7 @@ const seedDocuments: Document[] = [
   {
     id: "doc-elt-training",
     workspaceId: workspace.id,
+    knowledgeBundleId: LOCAL_GENERAL_BUNDLE_ID,
     title: "ELT System Training Notes",
     fileType: "PDF",
     size: "8.4 MB",
@@ -295,6 +324,7 @@ const seedDocuments: Document[] = [
   {
     id: "doc-company-policy",
     workspaceId: workspace.id,
+    knowledgeBundleId: LOCAL_GENERAL_BUNDLE_ID,
     title: "Technical Publications Control Policy",
     fileType: "PDF",
     size: "2.1 MB",
@@ -322,6 +352,7 @@ const seedDocuments: Document[] = [
   {
     id: "doc-apu-fault-routes",
     workspaceId: workspace.id,
+    knowledgeBundleId: LOCAL_GENERAL_BUNDLE_ID,
     title: "APU Fault Route Reference",
     fileType: "PDF",
     size: "11.6 MB",
@@ -349,6 +380,7 @@ const seedDocuments: Document[] = [
   {
     id: "doc-vendor-onboarding",
     workspaceId: workspace.id,
+    knowledgeBundleId: LOCAL_GENERAL_BUNDLE_ID,
     title: "Vendor Onboarding Handbook",
     fileType: "PDF",
     size: "5.7 MB",
@@ -376,6 +408,7 @@ const seedDocuments: Document[] = [
   {
     id: "doc-mel-dispatch",
     workspaceId: workspace.id,
+    knowledgeBundleId: LOCAL_GENERAL_BUNDLE_ID,
     title: "MEL Dispatch Gate Examples",
     fileType: "PDF",
     size: "19.3 MB",
@@ -596,6 +629,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const document: Document = {
         id: `doc-${randomUUID()}`,
         workspaceId: workspace.id,
+        knowledgeBundleId: input.knowledgeBundleId,
         title: input.title.trim() || input.originalFilename.replace(/\.pdf$/i, ""),
         fileType: "PDF",
         size: formatBytes(input.bytes.byteLength),
@@ -805,11 +839,15 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         .map((candidate): TopicRecord => ({
           ...candidate,
           id: `topic-${randomUUID()}`,
+          knowledgeBundleId: document.knowledgeBundleId,
           originalTitle: candidate.title,
           originalSummary: candidate.summary,
           approvedContentSource: null,
           enrichedAt: null,
           enrichedSummary: null,
+          enrichedBody: null,
+          proposedSourcePageNumbers: [],
+          discoveryMetadata: { version: "legacy-heading-v1" },
           enrichedTitle: null,
           enrichmentErrorMessage: null,
           enrichmentModel: null,
@@ -818,6 +856,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           editedBy: null,
           reviewStatus: "needs_review",
           relations: [],
+          okfMetadata: {},
           exportedFilePath: null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -917,14 +956,30 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     });
   }
 
+  async function updateTopicOkfMetadata(
+    topicId: string,
+    okfMetadata: Record<string, unknown>,
+  ) {
+    return mutateStore(async (store) => {
+      const topic = getStoreTopic(store, topicId);
+      if (topic.reviewStatus === "approved") {
+        throw new Error("topic_metadata_edit_requires_unapproved_topic");
+      }
+      topic.okfMetadata = okfMetadata;
+      topic.updatedAt = formatTimestamp(new Date());
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
   async function getTopicEnrichmentInput(topicId: string) {
     const store = await readStore();
     const topic = getStoreTopic(store, topicId);
     const document = getStoreDocument(store, topic.documentId);
-    const wantedPages = new Set(topic.sourcePageNumbers);
     return {
-      sourcePages: document.extraction.pageRecords.filter((pageRecord) =>
-        wantedPages.has(pageRecord.pageNumber),
+      sourcePages: document.extraction.pageRecords.filter(
+        (pageRecord) =>
+          pageRecord.pageNumber >= Math.max(1, topic.pageStart - 2) &&
+          pageRecord.pageNumber <= topic.pageEnd + 2,
       ),
       topic: normalizeTopicRecord(topic, store.topicEnrichmentAudits),
     };
@@ -948,6 +1003,8 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     input: {
       enrichedSummary: string;
       enrichedTitle: string;
+      enrichedBody?: string;
+      proposedSourcePageNumbers?: number[];
       model: string;
       promptSent: string;
       provider: string;
@@ -973,6 +1030,8 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       });
       topic.enrichedTitle = input.enrichedTitle;
       topic.enrichedSummary = input.enrichedSummary;
+      topic.enrichedBody = input.enrichedBody ?? input.enrichedSummary;
+      topic.proposedSourcePageNumbers = input.proposedSourcePageNumbers ?? [];
       topic.enrichmentStatus = "completed";
       topic.enrichmentErrorMessage = null;
       topic.enrichmentModel = input.model;
@@ -1077,6 +1136,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     updateTopicRelations,
     updateTopicExportedFilePath,
     updateTopicContent,
+    updateTopicOkfMetadata,
     updateDocumentMetadata,
   };
 }
@@ -1164,6 +1224,13 @@ export async function updateTopicContent(
   input: UpdateTopicContentInput,
 ) {
   return defaultVault.updateTopicContent(topicId, input);
+}
+
+export async function updateTopicOkfMetadata(
+  topicId: string,
+  okfMetadata: Record<string, unknown>,
+) {
+  return defaultVault.updateTopicOkfMetadata(topicId, okfMetadata);
 }
 
 export async function getTopicEnrichmentInput(topicId: string) {
@@ -1269,12 +1336,17 @@ function normalizeTopicRecord(
   topic: TopicRecord,
   audits: TopicEnrichmentAudit[] = [],
 ): TopicRecord {
+  topic.knowledgeBundleId ??= LOCAL_GENERAL_BUNDLE_ID;
+  topic.okfMetadata ??= {};
   topic.originalTitle ??= topic.title;
   topic.originalSummary ??= topic.summary;
   topic.editedAt ??= null;
   topic.editedBy ??= null;
   topic.enrichedTitle ??= null;
   topic.enrichedSummary ??= null;
+  topic.enrichedBody ??= null;
+  topic.proposedSourcePageNumbers ??= [];
+  topic.discoveryMetadata ??= { version: "legacy-heading-v1" };
   topic.enrichmentStatus ??= "none";
   topic.approvedContentSource ??= null;
   topic.exportedFilePath ??= null;
@@ -1354,6 +1426,7 @@ function calculateDocumentMetrics(documents: Document[]): DocumentMetrics {
 }
 
 function normalizeDocument(document: Document): Document {
+  document.knowledgeBundleId ??= LOCAL_GENERAL_BUNDLE_ID;
   document.extraction = normalizeExtraction(document.extraction);
   document.subjectFamily ??= null;
   document.documentType ??= null;

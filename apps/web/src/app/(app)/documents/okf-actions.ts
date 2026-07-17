@@ -13,7 +13,7 @@ import {
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { isProductionBackend } from "@/lib/production-document-service";
-import { getDefaultKnowledgeRoot } from "@/lib/knowledge-root";
+import { resolveKnowledgeBundleRoot } from "@/lib/knowledge-bundles";
 import { isRecoverableOkfExportError } from "@/lib/okf-export-errors";
 import { markOkfConceptLifecycle } from "@/lib/okf-lifecycle";
 import type { TopicRelation } from "@/lib/okf-relation-types";
@@ -82,7 +82,12 @@ export async function updateTopicRelationsAction(formData: FormData) {
     mismatchError: "okf_export_workspace_mismatch",
   });
 
-  const topic = (await getTopicRecordsByDocumentId(documentId)).find(
+  const [document, topics] = await Promise.all([
+    getDocumentById(documentId),
+    getTopicRecordsByDocumentId(documentId),
+  ]);
+  if (!document) throw new Error("document_not_found");
+  const topic = topics.find(
     (candidate) => candidate.id === topicId,
   );
 
@@ -100,7 +105,13 @@ export async function updateTopicRelationsAction(formData: FormData) {
   );
 
   try {
-    await validateTopicRelations(relations, getDefaultKnowledgeRoot());
+    await validateTopicRelations(
+      relations,
+      resolveKnowledgeBundleRoot({
+        bundleId: document.knowledgeBundleId,
+        workspaceId: context.workspaceId,
+      }),
+    );
   } catch (error) {
     if (error instanceof RelationValidationError) {
       redirect(
@@ -143,7 +154,11 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
     );
   }
 
-  const topics = await getTopicRecordsByDocumentId(documentId);
+  const [document, topics] = await Promise.all([
+    getDocumentById(documentId),
+    getTopicRecordsByDocumentId(documentId),
+  ]);
+  if (!document) throw new Error("document_not_found");
   const topic = topics.find((candidate) => candidate.id === topicId);
 
   if (!topic || topic.documentId !== documentId) {
@@ -162,7 +177,11 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
     await markOkfConceptLifecycle({
       actorId: context.userId,
       filePath: topic.exportedFilePath,
-      knowledgeRoot: getDefaultKnowledgeRoot(),
+      knowledgeBundleId: document.knowledgeBundleId,
+      knowledgeRoot: resolveKnowledgeBundleRoot({
+        bundleId: document.knowledgeBundleId,
+        workspaceId: context.workspaceId,
+      }),
       reason,
       status,
       topicId,

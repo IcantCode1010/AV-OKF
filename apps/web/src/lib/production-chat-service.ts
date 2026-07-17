@@ -33,7 +33,7 @@ import {
 } from "./production-chat-repository.ts";
 
 export type ProductionChatService = {
-  createSession(title?: string): Promise<ChatSession>;
+  createSession(knowledgeBundleId: string, title?: string): Promise<ChatSession>;
   getSessionWorkspaceId(sessionId: string): Promise<string | undefined>;
   getSessions(): Promise<ChatSession[]>;
   getSessionWithMessages(
@@ -81,9 +81,9 @@ export function createProductionChatService(
   const understandQuery = options.understandQuery ?? understandChatQuery;
 
   return {
-    async createSession(title?: string) {
+    async createSession(knowledgeBundleId: string, title?: string) {
       const context = await getContext();
-      return repository.createSession({ context, title });
+      return repository.createSession({ context, knowledgeBundleId, title });
     },
 
     async getSessionWorkspaceId(sessionId: string) {
@@ -144,8 +144,9 @@ export function createProductionChatService(
         : buildSkippedQueryUnderstanding(content);
       const retrievalQuery = queryUnderstanding.retrievalQuery;
       const retrieval = isRetrievalRoute(decision.route)
-        ? await retrieve({
+          ? await retrieve({
             decision,
+            knowledgeBundleId: history.session.knowledgeBundleId,
             query: retrievalQuery,
             workspaceId: context.workspaceId,
           })

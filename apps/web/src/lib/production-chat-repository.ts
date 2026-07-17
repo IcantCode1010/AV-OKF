@@ -12,6 +12,7 @@ type PrismaLike = ReturnType<typeof getPrisma>;
 type DbChatSessionRecord = {
   createdAt: Date;
   id: string;
+  knowledgeBundleId?: string;
   title: string;
   updatedAt: Date;
   userId: string;
@@ -55,10 +56,16 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 
     async createSession(input: {
       context: AuthWorkspaceContext;
+      knowledgeBundleId?: string;
       title?: string;
     }): Promise<ChatSession> {
+      if (!input.knowledgeBundleId) {
+        throw new Error("chat_bundle_required");
+      }
+
       const record = await db.chatSession.create({
         data: {
+          knowledgeBundleId: input.knowledgeBundleId,
           title: input.title?.trim() || "New chat",
           userId: input.context.userId,
           workspaceId: input.context.workspaceId,
@@ -150,6 +157,7 @@ function mapChatSession(record: DbChatSessionRecord): ChatSession {
   return {
     createdAt: record.createdAt.toISOString(),
     id: record.id,
+    knowledgeBundleId: record.knowledgeBundleId ?? "kb_general_local",
     title: record.title,
     updatedAt: record.updatedAt.toISOString(),
     userId: record.userId,

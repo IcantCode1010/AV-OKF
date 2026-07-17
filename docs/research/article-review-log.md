@@ -4,6 +4,7 @@ This log tracks external sources reviewed during AV-OKF planning and implementat
 
 | Date Reviewed | Source | Topic | Product Impact | Notes File |
 | --- | --- | --- | --- | --- |
+| 2026-07-15 | Analytics Vidhya: OKF - Redefining Knowledge Bases for AI Agents | OKF concept traversal and hybrid OKF/RAG architecture | Confirms current direction with a minor Stage 7C progressive-disclosure consideration | [2026-07-15-analytics-vidhya-okf-agent-knowledge-bases.md](2026-07-15-analytics-vidhya-okf-agent-knowledge-bases.md) |
 | 2026-07-06 | Agentic Resource Discovery Specification | Discovering callable agent resources before invocation | Future consideration with likely Stage 7/8 impact | [2026-07-06-agentic-resource-discovery.md](2026-07-06-agentic-resource-discovery.md) |
 | 2026-07-06 | Cloud Codes: Google's OKF: The Simple Folder Replacing Vector Databases | OKF as filesystem-native agent knowledge | Confirms current direction | [2026-07-06-google-okf-simple-folder-video.md](2026-07-06-google-okf-simple-folder-video.md) |
 | 2026-07-04 | Data Science Dojo: LLM Wiki Pattern | LLM-maintained Markdown wiki as a compounding knowledge base | Confirms current direction with future OKF maintenance consideration | [2026-07-04-llm-wiki-pattern.md](2026-07-04-llm-wiki-pattern.md) |

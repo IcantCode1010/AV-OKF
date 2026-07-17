@@ -31,6 +31,7 @@ import type { TopicRelation } from "./okf-relation-types.ts";
 type UploadMetadata = {
   bytes: Buffer;
   description: string;
+  knowledgeBundleId: string;
   originalFilename: string;
   owner: string;
   sourceType: SourceType;
@@ -85,6 +86,10 @@ export type ProductionDocumentService = {
   updateTopicContent(
     topicId: string,
     input: { editedBy: string; summary?: string; title?: string },
+  ): Promise<TopicRecord>;
+  updateTopicOkfMetadata(
+    topicId: string,
+    okfMetadata: Record<string, unknown>,
   ): Promise<TopicRecord>;
   getTopicEnrichmentInput(
     topicId: string,
@@ -171,6 +176,7 @@ export function createProductionDocumentService(
         context,
         description: input.description,
         documentId,
+        knowledgeBundleId: input.knowledgeBundleId,
         objectKey,
         originalFilename: input.originalFilename,
         owner: input.owner,
@@ -303,6 +309,13 @@ export function createProductionDocumentService(
         editedBy: input.editedBy,
         summary: input.summary,
         title: input.title,
+        topicId,
+      });
+    },
+    async updateTopicOkfMetadata(topicId, okfMetadata) {
+      return repository.updateTopicOkfMetadata({
+        context: await requireAuthWorkspaceContext(),
+        okfMetadata,
         topicId,
       });
     },

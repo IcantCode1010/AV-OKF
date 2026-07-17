@@ -12,6 +12,7 @@ import {
   getFrontmatterStringArray,
   parseOkfMarkdown,
 } from "./okf-frontmatter.ts";
+import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import type { TopicRelation } from "./okf-relation-types.ts";
 
 export type OkfBundleEvidence = {
@@ -51,11 +52,13 @@ export type OkfConceptLifecycleRecord = {
 
 export type OkfConceptLifecycleLookup = (input: {
   filePath: string;
+  knowledgeBundleId: string;
   knowledgeRoot: string;
   workspaceId: string;
 }) => Promise<OkfConceptLifecycleRecord | null | undefined>;
 
 export type OkfBundleRetrievalInput = {
+  knowledgeBundleId: string;
   knowledgeRoot?: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
   query: string;
@@ -65,6 +68,7 @@ export type OkfBundleRetrievalInput = {
 
 export type OkfBundleFileReadInput = {
   filePath: string;
+  knowledgeBundleId: string;
   knowledgeRoot?: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
   workspaceId: string;
@@ -164,6 +168,7 @@ export async function retrieveOkfBundleEvidence(
     const markdown = await readFile(fullPath, "utf8");
     const lifecycle = await resolveLifecycleStatus({
       filePath,
+      knowledgeBundleId: input.knowledgeBundleId,
       knowledgeRoot: root,
       lifecycleLookup: input.lifecycleLookup,
       workspaceId: input.workspaceId,
@@ -220,6 +225,7 @@ export async function readOkfBundleEvidenceByPath(
     const markdown = await readFile(fullPath, "utf8");
     const lifecycle = await resolveLifecycleStatus({
       filePath,
+      knowledgeBundleId: input.knowledgeBundleId,
       knowledgeRoot: root,
       lifecycleLookup: input.lifecycleLookup,
       workspaceId: input.workspaceId,
@@ -268,22 +274,18 @@ async function buildEvidenceCandidate(
 ): Promise<OkfBundleEvidence | null> {
   const parsed = parseOkfMarkdown(markdown);
   const type = getFrontmatterScalar(parsed.frontmatter, "type");
-  const reviewStatus = getFrontmatterScalar(parsed.frontmatter, "review_status");
   const title = getFrontmatterScalar(parsed.frontmatter, "title");
   const description = getFrontmatterScalar(parsed.frontmatter, "description");
   const sourceFile = getFrontmatterScalar(parsed.frontmatter, "source_file");
   const sourcePages = getFrontmatterNumberArray(parsed.frontmatter, "source_pages");
 
-  if (
-    !type ||
-    reviewStatus !== "approved" ||
-    !title ||
-    !description ||
-    !sourceFile ||
-    sourcePages.length === 0
-  ) {
+  if (!isAgentReadyOkfMetadata(parsed.frontmatter, parsed.body)) {
     return null;
   }
+
+  const trustedTitle = title!;
+  const trustedDescription = description ?? "";
+  const trustedSourceFile = sourceFile!;
 
   const searchableMetadata = [
     type,
@@ -295,17 +297,17 @@ async function buildEvidenceCandidate(
     getFrontmatterScalar(parsed.frontmatter, "source_authority"),
     getFrontmatterScalar(parsed.frontmatter, "revision"),
     getFrontmatterScalar(parsed.frontmatter, "knowledge_version"),
-    getFrontmatterScalar(parsed.frontmatter, "last_verified"),
+    getFrontmatterScalar(parsed.frontmatter, "updated"),
   ]
     .filter((value): value is string => Boolean(value))
     .join(" ");
   const match = queryTerms
     ? qualifyCandidate({
         body: parsed.body,
-        description,
+        description: trustedDescription,
         metadata: searchableMetadata,
         queryTerms,
-        title,
+        title: trustedTitle,
       })
     : null;
   if (queryTerms && !match) {
@@ -319,8 +321,8 @@ async function buildEvidenceCandidate(
       "covered_rag_chunk_ids",
     ),
     coverageType: getFrontmatterScalar(parsed.frontmatter, "coverage_type"),
-    description,
-    excerpt: truncateExcerpt([description, parsed.body].join("\n\n")),
+    description: trustedDescription,
+    excerpt: truncateExcerpt([trustedDescription, parsed.body].join("\n\n")),
     filePath,
     lifecycleStatus,
     lifecycleWarnings: await buildRelationWarnings(
@@ -336,16 +338,17 @@ async function buildEvidenceCandidate(
     relations: getFrontmatterRelations(parsed.frontmatter),
     reviewStatus: "approved",
     score: match?.score ?? 0,
-    sourceFile,
+    sourceFile: trustedSourceFile,
     sourcePages,
     sourceType: "okf_bundle",
-    title,
-    type,
+    title: trustedTitle,
+    type: type!,
   };
 }
 
 async function resolveLifecycleStatus(input: {
   filePath: string;
+  knowledgeBundleId: string;
   knowledgeRoot: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
   workspaceId: string;
@@ -357,6 +360,7 @@ async function resolveLifecycleStatus(input: {
   return (
     (await input.lifecycleLookup({
       filePath: input.filePath,
+      knowledgeBundleId: input.knowledgeBundleId,
       knowledgeRoot: input.knowledgeRoot,
       workspaceId: input.workspaceId,
     })) ?? { status: "active" }

@@ -74,21 +74,18 @@ test("buildOkfSystemTopic rejects non-approved topics", () => {
   );
 });
 
-test("buildOkfSystemTopic reports missing document metadata fields", () => {
-  assert.throws(
-    () =>
-      buildOkfSystemTopic({
-        document: {
-          ...exportDocument,
-          subjectFamily: null,
-          effectivity: null,
-          sourceAuthority: null,
-        },
-        knowledgeVersion: "0.1.0",
-        topic: approvedTopic,
-      }),
-    /okf_export_missing_document_metadata: subjectFamily, effectivity, sourceAuthority/,
-  );
+test("buildOkfSystemTopic keeps AV-OKF extension metadata optional", () => {
+  const exported = buildOkfSystemTopic({
+    document: {
+      ...exportDocument,
+      subjectFamily: null,
+      effectivity: null,
+      sourceAuthority: null,
+    },
+    knowledgeVersion: "0.1.0",
+    topic: approvedTopic,
+  });
+  assert.doesNotMatch(exported.content, /subject_family|effectivity|source_authority/);
 });
 
 test("buildOkfSystemTopic creates deterministic safe classification-code-prefixed filenames", () => {

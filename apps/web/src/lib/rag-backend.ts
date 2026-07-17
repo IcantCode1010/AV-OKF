@@ -45,6 +45,7 @@ export async function retrieveDocuments(
 
 export async function retrieveDocumentsByChunkIds(input: {
   chunkIds: string[];
+  knowledgeBundleId?: string;
   topK: number;
   workspaceId: string;
 }): Promise<RetrievalResult[]> {
@@ -55,6 +56,7 @@ export async function retrieveDocumentsByChunkIds(input: {
   const repository = createRagRepository() as ReturnType<typeof createRagRepository> & {
     getChunksByIds?(input: {
       chunkIds: string[];
+      knowledgeBundleId?: string;
       workspaceId: string;
     }): Promise<RetrievalResult[]>;
   };
@@ -65,6 +67,7 @@ export async function retrieveDocumentsByChunkIds(input: {
 
   return (await repository.getChunksByIds({
     chunkIds: input.chunkIds,
+    knowledgeBundleId: input.knowledgeBundleId,
     workspaceId: input.workspaceId,
   })).slice(0, input.topK);
 }

@@ -16,6 +16,7 @@ import {
 import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
 import { retrieveDocuments, retrieveDocumentsByChunkIds } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
+import { resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
@@ -56,17 +57,20 @@ export type ChatRetrievalResult = {
 
 export type ChatRetrievalFn = (input: {
   decision: ChatRouterDecision;
+  knowledgeBundleId?: string;
   query: string;
   workspaceId: string;
 }) => Promise<ChatRetrievalResult>;
 
 export type OkfBundleRetrievalFn = (input: {
+  knowledgeBundleId?: string;
   query: string;
   topK: number;
   workspaceId: string;
 }) => Promise<OkfBundleEvidence[]>;
 
 export type OkfGraphTraversalFn = (input: {
+  knowledgeBundleId?: string;
   seedFiles: string[];
   workspaceId: string;
   maxHops?: number;
@@ -74,40 +78,63 @@ export type OkfGraphTraversalFn = (input: {
 
 export type CoveredRagRetrievalFn = (input: {
   chunkIds: string[];
+  knowledgeBundleId?: string;
   topK: number;
   workspaceId: string;
 }) => Promise<RetrievalResult[]>;
 
 async function retrieveOkfBundleEvidenceWithLifecycle(input: {
+  knowledgeBundleId?: string;
   query: string;
   topK: number;
   workspaceId: string;
 }): Promise<OkfBundleEvidence[]> {
+  const knowledgeBundleId = input.knowledgeBundleId ?? "kb_general_local";
+
   return retrieveOkfBundleEvidence({
     ...input,
+    knowledgeBundleId,
+    knowledgeRoot: resolveKnowledgeBundleRoot({
+      bundleId: knowledgeBundleId,
+      workspaceId: input.workspaceId,
+    }),
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
   });
 }
 
 async function traverseOkfRelationsWithLifecycle(input: {
+  knowledgeBundleId?: string;
   seedFiles: string[];
   workspaceId: string;
   maxHops?: number;
 }): Promise<OkfGraphTraversalResult> {
+  const knowledgeBundleId = input.knowledgeBundleId ?? "kb_general_local";
+
   return traverseOkfRelations({
     ...input,
+    knowledgeBundleId,
+    knowledgeRoot: resolveKnowledgeBundleRoot({
+      bundleId: knowledgeBundleId,
+      workspaceId: input.workspaceId,
+    }),
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
   });
 }
 
 export async function runChatRetrieval(
-  input: { decision: ChatRouterDecision; query: string; workspaceId: string },
+  input: {
+    decision: ChatRouterDecision;
+    knowledgeBundleId?: string;
+    query: string;
+    workspaceId: string;
+  },
   retrieve: typeof retrieveDocuments = retrieveDocuments,
   retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleEvidenceWithLifecycle,
   traverseGraph: OkfGraphTraversalFn = traverseOkfRelationsWithLifecycle,
   retrieveCoveredRag: CoveredRagRetrievalFn = retrieveDocumentsByChunkIds,
 ): Promise<ChatRetrievalResult> {
-  const { decision, query, workspaceId } = input;
+  const { decision, knowledgeBundleId, query, workspaceId } = input;
+  const effectiveKnowledgeBundleId = knowledgeBundleId ?? "kb_general_local";
 
   if (!isRetrievalRoute(decision.route)) {
     return {
@@ -126,6 +153,7 @@ export async function runChatRetrieval(
   try {
     if (decision.route === "okf_only") {
       const okfResults = await retrieveOkf({
+        knowledgeBundleId: effectiveKnowledgeBundleId,
         query,
         topK: OKF_TOP_K,
         workspaceId,
@@ -134,6 +162,7 @@ export async function runChatRetrieval(
       if (okfResults.length > 0) {
         if (decision.requiresGraphTraversal) {
           const graph = await traverseGraph({
+            knowledgeBundleId: effectiveKnowledgeBundleId,
             seedFiles: okfResults.map((result) => result.filePath),
             workspaceId,
             maxHops: 2,
@@ -145,6 +174,7 @@ export async function runChatRetrieval(
           if (graphResults.length > 0) {
             const coveredRag = await retrieveCoveredRag({
               chunkIds: uniqueChunkIds(graphResults),
+              knowledgeBundleId: effectiveKnowledgeBundleId,
               topK: RAG_TOP_K,
               workspaceId,
             });
@@ -178,6 +208,7 @@ export async function runChatRetrieval(
 
           const discoveryResults = await fetchBySourceType(retrieve, {
             approvedOnly: false,
+            knowledgeBundleId: effectiveKnowledgeBundleId,
             query,
             sourceType: "raw_extraction",
             topK: RAG_TOP_K,
@@ -206,6 +237,7 @@ export async function runChatRetrieval(
       // downgrades to RAG for discovery only, never presented as official.
       const discoveryResults = await fetchBySourceType(retrieve, {
         approvedOnly: false,
+        knowledgeBundleId: effectiveKnowledgeBundleId,
         query,
         sourceType: "raw_extraction",
         topK: RAG_TOP_K,
@@ -224,6 +256,7 @@ export async function runChatRetrieval(
     if (decision.route === "rag_only") {
       const results = await fetchBySourceType(retrieve, {
         approvedOnly: false,
+        knowledgeBundleId: effectiveKnowledgeBundleId,
         query,
         sourceType: "raw_extraction",
         topK: RAG_TOP_K,
@@ -239,12 +272,14 @@ export async function runChatRetrieval(
     // sequential (not parallel) per the design so a later slice can shape
     // the RAG fetch around what OKF already covered.
     const okfResults = await retrieveOkf({
+      knowledgeBundleId: effectiveKnowledgeBundleId,
       query,
       topK: OKF_TOP_K,
       workspaceId,
     });
     const ragResults = await fetchBySourceType(retrieve, {
       approvedOnly: false,
+      knowledgeBundleId: effectiveKnowledgeBundleId,
       query,
       sourceType: "raw_extraction",
       topK: RAG_TOP_K,
@@ -287,6 +322,7 @@ async function fetchBySourceType(
   retrieve: typeof retrieveDocuments,
   options: {
     approvedOnly: boolean;
+    knowledgeBundleId: string;
     query: string;
     sourceType: "raw_extraction";
     topK: number;
@@ -298,6 +334,7 @@ async function fetchBySourceType(
       ...(options.approvedOnly ? { reviewStatus: ["approved"] } : {}),
       sourceTypes: [options.sourceType],
     },
+    knowledgeBundleId: options.knowledgeBundleId,
     mode: "hybrid",
     query: options.query,
     topK: options.topK,

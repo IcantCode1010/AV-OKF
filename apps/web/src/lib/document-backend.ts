@@ -23,6 +23,7 @@ import {
   markTopicEnrichmentPending as markLocalTopicEnrichmentPending,
   updateDocumentMetadata as updateLocalDocumentMetadata,
   updateTopicContent as updateLocalTopicContent,
+  updateTopicOkfMetadata as updateLocalTopicOkfMetadata,
   updateTopicExportedFilePath as updateLocalTopicExportedFilePath,
   updateTopicRelations as updateLocalTopicRelations,
   updateTopicReviewStatus as updateLocalTopicReviewStatus,
@@ -224,6 +225,16 @@ export async function updateTopicContent(
   }
 
   return updateLocalTopicContent(topicId, input);
+}
+
+export async function updateTopicOkfMetadata(
+  topicId: string,
+  okfMetadata: Record<string, unknown>,
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().updateTopicOkfMetadata(topicId, okfMetadata);
+  }
+  return updateLocalTopicOkfMetadata(topicId, okfMetadata);
 }
 
 export async function getTopicEnrichmentInput(

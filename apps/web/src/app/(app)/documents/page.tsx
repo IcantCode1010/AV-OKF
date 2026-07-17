@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-backend";
 import { uploadDocumentAction } from "./actions";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +17,11 @@ export default async function DocumentsPage({
   searchParams: Promise<{ uploadError?: string }>;
 }) {
   const { uploadError } = await searchParams;
-  const documents = await getDocuments();
+  const context = await requireAuthWorkspaceContext();
+  const [documents, bundles] = await Promise.all([
+    getDocuments(),
+    listKnowledgeBundles(context),
+  ]);
   const uploadErrorMessage = formatUploadError(uploadError);
 
   return (
@@ -64,6 +70,24 @@ export default async function DocumentsPage({
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="knowledgeBundleId">Knowledge bundle</Label>
+                <select
+                  id="knowledgeBundleId"
+                  name="knowledgeBundleId"
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                  required
+                >
+                  {bundles.map((bundle) => (
+                    <option key={bundle.id} value={bundle.id}>
+                      {bundle.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Assignment locks when extraction starts. Documents and derived knowledge stay inside this bundle.
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="title">Title</Label>
                 <Input id="title" name="title" placeholder="Document title" />

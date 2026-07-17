@@ -70,7 +70,10 @@ test("exportApprovedTopicForDocument writes an approved topic from document and 
       topics: [approvedTopic],
     });
 
-    assert.equal(exported.filename, "32-main-gear-brake-system-494f144a6e.md");
+    assert.equal(
+      exported.filename,
+      "concepts/system-topic/32-main-gear-brake-system-494f144a6e.md",
+    );
     const markdown = await readFile(path.join(root, exported.filename), "utf8");
     assert.match(markdown, /type: "system_topic"/);
     assert.match(markdown, /review_status: "approved"/);

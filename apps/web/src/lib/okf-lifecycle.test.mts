@@ -129,9 +129,9 @@ test("getOkfConceptLifecycleForFile returns projected lifecycle state", async ()
       async findUnique(input: unknown) {
         assert.deepEqual(input, {
           where: {
-            workspaceId_filePath: {
+            knowledgeBundleId_filePath: {
               filePath: "29-air-ground-position-95ac0bd3c2.md",
-              workspaceId: "wrk_1",
+              knowledgeBundleId: "kb_1",
             },
           },
         });
@@ -148,6 +148,7 @@ test("getOkfConceptLifecycleForFile returns projected lifecycle state", async ()
     await getOkfConceptLifecycleForFile({
       client,
       filePath: "29-air-ground-position-95ac0bd3c2.md",
+      knowledgeBundleId: "kb_1",
       workspaceId: "wrk_1",
     }),
     {
@@ -164,6 +165,7 @@ test("getOkfConceptLifecycleByFile returns active defaults and projected non-act
         assert.deepEqual(input, {
           where: {
             filePath: { in: ["29-air-ground-position-95ac0bd3c2.md", "32-brakes.md"] },
+            knowledgeBundleId: "kb_1",
             workspaceId: "wrk_1",
           },
         });
@@ -183,6 +185,7 @@ test("getOkfConceptLifecycleByFile returns active defaults and projected non-act
     await getOkfConceptLifecycleByFile({
       client,
       filePaths: ["29-air-ground-position-95ac0bd3c2.md", "32-brakes.md"],
+      knowledgeBundleId: "kb_1",
       workspaceId: "wrk_1",
     }),
     new Map([
@@ -219,6 +222,7 @@ test("markOkfConceptLifecycle requires a reason and appends a lifecycle log entr
           client,
           filePath: "32-brakes.md",
           knowledgeRoot: root,
+          knowledgeBundleId: "kb_1",
           reason: " ",
           status: "retracted",
           topicId: "topic_1",
@@ -233,6 +237,7 @@ test("markOkfConceptLifecycle requires a reason and appends a lifecycle log entr
       client,
       filePath: "32-brakes.md",
       knowledgeRoot: root,
+      knowledgeBundleId: "kb_1",
       reason: "Incorrect source mapping",
       status: "retracted",
       topicId: "topic_1",
@@ -245,6 +250,7 @@ test("markOkfConceptLifecycle requires a reason and appends a lifecycle log entr
           changedAt,
           changedBy: "user_1",
           filePath: "32-brakes.md",
+          knowledgeBundleId: "kb_1",
           reason: "Incorrect source mapping",
           status: "retracted",
           topicId: "topic_1",
@@ -258,9 +264,9 @@ test("markOkfConceptLifecycle requires a reason and appends a lifecycle log entr
           topicId: "topic_1",
         },
         where: {
-          workspaceId_filePath: {
+          knowledgeBundleId_filePath: {
             filePath: "32-brakes.md",
-            workspaceId: "wrk_1",
+            knowledgeBundleId: "kb_1",
           },
         },
       },

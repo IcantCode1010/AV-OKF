@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
@@ -9,6 +9,7 @@ type DocumentObjectKeyInput = {
 };
 
 export type ObjectStorage = {
+  deleteObject(key: string): Promise<void>;
   getObject(key: string): Promise<Buffer>;
   putObject(input: {
     body: Buffer;
@@ -53,6 +54,9 @@ export function createS3ObjectStorage(config = getS3ConfigFromEnv()): ObjectStor
   });
 
   return {
+    async deleteObject(key) {
+      await client.send(new DeleteObjectCommand({ Bucket: config.bucket, Key: key }));
+    },
     async getObject(key) {
       const response = await client.send(
         new GetObjectCommand({

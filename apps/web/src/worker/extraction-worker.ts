@@ -8,9 +8,20 @@ import { getDefaultChunkingStrategyId } from "../lib/rag-reindex.ts";
 import { createRagRepository } from "../lib/rag-repository.ts";
 import { getObjectStorage } from "../lib/production-storage.ts";
 import { runProductionExtractionJob } from "../lib/production-worker.ts";
+import { runTopicDiscoveryJob } from "../lib/topic-discovery-service.ts";
+import {
+  createBullMqTopicDiscoveryQueue,
+  type TopicDiscoveryJobPayload,
+} from "../lib/topic-discovery-queue.ts";
+import {
+  runKnowledgeBundleDeletionJob,
+  type KnowledgeBundleDeletionJob,
+} from "../lib/knowledge-bundle-deletion.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
+let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJob> | null = null;
+let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
 
 void main();
 
@@ -26,9 +37,11 @@ async function main() {
   const storage = getObjectStorage();
   const queue = createBullMqExtractionQueue(redisUrl);
   const ragQueue = createBullMqRagIndexQueue(redisUrl);
+  const topicDiscoveryQueue = createBullMqTopicDiscoveryQueue(redisUrl);
 
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
+  await reconcileQueuedTopicDiscoveryJobs(repository, topicDiscoveryQueue);
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -37,6 +50,7 @@ async function main() {
         ragQueue,
         repository,
         storage,
+        topicDiscoveryQueue,
       });
     },
     {
@@ -60,6 +74,21 @@ async function main() {
     },
   );
 
+  topicDiscoveryWorker = new Worker<TopicDiscoveryJobPayload>(
+    "topic-discovery",
+    async (job) => runTopicDiscoveryJob(job.data),
+    {
+      concurrency: Number(process.env.TOPIC_DISCOVERY_WORKER_CONCURRENCY ?? "1"),
+      connection: { url: redisUrl },
+    },
+  );
+
+  bundleDeletionWorker = new Worker<KnowledgeBundleDeletionJob>(
+    "knowledge-bundle-deletion",
+    async (job) => runKnowledgeBundleDeletionJob(job.data, storage),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
   extractionWorker.on("completed", (job) => {
     console.log(`Extraction job completed: ${job.id}`);
   });
@@ -74,6 +103,15 @@ async function main() {
 
   ragWorker.on("failed", (job, error) => {
     console.error(`RAG index job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  bundleDeletionWorker.on("failed", (job, error) => {
+    console.error(`Knowledge bundle deletion failed: ${job?.id ?? "unknown"}`, error);
+  });
+  topicDiscoveryWorker.on("completed", (job) => {
+    console.log(`Topic discovery job completed: ${job.id}`);
+  });
+  topicDiscoveryWorker.on("failed", (job, error) => {
+    console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -126,8 +164,25 @@ async function reconcileQueuedRagJobs(
   }
 }
 
+async function reconcileQueuedTopicDiscoveryJobs(
+  repository: ReturnType<typeof createPostgresDocumentRepository>,
+  queue: ReturnType<typeof createBullMqTopicDiscoveryQueue>,
+) {
+  const jobs = await repository.getQueuedTopicDiscoveryJobs();
+  for (const job of jobs) {
+    await queue.enqueue({
+      documentId: job.documentId,
+      topicDiscoveryJobId: job.id,
+      workspaceId: job.workspaceId,
+    });
+  }
+  if (jobs.length > 0) console.log(`Re-enqueued ${jobs.length} topic discovery jobs.`);
+}
+
 async function shutdown() {
   await extractionWorker?.close();
   await ragWorker?.close();
+  await bundleDeletionWorker?.close();
+  await topicDiscoveryWorker?.close();
   process.exit(0);
 }

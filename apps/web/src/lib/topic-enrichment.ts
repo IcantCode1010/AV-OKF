@@ -30,6 +30,8 @@ export type TopicEnrichmentProviderInput = {
 };
 
 export type TopicEnrichmentProviderOutput = {
+  body?: string;
+  proposedSourcePageNumbers?: number[];
   rawResponse: string;
   summary: string;
   title: string;
@@ -60,6 +62,8 @@ export type TopicEnrichmentRepository = {
     context: AuthWorkspaceContext;
     enrichedSummary: string;
     enrichedTitle: string;
+    enrichedBody?: string;
+    proposedSourcePageNumbers?: number[];
     model: string;
     promptSent: string;
     provider: string;
@@ -105,6 +109,8 @@ type ApproveTopicOptions = {
 const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
 const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
 const topicEnrichmentSchema = z.object({
+  body: z.string().default(""),
+  proposedSourcePageNumbers: z.array(z.number().int().positive()).default([]),
   summary: z.string(),
   title: z.string(),
 });
@@ -147,6 +153,11 @@ export async function enrichTopic(
     });
     const enrichedTitle = result.title.trim();
     const enrichedSummary = result.summary.trim();
+    const enrichedBody = (result.body ?? result.summary).trim();
+    const proposedSourcePageNumbers = [...new Set(result.proposedSourcePageNumbers ?? [])]
+      .filter((page) => sourcePages.some((sourcePage) => sourcePage.pageNumber === page))
+      .filter((page) => !topic.sourcePageNumbers.includes(page))
+      .sort((left, right) => left - right);
 
     if (!enrichedTitle || !enrichedSummary) {
       throw new Error("llm_enrichment_empty_response");
@@ -156,6 +167,8 @@ export async function enrichTopic(
       context,
       enrichedSummary,
       enrichedTitle,
+      enrichedBody,
+      proposedSourcePageNumbers,
       model: provider.model,
       promptSent: prompt,
       provider: provider.provider,
@@ -204,7 +217,9 @@ export function buildTopicEnrichmentPrompt(input: {
     "You are polishing a draft technical topic for a document knowledge base.",
     "Use only the supplied source text. Do not invent facts, applicability, warnings, or procedures that are not present in the source.",
     "Do not change the technical meaning. Improve clarity, structure, and wording only.",
-    "Return strict JSON with string fields: title, summary.",
+    "Return strict JSON with title, summary, body, and proposedSourcePageNumbers.",
+    "Keep summary concise. Body must be a structured Markdown article grounded only in source text.",
+    "Only propose page numbers from the supplied source context; proposals require reviewer acceptance.",
     "",
     `Current title: ${input.topic.title}`,
     `Current summary: ${input.topic.summary}`,
@@ -290,6 +305,8 @@ function createAnthropicTopicEnrichmentProvider(
 
       return {
         rawResponse: JSON.stringify(output),
+        body: parsed.data.body,
+        proposedSourcePageNumbers: parsed.data.proposedSourcePageNumbers,
         summary: parsed.data.summary,
         title: parsed.data.title,
       };
@@ -318,6 +335,8 @@ export function createOpenAiTopicEnrichmentProvider(
 
       return {
         rawResponse: JSON.stringify(output),
+        body: parsed.data.body,
+        proposedSourcePageNumbers: parsed.data.proposedSourcePageNumbers,
         summary: parsed.data.summary,
         title: parsed.data.title,
       };

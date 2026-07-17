@@ -36,6 +36,7 @@ export type ChatMessage = {
 export type ChatSession = {
   createdAt: string;
   id: string;
+  knowledgeBundleId: string;
   title: string;
   updatedAt: string;
   userId: string;

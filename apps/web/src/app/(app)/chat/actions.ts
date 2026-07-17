@@ -10,9 +10,14 @@ import {
   sendChatMessage,
 } from "@/lib/chat-backend";
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
+import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
 
-export async function createChatSessionAction() {
-  const session = await createChatSession();
+export async function createChatSessionAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const knowledgeBundleId = getFormString(formData, "knowledgeBundleId");
+  const bundle = await getKnowledgeBundle({ bundleId: knowledgeBundleId, context });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const session = await createChatSession(bundle.id);
 
   revalidatePath("/chat");
   redirect(`/chat/${session.id}`);

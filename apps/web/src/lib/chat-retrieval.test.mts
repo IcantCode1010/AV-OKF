@@ -71,7 +71,12 @@ test("okf_only route reads approved OKF bundle evidence and calls okf_retrieval"
   const okfRequests: unknown[] = [];
 
   const result = await runChatRetrieval(
-    { decision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
+    {
+      decision,
+      knowledgeBundleId: "kb_general",
+      query: "GEN OFF BUS",
+      workspaceId: "wrk_1",
+    },
     async () => {
       throw new Error("rag_should_not_be_called");
     },
@@ -83,6 +88,7 @@ test("okf_only route reads approved OKF bundle evidence and calls okf_retrieval"
 
   assert.deepEqual(okfRequests, [
     {
+      knowledgeBundleId: "kb_general",
       query: "GEN OFF BUS",
       topK: 4,
       workspaceId: "wrk_1",

@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getChatSessions, isChatAvailable } from "@/lib/chat-backend";
 import { createChatSessionAction } from "./actions";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +14,11 @@ export default async function ChatPage() {
     return <ChatUnavailableNotice />;
   }
 
-  const sessions = await getChatSessions();
+  const context = await requireAuthWorkspaceContext();
+  const [sessions, bundles] = await Promise.all([
+    getChatSessions(),
+    listKnowledgeBundles(context),
+  ]);
 
   return (
     <>
@@ -28,7 +34,19 @@ export default async function ChatPage() {
             answered from the retrieved evidence with citations.
           </p>
         </div>
-        <form action={createChatSessionAction}>
+        <form action={createChatSessionAction} className="flex items-end gap-2">
+          <label className="grid gap-1 text-xs text-muted-foreground">
+            Knowledge bundle
+            <select
+              className="h-9 min-w-52 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              name="knowledgeBundleId"
+              required
+            >
+              {bundles.map((bundle) => (
+                <option key={bundle.id} value={bundle.id}>{bundle.name}</option>
+              ))}
+            </select>
+          </label>
           <PendingSubmitButton pendingLabel="Starting...">
             New chat
           </PendingSubmitButton>

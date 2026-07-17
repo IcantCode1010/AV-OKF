@@ -11,13 +11,15 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/**/*.test.mts",
-    "worker": "tsx src/worker/extraction-worker.ts"
+    "worker": "tsx src/worker/extraction-worker.ts",
+    "migrate:knowledge-vault": "tsx scripts/migrate-knowledge-vault.mts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.58",
     "@ai-sdk/openai": "3.0.41",
     "@auth/prisma-adapter": "^2.11.2",
     "@aws-sdk/client-s3": "^3.1076.0",
+    "@cosmos.gl/graph": "3.2.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "ai": "6.0.0",
@@ -35,6 +37,8 @@
     "radix-ui": "^1.6.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "shadcn": "^4.12.0",
     "tailwind-merge": "^3.6.0",
     "tsx": "^4.22.4",

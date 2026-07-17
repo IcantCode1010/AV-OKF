@@ -6,6 +6,26 @@ Build AV-OKF in stages, starting with a generic document management foundation a
 
 The first usable product should be a clean document vault. Chat comes later, after ingestion, citations, review status, and retrieval exist.
 
+## Current Implementation Status
+
+As of 2026-07-15:
+
+| Stage | Status |
+| --- | --- |
+| 0-3 | Complete: product shell, document vault, extraction, topic review, and enrichment workflow |
+| 3.5-3.9 | Complete for the single-VPS target: Docker/Caddy, Postgres, MinIO, Redis/BullMQ worker, Auth.js, workspace guards |
+| 4 | Complete: raw-document RAG indexing, pgvector retrieval, search, budgets, and reindex administration |
+| 5 | Complete: reviewed OKF export, linting, typed relations, coverage links, and bundle explorer |
+| 5.5 | Complete: generic metadata contract, workspace multi-bundle vault, profile versioning, migration, and durable bundle deletion |
+| 6 | Complete: persistent chat, rules-first router with LLM fallback, OKF/RAG/Hybrid retrieval, synthesis, citations, and trace |
+| 6.5 | Complete: live uncached OKF bundle retrieval with precision gating and lifecycle filtering |
+| 6.6 | Core implemented; restore, historical citation notices, and coverage reconciliation remain |
+| 7A | Complete: deterministic post-answer evidence validation |
+| 7B | Core implemented: bounded OKF graph traversal and coverage-linked RAG support |
+| 7B.5 | Complete: deterministic bundle-local candidates, reviewer approval/rejection, and re-exported graph edges |
+| 7C | Next: chat-quality closeout and bounded Vercel AI SDK tool contracts |
+| 8 | Deferred optional domain pack; the core platform remains generic |
+
 ## Stage 0: Product Shell
 
 Purpose: create the basic application frame.
@@ -68,7 +88,7 @@ Exit criteria:
 
 Purpose: turn extracted document structure into reviewable knowledge candidates.
 
-Topic records should come from document structure, not arbitrary RAG chunks.
+Topic records come from an automatic document-wide LLM discovery job, not arbitrary RAG chunks. Every extracted page is analyzed in bounded windows and consolidated into section-level drafts; RAG indexing remains independent and immediate.
 
 Deliverables:
 
@@ -79,7 +99,8 @@ Deliverables:
 - Confidence score
 - Review status
 - Topic review UI
-- Manual topic generation only. Re-extraction does not automatically regenerate topics in Stage 3.
+- Discovery queues automatically after extraction. Manual retry/rerun replaces only unreviewed drafts and preserves approved/rejected coverage. Re-extraction marks reviewed topic output stale rather than silently overwriting it.
+- Optional enrichment remains a separate reviewer action and produces a structured Markdown article. Additional source pages are proposals until explicitly accepted.
 - Reruns delete `needs_review` and `needs_cleanup` topics, preserve `approved` and `rejected` topics, and skip new draft topics that overlap reviewed page coverage.
 - Confidence is categorical: `high` for ALL-CAPS or explicitly numbered/lettered heading matches, `medium` for the weaker short-line heading heuristic, and `low` for the coarse page-range fallback.
 - Heading detection rejects page-index/cross-reference code lines (e.g. `"0.1"`, `"Lights.Index.5"`) so they don't get mistaken for section headings; a 737 QRH document produced 368 mostly single-page junk-titled topics before this fix.
@@ -237,9 +258,15 @@ Deliverables:
 - Deterministic link lint for relative Markdown graph links and relation targets
 - Deterministic relation lint for relation enum values, target resolution, and target type matching
 - GitHub Actions `okflint validate` CI gate
+- Workspace-scoped bundle library with Generic, Aviation, and versioned custom profiles
+- Generic `type`-required metadata contract with optional `title`, `description`, `tags`, and `updated`
+- Required upload/chat bundle assignment and bundle-isolated retrieval, relations, lifecycle, and RAG filtering
+- Dry-run/resumable migration into General Knowledge with backup and recovery journal
+- Durable BullMQ bundle deletion across MinIO, OKF files, documents, derived data, and chats
 - Bundle-first Knowledge page
-- Folder-style OKF bundle explorer grouped by reserved files, system topics, fault routes, routing rules, and other files
-- OKF Markdown file preview inside the bundle explorer
+- Three-pane OKF bundle explorer with a physical file tree, force-directed typed-relation graph, and rendered Markdown reader
+- Shared `?file=` deep-link selection across tree rows, graph nodes, internal links, outgoing relations, and derived backlinks
+- Active-lifecycle filtering, safe relation warnings, and a usable tree/reader fallback when WebGL is unavailable
 
 Exit criteria:
 
@@ -249,13 +276,14 @@ Exit criteria:
 - Operational links use typed relations such as `routes_to`, `references`, `supports`, `covered_by`, `supersedes`, and `conflicts_with`.
 - Relation targets declare a `target_type` that matches the resolved target file's frontmatter `type`.
 - MVP-02 is enforced by `okflint validate --manifest okf-base.yaml`, not a custom schema checker.
-- A user can open the Knowledge page, select the `AV-OKF Knowledge Bundle`, browse the whole exported bundle structure, and preview reserved files or approved OKF topics without inspecting raw filesystem paths.
+- A user can create independent domain bundles, select one for uploads and chats, and browse its complete isolated structure without inspecting raw filesystem paths.
 
 Architecture note:
 
 - [okflint Profile](../architecture/okflint-profile.md)
 - [Link Resolution](../architecture/link-resolution.md)
 - [Typed Relations](../architecture/typed-relations.md)
+- [Knowledge Explorer V2](../architecture/knowledge-explorer.md)
 
 ## Stage 6: Chat Agent
 
@@ -294,13 +322,15 @@ Implementation note:
 Start with a rules-first router plus an LLM fallback. Do not run OKF and RAG together unless the router selects Hybrid.
 ```
 
-Progress note: the router (rules-first, no LLM fallback yet), OKF retrieval tool, RAG retrieval tool, hybrid mode, citation renderer, agent trace drawer, and the LLM answer builder (`chat-answer.ts`) are implemented. When the workspace has an LLM provider key configured (Settings), replies are synthesized from the retrieved evidence with enforced `[n]` citation markers — answers with missing or out-of-range markers are rejected and fall back to the deterministic excerpt echo, as do provider failures and workspaces without a key, so the citation-echo path remains the floor. The trace records `answerMode` (`llm`/`deterministic`) plus provider/model. Retrieval's source-type/approval filters are applied server-side by `rag-repository.ts` (`filters.sourceTypes`/`reviewStatus`); `chat-retrieval.ts` keeps a client-side guard as defense-in-depth.
+Implementation status: Stage 6 is complete. The router uses deterministic rules first and an LLM fallback only for low-confidence classifications. Query understanding is ambiguity-gated and preserves mixed-domain identifiers. OpenAI and Anthropic answer synthesis use the Vercel AI SDK provider layer; provider failure, malformed output, invalid citations, or a missing key degrade to deterministic handling. The trace records route, rationale, router mode, query understanding, tools called, evidence outcome, answer provider/model, and validation result.
 
 Agent-readiness pass: `routeChatQuestion` now also accepts the structured input shape from [Query Router](../architecture/query-router.md) (`question`/`workspaceId`/`conversationContext`), and `sendMessage` threads recent session turns through as that context — the seam a future LLM/agent router consumes without callers changing. Rules were widened to cover plain interrogative questions (`what is`, `how does`, `explain`, `describe`), which previously fell through to `missing_context` for anything not using an exact keyword like "definition" or "official". Hybrid retrieval now reads OKF before RAG (sequential, not parallel) per [Ingestion To Knowledge Flow](../architecture/ingestion-to-knowledge-flow.md), and an `okf_only` route with no approved evidence downgrades to labeled RAG discovery (unreviewed, never presented as official) instead of a dead-end reply. The trace now also records `approvedOkfAvailable`, `ragUsedForDiscoveryOnly`, and `finalEvidenceStatus` (`approved_evidence`/`discovery_evidence`/`no_evidence`/`retrieval_error`) — the OKF-priority signals [Validation Agent](../architecture/validation-agent.md) needs. Citations now carry `coveredByOkfConceptIds` so a future validator can treat a covering approved OKF concept as controlling over a raw RAG chunk.
 
 Stage 6 closeout correction: the LLM fallback classifier is now implemented for low-confidence rule results, with high-confidence safety routes kept rules-first. The current Stage 6 boundary is router-first retrieval, evidence-bound answer synthesis, citations, and traceability; gap-targeted hybrid retrieval and claim-level validation move to Stage 7.
 
 Stage 6.5 architecture correction: OKF retrieval should read the exported OKF bundle files directly, not depend on `okf_topic` rows embedded into the RAG vector database. The `okf_topic` RAG projection remains a legacy/optional cache from the Stage 4 follow-up, but the agent path should treat `knowledge/` as the reviewed knowledge source of truth. RAG remains the raw document discovery layer; OKF remains the reviewed Markdown/YAML bundle the agent can crawl through `index.md`, frontmatter, links, relations, `source_manifest.md`, and `log.md`.
+
+Stage 6.5 implementation status: complete. `okf-bundle-retriever.ts` reads the active bundle live on every query with no cache, uses the shared frontmatter parser, rejects unsafe paths, ignores reserved/non-approved/malformed files, applies lifecycle state, and uses a deterministic precision gate before approved OKF evidence can qualify. The admin OKF-to-RAG sync is labeled as a legacy optional cache rather than the primary agent path.
 
 Exit criteria:
 
@@ -323,11 +353,13 @@ Every prior stage answered how knowledge gets created or updated. This stage ans
 document -> extraction -> topics -> OKF concepts -> RAG chunks -> coverage links -> chat citations
 ```
 
-Scope rule:
+Implementation status:
 
-- This stage is design and decisions first, code second.
-- Submit the lifecycle design doc for review before writing deletion logic.
-- Do not bundle lifecycle behavior into unrelated implementation work. Deletion touches every layer and needs its own reviewable slice.
+- The reviewed lifecycle design is implemented for the core single-bundle workflow.
+- Source-document deletion is a soft delete with reason, actor, and timestamp; normal reads hide the document and its raw RAG chunks are deactivated.
+- Source-document deletion does not automatically retract exported OKF. Bundle files have separate explicit `deleted`, `retracted`, and `archived` lifecycle controls.
+- Trusted OKF retrieval excludes inactive lifecycle states and degrades safely when relation targets are missing.
+- Restore/reactivation UI, historical citation notices, explicit coverage reconciliation, and deletion/retrieval race tests remain closeout work.
 
 Deliverables:
 
@@ -346,27 +378,19 @@ Deliverables:
 - Append-only lifecycle entries in `log.md`.
 - Agent retrieval rules that exclude deleted, retracted, archived, superseded, or invalid lifecycle states from trusted evidence.
 
-Design questions that must be answered before implementation:
+Implemented policy:
 
-1. When a document is deleted, what happens to the uploaded source file, extracted pages, topic records, RAG chunks, embeddings, coverage links, activity records, and chat citations?
-2. If a document has an approved OKF concept derived from it, does deletion block, require confirmation, or mark the OKF concept's source as orphaned?
-3. If a topic is deleted or rejected after OKF export, is the exported concept retracted, archived, superseded, or left active?
-4. If a relation target is deleted after CI passed, does the live OKF bundle retriever skip the broken relation, degrade safely, or fail the query?
-5. When either side of a RAG-chunk-to-OKF-concept coverage link is removed, is the link deleted or marked stale?
-6. Which data types use soft-delete versus hard-delete, and why?
+- Soft-delete source documents and retain their uploaded object, extracted pages, and topics as an audit-bearing tombstone.
+- Deactivate raw-document RAG for a deleted source; do not silently delete or demote independently reviewed OKF files.
+- Manage exported OKF lifecycle explicitly from the Knowledge Bundle workflow.
+- Derive supersession from the existing `supersedes` typed relation.
+- Reconcile OKF-to-RAG coverage links through an explicit trigger, not as a hidden side effect of raw RAG reindex.
 
-Default recommendation:
+Remaining closeout test plan:
 
-- Soft-delete source documents, topic records, exported OKF concepts, and audit-bearing objects.
-- Hard-delete or rebuild derived indexes such as RAG chunks and embeddings when safe, because they are search projections rather than records of truth.
-- Block deletion of a source document that has approved OKF concepts until the reviewer explicitly retracts, supersedes, or archives those concepts.
-- Reconcile OKF-to-RAG coverage links through an explicit trigger, not as a hidden side effect of RAG reindex.
-
-Test plan:
-
-- Unit tests for every cascade decision.
-- End-to-end test for deleting a document that has an approved OKF concept, confirming the chosen behavior.
-- Runtime test for a broken relation target during live OKF retrieval.
+- Restore a soft-deleted document and confirm raw RAG and OKF trust are not silently reactivated.
+- Reopen a historical chat citation after its OKF source is archived/retracted and show the lifecycle notice.
+- Reconcile stale coverage links explicitly after raw RAG reindex.
 - Race-style test where a referenced file changes during chat retrieval and chat degrades without crashing.
 - Regression:
   - `pnpm --dir apps/web test`
@@ -374,11 +398,12 @@ Test plan:
   - `pnpm --dir apps/web build`
   - `python tools/okf_relation_lint.py --manifest okf-base.yaml`
 
-Exit criteria:
+Core exit criteria (met):
 
 - The project has a reviewed lifecycle design covering document deletion, OKF concept retirement, relation breakage, coverage cleanup, and chat-citation history.
-- No implementation path can silently leave trusted agent evidence pointing at deleted, missing, or retracted sources.
-- The agent retriever treats lifecycle state as part of trust, not just file existence.
+- A soft-deleted source document is hidden from normal reads and cannot contribute active raw RAG evidence.
+- Exported OKF knowledge remains independently managed by explicit lifecycle actions rather than being silently removed with its source document.
+- The agent retriever treats OKF lifecycle state as part of trust, not just file existence.
 
 Architecture note:
 
@@ -391,6 +416,8 @@ Purpose: keep the agent honest about where an answer came from. The agent search
 Stage 7 is intentionally smaller than the original Validation Agent design. It does not attempt to prove every sentence semantically yet. It validates the evidence contract around the answer and creates real failure data for a later claim-level validator.
 
 Stage 7A deliverables:
+
+Status: complete.
 
 - Deterministic post-answer evidence validation.
 - Citation index, source detail, page-range, and citation-marker checks.
@@ -410,6 +437,8 @@ Stage 7A exit criteria:
 Stage 7B: Agent-Ready OKF Graph Retrieval
 
 Purpose: make the agent useful for questions that require more than one approved OKF concept, without turning raw or automatically discovered relationships into trusted knowledge.
+
+Status: core implementation complete. Bounded relation traversal, lifecycle/path/type guards, cycle prevention, coverage-linked RAG retrieval, graph-aware citations, and trace metadata are implemented. The broader response-state vocabulary and permanent graph-retrieval evaluation set remain Stage 7C closeout work.
 
 Agent policy:
 
@@ -446,6 +475,39 @@ Deferred from Stage 7B:
 - Automatic approval of derived relationships.
 - Multi-agent swarms and unrestricted autonomous loops.
 
+## Stage 7B.5: Reviewed Relation Discovery
+
+Purpose: populate the typed OKF graph with useful relationships without allowing inferred links to become trusted agent evidence automatically.
+
+Workflow:
+
+- Scan approved, active-lifecycle OKF concepts within the current workspace bundle.
+- Generate relation candidates from deterministic signals first: explicit Markdown links, shared source/classification metadata, source-page proximity, and meaningful title/description overlap.
+- Use the configured workspace LLM only to propose a controlled-vocabulary relation type and concise reason when deterministic evidence identifies a plausible candidate; it may not create an authoritative edge directly.
+- Present candidates to a reviewer with source concept, target concept, proposed relation, reason, supporting signals, and duplicate/conflict warnings.
+- Allow the reviewer to approve, edit, or reject each candidate.
+- On approval, run the existing relation vocabulary, safe-path, target existence, and `target_type` validation; then update the topic working record and re-export the source OKF file.
+- Treat the exported `relations` frontmatter as the only graph source of truth. Rejected and pending candidates are never exposed to agent graph traversal.
+- Continue deriving incoming backlinks by reversing approved directed edges; do not write a second backlink source of truth.
+
+Deliverables:
+
+- Workspace-scoped relation-candidate projection with `pending`, `approved`, and `rejected` review states.
+- Idempotent candidate generation that excludes self-links, existing relations, inactive concepts, unsafe targets, and duplicate source/target/type proposals.
+- Knowledge Explorer review surface for candidate approval, editing, rejection, and rerun.
+- Re-export integration that writes approved relations into OKF frontmatter and refreshes the live graph.
+- Audit record for candidate generation and reviewer decisions.
+- Mixed-domain evaluation fixtures proving discovery works without aviation-specific assumptions.
+
+Exit criteria:
+
+- A bundle containing multiple related approved concepts can produce reviewable candidate edges.
+- No candidate influences chat retrieval or graph traversal before human approval and successful OKF export.
+- Approved candidates pass both `okflint` and `tools/okf_relation_lint.py`.
+- Re-running discovery does not duplicate candidates or existing edges.
+- Archived, retracted, deleted, malformed, or cross-workspace concepts cannot become relation targets.
+- The Knowledge Explorer shows the approved edge and derived backlink immediately after export.
+
 Deferred Stage 7 work:
 
 - LLM-based atomic claim extraction and claim typing.
@@ -454,6 +516,28 @@ Deferred Stage 7 work:
 - Automatic rewriting or refusal of individual unsupported claims.
 - Detailed claim-level validation reports.
 
+## Stage 7C: Chat Quality And Bounded Agent Tools
+
+Purpose: close the remaining user-facing evidence gaps and expose the proven retrieval operations as bounded agent tools without replacing deterministic trust controls.
+
+Deliverables:
+
+- Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
+- Clickable citation-to-source navigation and `Open PDF page` verification.
+- Clear separation between router intent and evidence actually used in the trace UI.
+- Historical citation lifecycle notices.
+- Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
+- Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
+- Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.
+- Persist bounded tool calls and outcomes in the existing chat trace.
+
+Exit criteria:
+
+- Users can verify an answer against the cited source page.
+- Insufficient evidence produces a concise limitation and useful next step, not a citation dump or unsupported answer.
+- Tool execution is bounded, traceable, workspace-scoped, and covered by evaluation tests.
+- Any later model-directed tool selection can be compared against the deterministic baseline before rollout.
+
 Architecture note:
 
 - [Validation Agent](../architecture/validation-agent.md)
@@ -461,7 +545,9 @@ Architecture note:
 
 ## Stage 8: Aviation Domain Pack
 
-Purpose: prove the generic platform in a high-trust technical domain.
+Status: deferred optional domain pack. The platform core remains generic and mixed-domain.
+
+Purpose: prove the generic platform in a high-trust technical domain without making aviation metadata or rules mandatory for other workspaces.
 
 Deliverables:
 
@@ -478,9 +564,9 @@ Exit criteria:
 
 - Aviation maintenance questions can be routed safely without making aviation hardcoded into the core platform.
 
-## First Sprint
+## Original First Sprint (Complete)
 
-Build only Stage 0 and Stage 1.
+The original Stage 0-1 sprint is complete and retained here as project history.
 
 Initial milestone:
 
@@ -488,7 +574,7 @@ Initial milestone:
 A polished document dashboard where users can upload PDFs, view documents, tag them, and inspect document metadata.
 ```
 
-Do not start with chat. Chat depends on ingestion, citations, search, review status, and validated knowledge.
+Chat was started only after ingestion, citations, search, review status, and validated knowledge were established.
 
 ## MVP Demo Target
 

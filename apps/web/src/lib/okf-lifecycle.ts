@@ -47,16 +47,18 @@ export function normalizeOkfConceptLifecycleStatus(
 export function createPostgresOkfConceptLifecycleLookup(
   db = getPrisma(),
 ): OkfConceptLifecycleLookup {
-  return async ({ filePath, workspaceId }) => {
+  return async ({ filePath, knowledgeBundleId, workspaceId }) => {
     return getOkfConceptLifecycleForFile({
       client: db,
       filePath,
+      knowledgeBundleId,
       workspaceId,
     });
   };
 }
 
 export async function getOkfConceptLifecycleForFile(input: {
+  knowledgeBundleId: string;
   client?: LifecycleClient;
   filePath: string;
   workspaceId: string;
@@ -64,9 +66,9 @@ export async function getOkfConceptLifecycleForFile(input: {
   const client = input.client ?? getPrisma();
   const record = await client.okfConceptLifecycle!.findUnique!({
     where: {
-      workspaceId_filePath: {
+      knowledgeBundleId_filePath: {
         filePath: input.filePath,
-        workspaceId: input.workspaceId,
+        knowledgeBundleId: input.knowledgeBundleId,
       },
     },
   });
@@ -84,6 +86,7 @@ export async function getOkfConceptLifecycleForFile(input: {
 export async function getOkfConceptLifecycleByFile(input: {
   client?: LifecycleClient;
   filePaths: string[];
+  knowledgeBundleId: string;
   workspaceId: string;
 }): Promise<Map<string, OkfConceptLifecycleRecord>> {
   const uniqueFilePaths = Array.from(new Set(input.filePaths));
@@ -99,6 +102,7 @@ export async function getOkfConceptLifecycleByFile(input: {
   const records = await client.okfConceptLifecycle!.findMany!({
     where: {
       filePath: { in: uniqueFilePaths },
+      knowledgeBundleId: input.knowledgeBundleId,
       workspaceId: input.workspaceId,
     },
   });
@@ -169,6 +173,7 @@ export async function markOkfConceptLifecycle(input: {
   client?: LifecycleClient;
   filePath: string;
   knowledgeRoot?: string;
+  knowledgeBundleId: string;
   reason: string;
   status: Exclude<OkfConceptLifecycleStatus, "active">;
   topicId?: string | null;
@@ -187,6 +192,7 @@ export async function markOkfConceptLifecycle(input: {
       changedAt,
       changedBy: input.actorId,
       filePath: input.filePath,
+      knowledgeBundleId: input.knowledgeBundleId,
       reason,
       status: input.status,
       topicId: input.topicId ?? null,
@@ -200,9 +206,9 @@ export async function markOkfConceptLifecycle(input: {
       topicId: input.topicId ?? null,
     },
     where: {
-      workspaceId_filePath: {
+      knowledgeBundleId_filePath: {
         filePath: input.filePath,
-        workspaceId: input.workspaceId,
+        knowledgeBundleId: input.knowledgeBundleId,
       },
     },
   });

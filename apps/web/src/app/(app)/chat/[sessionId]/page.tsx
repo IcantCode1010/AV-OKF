@@ -7,6 +7,9 @@ import { ChatSidePanelSheet } from "@/components/chat/chat-side-panel-sheet";
 import { ChatSidePanelContent } from "@/components/chat/chat-side-panel";
 import { Button } from "@/components/ui/button";
 import { getChatSessionWithMessages, isChatAvailable } from "@/lib/chat-backend";
+import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
+import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +30,12 @@ export default async function ChatSessionPage({
   }
 
   const { session, messages } = result;
+  const context = await requireAuthWorkspaceContext();
+  const bundle = await getKnowledgeBundle({
+    bundleId: session.knowledgeBundleId,
+    context,
+  });
+  if (!bundle) notFound();
   const latestAssistantMessage =
     [...messages].reverse().find((message) => message.role === "assistant") ??
     null;
@@ -42,7 +51,7 @@ export default async function ChatSessionPage({
                 <span className="sr-only">Back to conversations</span>
               </Link>
             </Button>
-            <h1 className="truncate text-lg font-semibold">{session.title}</h1>
+            <div className="min-w-0"><h1 className="truncate text-lg font-semibold">{session.title}</h1><Badge className="mt-1" variant="outline">{bundle.name}</Badge></div>
           </div>
           <ChatSidePanelSheet>
             <ChatSidePanelContent

@@ -42,12 +42,13 @@ The platform should remain generic while aviation proves that the architecture w
 ```text
 Upload documents
 -> Extract pages, text, tables, and images
+-> Index raw extracted text for RAG discovery
 -> Generate topic records
 -> Review and approve structured knowledge
 -> Export approved knowledge to OKF Markdown
--> Index raw and structured content for RAG
+-> Retrieve approved knowledge live from the OKF bundle
 -> Route each chat question to OKF, RAG, Hybrid, or missing-context handling
--> Validate claims and show citations
+-> Synthesize an evidence-bound answer and validate its citations
 ```
 
 ## Repository Contents
@@ -62,27 +63,31 @@ docs/
 
 ## Current Status
 
-This repository contains planning artifacts, OKF validation tooling, the first web application shell, and an initial production data-plane path for Docker/VPS deployment.
+AV-OKF is a late-stage MVP with a working end-to-end document-to-agent pipeline and a workspace-scoped, multi-bundle knowledge vault.
 
-The current engineering milestone is a Papra-style document vault:
+The current system includes:
 
 ```text
-workspace shell
-document dashboard
-PDF upload
-document metadata
-tags
-document detail page
-processing status
-page extraction records
-extraction logs
-topic records
-topic review status
+Next.js document workspace
+Postgres application state
+MinIO PDF storage
+Redis/BullMQ extraction and indexing worker
+page-preserving PDF extraction
+raw-document RAG with pgvector
+reviewable and enrichable topic records
+generic and aviation-derived OKF profile export
+workspace-isolated knowledge bundles and bundle-scoped chats
+live OKF bundle retrieval and typed-relation traversal
+router-first chat with OKF, RAG, Hybrid, and missing-context paths
+Vercel AI SDK answer synthesis
+citations, evidence cards, traces, and deterministic evidence validation
 ```
+
+The next milestone is Stage 7 closeout: improve insufficient-evidence responses, connect citations to original PDF pages, finish lifecycle reconciliation, and formalize bounded agent-tool contracts. Unrestricted model-driven tool loops remain deliberately deferred.
 
 ## Web App
 
-The Stage 3 product shell lives in `apps/web`.
+The web application lives in `apps/web`.
 
 ```bash
 pnpm --dir apps/web dev
@@ -90,13 +95,30 @@ pnpm --dir apps/web lint
 pnpm --dir apps/web build
 ```
 
-By default, local development still uses mock auth plus the local Stage 1 document vault. PDFs upload through Server Actions, files are written under opaque storage keys, metadata is editable, and document state is persisted in `apps/web/.data/document-vault.json`.
+The local JSON vault remains available as a development/test fixture. Production mode uses Postgres, MinIO, Redis/BullMQ, and the separate worker container; no production path writes `document-vault.json`.
 
 `apps/web/.data/` is intentionally ignored by git. This JSON file store is a temporary Stage 1 stand-in so the product flow can work before a real database and object store are selected. Do not treat it as the long-term backend.
 
-Stage 2 adds local in-process PDF extraction. Upload returns immediately, extraction runs in the same long-lived Node process, and the document detail page polls while extraction is queued or running. This is an MVP-only background job model and must be replaced with a durable queue or worker before serverless or production deployment.
+Local-vault mode can still use in-process extraction. The production backend uses the durable Redis/BullMQ queue and worker implemented in Stage 3.8.
 
 Stage 3 adds manual topic generation from extracted page records. It does not run automatically after re-extraction. Reruns replace draft topics, preserve approved or rejected topics, and skip regenerated drafts that overlap reviewed page coverage. Topic confidence is categorical, not numeric, and `sourcePageNumbers` is the page coverage field that later OKF export should consume.
+
+### OKF And Chat
+
+Approved topics export into the document's selected bundle under `knowledge/workspaces/{workspaceId}/bundles/{bundleId}`. Uploads and chats require one bundle, and retrieval, relations, lifecycle state, RAG search, and exports stay inside it. The live chat path reads current bundle files on every OKF query; raw RAG remains the unreviewed discovery layer.
+
+Generic OKF requires only `type`; `title`, `description`, `tags`, and `updated` are optional interoperable fields. Agent trust is a separate gate requiring active lifecycle, approval, usable content, and source-file/page provenance. Aviation and custom profiles extend the generic contract without changing its base semantics.
+
+Create bundles from `/knowledge`. Existing single-bundle installations can inspect or apply the resumable migration with:
+
+```bash
+pnpm --dir apps/web migrate:knowledge-vault -- --workspace <workspace-id>
+pnpm --dir apps/web migrate:knowledge-vault -- --workspace <workspace-id> --apply
+```
+
+Each Knowledge Bundle explorer provides a synchronized physical file tree, force-directed typed-relation graph, and rendered Markdown reader at `/knowledge/[bundleId]`. The explorer labels generic validity separately from agent readiness. Reviewed relation discovery creates pending candidates; only approved and re-exported relations enter frontmatter or graph traversal.
+
+Chat uses deterministic routing first, with an LLM classifier only for low-confidence routes. OpenAI and Anthropic are supported through the Vercel AI SDK provider layer. Generated answers must use retrieved evidence and valid `[n]` citation markers or they fall back to a deterministic evidence response.
 
 ### Stage 4 RAG Search
 

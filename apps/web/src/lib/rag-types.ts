@@ -73,6 +73,7 @@ export type RetrievalMode = "hybrid" | "vector" | "keyword";
 
 export type RetrievalRequest = {
   documentIds?: string[];
+  knowledgeBundleId?: string;
   filters?: {
     documentIds?: string[];
     pageNumbers?: number[];

@@ -200,7 +200,7 @@ test("retriever reads bundle live and stops surfacing unapproved changes", async
   }
 });
 
-test("retriever excludes an approved topic missing a required field", async () => {
+test("retriever accepts approved agent-ready content without optional description", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-missing-field-"));
 
   try {
@@ -223,7 +223,8 @@ test("retriever excludes an approved topic missing a required field", async () =
       workspaceId: "wrk_1",
     });
 
-    assert.deepEqual(results, []);
+    assert.equal(results.length, 1);
+    assert.equal(results[0]?.description, "");
   } finally {
     await rm(root, { force: true, recursive: true });
   }

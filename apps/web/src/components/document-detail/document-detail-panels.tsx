@@ -19,9 +19,11 @@ import {
   approveTopicContentAction,
   enrichTopicAction,
   generateTopicsAction,
+  resolveProposedTopicPagesAction,
   softDeleteDocumentAction,
   updateDocumentMetadataAction,
   updateTopicContentAction,
+  updateTopicOkfMetadataAction,
   updateTopicReviewStatusAction,
 } from "@/app/(app)/documents/actions";
 import {
@@ -36,6 +38,7 @@ import {
 } from "@/lib/document-backend";
 import type { OkfBundleFile } from "@/lib/okf-bundle";
 import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
+import type { KnowledgeProfileSchema } from "@/lib/knowledge-profile";
 
 type TopicPanelProps = {
   allowedRelations: string[];
@@ -45,10 +48,11 @@ type TopicPanelProps = {
   lifecycleUpdated: string | null;
   enrichmentError: string | null;
   okfExportError: string | null;
+  profile: KnowledgeProfileSchema;
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord | null;
-  topicsGeneratedCount: number | null;
+  topicsGeneratedCount: number | "queued" | null;
 };
 
 export function DocumentSummaryPanel({
@@ -507,6 +511,7 @@ export function TopicWorkflowPanel({
   document,
   enrichmentError,
   okfExportError,
+  profile,
   relationError,
   relationTargets,
   lifecycleError,
@@ -529,7 +534,10 @@ export function TopicWorkflowPanel({
           <form action={generateTopicsAction}>
             <input type="hidden" name="id" value={document.id} />
             <PendingSubmitButton pendingLabel="Generating...">
-              Generate topics
+              {document.topicDiscovery?.status === "failed" ||
+              document.topicDiscovery?.status === "awaiting_provider"
+                ? "Retry topic discovery"
+                : "Run topic discovery"}
             </PendingSubmitButton>
           </form>
         </div>
@@ -537,8 +545,31 @@ export function TopicWorkflowPanel({
       <CardContent className="space-y-4">
         {topicsGeneratedCount !== null ? (
           <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4 text-sm text-emerald-200">
-            Topic generation complete: {topicsGeneratedCount} topic record
-            {topicsGeneratedCount === 1 ? "" : "s"} ready for review.
+            {topicsGeneratedCount === "queued"
+              ? "LLM topic discovery queued. This page will refresh while the document is analyzed."
+              : `Topic generation complete: ${topicsGeneratedCount} topic records ready for review.`}
+          </div>
+        ) : null}
+        {document.topicDiscovery && document.topicDiscovery.status !== "not_started" ? (
+          <div className="rounded-md border border-border p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium capitalize">
+                Topic discovery: {document.topicDiscovery.status.replaceAll("_", " ")}
+              </span>
+              {document.topicDiscovery.totalWindows > 0 ? (
+                <span className="text-muted-foreground">
+                  {document.topicDiscovery.completedWindows}/{document.topicDiscovery.totalWindows} windows
+                </span>
+              ) : null}
+            </div>
+            {document.topicDiscovery.estimatedInputTokens > 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Estimated input: {document.topicDiscovery.estimatedInputTokens.toLocaleString()} tokens. Provider pricing determines actual cost.
+              </p>
+            ) : null}
+            {document.topicDiscovery.errorMessage ? (
+              <p className="mt-2 text-amber-300">{document.topicDiscovery.errorMessage}</p>
+            ) : null}
           </div>
         ) : null}
         {okfExportError ? (
@@ -559,6 +590,7 @@ export function TopicWorkflowPanel({
             lifecycleError={lifecycleError}
             lifecycleStatus={lifecycleStatus}
             lifecycleUpdated={lifecycleUpdated}
+            profile={profile}
             relationError={relationError}
             relationTargets={relationTargets}
             topic={topic}
@@ -582,6 +614,7 @@ function SelectedTopicPanel({
   lifecycleError,
   lifecycleStatus,
   lifecycleUpdated,
+  profile,
   relationError,
   relationTargets,
   topic,
@@ -592,6 +625,7 @@ function SelectedTopicPanel({
   lifecycleError: string | null;
   lifecycleStatus: OkfConceptLifecycleRecord;
   lifecycleUpdated: string | null;
+  profile: KnowledgeProfileSchema;
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord;
@@ -608,6 +642,11 @@ function SelectedTopicPanel({
               </Badge>
               <Badge variant="outline" className="capitalize">
                 {topic.confidence} confidence
+              </Badge>
+              <Badge variant="outline">
+                {topic.discoveryMetadata.version === "llm-section-v1"
+                  ? "LLM discovered"
+                  : "Legacy heuristic"}
               </Badge>
               {topic.editedAt ? <Badge variant="secondary">edited</Badge> : null}
               {topic.enrichmentStatus !== "none" ? (
@@ -634,6 +673,11 @@ function SelectedTopicPanel({
               Pages {topic.pageStart}-{topic.pageEnd} | sourcePageNumbers:{" "}
               {topic.sourcePageNumbers.join(", ")}
             </p>
+            {typeof topic.discoveryMetadata.rationale === "string" ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Boundary rationale: {topic.discoveryMetadata.rationale}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <form action={updateTopicReviewStatusAction} className="flex gap-2">
@@ -670,6 +714,18 @@ function SelectedTopicPanel({
 
       {topic.reviewStatus !== "approved" ? (
         <>
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">OKF type and profile metadata</summary>
+            <form action={updateTopicOkfMetadataAction} className="mt-3 grid gap-3 md:grid-cols-2">
+              <input name="documentId" type="hidden" value={documentId} />
+              <input name="topicId" type="hidden" value={topic.id} />
+              <label className="grid gap-2 text-sm">Concept type<select className={selectClassName} defaultValue={String(topic.okfMetadata.type ?? "system_topic")} name="okfField__type">{Object.entries(profile.types).map(([id, definition]) => <option key={id} value={id}>{definition.label}</option>)}</select></label>
+              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "updated", "review_status", "source_file", "source_pages", "source_authority", "knowledge_version", "relations"].includes(field)).map(([field, definition]) => (
+                <label className="grid gap-2 text-sm" key={field}>{field.replaceAll("_", " ")}{definition.required ? " (required)" : ""}<Input defaultValue={Array.isArray(topic.okfMetadata[field]) ? (topic.okfMetadata[field] as unknown[]).join(", ") : String(topic.okfMetadata[field] ?? "")} name={`okfField__${field}`} required={Boolean(definition.required)} /></label>
+              ))}
+              <div className="md:col-span-2"><PendingSubmitButton pendingLabel="Saving metadata...">Save OKF metadata</PendingSubmitButton></div>
+            </form>
+          </details>
           <details className="rounded-md border border-border p-3">
             <summary className="cursor-pointer text-sm font-medium">
               Edit topic content
@@ -784,6 +840,31 @@ function SelectedTopicPanel({
                   <p className="mt-2 text-sm text-muted-foreground">
                     {topic.enrichedSummary ?? "No enriched summary yet."}
                   </p>
+                  {topic.enrichedBody ? (
+                    <div className="mt-3 whitespace-pre-wrap border-t border-border pt-3 text-sm text-muted-foreground">
+                      {topic.enrichedBody}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {topic.proposedSourcePageNumbers.length > 0 ? (
+              <div className="rounded-md border border-amber-400/30 bg-amber-400/5 p-3">
+                <p className="text-sm font-medium">Proposed additional source pages</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Pages {topic.proposedSourcePageNumbers.join(", ")} were used as nearby context. Accept them before they become authoritative citations.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  {(["accept", "reject"] as const).map((decision) => (
+                    <form action={resolveProposedTopicPagesAction} key={decision}>
+                      <input type="hidden" name="documentId" value={documentId} />
+                      <input type="hidden" name="topicId" value={topic.id} />
+                      <input type="hidden" name="decision" value={decision} />
+                      <PendingSubmitButton pendingLabel="Saving...">
+                        {decision === "accept" ? "Accept pages" : "Reject pages"}
+                      </PendingSubmitButton>
+                    </form>
+                  ))}
                 </div>
               </div>
             ) : null}

@@ -60,6 +60,9 @@ export function AppShell({
   user: User;
   workspace: Workspace;
 }) {
+  const pathname = usePathname();
+  const usesWideWorkspace = pathname === "/knowledge/bundle";
+
   return (
     <div className="min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-border/70 bg-card/40 lg:block">
@@ -67,7 +70,12 @@ export function AppShell({
       </aside>
       <div className="lg:pl-72">
         <TopBar user={user} workspace={workspace} />
-        <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <main
+          className={cn(
+            "mx-auto flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8",
+            usesWideWorkspace ? "max-w-none py-0" : "max-w-7xl",
+          )}
+        >
           {children}
         </main>
       </div>
@@ -162,17 +170,18 @@ function TopBar({ user, workspace }: { user: User; workspace: Workspace }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             disabled
+            suppressHydrationWarning
             className="h-9 bg-card/50 pl-9"
             placeholder="Search documents, tags, or future topics"
           />
         </div>
-        <Button variant="ghost" size="icon">
+        <Button suppressHydrationWarning variant="ghost" size="icon">
           <Bell className="h-4 w-4" />
           <span className="sr-only">Notifications</span>
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-10 gap-2 px-2">
+            <Button suppressHydrationWarning variant="ghost" className="h-10 gap-2 px-2">
               <Avatar className="h-7 w-7">
                 <AvatarFallback>{user.initials}</AvatarFallback>
               </Avatar>

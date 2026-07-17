@@ -16,9 +16,12 @@ function assertChatAvailable(): void {
   }
 }
 
-export async function createChatSession(title?: string): Promise<ChatSession> {
+export async function createChatSession(
+  knowledgeBundleId: string,
+  title?: string,
+): Promise<ChatSession> {
   assertChatAvailable();
-  return getProductionChatService().createSession(title);
+  return getProductionChatService().createSession(knowledgeBundleId, title);
 }
 
 export async function getChatSessions(): Promise<ChatSession[]> {

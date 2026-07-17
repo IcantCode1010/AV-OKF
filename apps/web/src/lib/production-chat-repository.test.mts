@@ -5,6 +5,7 @@ import { buildStage6aRouterTrace, routeChatQuestion } from "./chat-router.ts";
 import { createPostgresChatRepository } from "./production-chat-repository.ts";
 
 const context = { role: "admin" as const, userId: "usr_1", workspaceId: "wrk_1" };
+const knowledgeBundleId = "kb_general";
 
 test("createSession scopes workspaceId and userId from context", async () => {
   const calls: unknown[] = [];
@@ -24,10 +25,10 @@ test("createSession scopes workspaceId and userId from context", async () => {
     },
   });
 
-  const session = await repository.createSession({ context });
+  const session = await repository.createSession({ context, knowledgeBundleId });
 
   assert.deepEqual(calls, [
-    { title: "New chat", userId: "usr_1", workspaceId: "wrk_1" },
+    { knowledgeBundleId, title: "New chat", userId: "usr_1", workspaceId: "wrk_1" },
   ]);
   assert.equal(session.title, "New chat");
 });
@@ -48,12 +49,26 @@ test("createSession trims a provided title and falls back when blank", async () 
 
   const trimmed = await repository.createSession({
     context,
+    knowledgeBundleId,
     title: "  Reverser question  ",
   });
-  const blank = await repository.createSession({ context, title: "   " });
+  const blank = await repository.createSession({ context, knowledgeBundleId, title: "   " });
 
   assert.equal(trimmed.title, "Reverser question");
   assert.equal(blank.title, "New chat");
+});
+
+test("createSession fails closed when no knowledge bundle is supplied", async () => {
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      create: async () => assert.fail("chat session must not be written"),
+    },
+  });
+
+  await assert.rejects(
+    () => repository.createSession({ context }),
+    /chat_bundle_required/,
+  );
 });
 
 test("getSessionWorkspaceId returns undefined for a missing session", async () => {

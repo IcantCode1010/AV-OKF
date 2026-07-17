@@ -334,6 +334,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
 
       async searchKeyword(input: {
         documentIds?: string[];
+        knowledgeBundleId?: string;
         filters?: {
           reviewStatus?: string[];
           sourceTypes?: string[];
@@ -377,6 +378,9 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
             text: { contains: term, mode: "insensitive" as const },
           })),
           workspaceId: input.workspaceId,
+          ...(input.knowledgeBundleId
+            ? { document: { knowledgeBundleId: input.knowledgeBundleId } }
+            : {}),
         },
       });
       // Array#sort is stable, so rows tying on matchCount keep the
@@ -408,6 +412,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
 
     async searchVector(input: {
         documentIds?: string[];
+        knowledgeBundleId?: string;
         embedding: number[];
         filters?: {
           reviewStatus?: string[];
@@ -424,6 +429,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         const hasDocumentFilter = documentIds.length > 0;
         const hasSourceTypeFilter = sourceTypes.length > 0;
         const hasReviewStatusFilter = reviewStatuses.length > 0;
+        const hasKnowledgeBundleFilter = Boolean(input.knowledgeBundleId);
       const rows = await db.$queryRaw<
         Array<{
           chunkId: string;
@@ -454,6 +460,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         INNER JOIN "Document" d ON d."id" = c."documentId"
           WHERE c."workspaceId" = ${input.workspaceId}
             AND c."isActive" = true
+            AND (${hasKnowledgeBundleFilter} = false OR d."knowledgeBundleId" = ${input.knowledgeBundleId ?? ""})
             AND (${hasDocumentFilter} = false OR c."documentId" = ANY(${documentIds}::text[]))
             AND (${hasSourceTypeFilter} = false OR c."sourceType" = ANY(${sourceTypes}::text[]))
             AND (${hasReviewStatusFilter} = false OR c."reviewStatus" = ANY(${reviewStatuses}::text[]))
@@ -483,6 +490,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
 
     async getChunksByIds(input: {
       chunkIds: string[];
+      knowledgeBundleId?: string;
       workspaceId: string;
     }): Promise<RetrievalResult[]> {
       if (input.chunkIds.length === 0) {
@@ -497,6 +505,9 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
           isActive: true,
           sourceType: RAW_EXTRACTION_SOURCE_TYPE,
           workspaceId: input.workspaceId,
+          ...(input.knowledgeBundleId
+            ? { document: { knowledgeBundleId: input.knowledgeBundleId } }
+            : {}),
         },
       });
       const coverage = await getCoverageByChunkId(db, {
@@ -753,6 +764,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     async syncOkfConceptChunkLinks(input: {
       chunkIds: string[];
       coverageType: string;
+      knowledgeBundleId?: string;
       okfConceptId: string;
       workspaceId: string;
     }) {
@@ -760,6 +772,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         await tx.okfConceptChunkLink.deleteMany({
           where: {
             okfConceptId: input.okfConceptId,
+            knowledgeBundleId: input.knowledgeBundleId ?? "kb_general_local",
             workspaceId: input.workspaceId,
             ...(input.chunkIds.length > 0
               ? { chunkId: { notIn: input.chunkIds } }
@@ -776,6 +789,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
             chunkId,
             coverageType: input.coverageType,
             okfConceptId: input.okfConceptId,
+            knowledgeBundleId: input.knowledgeBundleId ?? "kb_general_local",
             workspaceId: input.workspaceId,
           })),
           skipDuplicates: true,
