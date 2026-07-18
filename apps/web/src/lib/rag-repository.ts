@@ -895,10 +895,37 @@ async function getReservedTokenUsageToday(
       where: usageWindow,
     }),
   ]);
+  const okfJobs = "okfConceptEmbeddingJob" in db
+    ? await Promise.all([
+        db.okfConceptEmbeddingJob.aggregate({
+          _sum: { tokenEstimate: true },
+          where: {
+            OR: [
+              { completedAt: { gte: start }, status: "completed" },
+              { startedAt: { gte: start }, status: "running" },
+            ],
+            tokenEstimate: { gt: 0 },
+            workspaceId,
+          },
+        }),
+        db.okfConceptEmbeddingJob.aggregate({
+          _sum: { tokenEstimate: true },
+          where: {
+            OR: [
+              { completedAt: { gte: start }, status: "completed" },
+              { startedAt: { gte: start }, status: "running" },
+            ],
+            tokenEstimate: { gt: 0 },
+          },
+        }),
+      ])
+    : null;
 
   return {
-    globalTokensUsedToday: global._sum.tokenEstimate ?? 0,
-    workspaceTokensUsedToday: workspace._sum.tokenEstimate ?? 0,
+    globalTokensUsedToday:
+      (global._sum.tokenEstimate ?? 0) + (okfJobs?.[1]._sum.tokenEstimate ?? 0),
+    workspaceTokensUsedToday:
+      (workspace._sum.tokenEstimate ?? 0) + (okfJobs?.[0]._sum.tokenEstimate ?? 0),
   };
 }
 

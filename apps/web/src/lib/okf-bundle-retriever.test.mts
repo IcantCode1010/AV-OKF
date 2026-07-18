@@ -540,6 +540,63 @@ test("broken relation targets add lifecycle warnings without dropping source evi
   }
 });
 
+test("semantic lookup recovers an approved concept when lexical terms do not overlap", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-semantic-"));
+  try {
+    await writeTopic(root, "brakes.md", { title: "Main Gear Brake System" });
+    let searched = false;
+    const [result] = await retrieveOkfBundleEvidence({
+      knowledgeBundleId: "bundle_1",
+      knowledgeRoot: root,
+      query: "wheel deceleration equipment",
+      semantic: {
+        getMetadata: async () => {
+          const [{ contentHash, filePath }] = await import("./okf-bundle-retriever.ts").then(
+            ({ listApprovedOkfBundleEvidence }) =>
+              listApprovedOkfBundleEvidence({ knowledgeBundleId: "bundle_1", knowledgeRoot: root, workspaceId: "wrk_1" }),
+          );
+          return [{ contentHash, filePath }];
+        },
+        search: async ({ candidates }) => {
+          searched = true;
+          return [{ filePath: candidates[0]!.filePath, score: 0.81 }];
+        },
+      },
+      workspaceId: "wrk_1",
+    });
+    assert.equal(searched, true);
+    assert.equal(result?.filePath, "brakes.md");
+    assert.equal(result?.okfMatchMode, "vector");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("semantic lookup excludes stale hashes and queues their replacement", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-stale-"));
+  try {
+    await writeTopic(root, "brakes.md", { title: "Main Gear Brake System" });
+    const queued: Array<{ contentHash: string; filePath: string }> = [];
+    const results = await retrieveOkfBundleEvidence({
+      knowledgeBundleId: "bundle_1",
+      knowledgeRoot: root,
+      query: "wheel deceleration equipment",
+      semantic: {
+        enqueueMissing: async (candidates) => queued.push(...candidates),
+        getMetadata: async () => [{ contentHash: "stale", filePath: "brakes.md" }],
+        search: async () => assert.fail("stale embeddings must not be searched"),
+      },
+      workspaceId: "wrk_1",
+    });
+    assert.deepEqual(results, []);
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0]?.filePath, "brakes.md");
+    assert.notEqual(queued[0]?.contentHash, "stale");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 async function writeTopic(
   root: string,
   filename: string,

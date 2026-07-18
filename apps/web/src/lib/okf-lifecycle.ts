@@ -178,6 +178,11 @@ export async function markOkfConceptLifecycle(input: {
   status: Exclude<OkfConceptLifecycleStatus, "active">;
   topicId?: string | null;
   workspaceId: string;
+  embeddingCleanup?: (input: {
+    filePath: string;
+    knowledgeBundleId: string;
+    workspaceId: string;
+  }) => Promise<void>;
 }): Promise<void> {
   const client = input.client ?? getPrisma();
   const changedAt = input.changedAt ?? new Date();
@@ -212,6 +217,13 @@ export async function markOkfConceptLifecycle(input: {
       },
     },
   });
+
+  if (input.embeddingCleanup) {
+    await input.embeddingCleanup(input);
+  } else if (process.env.AV_OKF_BACKEND === "production") {
+    const { createOkfConceptEmbeddingRepository } = await import("./okf-concept-embedding.ts");
+    await createOkfConceptEmbeddingRepository().deleteForFile(input);
+  }
 
   await appendLifecycleLogEntry({
     changedAt,

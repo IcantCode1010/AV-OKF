@@ -92,6 +92,33 @@ export async function exportApprovedTopicForDocument(
     });
   }
 
+  if (
+    isProductionBackend() &&
+    input.document.workspaceId &&
+    input.document.knowledgeBundleId
+  ) {
+    const {
+      createOkfConceptEmbeddingRepository,
+      queueOkfConceptEmbedding,
+    } = await import("./okf-concept-embedding.ts");
+    const repository = createOkfConceptEmbeddingRepository();
+    if (topic.exportedFilePath && topic.exportedFilePath !== exported.filename) {
+      await repository.deleteForFile({
+        filePath: topic.exportedFilePath,
+        knowledgeBundleId: input.document.knowledgeBundleId,
+        workspaceId: input.document.workspaceId,
+      });
+    }
+    await queueOkfConceptEmbedding({
+      bundleName: "name" in bundle ? bundle.name : "Knowledge Bundle",
+      filePath: exported.filename,
+      knowledgeBundleId: input.document.knowledgeBundleId,
+      markdown: exported.content,
+      repository,
+      workspaceId: input.document.workspaceId,
+    });
+  }
+
   return exported;
 }
 

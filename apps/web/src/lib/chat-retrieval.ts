@@ -50,6 +50,7 @@ export type ChatRetrievalResult = {
   // no approved evidence existed. Never true when OKF evidence is present.
   ragUsedForDiscoveryOnly: boolean;
   okfEvidenceMode?: "direct" | "graph";
+  okfMatchMode?: "lexical" | "vector";
   retrievalError: boolean;
   retrievalToolsCalled: string[];
   sourcesRead: string[];
@@ -400,6 +401,7 @@ function buildOkfBundleRetrievalResult(
     retrievalToolsCalled,
     sourcesRead,
     okfEvidenceMode,
+    okfMatchMode: results[0]?.okfMatchMode,
   };
 }
 
@@ -444,6 +446,7 @@ function buildCombinedRetrievalResult(
     retrievalError: false,
     retrievalToolsCalled,
     sourcesRead,
+    okfMatchMode: okfResults[0]?.okfMatchMode,
   };
 }
 

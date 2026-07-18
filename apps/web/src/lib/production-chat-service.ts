@@ -187,6 +187,9 @@ export function createProductionChatService(
               approvedOkfAvailable: retrieval.approvedOkfAvailable,
               finalEvidenceStatus: resolveEvidenceStatus(retrieval),
               ragUsedForDiscoveryOnly: retrieval.ragUsedForDiscoveryOnly,
+              ...(retrieval.okfMatchMode
+                ? { okfMatchMode: retrieval.okfMatchMode }
+                : {}),
             }
           : {}),
         retrievalToolsCalled: retrieval.retrievalToolsCalled,

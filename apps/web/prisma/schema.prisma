@@ -70,6 +70,8 @@ model Workspace {
   okfConceptLifecycles   OkfConceptLifecycle[]
   knowledgeBundles       KnowledgeBundle[]
   bundleDeletionAudits   BundleDeletionAudit[]
+  okfConceptEmbeddings   OkfConceptEmbedding[]
+  okfEmbeddingJobs       OkfConceptEmbeddingJob[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 }
@@ -164,6 +166,8 @@ model KnowledgeBundle {
   chatSessions           ChatSession[]
   relationCandidates     OkfRelationCandidate[]
   authoringRuns          KnowledgeAuthoringRun[]
+  conceptEmbeddings      OkfConceptEmbedding[]
+  conceptEmbeddingJobs   OkfConceptEmbeddingJob[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -472,6 +476,49 @@ model RagEmbedding {
   chunk       RagChunk                    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, model])
+}
+
+model OkfConceptEmbedding {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  filePath          String
+  contentHash       String
+  model             String
+  dimensions        Int
+  tokenCount        Int
+  embedding         Unsupported("vector(1536)")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBundleId, filePath])
+  @@index([workspaceId, knowledgeBundleId])
+  @@index([contentHash])
+}
+
+model OkfConceptEmbeddingJob {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  filePath          String
+  contentHash       String
+  bundleName        String
+  status            String          @default("queued")
+  tokenEstimate     Int             @default(0)
+  attempts          Int             @default(0)
+  errorCode         String?
+  errorMessage      String?         @db.Text
+  queuedAt          DateTime        @default(now())
+  startedAt         DateTime?
+  completedAt       DateTime?
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBundleId, filePath, contentHash])
+  @@index([status, queuedAt])
+  @@index([workspaceId, status])
 }
 
 model OkfConceptChunkLink {

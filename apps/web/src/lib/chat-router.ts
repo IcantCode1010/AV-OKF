@@ -92,6 +92,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerModel?: string;
   answerProvider?: string;
   queryUnderstanding?: ChatQueryUnderstandingTrace;
+  okfMatchMode?: "lexical" | "vector";
   approvedOkfAvailable?: boolean;
   finalEvidenceStatus?: ChatEvidenceStatus;
   ragUsedForDiscoveryOnly?: boolean;

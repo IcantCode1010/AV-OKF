@@ -14,6 +14,13 @@ import {
 } from "./okf-frontmatter.ts";
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import type { TopicRelation } from "./okf-relation-types.ts";
+import { getEmbeddingProvider } from "./embedding-provider.ts";
+import {
+  createOkfConceptEmbeddingRepository,
+  queueOkfConceptEmbeddingByHash,
+  type OkfSemanticMatch,
+} from "./okf-concept-embedding.ts";
+import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 
 export type OkfBundleEvidence = {
   body: string;
@@ -25,6 +32,7 @@ export type OkfBundleEvidence = {
   matchedTerms: string[];
   matchReason: string;
   matchStrength: "strong" | "medium";
+  okfMatchMode?: "lexical" | "vector";
   lifecycleStatus: OkfConceptLifecycleStatus;
   lifecycleWarnings: string[];
   pageEnd: number;
@@ -32,6 +40,8 @@ export type OkfBundleEvidence = {
   relations: TopicRelation[];
   reviewStatus: "approved";
   score: number;
+  contentHash?: string;
+  searchableMetadata?: string;
   sourceFile: string;
   sourcePages: number[];
   sourceType: "okf_bundle";
@@ -58,12 +68,18 @@ export type OkfConceptLifecycleLookup = (input: {
 }) => Promise<OkfConceptLifecycleRecord | null | undefined>;
 
 export type OkfBundleRetrievalInput = {
+  bundleName?: string;
   knowledgeBundleId: string;
   knowledgeRoot?: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
   query: string;
   topK?: number;
   workspaceId: string;
+  semantic?: {
+    enqueueMissing?(candidates: Array<{ contentHash: string; filePath: string }>): Promise<void>;
+    getMetadata(): Promise<Array<{ contentHash: string; filePath: string }>>;
+    search(input: { candidates: Array<{ contentHash: string; filePath: string }>; query: string; topK: number }): Promise<OkfSemanticMatch[]>;
+  };
 };
 
 export type OkfBundleFileReadInput = {
@@ -82,6 +98,7 @@ const RESERVED_BUNDLE_FILES = new Set([
 const DEFAULT_TOP_K = 4;
 const EXCERPT_MAX_CHARS = 1500;
 const MIN_QUALIFIED_SCORE = 8;
+const DEFAULT_VECTOR_MIN_SIMILARITY = 0.5;
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -132,13 +149,72 @@ const GENERIC_RETRIEVAL_TERMS = new Set([
 export async function retrieveOkfBundleEvidence(
   input: OkfBundleRetrievalInput,
 ): Promise<OkfBundleEvidence[]> {
-  const root = path.resolve(input.knowledgeRoot ?? getDefaultKnowledgeRoot());
   const queryTerms = tokenize(input.query);
 
   if (queryTerms.length === 0) {
     return [];
   }
 
+  const trustedCandidates = await listApprovedOkfBundleEvidence(input);
+
+  const lexicalCandidates = trustedCandidates.flatMap((candidate) => {
+    const match = qualifyCandidate({
+      body: candidate.body,
+      description: candidate.description,
+      metadata: candidate.searchableMetadata ?? "",
+      queryTerms,
+      title: candidate.title,
+    });
+    return match
+      ? [{
+          ...candidate,
+          matchedTerms: match.matchedTerms,
+          matchReason: match.reason,
+          matchStrength: match.strength,
+          okfMatchMode: "lexical" as const,
+          score: match.score,
+        }]
+      : [];
+  });
+
+  if (lexicalCandidates.length > 0) {
+    return sortEvidence(lexicalCandidates).slice(0, input.topK ?? DEFAULT_TOP_K);
+  }
+
+  const semantic = input.semantic ?? createDefaultSemanticRetriever(input);
+  if (!semantic || trustedCandidates.length === 0) return [];
+  const candidateIdentities = trustedCandidates.flatMap(({ contentHash, filePath }) =>
+    contentHash ? [{ contentHash, filePath }] : [],
+  );
+  const metadata = await semantic.getMetadata();
+  const current = new Set(metadata.map((row) => `${row.filePath}:${row.contentHash}`));
+  const missing = candidateIdentities.filter((row) => !current.has(`${row.filePath}:${row.contentHash}`));
+  if (missing.length > 0) await semantic.enqueueMissing?.(missing);
+  const eligible = candidateIdentities.filter((row) => current.has(`${row.filePath}:${row.contentHash}`));
+  if (eligible.length === 0) return [];
+  const matches = await semantic.search({ candidates: eligible, query: input.query, topK: input.topK ?? DEFAULT_TOP_K });
+  const minimum = readSimilarityThreshold();
+  const byPath = new Map(trustedCandidates.map((candidate) => [candidate.filePath, candidate]));
+  return sortEvidence(matches.flatMap((match) => {
+    const candidate = byPath.get(match.filePath);
+    if (!candidate || match.score < minimum) return [];
+    return [{
+      ...candidate,
+      matchReason: `Semantic similarity ${match.score.toFixed(3)} met the ${minimum.toFixed(2)} threshold.`,
+      matchStrength: match.score >= 0.7 ? "strong" as const : "medium" as const,
+      okfMatchMode: "vector" as const,
+      score: match.score,
+    }];
+  })).slice(0, input.topK ?? DEFAULT_TOP_K);
+}
+
+export async function listApprovedOkfBundleEvidence(
+  input: Pick<
+    OkfBundleRetrievalInput,
+    "knowledgeBundleId" | "knowledgeRoot" | "lifecycleLookup" | "workspaceId"
+  >,
+): Promise<OkfBundleEvidence[]> {
+  const root = path.resolve(input.knowledgeRoot ?? getDefaultKnowledgeRoot());
   let files: string[];
   try {
     files = await collectMarkdownFiles(root, root);
@@ -150,7 +226,7 @@ export async function retrieveOkfBundleEvidence(
     throw error;
   }
 
-  const candidates: OkfBundleEvidence[] = [];
+  const trustedCandidates: OkfBundleEvidence[] = [];
 
   for (const filePath of files) {
     if (RESERVED_BUNDLE_FILES.has(filePath)) {
@@ -182,15 +258,19 @@ export async function retrieveOkfBundleEvidence(
       root,
       filePath,
       markdown,
-      queryTerms,
+      null,
       lifecycle.status,
     );
 
-    if (evidence && evidence.score > 0) {
-      candidates.push(evidence);
+    if (evidence) {
+      trustedCandidates.push(evidence);
     }
   }
 
+  return trustedCandidates;
+}
+
+function sortEvidence(candidates: OkfBundleEvidence[]) {
   return candidates
     .sort((left, right) => {
       if (right.score !== left.score) {
@@ -199,8 +279,7 @@ export async function retrieveOkfBundleEvidence(
 
       const titleOrder = left.title.localeCompare(right.title);
       return titleOrder === 0 ? left.filePath.localeCompare(right.filePath) : titleOrder;
-    })
-    .slice(0, input.topK ?? DEFAULT_TOP_K);
+    });
 }
 
 export async function readOkfBundleEvidenceByPath(
@@ -316,6 +395,7 @@ async function buildEvidenceCandidate(
 
   return {
     body: parsed.body,
+    contentHash: hashOkfSource(markdown),
     coveredRagChunkIds: getFrontmatterStringArray(
       parsed.frontmatter,
       "covered_rag_chunk_ids",
@@ -338,6 +418,7 @@ async function buildEvidenceCandidate(
     relations: getFrontmatterRelations(parsed.frontmatter),
     reviewStatus: "approved",
     score: match?.score ?? 0,
+    searchableMetadata,
     sourceFile: trustedSourceFile,
     sourcePages,
     sourceType: "okf_bundle",
@@ -365,6 +446,37 @@ async function resolveLifecycleStatus(input: {
       workspaceId: input.workspaceId,
     })) ?? { status: "active" }
   );
+}
+
+function createDefaultSemanticRetriever(input: OkfBundleRetrievalInput) {
+  if (process.env.AV_OKF_BACKEND !== "production") return null;
+  const repository = createOkfConceptEmbeddingRepository();
+  return {
+    async enqueueMissing(candidates: Array<{ contentHash: string; filePath: string }>) {
+      for (const candidate of candidates) {
+        await queueOkfConceptEmbeddingByHash({
+          bundleName: input.bundleName ?? "Knowledge Bundle",
+          ...candidate,
+          knowledgeBundleId: input.knowledgeBundleId,
+          repository,
+          workspaceId: input.workspaceId,
+        });
+      }
+    },
+    getMetadata: () => repository.getEmbeddingMetadata(input),
+    async search(searchInput: { candidates: Array<{ contentHash: string; filePath: string }>; query: string; topK: number }) {
+      const provider = getEmbeddingProvider();
+      const [embedding] = await provider.embedTexts([searchInput.query]);
+      if (!embedding) return [];
+      return repository.search({ ...searchInput, embedding, knowledgeBundleId: input.knowledgeBundleId, workspaceId: input.workspaceId });
+    },
+  };
+}
+
+function readSimilarityThreshold() {
+  const value = Number(process.env.OKF_VECTOR_MIN_SIMILARITY ?? DEFAULT_VECTOR_MIN_SIMILARITY);
+  if (!Number.isFinite(value) || value < -1 || value > 1) throw new Error("invalid_env_OKF_VECTOR_MIN_SIMILARITY");
+  return value;
 }
 
 function normalizeBundleFilePath(value: string): string | null {

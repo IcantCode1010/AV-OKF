@@ -22,12 +22,22 @@ import {
   runKnowledgeBundleDeletionJob,
   type KnowledgeBundleDeletionJob,
 } from "../lib/knowledge-bundle-deletion.ts";
+import {
+  createOkfConceptEmbeddingRepository,
+  reconcileOkfConceptEmbeddings,
+  runOkfConceptEmbeddingJob,
+} from "../lib/okf-concept-embedding.ts";
+import {
+  getOkfConceptEmbeddingQueue,
+  type OkfConceptEmbeddingJobPayload,
+} from "../lib/okf-concept-embedding-queue.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
 let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJob> | null = null;
 let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
 let knowledgeAuthoringWorker: Worker<KnowledgeAuthoringJobPayload> | null = null;
+let okfEmbeddingWorker: Worker<OkfConceptEmbeddingJobPayload> | null = null;
 
 void main();
 
@@ -45,11 +55,16 @@ async function main() {
   const ragQueue = createBullMqRagIndexQueue(redisUrl);
   const topicDiscoveryQueue = createBullMqTopicDiscoveryQueue(redisUrl);
   const knowledgeAuthoringQueue = createBullMqKnowledgeAuthoringQueue(redisUrl);
+  const okfEmbeddingQueue = getOkfConceptEmbeddingQueue();
 
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
   await reconcileQueuedTopicDiscoveryJobs(repository, topicDiscoveryQueue);
   await reconcileQueuedKnowledgeAuthoringRuns(repository, knowledgeAuthoringQueue);
+  await reconcileOkfConceptEmbeddings({
+    queue: okfEmbeddingQueue,
+    repository: createOkfConceptEmbeddingRepository(),
+  });
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -106,6 +121,12 @@ async function main() {
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
+  okfEmbeddingWorker = new Worker<OkfConceptEmbeddingJobPayload>(
+    "okf-concept-embedding",
+    async (job) => runOkfConceptEmbeddingJob(job.data),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
   extractionWorker.on("completed", (job) => {
     console.log(`Extraction job completed: ${job.id}`);
   });
@@ -135,6 +156,9 @@ async function main() {
   });
   knowledgeAuthoringWorker.on("failed", (job, error) => {
     console.error(`Knowledge authoring run failed: ${job?.id ?? "unknown"}`, error);
+  });
+  okfEmbeddingWorker.on("failed", (job, error) => {
+    console.error(`OKF concept embedding job failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -219,5 +243,6 @@ async function shutdown() {
   await bundleDeletionWorker?.close();
   await topicDiscoveryWorker?.close();
   await knowledgeAuthoringWorker?.close();
+  await okfEmbeddingWorker?.close();
   process.exit(0);
 }
