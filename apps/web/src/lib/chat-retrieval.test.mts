@@ -428,6 +428,7 @@ test("missing_context and unsupported routes never call retrieve", async () => {
     ragUsedForDiscoveryOnly: false,
     retrievalError: false,
     retrievalToolsCalled: [],
+    rerank: { applied: false, dropped: 0, status: "not_applicable" },
     sourcesRead: [],
   });
   assert.deepEqual(unsupportedResult, {
@@ -437,6 +438,7 @@ test("missing_context and unsupported routes never call retrieve", async () => {
     ragUsedForDiscoveryOnly: false,
     retrievalError: false,
     retrievalToolsCalled: [],
+    rerank: { applied: false, dropped: 0, status: "not_applicable" },
     sourcesRead: [],
   });
 });
@@ -460,6 +462,7 @@ test("a retrieval failure degrades to an error result instead of throwing", asyn
     ragUsedForDiscoveryOnly: false,
     retrievalError: true,
     retrievalToolsCalled: ["okf_retrieval"],
+    rerank: { applied: false, dropped: 0, status: "provider_failed" },
     sourcesRead: [],
   });
 });
@@ -549,6 +552,7 @@ test("a hybrid-route OKF failure degrades to an error result with no partial cit
     ragUsedForDiscoveryOnly: false,
     retrievalError: true,
     retrievalToolsCalled: ["okf_retrieval", "rag_retrieval"],
+    rerank: { applied: false, dropped: 0, status: "provider_failed" },
     sourcesRead: [],
   });
 });

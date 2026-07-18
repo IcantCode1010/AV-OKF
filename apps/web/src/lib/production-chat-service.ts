@@ -157,6 +157,7 @@ export function createProductionChatService(
             ragUsedForDiscoveryOnly: false,
             retrievalError: false,
             retrievalToolsCalled: [],
+            rerank: { applied: false, dropped: 0, status: "not_applicable" as const },
             sourcesRead: [],
           };
       const answer: ChatAnswer = isRetrievalRoute(decision.route)
@@ -190,6 +191,7 @@ export function createProductionChatService(
               ...(retrieval.okfMatchMode
                 ? { okfMatchMode: retrieval.okfMatchMode }
                 : {}),
+              rerank: retrieval.rerank,
             }
           : {}),
         retrievalToolsCalled: retrieval.retrievalToolsCalled,

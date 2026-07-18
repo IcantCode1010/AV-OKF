@@ -17,6 +17,7 @@ import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
 import { retrieveDocuments, retrieveDocumentsByChunkIds } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 import { resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
+import { rerankRawRagCandidates, type RagRerankTrace } from "./rag-reranker.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
@@ -51,6 +52,7 @@ export type ChatRetrievalResult = {
   ragUsedForDiscoveryOnly: boolean;
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";
+  rerank: RagRerankTrace;
   retrievalError: boolean;
   retrievalToolsCalled: string[];
   sourcesRead: string[];
@@ -133,6 +135,7 @@ export async function runChatRetrieval(
   retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleEvidenceWithLifecycle,
   traverseGraph: OkfGraphTraversalFn = traverseOkfRelationsWithLifecycle,
   retrieveCoveredRag: CoveredRagRetrievalFn = retrieveDocumentsByChunkIds,
+  rerank: typeof rerankRawRagCandidates = rerankRawRagCandidates,
 ): Promise<ChatRetrievalResult> {
   const { decision, knowledgeBundleId, query, workspaceId } = input;
   const effectiveKnowledgeBundleId = knowledgeBundleId ?? "kb_general_local";
@@ -145,6 +148,7 @@ export async function runChatRetrieval(
       ragUsedForDiscoveryOnly: false,
       retrievalError: false,
       retrievalToolsCalled: [],
+      rerank: { applied: false, dropped: 0, status: "not_applicable" },
       sourcesRead: [],
     };
   }
@@ -207,7 +211,7 @@ export async function runChatRetrieval(
             );
           }
 
-          const discoveryResults = await fetchBySourceType(retrieve, {
+          const discovery = await fetchBySourceType(retrieve, rerank, {
             approvedOnly: false,
             knowledgeBundleId: effectiveKnowledgeBundleId,
             query,
@@ -217,7 +221,7 @@ export async function runChatRetrieval(
           });
           return buildCombinedRetrievalResult(
             okfResults,
-            discoveryResults,
+            discovery.results,
             [...toolsForRoute, "okf_relation_traversal", "rag_retrieval"],
             {
               approvedOkfAvailable: true,
@@ -225,6 +229,7 @@ export async function runChatRetrieval(
               ragUsedForDiscoveryOnly: false,
             },
             "direct",
+            discovery.trace,
           );
         }
 
@@ -236,7 +241,7 @@ export async function runChatRetrieval(
 
       // query-router.md fallback rule: okf_only with no approved OKF object
       // downgrades to RAG for discovery only, never presented as official.
-      const discoveryResults = await fetchBySourceType(retrieve, {
+      const discovery = await fetchBySourceType(retrieve, rerank, {
         approvedOnly: false,
         knowledgeBundleId: effectiveKnowledgeBundleId,
         query,
@@ -245,17 +250,18 @@ export async function runChatRetrieval(
         workspaceId,
       });
       return buildRetrievalResult(
-        discoveryResults,
+        discovery.results,
         ["okf_retrieval", "rag_retrieval"],
         {
           approvedOkfAvailable: false,
-          ragUsedForDiscoveryOnly: discoveryResults.length > 0,
+          ragUsedForDiscoveryOnly: discovery.results.length > 0,
         },
+        discovery.trace,
       );
     }
 
     if (decision.route === "rag_only") {
-      const results = await fetchBySourceType(retrieve, {
+      const reranked = await fetchBySourceType(retrieve, rerank, {
         approvedOnly: false,
         knowledgeBundleId: effectiveKnowledgeBundleId,
         query,
@@ -263,10 +269,10 @@ export async function runChatRetrieval(
         topK: RAG_TOP_K,
         workspaceId,
       });
-      return buildRetrievalResult(results, toolsForRoute, {
+      return buildRetrievalResult(reranked.results, toolsForRoute, {
         approvedOkfAvailable: false,
-        ragUsedForDiscoveryOnly: results.length > 0,
-      });
+        ragUsedForDiscoveryOnly: reranked.results.length > 0,
+      }, reranked.trace);
     }
 
     // Hybrid reads OKF first, then RAG for the supporting evidence - kept
@@ -278,7 +284,7 @@ export async function runChatRetrieval(
       topK: OKF_TOP_K,
       workspaceId,
     });
-    const ragResults = await fetchBySourceType(retrieve, {
+    const rag = await fetchBySourceType(retrieve, rerank, {
       approvedOnly: false,
       knowledgeBundleId: effectiveKnowledgeBundleId,
       query,
@@ -287,10 +293,10 @@ export async function runChatRetrieval(
       workspaceId,
     });
 
-    return buildCombinedRetrievalResult(okfResults, ragResults, toolsForRoute, {
+    return buildCombinedRetrievalResult(okfResults, rag.results, toolsForRoute, {
       approvedOkfAvailable: okfResults.length > 0,
-      ragUsedForDiscoveryOnly: okfResults.length === 0 && ragResults.length > 0,
-    });
+      ragUsedForDiscoveryOnly: okfResults.length === 0 && rag.results.length > 0,
+    }, "direct", rag.trace);
   } catch {
     // A retrieval failure (missing/invalid embedding credentials, budget
     // exceeded, transient provider/db error) must never crash the chat
@@ -302,6 +308,7 @@ export async function runChatRetrieval(
       ragUsedForDiscoveryOnly: false,
       retrievalError: true,
       retrievalToolsCalled: toolsForRoute,
+      rerank: { applied: false, dropped: 0, status: "provider_failed" },
       sourcesRead: [],
     };
   }
@@ -321,6 +328,7 @@ function retrievalToolsForRoute(route: ChatRoute): string[] {
 
 async function fetchBySourceType(
   retrieve: typeof retrieveDocuments,
+  rerank: typeof rerankRawRagCandidates,
   options: {
     approvedOnly: boolean;
     knowledgeBundleId: string;
@@ -329,7 +337,7 @@ async function fetchBySourceType(
     topK: number;
     workspaceId: string;
   },
-): Promise<RetrievalResult[]> {
+): Promise<{ results: RetrievalResult[]; trace: RagRerankTrace }> {
   const results = await retrieve({
     filters: {
       ...(options.approvedOnly ? { reviewStatus: ["approved"] } : {}),
@@ -338,20 +346,23 @@ async function fetchBySourceType(
     knowledgeBundleId: options.knowledgeBundleId,
     mode: "hybrid",
     query: options.query,
-    topK: options.topK,
+    topK: 10,
     workspaceId: options.workspaceId,
   });
 
-  return results
+  const candidates = results
     .filter((result) => result.sourceType === options.sourceType)
     .filter((result) => !options.approvedOnly || result.reviewStatus === "approved")
-    .slice(0, options.topK);
+    .slice(0, 10);
+  const reranked = await rerank({ candidates, query: options.query, workspaceId: options.workspaceId });
+  return { results: reranked.results.slice(0, options.topK), trace: reranked.trace };
 }
 
 function buildRetrievalResult(
   results: RetrievalResult[],
   retrievalToolsCalled: string[],
   flags: Pick<ChatRetrievalResult, "approvedOkfAvailable" | "ragUsedForDiscoveryOnly">,
+  rerank: RagRerankTrace = { applied: false, dropped: 0, status: "not_applicable" },
 ): ChatRetrievalResult {
   const citations = results.map((result, index) => toChatCitation(result, index + 1));
   const evidence = results.map((result, index) => toEvidence(result, index + 1));
@@ -365,6 +376,7 @@ function buildRetrievalResult(
     evidence,
     retrievalError: false,
     retrievalToolsCalled,
+    rerank,
     sourcesRead,
   };
 }
@@ -401,6 +413,7 @@ function buildOkfBundleRetrievalResult(
     retrievalToolsCalled,
     sourcesRead,
     okfEvidenceMode,
+    rerank: { applied: false, dropped: 0, status: "not_applicable" },
     okfMatchMode: results[0]?.okfMatchMode,
   };
 }
@@ -414,6 +427,7 @@ function buildCombinedRetrievalResult(
     "approvedOkfAvailable" | "okfEvidenceMode" | "ragUsedForDiscoveryOnly"
   >,
   okfEvidenceMode: "direct" | "graph" = "direct",
+  rerank: RagRerankTrace = { applied: false, dropped: 0, status: "not_applicable" },
 ): ChatRetrievalResult {
   const okfCitations = okfResults.map((result, index) =>
     okfBundleToChatCitation(result, index + 1, okfEvidenceMode),
@@ -445,6 +459,7 @@ function buildCombinedRetrievalResult(
     evidence: [...okfEvidence, ...ragEvidence],
     retrievalError: false,
     retrievalToolsCalled,
+    rerank,
     sourcesRead,
     okfMatchMode: okfResults[0]?.okfMatchMode,
   };

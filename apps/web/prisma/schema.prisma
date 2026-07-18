@@ -72,8 +72,20 @@ model Workspace {
   bundleDeletionAudits   BundleDeletionAudit[]
   okfConceptEmbeddings   OkfConceptEmbedding[]
   okfEmbeddingJobs       OkfConceptEmbeddingJob[]
+  ragRerankDailyUsage    RagRerankDailyUsage[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
+}
+
+model RagRerankDailyUsage {
+  id          String    @id @default(cuid())
+  workspaceId String
+  usageDate   String
+  calls       Int       @default(0)
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, usageDate])
 }
 
 model WorkspaceMember {
