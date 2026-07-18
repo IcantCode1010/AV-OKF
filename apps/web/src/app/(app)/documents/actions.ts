@@ -35,6 +35,13 @@ import {
 import { softDeleteDocument } from "@/lib/okf-lifecycle";
 import { getKnowledgeBundle, getKnowledgeBundleByIdentity } from "@/lib/knowledge-bundles";
 import { requestTopicDiscovery, resolveProposedTopicPages } from "@/lib/topic-discovery-actions";
+import {
+  confirmKnowledgeAuthoringCost,
+  createKnowledgeAuthoringRun,
+  promoteAuthoringRelationSuggestions,
+  undoAuthoringMetadata,
+} from "@/lib/knowledge-authoring";
+import { createBullMqKnowledgeAuthoringQueue } from "@/lib/knowledge-authoring-queue";
 
 const RECOVERABLE_UPLOAD_ERRORS = new Set([
   "missing_pdf_file",
@@ -114,6 +121,66 @@ export async function generateTopicsAction(formData: FormData) {
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
   redirect(`/documents/${id}?panel=topics&topicsGenerated=${result}`);
+}
+
+export async function startKnowledgeAuthoringAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const context = await requireAuthWorkspaceContext();
+  const run = await createKnowledgeAuthoringRun({ context, documentId });
+  await enqueueKnowledgeAuthoringRun(run);
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=authoring`);
+}
+
+export async function confirmKnowledgeAuthoringCostAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const context = await requireAuthWorkspaceContext();
+  const run = await confirmKnowledgeAuthoringCost({ context, runId: getFormString(formData, "runId") });
+  await enqueueKnowledgeAuthoringRun(run);
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=authoring`);
+}
+
+export async function retryKnowledgeAuthoringAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const context = await requireAuthWorkspaceContext();
+  const runId = getFormString(formData, "runId");
+  const prisma = (await import("@/lib/prisma")).getPrisma();
+  const run = await prisma.knowledgeAuthoringRun.findFirst({ where: { documentId, id: runId, workspaceId: context.workspaceId } });
+  if (!run) throw new Error("knowledge_authoring_workspace_mismatch");
+  const queued = await prisma.knowledgeAuthoringRun.update({ data: { errorCode: null, errorMessage: null, status: "queued" }, where: { id: run.id } });
+  await enqueueKnowledgeAuthoringRun(queued);
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=authoring`);
+}
+
+export async function undoAuthoringMetadataAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  await undoAuthoringMetadata({ context: await requireAuthWorkspaceContext(), proposalId: getFormString(formData, "proposalId") });
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=authoring`);
+}
+
+export async function promoteAuthoringRelationsAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const result = await promoteAuthoringRelationSuggestions({
+    context: await requireAuthWorkspaceContext(),
+    runId: getFormString(formData, "runId"),
+  });
+  revalidatePath(`/documents/${documentId}`);
+  revalidatePath(`/knowledge/${result.knowledgeBundleId}`);
+  redirect(`/knowledge/${result.knowledgeBundleId}?relationsPromoted=${result.promoted}&relationsSkipped=${result.skipped}`);
+}
+
+async function enqueueKnowledgeAuthoringRun(run: { documentId: string; id: string; workspaceId: string }) {
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) throw new Error("missing_env_REDIS_URL");
+  const queue = createBullMqKnowledgeAuthoringQueue(redisUrl);
+  try {
+    await queue.enqueue({ documentId: run.documentId, runId: run.id, workspaceId: run.workspaceId });
+  } finally {
+    await queue.close();
+  }
 }
 
 export async function updateTopicReviewStatusAction(formData: FormData) {

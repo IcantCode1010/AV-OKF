@@ -156,13 +156,24 @@ export async function exportTopicToKnowledge(
     await validateTopicRelations(relations, knowledgeRoot);
   }
 
-  const built = buildOkfSystemTopic(input);
+  const initial = buildOkfSystemTopic(input);
   const exported = {
-    ...built,
+    ...initial,
     filename: input.directory
-      ? path.posix.join(input.directory, built.filename)
-      : built.filename,
+      ? path.posix.join(input.directory, initial.filename)
+      : initial.filename,
   };
+  if (relations.length > 0) {
+    const sourceDirectory = path.posix.dirname(exported.filename);
+    const emittedRelations = relations.map((relation) => ({
+      ...relation,
+      target: toSourceRelativeTarget(sourceDirectory, relation.target),
+    }));
+    exported.content = buildOkfSystemTopic({
+      ...input,
+      topic: { ...input.topic, relations: emittedRelations },
+    }).content;
+  }
   const topicPath = path.join(knowledgeRoot, exported.filename);
 
   await mkdir(/*turbopackIgnore: true*/ path.dirname(topicPath), { recursive: true });
@@ -329,6 +340,12 @@ function formatSourceManifestEntry(document: ExportDocument) {
     `- ${document.title}`,
     ...optionalManifestMetadata(document),
   ].join("\n");
+}
+
+function toSourceRelativeTarget(sourceDirectory: string, bundleRelativeTarget: string) {
+  if (sourceDirectory === ".") return bundleRelativeTarget;
+  const relative = path.posix.relative(sourceDirectory, bundleRelativeTarget);
+  return relative || path.posix.basename(bundleRelativeTarget);
 }
 
 function optionalManifestMetadata(document: ExportDocument): string[] {

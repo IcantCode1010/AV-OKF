@@ -26,7 +26,7 @@ type ProductionExtractionRepository = {
     indexVersion: number;
     workspaceId: string;
   }>;
-  createTopicDiscoveryJobAfterExtraction?(input: {
+  createKnowledgeAuthoringRunAfterExtraction?(input: {
     documentId: string;
     workspaceId: string;
   }): Promise<{ documentId: string; id: string; workspaceId: string }>;
@@ -59,10 +59,10 @@ type RunProductionExtractionJobOptions = {
       workspaceId: string;
     }): Promise<void>;
   };
-  topicDiscoveryQueue?: {
+  knowledgeAuthoringQueue?: {
     enqueue(input: {
       documentId: string;
-      topicDiscoveryJobId: string;
+      runId: string;
       workspaceId: string;
     }): Promise<void>;
   };
@@ -107,20 +107,20 @@ export async function runProductionExtractionJob(
       }
     }
     if (
-      options.topicDiscoveryQueue &&
-      options.repository.createTopicDiscoveryJobAfterExtraction
+      options.knowledgeAuthoringQueue &&
+      options.repository.createKnowledgeAuthoringRunAfterExtraction
     ) {
       try {
-        const discoveryJob =
-          await options.repository.createTopicDiscoveryJobAfterExtraction(payload);
-        await options.topicDiscoveryQueue.enqueue({
-          documentId: discoveryJob.documentId,
-          topicDiscoveryJobId: discoveryJob.id,
-          workspaceId: discoveryJob.workspaceId,
+        const authoringRun =
+          await options.repository.createKnowledgeAuthoringRunAfterExtraction(payload);
+        await options.knowledgeAuthoringQueue.enqueue({
+          documentId: authoringRun.documentId,
+          runId: authoringRun.id,
+          workspaceId: authoringRun.workspaceId,
         });
       } catch (error) {
         console.error(
-          "Topic discovery enqueue failed; queued job remains in Postgres.",
+          "Knowledge authoring enqueue failed; queued run remains in Postgres.",
           error,
         );
       }

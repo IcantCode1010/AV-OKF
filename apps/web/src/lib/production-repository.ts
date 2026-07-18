@@ -1009,6 +1009,38 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         select: { documentId: true, id: true, workspaceId: true },
       });
     },
+    async createKnowledgeAuthoringRunAfterExtraction(input: {
+      documentId: string;
+      workspaceId: string;
+    }) {
+      const document = await db.document.findFirst({
+        select: { knowledgeBundleId: true },
+        where: { id: input.documentId, workspaceId: input.workspaceId },
+      });
+      if (!document) throw new Error("document_not_found");
+      const member = await db.workspaceMember.findFirst({
+        orderBy: { createdAt: "asc" },
+        select: { userId: true },
+        where: { workspaceId: input.workspaceId },
+      });
+      return db.knowledgeAuthoringRun.create({
+        data: {
+          documentId: input.documentId,
+          knowledgeBundleId: document.knowledgeBundleId,
+          requestedBy: member?.userId,
+          workspaceId: input.workspaceId,
+        },
+        select: { documentId: true, id: true, workspaceId: true },
+      });
+    },
+    async getQueuedKnowledgeAuthoringRuns(limit = 100) {
+      return db.knowledgeAuthoringRun.findMany({
+        orderBy: { createdAt: "asc" },
+        select: { documentId: true, id: true, workspaceId: true },
+        take: limit,
+        where: { status: { in: ["queued", "running"] } },
+      });
+    },
     async getQueuedTopicDiscoveryJobs(limit = 100) {
       return db.topicDiscoveryJob.findMany({
         orderBy: { queuedAt: "asc" },

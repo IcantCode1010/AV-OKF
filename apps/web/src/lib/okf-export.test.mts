@@ -522,6 +522,41 @@ test("exportTopicToKnowledge exports typed relations that pass both OKF linters"
   }
 });
 
+test("nested exports emit source-relative relation targets while accepting bundle-relative draft paths", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-nested-relation-export-"));
+  const knowledgeRoot = path.join(root, "knowledge");
+
+  try {
+    await copyManifestTo(root);
+    const directory = "concepts/system-topic";
+    const target = await exportTopicToKnowledge({
+      directory,
+      document: exportDocument,
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: approvedTopic,
+    });
+    const source = await exportTopicToKnowledge({
+      directory,
+      document: exportDocument,
+      knowledgeRoot,
+      knowledgeVersion: "0.1.0",
+      topic: {
+        ...approvedTopic,
+        id: "topic_nested_source",
+        relations: [{ relation: "supports", target: target.filename, targetType: "system_topic", reason: "Same-folder support." }],
+        title: "Nested Source",
+      },
+    });
+
+    const markdown = await readFile(path.join(knowledgeRoot, source.filename), "utf8");
+    assert.match(markdown, new RegExp(`target: "${path.posix.basename(target.filename)}"`));
+    await assertRelationLintPasses(root);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("exportTopicToKnowledge exports coverage fields that pass okflint", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-coverage-export-"));
   const knowledgeRoot = path.join(root, "knowledge");

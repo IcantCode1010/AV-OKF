@@ -37,6 +37,7 @@ const documentItems = [
   { id: "summary", label: "Summary", hrefPanel: "summary" },
   { id: "metadata", label: "Metadata", hrefPanel: "metadata" },
   { id: "extraction", label: "Extraction", hrefPanel: "extraction" },
+  { id: "authoring", label: "AI authoring", hrefPanel: "authoring" },
 ];
 
 export function DocumentTreeNav({
@@ -45,7 +46,7 @@ export function DocumentTreeNav({
   documentId,
   topics,
 }: DocumentTreeNavProps) {
-  const activeDocumentBranch = ["summary", "metadata", "extraction"].includes(
+  const activeDocumentBranch = ["summary", "metadata", "extraction", "authoring"].includes(
     activePanel,
   );
   const activeTopicsBranch = activePanel === "topics";

@@ -1,5 +1,30 @@
 # AV-OKF TODO
 
+## LLM-Assisted Authoring
+
+- [x] Add a durable parent run for metadata discovery, concept discovery, enrichment, relation classification, and validation.
+- [x] Automatically start guided authoring after production extraction.
+- [x] Keep metadata changes reversible with original/proposed/applied values and actor-independent audit history.
+- [x] Pause high-cost enrichment runs for explicit confirmation.
+- [x] Restrict relation classification to deterministic candidate pairs and the active profile vocabulary.
+- [x] Stop the agent at `ready_for_review`; approval, export, lifecycle changes, and deletion remain human actions.
+- [ ] Add a single package-review screen for bulk raw/enriched choices and publishing valid topics; current review uses the existing per-topic controls.
+- [ ] Add run-level token usage and provider cost reporting from provider response metadata.
+- [x] Attribute failures to the exact active stage and preserve explicit retry attempt numbers.
+- [x] Condense stage status in the authoring panel while retaining expandable append-only attempt history.
+- [x] Add a real-provider E2E command that resolves the workspace key saved in Settings and forbids deterministic fallback.
+- [x] Verify a fresh real PDF through extraction, LLM discovery/enrichment, human approval/export, reviewed relation insertion, graph rendering, and Approved OKF chat retrieval.
+
+## Bundle Profile Conformance And Migration
+
+- [ ] Write a dry-run inventory that maps every live bundle file to its owning workspace, bundle, active profile, source document, and exported topic.
+- [ ] Ensure every bundle contains and validates against its own generated `okf-base.yaml`; do not apply the repository aviation profile to Generic bundles.
+- [ ] Correct suspicious or incomplete source metadata through the document metadata workflow, then regenerate affected OKF files through the exporter rather than editing Markdown directly.
+- [ ] Migrate or remove legacy compatibility files that cannot satisfy their active profile or no longer have a valid source/topic projection.
+- [ ] Run `okflint` and relation lint per live bundle and expose separate `Structurally valid` and `Agent ready` results in bundle settings.
+- [ ] Add a Docker E2E proving a Generic bundle and an Aviation bundle independently pass their own profiles after export and container restart.
+- [ ] Prevent profile activation or trusted publication when a generated export would violate the bundle's active schema.
+
 ## Knowledge Explorer V2
 
 - [x] Replace the flat bundle preview with synchronized physical tree, force-directed graph, and rendered reader panes.
@@ -12,13 +37,13 @@
 
 ## Reviewed Relation Discovery
 
-- [ ] Add a design for workspace-scoped relation candidates with `pending`, `approved`, and `rejected` states.
-- [ ] Discover candidate concept pairs from deterministic signals before using the workspace LLM to suggest a controlled-vocabulary relation and reason.
-- [ ] Exclude self-links, existing edges, inactive concepts, unsafe targets, and duplicate candidates.
+- [x] Add a design for workspace-scoped relation candidates with `pending`, `approved`, and `rejected` states.
+- [x] Discover candidate concept pairs from deterministic signals before using the workspace LLM to suggest a controlled-vocabulary relation and reason.
+- [x] Exclude self-links, existing edges, inactive concepts, unsafe targets, and duplicate candidates.
 - [x] Add deterministic bundle-local relation discovery with reviewer approval/rejection and re-export before graph traversal.
-- [ ] Validate approved candidates with the existing vocabulary, path, target existence, and `target_type` checks.
-- [ ] Re-export the source concept so approved relations enter OKF frontmatter, the live graph, backlinks, and agent traversal together.
-- [ ] Keep pending/rejected candidates out of the graph retriever and chat evidence path.
+- [x] Validate approved candidates with the existing vocabulary, path, target existence, and `target_type` checks.
+- [x] Re-export the source concept so approved relations enter OKF frontmatter, the live graph, backlinks, and agent traversal together.
+- [x] Keep pending/rejected candidates out of the graph retriever and chat evidence path.
 - [ ] Add audit records and mixed-domain relation-discovery evaluations.
 
 ## Chat Source Clarity
@@ -111,6 +136,20 @@
 - [ ] Keep the deterministic router, lifecycle gates, hop limits, workspace checks, and validator authoritative while the tool layer is introduced.
 - [ ] Persist tool calls and outcomes in the existing chat trace.
 - [ ] Evaluate bounded model-directed tool selection before considering any autonomous multi-step loop.
+
+## Multi-Bundle Chat Requests
+
+- [ ] Allow a user to select multiple knowledge bundles when creating a chat or submitting a request.
+- [ ] Store the selected bundle IDs on the chat session and enforce workspace ownership for every selection.
+- [ ] Add a bundle-discovery step that ranks selected bundles before concept retrieval instead of blindly crawling every file.
+- [ ] Search approved, active OKF concepts across a bounded number of selected bundles.
+- [ ] Keep graph traversal and typed relations bundle-local in the first version.
+- [ ] Restrict raw RAG fallback to documents belonging to the selected bundles.
+- [ ] Include the originating bundle identity on every citation, evidence row, and agent trace entry.
+- [ ] Preserve trust precedence independently per bundle: current approved OKF first, raw RAG as labeled discovery/support.
+- [ ] Detect conflicting answers or authorities across bundles and disclose the conflict instead of silently merging them.
+- [ ] Add workspace-isolation, lifecycle, retrieval-ranking, conflicting-authority, and mixed-bundle answer tests.
+- [ ] Defer cross-bundle typed relations until stable concept identities and dedicated validation rules exist.
 
 ## Platform Follow-Up
 

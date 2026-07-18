@@ -109,8 +109,8 @@ type ApproveTopicOptions = {
 const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
 const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
 const topicEnrichmentSchema = z.object({
-  body: z.string().default(""),
-  proposedSourcePageNumbers: z.array(z.number().int().positive()).default([]),
+  body: z.string(),
+  proposedSourcePageNumbers: z.array(z.number().int().positive()),
   summary: z.string(),
   title: z.string(),
 });

@@ -13,6 +13,11 @@ import {
   createBullMqTopicDiscoveryQueue,
   type TopicDiscoveryJobPayload,
 } from "../lib/topic-discovery-queue.ts";
+import { runKnowledgeAuthoringJob } from "../lib/knowledge-authoring.ts";
+import {
+  createBullMqKnowledgeAuthoringQueue,
+  type KnowledgeAuthoringJobPayload,
+} from "../lib/knowledge-authoring-queue.ts";
 import {
   runKnowledgeBundleDeletionJob,
   type KnowledgeBundleDeletionJob,
@@ -22,6 +27,7 @@ let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
 let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJob> | null = null;
 let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
+let knowledgeAuthoringWorker: Worker<KnowledgeAuthoringJobPayload> | null = null;
 
 void main();
 
@@ -38,10 +44,12 @@ async function main() {
   const queue = createBullMqExtractionQueue(redisUrl);
   const ragQueue = createBullMqRagIndexQueue(redisUrl);
   const topicDiscoveryQueue = createBullMqTopicDiscoveryQueue(redisUrl);
+  const knowledgeAuthoringQueue = createBullMqKnowledgeAuthoringQueue(redisUrl);
 
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
   await reconcileQueuedTopicDiscoveryJobs(repository, topicDiscoveryQueue);
+  await reconcileQueuedKnowledgeAuthoringRuns(repository, knowledgeAuthoringQueue);
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -50,7 +58,7 @@ async function main() {
         ragQueue,
         repository,
         storage,
-        topicDiscoveryQueue,
+        knowledgeAuthoringQueue,
       });
     },
     {
@@ -79,6 +87,15 @@ async function main() {
     async (job) => runTopicDiscoveryJob(job.data),
     {
       concurrency: Number(process.env.TOPIC_DISCOVERY_WORKER_CONCURRENCY ?? "1"),
+      connection: { url: redisUrl },
+    },
+  );
+
+  knowledgeAuthoringWorker = new Worker<KnowledgeAuthoringJobPayload>(
+    "knowledge-authoring",
+    async (job) => runKnowledgeAuthoringJob(job.data),
+    {
+      concurrency: Number(process.env.KNOWLEDGE_AUTHORING_WORKER_CONCURRENCY ?? "1"),
       connection: { url: redisUrl },
     },
   );
@@ -112,6 +129,12 @@ async function main() {
   });
   topicDiscoveryWorker.on("failed", (job, error) => {
     console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  knowledgeAuthoringWorker.on("completed", (job) => {
+    console.log(`Knowledge authoring run completed: ${job.id}`);
+  });
+  knowledgeAuthoringWorker.on("failed", (job, error) => {
+    console.error(`Knowledge authoring run failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -179,10 +202,22 @@ async function reconcileQueuedTopicDiscoveryJobs(
   if (jobs.length > 0) console.log(`Re-enqueued ${jobs.length} topic discovery jobs.`);
 }
 
+async function reconcileQueuedKnowledgeAuthoringRuns(
+  repository: ReturnType<typeof createPostgresDocumentRepository>,
+  queue: ReturnType<typeof createBullMqKnowledgeAuthoringQueue>,
+) {
+  const jobs = await repository.getQueuedKnowledgeAuthoringRuns();
+  for (const job of jobs) {
+    await queue.enqueue({ documentId: job.documentId, runId: job.id, workspaceId: job.workspaceId });
+  }
+  if (jobs.length > 0) console.log(`Re-enqueued ${jobs.length} knowledge authoring runs.`);
+}
+
 async function shutdown() {
   await extractionWorker?.close();
   await ragWorker?.close();
   await bundleDeletionWorker?.close();
   await topicDiscoveryWorker?.close();
+  await knowledgeAuthoringWorker?.close();
   process.exit(0);
 }

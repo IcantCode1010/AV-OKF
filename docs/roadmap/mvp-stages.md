@@ -8,7 +8,7 @@ The first usable product should be a clean document vault. Chat comes later, aft
 
 ## Current Implementation Status
 
-As of 2026-07-15:
+As of 2026-07-18:
 
 | Stage | Status |
 | --- | --- |
@@ -17,6 +17,7 @@ As of 2026-07-15:
 | 4 | Complete: raw-document RAG indexing, pgvector retrieval, search, budgets, and reindex administration |
 | 5 | Complete: reviewed OKF export, linting, typed relations, coverage links, and bundle explorer |
 | 5.5 | Complete: generic metadata contract, workspace multi-bundle vault, profile versioning, migration, and durable bundle deletion |
+| 5.6 | Complete: durable LLM-assisted metadata, concept discovery, enrichment, relation classification, validation, and human-review handoff |
 | 6 | Complete: persistent chat, rules-first router with LLM fallback, OKF/RAG/Hybrid retrieval, synthesis, citations, and trace |
 | 6.5 | Complete: live uncached OKF bundle retrieval with precision gating and lifecycle filtering |
 | 6.6 | Core implemented; restore, historical citation notices, and coverage reconciliation remain |
@@ -284,6 +285,20 @@ Architecture note:
 - [Link Resolution](../architecture/link-resolution.md)
 - [Typed Relations](../architecture/typed-relations.md)
 - [Knowledge Explorer V2](../architecture/knowledge-explorer.md)
+
+## Stage 5.6: LLM-Assisted Knowledge Authoring
+
+Purpose: coordinate the complete non-destructive authoring lifecycle after extraction while preserving a mandatory human publication boundary.
+
+Implementation status: complete for the current human-review workflow. A durable parent run coordinates metadata discovery, document-wide concept discovery, medium/high-confidence enrichment, controlled-vocabulary relation classification, and package validation. Runs resume by exact stage, persist numbered attempts and append-only audit history, pause for explicit confirmation above 250,000 estimated input tokens or 25 enrichment candidates, retain reversible metadata proposals, and stop at `ready_for_review`. A real-provider Docker/browser E2E using the workspace key has verified upload, 29-page extraction, six discovered/enriched topics, approval/export, reviewed relation promotion, graph insertion, and an Approved OKF chat answer.
+
+Agent authority is deliberately bounded: it may prepare metadata, topics, articles, relation candidates, and validation results. It cannot approve, export, archive, retract, or delete. Review and publication continue through the existing per-topic controls; a consolidated package-review screen remains a follow-up.
+
+Bundle conformance follow-up: compatibility-era bundle files still need migration to a bundle-local active profile. The migration must classify legacy content, correct source metadata through sanctioned document edits, regenerate exports instead of hand-editing Markdown, and make each live bundle pass both `okflint` and relation lint independently. Generic structural validity and Approved OKF agent trust remain separate gates.
+
+Architecture note:
+
+- [LLM-Assisted Knowledge Authoring](../architecture/llm-assisted-authoring.md)
 
 ## Stage 6: Chat Agent
 

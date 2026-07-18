@@ -9,12 +9,12 @@ const DEFAULT_WINDOW_PAGE_LIMIT = 20;
 
 const candidateSchema = z.object({
   confidence: z.enum(["low", "medium", "high"]),
-  evidenceHeadings: z.array(z.string()).default([]),
+  evidenceHeadings: z.array(z.string()),
   pageNumbers: z.array(z.number().int().positive()).min(1),
   rationale: z.string(),
   summary: z.string(),
   title: z.string(),
-  topicType: z.string().default("system_topic"),
+  topicType: z.string(),
 });
 
 const candidateListSchema = z.object({ topics: z.array(candidateSchema) });

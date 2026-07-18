@@ -121,7 +121,7 @@ test("runProductionExtractionJob queues RAG indexing after extraction completes"
   ]);
 });
 
-test("runProductionExtractionJob queues LLM topic discovery after extraction completes", async () => {
+test("runProductionExtractionJob queues the guided authoring workflow after extraction completes", async () => {
   const enqueued: unknown[] = [];
   await runProductionExtractionJob(
     { documentId: "doc-1", extractionJobId: "extract-1", workspaceId: "ws-1" },
@@ -129,16 +129,16 @@ test("runProductionExtractionJob queues LLM topic discovery after extraction com
       extractPdfPages: async () => [{ charCount: 7, imageCount: 0, pageNumber: 1, tables: [], text: "BRAKES" }],
       repository: {
         completeExtractionJob: async () => {},
-        createTopicDiscoveryJobAfterExtraction: async () => ({ documentId: "doc-1", id: "topics-1", workspaceId: "ws-1" }),
+        createKnowledgeAuthoringRunAfterExtraction: async () => ({ documentId: "doc-1", id: "authoring-1", workspaceId: "ws-1" }),
         failExtractionJob: async () => {},
         getPrimaryDocumentObject: async () => ({ objectKey: "opaque.pdf" }),
         startExtractionJob: async () => {},
       },
       storage: { getObject: async () => Buffer.from("%PDF-") },
-      topicDiscoveryQueue: { enqueue: async (payload) => { enqueued.push(payload); } },
+      knowledgeAuthoringQueue: { enqueue: async (payload) => { enqueued.push(payload); } },
     },
   );
-  assert.deepEqual(enqueued, [{ documentId: "doc-1", topicDiscoveryJobId: "topics-1", workspaceId: "ws-1" }]);
+  assert.deepEqual(enqueued, [{ documentId: "doc-1", runId: "authoring-1", workspaceId: "ws-1" }]);
 });
 
 test("runProductionExtractionJob normalizes malformed PDF failures", async () => {

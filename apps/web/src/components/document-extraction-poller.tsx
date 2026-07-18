@@ -6,9 +6,11 @@ import { useEffect } from "react";
 import type { ExtractionStatus, TopicDiscoveryStatus } from "@/lib/document-vault";
 
 export function DocumentExtractionPoller({
+  authoringStatus = "not_started",
   status,
   topicDiscoveryStatus = "not_started",
 }: {
+  authoringStatus?: string;
   status: ExtractionStatus;
   topicDiscoveryStatus?: TopicDiscoveryStatus;
 }) {
@@ -17,7 +19,8 @@ export function DocumentExtractionPoller({
   useEffect(() => {
     const extractionActive = status === "queued" || status === "running";
     const discoveryActive = ["queued", "analyzing", "consolidating"].includes(topicDiscoveryStatus);
-    if (!extractionActive && !discoveryActive) {
+    const authoringActive = ["queued", "running"].includes(authoringStatus);
+    if (!extractionActive && !discoveryActive && !authoringActive) {
       return;
     }
 
@@ -26,7 +29,7 @@ export function DocumentExtractionPoller({
     }, 2000);
 
     return () => window.clearInterval(interval);
-  }, [router, status, topicDiscoveryStatus]);
+  }, [authoringStatus, router, status, topicDiscoveryStatus]);
 
   return null;
 }

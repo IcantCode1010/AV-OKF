@@ -11,6 +11,7 @@ import {
   TopicWorkflowPanel,
 } from "@/components/document-detail/document-detail-panels";
 import { DocumentTreeNav } from "@/components/document-tree-nav";
+import { KnowledgeAuthoringPanel } from "@/components/document-detail/knowledge-authoring-panel";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -31,10 +32,11 @@ import {
   getKnowledgeBundleByIdentity,
   resolveKnowledgeBundleRoot,
 } from "@/lib/knowledge-bundles";
+import { getLatestKnowledgeAuthoringRun } from "@/lib/knowledge-authoring";
 
 export const dynamic = "force-dynamic";
 
-const documentPanels = ["summary", "metadata", "extraction", "topics", "logs"];
+const documentPanels = ["summary", "metadata", "extraction", "authoring", "topics", "logs"];
 
 export default async function DocumentDetailPage({
   params,
@@ -88,7 +90,10 @@ export default async function DocumentDetailPage({
     bundleId: currentBundle.id,
     workspaceId: context.workspaceId,
   });
-  const [relationTargets] = await Promise.all([getRelationTargets(knowledgeRoot)]);
+  const [relationTargets, authoringRun] = await Promise.all([
+    getRelationTargets(knowledgeRoot),
+    getLatestKnowledgeAuthoringRun({ context, documentId: id }),
+  ]);
   const allowedRelations = currentBundle.profile.relations;
   const activePanel = resolvePanel(
     panel,
@@ -119,6 +124,7 @@ export default async function DocumentDetailPage({
   return (
     <>
       <DocumentExtractionPoller
+        authoringStatus={authoringRun?.status}
         status={currentDocument.extraction.status}
         topicDiscoveryStatus={currentDocument.topicDiscovery?.status}
       />
@@ -202,6 +208,10 @@ export default async function DocumentDetailPage({
 
     if (selectedPanel === "extraction") {
       return <DocumentExtractionPanel document={currentDocument} />;
+    }
+
+    if (selectedPanel === "authoring") {
+      return <KnowledgeAuthoringPanel documentId={currentDocument.id} extractionReady={currentDocument.extraction.status === "completed"} run={authoringRun} />;
     }
 
     if (selectedPanel === "logs") {
