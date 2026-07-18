@@ -31,7 +31,7 @@ test("requestDocumentReindex rejects a second document while one workspace reind
       documentId: string;
       workspaceId: string;
     }) {
-      assert.equal(input.chunkingStrategyId, "paragraph-v1");
+      assert.equal(input.chunkingStrategyId, "paragraph-context-v2");
       assert.equal(input.workspaceId, "wrk_1");
 
       if (activeDocumentId) {
@@ -53,7 +53,7 @@ test("requestDocumentReindex rejects a second document while one workspace reind
   };
 
   await requestDocumentReindex({
-    chunkingStrategyId: "paragraph-v1",
+    chunkingStrategyId: "paragraph-context-v2",
     context,
     documentId: "doc_a",
     queue,
@@ -63,7 +63,7 @@ test("requestDocumentReindex rejects a second document while one workspace reind
   await assert.rejects(
     () =>
       requestDocumentReindex({
-        chunkingStrategyId: "paragraph-v1",
+        chunkingStrategyId: "paragraph-context-v2",
         context,
         documentId: "doc_b",
         queue,
@@ -75,7 +75,7 @@ test("requestDocumentReindex rejects a second document while one workspace reind
   activeDocumentId = null;
 
   await requestDocumentReindex({
-    chunkingStrategyId: "paragraph-v1",
+    chunkingStrategyId: "paragraph-context-v2",
     context,
     documentId: "doc_b",
     queue,
@@ -91,7 +91,7 @@ test("requestDocumentReindex does not enqueue documents outside the workspace", 
   await assert.rejects(
     () =>
       requestDocumentReindex({
-        chunkingStrategyId: "paragraph-v1",
+        chunkingStrategyId: "paragraph-context-v2",
         context,
         documentId: "doc_foreign",
         queue: {

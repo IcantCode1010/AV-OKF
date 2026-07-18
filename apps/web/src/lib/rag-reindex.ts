@@ -46,6 +46,10 @@ export function formatChunkingStrategyLabel(strategyId?: string | null) {
     return "unknown";
   }
 
+  if (strategyId === "paragraph-v1") {
+    return "Paragraph-granular (v1)";
+  }
+
   return (
     RAG_CHUNK_STRATEGIES.find((strategy) => strategy.id === strategyId)?.label ??
     "unknown"

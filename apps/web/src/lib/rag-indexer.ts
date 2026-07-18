@@ -30,6 +30,10 @@ type RunRagIndexJobOptions = {
     | "markIndexJobRunning"
     | "storeCompletedIndex"
   > & {
+    getDocumentTitle?: (input: {
+      documentId: string;
+      workspaceId: string;
+    }) => Promise<string>;
     deleteChunksForDocument?: (input: {
       documentId: string;
       workspaceId: string;
@@ -63,8 +67,12 @@ export async function runRagIndexJob(
     const pages = (await repository.getExtractedPages(
       payload,
     )) as ExtractedPageRecord[];
+    const documentTitle = repository.getDocumentTitle
+      ? await repository.getDocumentTitle(payload)
+      : payload.documentId;
     const chunks = chunkPages({
       documentId: payload.documentId,
+      documentTitle,
       indexJobId: payload.indexJobId,
       indexVersion: payload.indexVersion,
       pages,
@@ -109,7 +117,7 @@ export async function runRagIndexJob(
 
     const embeddings =
       chunks.length > 0
-        ? await embeddingProvider.embedTexts(chunks.map((chunk) => chunk.text))
+        ? await embeddingProvider.embedTexts(chunks.map((chunk) => chunk.embeddingText ?? chunk.text))
         : [];
 
     if (mode === "reindex") {

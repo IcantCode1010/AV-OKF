@@ -190,7 +190,7 @@ Only one reindex job can run at a time in the workspace.
 The current default chunking strategy is:
 
 ```text
-paragraph-v1
+paragraph-context-v2
 ```
 
 If a document was indexed before strategy tracking existed, the strategy may show as:
@@ -226,4 +226,3 @@ After the process is complete, the user has:
 - A searchable RAG index when production indexing is enabled
 - Optional typed relations between OKF files
 - A knowledge bundle that can be validated
-

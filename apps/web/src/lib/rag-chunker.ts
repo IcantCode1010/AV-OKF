@@ -10,9 +10,9 @@ const DEFAULT_OVERLAP_TOKENS = 120;
 export const RAG_CHUNK_STRATEGIES = [
   {
     description:
-      "Splits extracted page text into paragraph units, packs them by retrieval-sized token windows, and preserves source page citations.",
-    id: "paragraph-v1",
-    label: "Paragraph-granular (v1)",
+      "Splits extracted page text into paragraph units and embeds deterministic document, section, and page context while preserving clean source citations.",
+    id: "paragraph-context-v2",
+    label: "Paragraph + context (v2)",
   },
 ] as const;
 
@@ -46,7 +46,7 @@ export function chunkExtractedPages(
       .map((paragraph) => paragraph.trim())
       .filter(Boolean)
       .flatMap((text) =>
-        splitUnitToMaxTokens(
+        splitUnitToContextualMaxTokens(
           {
             pageNumber: page.pageNumber,
             text,
@@ -54,6 +54,7 @@ export function chunkExtractedPages(
           },
           tokenCounter,
           config,
+          input,
         ),
       ),
   );
@@ -69,7 +70,7 @@ export function chunkExtractedPages(
     if (
       buffer.length > 0 &&
       bufferHasNewContent &&
-      countUnitText(targetCandidate, tokenCounter) > config.targetTokens
+      countContextualUnitText(input, targetCandidate, tokenCounter) > config.targetTokens
     ) {
       emitChunk(input, chunks, buffer, tokenCounter, emittedHashes, config);
       buffer = createOverlapBuffer(buffer, tokenCounter, config);
@@ -79,7 +80,7 @@ export function chunkExtractedPages(
     const maxCandidate = [...buffer, unit];
     if (
       buffer.length > 0 &&
-      countUnitText(maxCandidate, tokenCounter) > config.maxTokens
+      countContextualUnitText(input, maxCandidate, tokenCounter) > config.maxTokens
     ) {
       if (bufferHasNewContent) {
         emitChunk(input, chunks, buffer, tokenCounter, emittedHashes, config);
@@ -91,7 +92,7 @@ export function chunkExtractedPages(
     buffer.push(unit);
     bufferHasNewContent = true;
 
-    if (countUnitText(buffer, tokenCounter) >= config.maxTokens) {
+    if (countContextualUnitText(input, buffer, tokenCounter) >= config.maxTokens) {
       emitChunk(input, chunks, buffer, tokenCounter, emittedHashes, config);
       buffer = createOverlapBuffer(buffer, tokenCounter, config);
       bufferHasNewContent = false;
@@ -137,15 +138,23 @@ function createChunk(
 ): RagChunkRecord {
   const sourcePageNumbers = [...new Set(units.map((unit) => unit.pageNumber))];
   const text = units.map((unit) => unit.text).join("\n\n");
-  const contentHash = hashText(text);
   const pageStart = Math.min(...sourcePageNumbers);
   const pageEnd = Math.max(...sourcePageNumbers);
+  const headingPath = inferHeadingPath(text);
+  const embeddingText = buildContextualEmbeddingText(input, {
+    headingPath,
+    pageEnd,
+    pageStart,
+    text,
+  });
+  const contentHash = hashText(embeddingText);
 
   return {
     chunkOrdinal: ordinal,
     contentHash,
     documentId: input.documentId,
-    headingPath: inferHeadingPath(text),
+    embeddingText,
+    headingPath,
     id: `rag_${input.documentId}_${input.indexVersion}_${pageStart}_${ordinal}_${contentHash.slice(0, 12)}`,
     indexJobId: input.indexJobId,
     indexVersion: input.indexVersion,
@@ -154,7 +163,7 @@ function createChunk(
     reviewStatus: "raw_extracted",
     sourcePageNumbers,
     text,
-    tokenCount: tokenCounter.count(text),
+    tokenCount: tokenCounter.count(embeddingText),
     workspaceId: input.workspaceId,
   };
 }
@@ -206,6 +215,48 @@ function inferHeadingPath(text: string): string[] {
 
 function hashText(text: string) {
   return createHash("sha256").update(text).digest("hex");
+}
+
+export function buildContextualEmbeddingText(
+  input: Pick<RagChunkInput, "documentId" | "documentTitle">,
+  chunk: { headingPath: string[]; pageEnd: number; pageStart: number; text: string },
+) {
+  const documentTitle = normalizeHeaderValue(input.documentTitle ?? input.documentId, 80);
+  const section = normalizeHeaderValue(chunk.headingPath.join(" > ") || "Unspecified", 60);
+  const pages = chunk.pageStart === chunk.pageEnd
+    ? String(chunk.pageStart)
+    : `${chunk.pageStart}-${chunk.pageEnd}`;
+  return `[Document: ${documentTitle} | Section: ${section} | Pages: ${pages}]\n${chunk.text}`;
+}
+
+function normalizeHeaderValue(value: string, maxLength: number) {
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength) || "Unspecified";
+}
+
+function splitUnitToContextualMaxTokens(
+  unit: TextUnit,
+  tokenCounter: TokenCounter,
+  config: ChunkTokenConfig,
+  input: RagChunkInput,
+): TextUnit[] {
+  const contextualTokens = countContextualUnitText(input, [unit], tokenCounter);
+  if (contextualTokens <= config.maxTokens) return [unit];
+
+  const headerTokens = contextualTokens - unit.tokenCount;
+  const maxContentTokens = config.maxTokens - headerTokens;
+  if (maxContentTokens < 1) {
+    throw new Error("rag_chunk_context_header_exceeds_max_tokens");
+  }
+  const splitConfig = {
+    maxTokens: maxContentTokens,
+    overlapTokens: 0,
+    targetTokens: Math.max(1, Math.min(config.targetTokens - headerTokens, maxContentTokens)),
+  };
+  return splitUnitToMaxTokens(unit, tokenCounter, splitConfig).flatMap((candidate) =>
+    countContextualUnitText(input, [candidate], tokenCounter) <= config.maxTokens
+      ? [candidate]
+      : splitTextByTokenWindows(candidate.text, candidate.pageNumber, tokenCounter, splitConfig),
+  );
 }
 
 function splitUnitToMaxTokens(
@@ -393,6 +444,22 @@ function countUnitText(units: TextUnit[], tokenCounter: TokenCounter) {
   }
 
   return tokenCounter.count(units.map((unit) => unit.text).join("\n\n"));
+}
+
+function countContextualUnitText(
+  input: RagChunkInput,
+  units: TextUnit[],
+  tokenCounter: TokenCounter,
+) {
+  if (units.length === 0) return 0;
+  const sourcePageNumbers = [...new Set(units.map((unit) => unit.pageNumber))];
+  const text = units.map((unit) => unit.text).join("\n\n");
+  return tokenCounter.count(buildContextualEmbeddingText(input, {
+    headingPath: inferHeadingPath(text),
+    pageEnd: Math.max(...sourcePageNumbers),
+    pageStart: Math.min(...sourcePageNumbers),
+    text,
+  }));
 }
 
 function resolveChunkConfig(input: ChunkExtractedPagesInput): ChunkTokenConfig {

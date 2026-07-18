@@ -31,6 +31,7 @@ export type RagChunkRecord = {
   chunkingStrategyId?: string | null;
   chunkOrdinal: number;
   text: string;
+  embeddingText?: string;
   contentHash: string;
   tokenCount: number;
   pageStart: number;
@@ -43,6 +44,7 @@ export type RagChunkRecord = {
 };
 
 export type RagChunkInput = {
+  documentTitle?: string;
   documentId: string;
   indexJobId: string;
   indexVersion: number;

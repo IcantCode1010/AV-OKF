@@ -195,6 +195,15 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       return pages.map(mapExtractedPageRecord);
     },
 
+    async getDocumentTitle(input: { documentId: string; workspaceId: string }) {
+      const document = await db.document.findFirst({
+        select: { title: true },
+        where: { id: input.documentId, workspaceId: input.workspaceId },
+      });
+      if (!document) throw new Error("document_not_found");
+      return document.title;
+    },
+
     async getQueuedIndexJobs(limit = 100) {
       return db.ragIndexJob.findMany({
         orderBy: { queuedAt: "asc" },

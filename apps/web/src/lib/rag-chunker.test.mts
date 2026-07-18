@@ -19,13 +19,13 @@ const smallChunkConfig = {
   tokenCounter: whitespaceTokenCounter,
 };
 
-test("RAG chunk strategy registry names the existing paragraph chunker", () => {
+test("RAG chunk strategy registry names the contextual paragraph chunker", () => {
   assert.deepEqual(RAG_CHUNK_STRATEGIES, [
     {
       description:
-        "Splits extracted page text into paragraph units, packs them by retrieval-sized token windows, and preserves source page citations.",
-      id: "paragraph-v1",
-      label: "Paragraph-granular (v1)",
+        "Splits extracted page text into paragraph units and embeds deterministic document, section, and page context while preserving clean source citations.",
+      id: "paragraph-context-v2",
+      label: "Paragraph + context (v2)",
     },
   ]);
 });
@@ -316,12 +316,52 @@ test("chunkExtractedPages preserves citations across page-spanning chunks", () =
     ],
     workspaceId: "wrk_1",
     ...smallChunkConfig,
+    targetTokens: 70,
   });
 
   assert.equal(chunks.length, 1);
   assert.equal(chunks[0]?.pageStart, 3);
   assert.equal(chunks[0]?.pageEnd, 4);
   assert.deepEqual(chunks[0]?.sourcePageNumbers, [3, 4]);
+});
+
+test("chunkExtractedPages keeps contextual headers out of citation text", () => {
+  const [chunk] = chunkExtractedPages({
+    documentId: "doc_context",
+    documentTitle: "Hydraulic Pump Manual",
+    indexJobId: "job_context",
+    indexVersion: 1,
+    pages: [{
+      charCount: 80,
+      imageCount: 0,
+      pageNumber: 7,
+      tables: [],
+      text: "Pressure Verification\n\nVerify pressure reaches 3,000 PSI.",
+    }],
+    tokenCounter: whitespaceTokenCounter,
+    workspaceId: "wrk_1",
+  });
+
+  assert.equal(chunk?.text.includes("[Document:"), false);
+  assert.match(chunk?.embeddingText ?? "", /^\[Document: Hydraulic Pump Manual \| Section: Pressure Verification \| Pages: 7\]/);
+  assert.equal(chunk?.tokenCount, whitespaceTokenCounter.count(chunk?.embeddingText ?? ""));
+});
+
+test("context changes content hash and chunk id without changing citation text", () => {
+  const base = {
+    documentId: "doc_context_hash",
+    indexJobId: "job_context_hash",
+    indexVersion: 1,
+    pages: [{ charCount: 20, imageCount: 0, pageNumber: 1, tables: [], text: "Same source text." }],
+    tokenCounter: whitespaceTokenCounter,
+    workspaceId: "wrk_1",
+  };
+  const [left] = chunkExtractedPages({ ...base, documentTitle: "Manual A" });
+  const [right] = chunkExtractedPages({ ...base, documentTitle: "Manual B" });
+
+  assert.equal(left?.text, right?.text);
+  assert.notEqual(left?.contentHash, right?.contentHash);
+  assert.notEqual(left?.id, right?.id);
 });
 
 test("chunkExtractedPages rejects invalid token limits", () => {

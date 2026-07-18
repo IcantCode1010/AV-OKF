@@ -79,6 +79,7 @@ test("runRagIndexJob checks budget before embedding provider call", async () => 
 
 test("runRagIndexJob stores completed index when embedding succeeds", async () => {
   let storedChunks = 0;
+  let embeddedInput: string[] = [];
 
   await runRagIndexJob(
     {
@@ -102,6 +103,7 @@ test("runRagIndexJob stores completed index when embedding succeeds", async () =
           reviewStatus: "raw_extracted",
           sourcePageNumbers: [1],
           text: "generator control",
+          embeddingText: "[Document: Generator Manual | Section: Control | Pages: 1]\ngenerator control",
           tokenCount: 2,
           workspaceId: "wrk_1",
         },
@@ -110,6 +112,7 @@ test("runRagIndexJob stores completed index when embedding succeeds", async () =
         dimensions: 1536,
         model: "test",
         async embedTexts(input: string[]) {
+          embeddedInput = input;
           return input.map(() => Array.from({ length: 1536 }, () => 0.01));
         },
       },
@@ -129,6 +132,7 @@ test("runRagIndexJob stores completed index when embedding succeeds", async () =
   );
 
   assert.equal(storedChunks, 1);
+  assert.deepEqual(embeddedInput, ["[Document: Generator Manual | Section: Control | Pages: 1]\ngenerator control"]);
 });
 
 test("runRagIndexJob reindex deletes old chunks before storing fresh strategy-labeled chunks", async () => {
