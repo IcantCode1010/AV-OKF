@@ -188,12 +188,15 @@ export function createProductionChatService(
               approvedOkfAvailable: retrieval.approvedOkfAvailable,
               finalEvidenceStatus: resolveEvidenceStatus(retrieval),
               ragUsedForDiscoveryOnly: retrieval.ragUsedForDiscoveryOnly,
+              ...(retrieval.okfEvidenceMode
+                ? { okfEvidenceMode: retrieval.okfEvidenceMode }
+                : {}),
               ...(retrieval.okfMatchMode
                 ? { okfMatchMode: retrieval.okfMatchMode }
                 : {}),
-              rerank: retrieval.rerank,
             }
           : {}),
+        rerank: retrieval.rerank,
         retrievalToolsCalled: retrieval.retrievalToolsCalled,
         sourcesRead: retrieval.sourcesRead,
       };

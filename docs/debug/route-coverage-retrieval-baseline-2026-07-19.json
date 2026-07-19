@@ -1,0 +1,317 @@
+{
+  "bundleId": "cmrrtz602000025sdzp84n2x8",
+  "evaluatedAt": "2026-07-19T13:31:57.736Z",
+  "failedCount": 0,
+  "passedCount": 8,
+  "phase": "baseline",
+  "questions": [
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "direct",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "okf-lexical",
+      "passed": true,
+      "query": "What is the approved Thermal Regulation Protocol?",
+      "trace": {
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": "direct",
+        "okfMatchMode": "lexical",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval"
+        ],
+        "route": "okf_only"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "direct",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "okf-vector-fallback",
+      "passed": true,
+      "query": "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
+      "trace": {
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": "direct",
+        "okfMatchMode": "vector",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval"
+        ],
+        "route": "okf_only"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "graph",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        },
+        {
+          "documentTitle": "Power Balance Guard",
+          "okfEvidenceMode": "graph",
+          "okfFilePath": "concepts/procedure/power-balance-guard.md",
+          "pageEnd": 44,
+          "pageStart": 44,
+          "sourceType": "okf"
+        }
+      ],
+      "correctCitationCount": 2,
+      "expectedCitationCount": 2,
+      "id": "okf-graph-traversal",
+      "passed": true,
+      "query": "How does the approved Thermal Regulation Protocol affect the downstream subsystem?",
+      "trace": {
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": "graph",
+        "okfMatchMode": "lexical",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": true,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "okf_relation_traversal"
+        ],
+        "route": "okf_only"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 2,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "rag-only",
+      "passed": true,
+      "query": "Search every document for calibration drift examples.",
+      "trace": {
+        "finalEvidenceStatus": "discovery_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": true,
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "rag_retrieval"
+        ],
+        "route": "rag_only"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "direct",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        },
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 2,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 2,
+      "expectedCitationCount": 2,
+      "id": "hybrid",
+      "passed": true,
+      "query": "Give the approved Thermal Regulation Protocol with supporting raw documents about calibration drift.",
+      "trace": {
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": "lexical",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "rag_retrieval"
+        ],
+        "route": "hybrid"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [],
+      "correctCitationCount": 0,
+      "expectedCitationCount": 0,
+      "id": "missing-context",
+      "passed": true,
+      "query": "Should I delete production data?",
+      "trace": {
+        "finalEvidenceStatus": null,
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "llm",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [],
+        "route": "missing_context"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [],
+      "correctCitationCount": 0,
+      "expectedCitationCount": 0,
+      "id": "unsupported-live-data",
+      "passed": true,
+      "query": "What is the live weather right now?",
+      "trace": {
+        "finalEvidenceStatus": null,
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [],
+        "route": "unsupported"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 2,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "okf-vector-missing-fallback",
+      "passed": true,
+      "query": "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
+      "trace": {
+        "finalEvidenceStatus": "discovery_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": true,
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "rag_retrieval"
+        ],
+        "route": "okf_only"
+      }
+    }
+  ],
+  "workspaceId": "cmr2lf3s0000101suuz8cz5mn"
+}

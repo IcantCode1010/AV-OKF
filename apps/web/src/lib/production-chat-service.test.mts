@@ -167,6 +167,7 @@ test("sendMessage reports no evidence when retrieval finds nothing", async () =>
 function citedRetrievalResult(): ChatRetrievalResult {
   return {
     approvedOkfAvailable: true,
+    okfEvidenceMode: "direct",
     ragUsedForDiscoveryOnly: false,
     citations: [
       {
@@ -190,6 +191,7 @@ function citedRetrievalResult(): ChatRetrievalResult {
     ],
     retrievalError: false,
     retrievalToolsCalled: ["okf_retrieval"],
+    rerank: { applied: false, dropped: 0, status: "not_applicable" },
     sourcesRead: ["737NG QRH (p. 12)"],
   };
 }
@@ -212,6 +214,8 @@ test("sendMessage builds a cited answer from retrieval results", async () => {
   assert.match(result.assistantMessage.content, /\[1\]/);
   assert.match(result.assistantMessage.content, /generator bus fault/i);
   assert.deepEqual(appendCalls[0]?.assistantTrace.sourcesRead, ["737NG QRH (p. 12)"]);
+  assert.equal(appendCalls[0]?.assistantTrace.okfEvidenceMode, "direct");
+  assert.equal(appendCalls[0]?.assistantTrace.rerank?.status, "not_applicable");
 });
 
 test("sendMessage stores the LLM answer and records answer mode in the trace", async () => {

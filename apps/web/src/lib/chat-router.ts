@@ -92,6 +92,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerModel?: string;
   answerProvider?: string;
   queryUnderstanding?: ChatQueryUnderstandingTrace;
+  okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";
   rerank?: import("./rag-reranker.ts").RagRerankTrace;
   approvedOkfAvailable?: boolean;

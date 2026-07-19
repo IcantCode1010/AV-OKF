@@ -460,6 +460,8 @@ Purpose: make the agent useful for questions that require more than one approved
 
 Status: core implementation complete. Bounded relation traversal, lifecycle/path/type guards, cycle prevention, coverage-linked RAG retrieval, graph-aware citations, and trace metadata are implemented. The broader response-state vocabulary and permanent graph-retrieval evaluation set remain Stage 7C closeout work.
 
+Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, unsupported live data, and missing-vector discovery fallback. It also blocks retracted evidence and per-question citation regressions. Failure injection, multi-bundle isolation, and the broader mixed-domain question corpus remain separate follow-up slices.
+
 Agent policy:
 
 - Search approved, active-lifecycle OKF concepts first.

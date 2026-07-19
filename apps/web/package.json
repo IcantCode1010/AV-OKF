@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/**/*.test.mts",
     "test:e2e:llm": "tsx scripts/e2e-llm-authoring.mts",
+    "test:e2e:routes": "tsx scripts/eval-retrieval-quality.mts routes",
     "eval:retrieval": "tsx scripts/eval-retrieval-quality.mts",
     "worker": "tsx src/worker/extraction-worker.ts",
     "migrate:knowledge-vault": "tsx scripts/migrate-knowledge-vault.mts"

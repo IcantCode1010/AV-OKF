@@ -2,6 +2,18 @@ import { retrieveDocuments } from "../src/lib/rag-backend.ts";
 import { rerankRawRagCandidates } from "../src/lib/rag-reranker.ts";
 import { readFile, writeFile } from "node:fs/promises";
 
+if (process.argv[2] === "routes") {
+  const { runRouteCoverageEval } = await import("./route-coverage-eval.mts");
+  await runRouteCoverageEval({
+    baselinePath: process.env.EVAL_BASELINE_PATH,
+    outputPath: process.env.EVAL_OUTPUT_PATH,
+    phase: process.argv[3] ?? "current",
+  });
+} else {
+  await runRawRetrievalEval();
+}
+
+async function runRawRetrievalEval() {
 const WORKSPACE_ID = process.env.EVAL_WORKSPACE_ID ?? "cmr2lf3s0000101suuz8cz5mn";
 const BUNDLE_ID = process.env.EVAL_BUNDLE_ID ?? "cmrmlfnpe009601pcgkqi5pu2";
 const EXPECTED_DOCUMENT = "03 Electrical Power";
@@ -111,4 +123,5 @@ if (
   report.baselineComparison?.regressed
 ) {
   process.exitCode = 1;
+}
 }

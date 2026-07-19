@@ -123,6 +123,7 @@
 
 ## Stage 7 Closeout
 
+- [x] Add a Docker-backed route-coverage evaluation for every current router path and retrieval mode, with persisted-trace assertions and a committed baseline.
 - [x] Add a permanent five-question raw-RAG retrieval evaluation with saved baseline/post-change reports and a citation-regression guard.
 - [ ] Preserve a concise insufficient-evidence response when the LLM returns `supported: false`; do not replace it with concatenated excerpts solely because citations were retrieved.
 - [ ] Add a permanent mixed-domain chat evaluation set covering direct OKF, OKF via graph, raw RAG discovery, hybrid support, missing evidence, and retrieval failure.
