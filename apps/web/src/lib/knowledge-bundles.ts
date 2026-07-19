@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 import {
+  BASE_FIELDS,
   getTypeDirectory,
   getKnowledgeProfileTemplate,
   type KnowledgeProfileSchema,
@@ -190,6 +191,7 @@ export async function scaffoldKnowledgeBundle(input: {
       `---\ntype: source_manifest\ntitle: Source Manifest\nupdated: ${toIsoDate(new Date())}\n---\n\n# Source Manifest\n`,
     ),
   ]);
+  await ensureSourceManifestReviewStatus(path.join(root, "source_manifest.md"));
 }
 
 export async function writeWorkspaceVault(workspaceId: string): Promise<void> {
@@ -298,13 +300,18 @@ async function validateExistingTypeFolders(
 }
 
 export function buildBundleManifest(profile: KnowledgeProfileSchema): string {
-  const requiredFields = Object.entries(profile.fields)
+  const fields = { ...BASE_FIELDS, ...profile.fields };
+  const types = {
+    source_manifest: { category: "indexes" as const, label: "Source manifest" },
+    ...profile.types,
+  };
+  const requiredFields = Object.entries(fields)
     .filter(([, definition]) => definition.required)
     .map(([field]) => field);
-  const optionalFields = Object.entries(profile.fields)
+  const optionalFields = Object.entries(fields)
     .filter(([, definition]) => !definition.required)
     .map(([field]) => field);
-  const typeLines = Object.keys(profile.types).sort().flatMap((type) => [
+  const typeLines = Object.keys(types).sort().flatMap((type) => [
     `    ${type}:`,
     "      required:",
     ...requiredFields.map((field) => `      - ${field}`),
@@ -351,6 +358,18 @@ export function buildBundleManifest(profile: KnowledgeProfileSchema): string {
     "  unknown_fields: error",
     "",
   ].join("\n");
+}
+
+async function ensureSourceManifestReviewStatus(filePath: string): Promise<void> {
+  const content = await readFile(filePath, "utf8");
+  const parsed = parseOkfMarkdown(content);
+  if (parsed.frontmatter.review_status !== undefined) return;
+  const updated = content.replace(
+    /^(---\r?\n(?:.|\r?\n)*?type:\s*[^\r\n]+\r?\n)/,
+    "$1review_status: approved\n",
+  );
+  if (updated === content) throw new Error("source_manifest_frontmatter_invalid");
+  await atomicWrite(filePath, updated);
 }
 
 async function validateBundleFilesAgainstProfile(

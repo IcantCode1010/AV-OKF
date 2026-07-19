@@ -229,6 +229,10 @@ Deliverables:
 - Source filters
 - Citation objects
 - Search UI
+- [x] Contextual raw-RAG embedding text (`paragraph-context-v2`) with clean citation text
+- [x] Durable semantic lookup index for live approved OKF files, after the lexical fast path
+- [x] Chat-only raw-RAG reranking with fail-open provider and budget handling
+- [x] Permanent five-question raw-RAG retrieval evaluation with baseline regression guard
 
 Coverage projection moved to Stage 5 (consumes OKF concepts).
 
@@ -236,6 +240,7 @@ Exit criteria:
 
 - A user can search across uploaded documents and retrieve relevant passages with citations.
 - Newly ingested documents become searchable before OKF approval.
+- A representative real-document reindex preserves all expected-source hits and does not reduce correct citations against its recorded baseline.
 
 ## Stage 5: OKF Bundle
 

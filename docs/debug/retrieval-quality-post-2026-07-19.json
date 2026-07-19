@@ -1,0 +1,232 @@
+{
+  "baselineComparison": {
+    "baselineCorrectCitationCount": 17,
+    "baselineHitCount": 5,
+    "correctCitationDelta": 2,
+    "hitDelta": 0,
+    "regressed": false
+  },
+  "bundleId": "cmrmlfnpe009601pcgkqi5pu2",
+  "correctCitationCount": 19,
+  "evaluatedAt": "2026-07-19T12:39:23.201Z",
+  "hitCount": 5,
+  "phase": "post-reindex",
+  "questions": [
+    {
+      "citations": [
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_4_1_a011fee44c55",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 5,
+          "pageStart": 4,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER - INTRODUCTION 4 Effective On: 24-00-00 737 NG Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER - POWER AND CONTROL DC Power Purpose Three transformer "
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_39_19_80e5d053f5a2",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 41,
+          "pageStart": 39,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC GENERATION Purpose AC generation makes and controls three-phase, 115/200 v ac, 400 Hz power for use by the electrical power system. 39 Effective On: 24-20-00 737 NG Airbus Maintenance T"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_28_14_1098d5efc9f0",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 31,
+          "pageStart": 28,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book INTEGRATED DRIVE GENERATOR (IDG) 28 Effective On: 24-10-00 737 NG Airbus Maintenance Training Boeing 737 Student Book IDG - COMPONENT LOCATION General The components of the generator drive"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_9_4_4cae00c16202",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 10,
+          "pageStart": 9,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER - DISTRIBUTION External Power DC Buses External power can supply power to these buses: • AC transfer buses DC bus 1 usually receives power from TRU 1. However, the bus • G"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_1_0_0c1d7318f598",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 4,
+          "pageStart": 1,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER DISCLAIMER This is an UNCONTROLLED DOCUMENT and will not be revised. Information contained herein is For Training Purposes Only and is not to be regarded as authority over"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_73_32_9f546c6cf76d",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 76,
+          "pageStart": 73,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book STANDBY POWER SYSTEM - INTRODUCTION Purpose The standby power system supplies a nominal 28v dc and single phase 115v ac to electrical buses which must have power to maintain safe flight. 7"
+        }
+      ],
+      "correctCitationCount": 5,
+      "hit": true,
+      "id": "idg-normal-source",
+      "query": "What is the normal source of AC electrical power in flight?",
+      "rerank": {
+        "applied": true,
+        "dropped": 1,
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "status": "applied"
+      }
+    },
+    {
+      "citations": [
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_17_8_4b4a3d6b9119",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 18,
+          "pageStart": 17,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book GENERATOR DRIVE AND STANDBY POWER MODULE 17 Effective On: 24-00-00 737 NG Airbus Maintenance Training Boeing 737 Student Book AC SYSTEMS, GENERATOR, AND APU MODULE TRANSFER BUS OFF Light G"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_58_26_7c1d6a4d2b3b",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 59,
+          "pageStart": 58,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book POWER DISTRIBUTION PANELS 58 Effective On: 24-20-00 737 NG Airbus Maintenance Training Boeing 737 Student Book AC SYSTEMS, GENERATOR, AND APU PANEL - TRANSFER BUS OFF Light INDICATION The "
+        }
+      ],
+      "correctCitationCount": 2,
+      "hit": true,
+      "id": "transfer-bus-off",
+      "query": "What does the TRANSFER BUS OFF light indicate?",
+      "rerank": {
+        "applied": true,
+        "dropped": 8,
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "status": "applied"
+      }
+    },
+    {
+      "citations": [
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_92_40_721c8810d596",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 93,
+          "pageStart": 92,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC ELECTRICAL LOAD DISTRIBUTION - LOAD SHED RELAY 92 Effective On: 24-50-00 737 NG Airbus Maintenance Training Boeing 737 Student Book AC ELECTRICAL LOAD DISTRIBUTION - LOAD Command Load S"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_95_42_ffc56d5f6244",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 96,
+          "pageStart": 95,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC ELECTRICAL LOAD DISTRIBUTION - LOAD SHED - OPERATION Overcurrent Load Shed, APU/External Power Operation The BPCU opens the galley relays powered by AC Transfer Bus 2. If the overcurren"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_94_41_385b4ac28c98",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 95,
+          "pageStart": 94,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC ELECTRICAL LOAD DISTRIBUTION - LOAD Overcurrent Load Shed, Single IDG Operation SHED - OPERATION The bus power control unit (BPCU) opens the galley relays that Overcurrent Load Shed, Tw"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_91_39_9912df5d0f48",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 92,
+          "pageStart": 91,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC ELECTRICAL LOAD DISTRIBUTION - LOAD SHED RELAY Purpose The load shed relays control power to the main buses and the galley buses to protect the power source from overload. Location The "
+        }
+      ],
+      "correctCitationCount": 4,
+      "hit": true,
+      "id": "load-shedding",
+      "query": "Under what conditions does electrical load shedding occur?",
+      "rerank": {
+        "applied": true,
+        "dropped": 6,
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "status": "applied"
+      }
+    },
+    {
+      "citations": [
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_55_25_bee53c734610",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 58,
+          "pageStart": 55,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book APU - START CONVERTER UNIT (SCU) Purpose The start converter unit (SCU) has two functions: • Regulate the APU starter-generator electrical power output • Turn the APU during an APU start. "
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_52_24_6f30f47e5807",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 55,
+          "pageStart": 52,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book APU STARTER GENERATOR 52 Effective On: 24-20-00 737 NG Airbus Maintenance Training Boeing 737 Student Book The AGCU receives three-phase sense voltage input from APU - GENERATOR CONTROL UN"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_49_23_699915e64e40",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 52,
+          "pageStart": 49,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC - GENERATOR CONTROL UNIT (GCU) Built-In-Test-Equipment (BITE) GCU Outputs Each GCU has front face BITE to help you do troubleshooting of the electrical system. GCU1 and GCU2 have these "
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_6_2_af0d0a68f99b",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 7,
+          "pageStart": 6,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER - POWER AND CONTROL Control Protection These modules on the P5 panel give manual control of the electrical power system: The electrical power system uses automatic control"
+        }
+      ],
+      "correctCitationCount": 4,
+      "hit": true,
+      "id": "start-converter-unit",
+      "query": "What does the start converter unit do for the APU?",
+      "rerank": {
+        "applied": true,
+        "dropped": 6,
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "status": "applied"
+      }
+    },
+    {
+      "citations": [
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_4_1_a011fee44c55",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 5,
+          "pageStart": 4,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER - INTRODUCTION 4 Effective On: 24-00-00 737 NG Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER - POWER AND CONTROL DC Power Purpose Three transformer "
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_76_33_fc5268ec4c8b",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 80,
+          "pageStart": 76,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book STANDBY POWER - GENERAL DESCRIPTION 76 Effective On: 24-34-00 737 NG Airbus Maintenance Training Boeing 737 Student Book A static inverter failure causes the amber ELEC light to come STAND"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_73_32_9f546c6cf76d",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 76,
+          "pageStart": 73,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book STANDBY POWER SYSTEM - INTRODUCTION Purpose The standby power system supplies a nominal 28v dc and single phase 115v ac to electrical buses which must have power to maintain safe flight. 7"
+        },
+        {
+          "chunkId": "rag_doc_89a4c751-a5a0-4148-8253-b04076f10df4_2_39_19_80e5d053f5a2",
+          "documentTitle": "03 Electrical Power",
+          "pageEnd": 41,
+          "pageStart": 39,
+          "text": "Airbus Maintenance Training Boeing 737 Student Book AC GENERATION Purpose AC generation makes and controls three-phase, 115/200 v ac, 400 Hz power for use by the electrical power system. 39 Effective On: 24-20-00 737 NG Airbus Maintenance T"
+        }
+      ],
+      "correctCitationCount": 4,
+      "hit": true,
+      "id": "static-inverter",
+      "query": "What is the purpose of the static inverter?",
+      "rerank": {
+        "applied": true,
+        "dropped": 6,
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "status": "applied"
+      }
+    }
+  ],
+  "workspaceId": "cmr2lf3s0000101suuz8cz5mn"
+}

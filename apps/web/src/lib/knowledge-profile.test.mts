@@ -10,6 +10,8 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.deepEqual(validateKnowledgeProfile(generic), []);
   assert.equal(generic.fields.type.required, true);
   assert.equal(generic.fields.aircraft_family, undefined);
+  assert.equal(generic.fields.covered_rag_chunk_ids?.type, "string_array");
+  assert.equal(generic.fields.classification_code?.type, "string");
   assert.equal(aviation.fields.aircraft_family?.required, undefined);
   assert.equal(getTypeDirectory(generic, "procedure"), "procedures/procedure");
 });

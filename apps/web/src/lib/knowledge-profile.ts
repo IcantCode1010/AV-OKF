@@ -31,7 +31,7 @@ export const DEFAULT_RELATIONS = [
   "depends_on",
 ] as const;
 
-const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
+export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   type: { required: true, type: "string" },
   title: { type: "string" },
   description: { type: "string" },
@@ -43,6 +43,13 @@ const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   source_authority: { type: "string" },
   knowledge_version: { type: "string" },
   relations: { type: "relations" },
+  classification_code: { type: "string" },
+  coverage_type: { type: "string" },
+  covered_rag_chunk_ids: { type: "string_array" },
+  document_type: { type: "string" },
+  effectivity: { type: "string" },
+  revision: { type: "string" },
+  subject_family: { type: "string" },
 };
 
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
