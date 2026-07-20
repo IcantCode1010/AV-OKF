@@ -24,6 +24,7 @@ export type ChatAnswer = {
   content: string;
   mode: "llm" | "deterministic";
   model?: string;
+  outcome: "answered" | "insufficient_evidence" | "retrieval_unavailable";
   provider?: LlmProviderId;
 };
 
@@ -76,6 +77,11 @@ export async function generateChatAnswer(
   const deterministic: ChatAnswer = {
     content: buildRetrievalAnswer(input.route, input.retrieval),
     mode: "deterministic",
+    outcome: input.retrieval.retrievalError
+      ? "retrieval_unavailable"
+      : input.retrieval.citations.length === 0
+        ? "insufficient_evidence"
+        : "answered",
   };
 
   // Only synthesize when there is real evidence to ground the answer in;
@@ -120,6 +126,7 @@ export async function generateChatAnswer(
         content: buildNotDirectlyAnsweredReply(input.route),
         mode: "llm",
         model: provider.model,
+        outcome: "insufficient_evidence",
         provider: provider.id,
       };
     }
@@ -140,6 +147,7 @@ export async function generateChatAnswer(
       content: answer,
       mode: "llm",
       model: provider.model,
+      outcome: "answered",
       provider: provider.id,
     };
   } catch (error) {
@@ -208,15 +216,12 @@ export function hasValidCitationMarkers(
 }
 
 export function buildNotDirectlyAnsweredReply(route: RetrievalChatRoute): string {
-  if (route === "okf_only") {
-    return "The approved knowledge base has related content, but it does not directly answer this question. The retrieved sources are listed for reference.";
-  }
-
-  if (route === "rag_only") {
-    return "The indexed documents have related content, but none of it directly answers this question. The retrieved sources are listed for reference.";
-  }
-
-  return "The approved knowledge base and indexed documents have related content, but none of it directly answers this question. The retrieved sources are listed for reference.";
+  const searched = route === "okf_only"
+    ? "the approved knowledge bundle and its raw document fallback"
+    : route === "rag_only"
+      ? "the indexed source documents"
+      : "the approved knowledge bundle and indexed source documents";
+  return `I found related material, but not enough supported evidence to answer this question reliably. I searched ${searched}. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.`;
 }
 
 function evidenceContextForRoute(route: RetrievalChatRoute): string {

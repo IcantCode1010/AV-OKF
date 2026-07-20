@@ -139,6 +139,11 @@ test("appendUserMessageAndAssistantReply inserts one user and one assistant mess
             calls.push("session.update");
           },
         },
+        knowledgeGap: {
+          create: async () => {
+            calls.push("knowledgeGap.create");
+          },
+        },
       }),
   });
 
@@ -168,6 +173,73 @@ test("appendUserMessageAndAssistantReply inserts one user and one assistant mess
   );
   assert.deepEqual(result.assistantMessage.citations, []);
   assert.deepEqual(result.assistantMessage.trace, assistantTrace);
+});
+
+test("appendUserMessageAndAssistantReply stores a knowledge gap in the message transaction", async () => {
+  const writes: Record<string, unknown>[] = [];
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findFirst: async () => ({
+        createdAt: new Date(),
+        id: "session_1",
+        knowledgeBundleId,
+        title: "New chat",
+        updatedAt: new Date(),
+        userId: "usr_1",
+        workspaceId: "wrk_1",
+      }),
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        chatMessage: {
+          create: async ({ data }: { data: Record<string, unknown> }) => ({
+            citations: data.citations ?? [],
+            content: data.content,
+            createdAt: new Date(),
+            id: data.role === "assistant" ? "msg_assistant" : "msg_user",
+            role: data.role,
+            sessionId: data.sessionId,
+            trace: data.trace ?? null,
+          }),
+        },
+        chatSession: { update: async () => undefined },
+        knowledgeGap: {
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            writes.push(data);
+          },
+        },
+      }),
+  });
+
+  await repository.appendUserMessageAndAssistantReply({
+    assistantContent: "Not enough evidence.",
+    assistantTrace: buildStage6aRouterTrace(
+      routeChatQuestion("What is the official missing procedure?"),
+    ),
+    citations: [],
+    content: "What is the official missing procedure?",
+    context,
+    knowledgeGap: {
+      question: "What is the official missing procedure?",
+      reason: "no_matching_evidence",
+      retrievalQuery: "official missing procedure",
+      route: "okf_only",
+      searchedSources: ["okf_retrieval", "rag_retrieval"],
+    },
+    sessionId: "session_1",
+  });
+
+  assert.deepEqual(writes, [{
+    assistantMessageId: "msg_assistant",
+    chatSessionId: "session_1",
+    knowledgeBundleId,
+    question: "What is the official missing procedure?",
+    reason: "no_matching_evidence",
+    retrievalQuery: "official missing procedure",
+    route: "okf_only",
+    searchedSources: ["okf_retrieval", "rag_retrieval"],
+    workspaceId: "wrk_1",
+  }]);
 });
 
 test("appendUserMessageAndAssistantReply rejects before writing when the session belongs to another workspace", async () => {

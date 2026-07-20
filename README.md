@@ -83,7 +83,7 @@ Vercel AI SDK answer synthesis
 citations, evidence cards, traces, and deterministic evidence validation
 ```
 
-The next milestone is Stage 7 closeout: improve insufficient-evidence responses, connect citations to original PDF pages, finish lifecycle reconciliation, and formalize bounded agent-tool contracts. Unrestricted model-driven tool loops remain deliberately deferred.
+The next milestone is the bounded Stage 7 agent-tool layer. Insufficient-evidence completion, reviewer-visible knowledge gaps, authenticated source-PDF page links, OKF concept links, and historical citation lifecycle notices are implemented. Unrestricted model-driven tool loops remain deliberately deferred.
 
 ## Web App
 

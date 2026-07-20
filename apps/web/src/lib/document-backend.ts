@@ -10,7 +10,7 @@ import {
   getActivityEvents as getLocalActivityEvents,
   getDocumentById as getLocalDocumentById,
   getDocumentMetrics as getLocalDocumentMetrics,
-  getDocumentPdfBytes,
+  getDocumentPdfBytes as getLocalDocumentPdfBytes,
   getTopicEnrichmentInput as getLocalTopicEnrichmentInput,
   getDocuments as getLocalDocuments,
   getRecentDocuments as getLocalRecentDocuments,
@@ -53,7 +53,6 @@ export {
   completeExtraction,
   customPropertiesToText,
   failExtraction,
-  getDocumentPdfBytes,
   MAX_UPLOAD_BYTES,
   assertPdfUpload,
   parseCustomProperties,
@@ -225,6 +224,14 @@ export async function updateTopicContent(
   }
 
   return updateLocalTopicContent(topicId, input);
+}
+
+export async function getDocumentPdfBytes(id: string): Promise<Buffer> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().getDocumentPdfBytes(id);
+  }
+
+  return getLocalDocumentPdfBytes(id);
 }
 
 export async function updateTopicOkfMetadata(

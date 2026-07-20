@@ -4,6 +4,7 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation, ChatMessage, ChatSession } from "./chat-types.ts";
 import { getPrisma } from "./prisma.ts";
 import type { Stage6aRouterTrace } from "./chat-router.ts";
+import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
 
 export type ProductionChatRepository = ReturnType<typeof createPostgresChatRepository>;
 
@@ -112,9 +113,13 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
       citations: ChatCitation[];
       content: string;
       context: AuthWorkspaceContext;
+      knowledgeGap?: KnowledgeGapDraft;
       sessionId: string;
     }): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }> {
-      await getSessionForWorkspace(input.sessionId, input.context.workspaceId);
+      const sessionRecord = await getSessionForWorkspace(
+        input.sessionId,
+        input.context.workspaceId,
+      );
 
       const [userRecord, assistantRecord] = await db.$transaction(
         async (tx: Prisma.TransactionClient) => {
@@ -136,6 +141,21 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
               workspaceId: input.context.workspaceId,
             },
           });
+          if (input.knowledgeGap) {
+            await tx.knowledgeGap.create({
+              data: {
+                assistantMessageId: assistantRecord.id,
+                chatSessionId: input.sessionId,
+                knowledgeBundleId: sessionRecord.knowledgeBundleId,
+                question: input.knowledgeGap.question,
+                reason: input.knowledgeGap.reason,
+                retrievalQuery: input.knowledgeGap.retrievalQuery,
+                route: input.knowledgeGap.route,
+                searchedSources: input.knowledgeGap.searchedSources,
+                workspaceId: input.context.workspaceId,
+              },
+            });
+          }
           await tx.chatSession.update({
             data: { updatedAt: new Date() },
             where: { id: input.sessionId },

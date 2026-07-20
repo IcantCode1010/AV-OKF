@@ -113,3 +113,15 @@ test("OKF route with RAG fallback is raw RAG and not approved OKF", () => {
   assert.notEqual(profile.evidenceKind, "approved_okf");
   assert.match(profile.fallbackReason ?? "", /No approved OKF topic matched/i);
 });
+
+test("insufficient answers never present related OKF citations as approved answer evidence", () => {
+  const profile = buildAnswerEvidenceProfile({
+    citations: [citation("okf")],
+    trace: { answerOutcome: "insufficient_evidence", route: "okf_only" },
+  });
+
+  assert.equal(profile.evidenceKind, "none");
+  assert.equal(profile.trustLevel, "blocked");
+  assert.equal(profile.sourceCounts.total, 1);
+  assert.match(profile.fallbackReason ?? "", /did not contain enough evidence/i);
+});

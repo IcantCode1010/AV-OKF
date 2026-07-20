@@ -22,6 +22,7 @@ export type ChatValidationResult = {
  * deterministic: claim-level semantic judging belongs to a later stage.
  */
 export function validateChatAnswerEvidence(input: {
+  answerOutcome?: "answered" | "insufficient_evidence" | "retrieval_unavailable";
   answerContent: string;
   citations: ChatCitation[];
   retrievalError: boolean;
@@ -32,6 +33,20 @@ export function validateChatAnswerEvidence(input: {
     citations: input.citations,
     trace: input.trace,
   });
+
+  if (input.answerOutcome === "insufficient_evidence") {
+    const hasCitationMarkers = parseCitationMarkers(input.answerContent).some(
+      (segment) => segment.type === "citation",
+    );
+    return {
+      profile,
+      safeAnswerMode: "answer_with_missing_evidence",
+      status: hasCitationMarkers ? "fail" : "pass",
+      violations: hasCitationMarkers
+        ? ["insufficient_evidence_must_not_cite_related_sources"]
+        : [],
+    };
+  }
 
   if (input.citations.length === 0) {
     const hasCitationMarkers = parseCitationMarkers(input.answerContent).some(

@@ -61,6 +61,7 @@ export type ProductionDocumentService = {
   generateTopicRecords(documentId: string): Promise<TopicRecord[]>;
   getActivityEvents(): Promise<ActivityEvent[]>;
   getDocumentById(documentId: string): Promise<Document | undefined>;
+  getDocumentPdfBytes(documentId: string): Promise<Buffer>;
   getDocumentWorkspaceId(documentId: string): Promise<string | undefined>;
   getDocumentMetrics(): Promise<DocumentMetrics>;
   getDocuments(): Promise<Document[]>;
@@ -311,6 +312,15 @@ export function createProductionDocumentService(
         title: input.title,
         topicId,
       });
+    },
+    async getDocumentPdfBytes(documentId: string): Promise<Buffer> {
+      const context = await requireAuthWorkspaceContext();
+      await repository.getDocumentById({ context, documentId });
+      const object = await repository.getPrimaryDocumentObject({
+        documentId,
+        workspaceId: context.workspaceId,
+      });
+      return storage.getObject(object.objectKey);
     },
     async updateTopicOkfMetadata(topicId, okfMetadata) {
       return repository.updateTopicOkfMetadata({

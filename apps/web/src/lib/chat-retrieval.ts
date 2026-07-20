@@ -220,6 +220,8 @@ export async function runChatRetrieval(
                   ragUsedForDiscoveryOnly: false,
                 },
                 "graph",
+                undefined,
+                effectiveKnowledgeBundleId,
               );
             }
 
@@ -232,6 +234,7 @@ export async function runChatRetrieval(
                 ragUsedForDiscoveryOnly: false,
               },
               "graph",
+              effectiveKnowledgeBundleId,
             );
           }
 
@@ -254,13 +257,20 @@ export async function runChatRetrieval(
             },
             "direct",
             discovery.trace,
+            effectiveKnowledgeBundleId,
           );
         }
 
-        return buildOkfBundleRetrievalResult(okfResults, toolsForRoute, {
-          approvedOkfAvailable: true,
-          ragUsedForDiscoveryOnly: false,
-        });
+        return buildOkfBundleRetrievalResult(
+          okfResults,
+          toolsForRoute,
+          {
+            approvedOkfAvailable: true,
+            ragUsedForDiscoveryOnly: false,
+          },
+          "direct",
+          effectiveKnowledgeBundleId,
+        );
       }
 
       if (!clarificationAlreadyAsked && okfDiagnostics.metadataClarification) {
@@ -331,10 +341,18 @@ export async function runChatRetrieval(
       workspaceId,
     });
 
-    return buildCombinedRetrievalResult(okfResults, rag.results, toolsForRoute, {
-      approvedOkfAvailable: okfResults.length > 0,
-      ragUsedForDiscoveryOnly: okfResults.length === 0 && rag.results.length > 0,
-    }, "direct", rag.trace);
+    return buildCombinedRetrievalResult(
+      okfResults,
+      rag.results,
+      toolsForRoute,
+      {
+        approvedOkfAvailable: okfResults.length > 0,
+        ragUsedForDiscoveryOnly: okfResults.length === 0 && rag.results.length > 0,
+      },
+      "direct",
+      rag.trace,
+      effectiveKnowledgeBundleId,
+    );
   } catch {
     // A retrieval failure (missing/invalid embedding credentials, budget
     // exceeded, transient provider/db error) must never crash the chat
@@ -452,9 +470,15 @@ function buildOkfBundleRetrievalResult(
     "approvedOkfAvailable" | "okfEvidenceMode" | "ragUsedForDiscoveryOnly"
   >,
   okfEvidenceMode: "direct" | "graph" = "direct",
+  knowledgeBundleId?: string,
 ): ChatRetrievalResult {
   const citations = results.map((result, index) =>
-    okfBundleToChatCitation(result, index + 1, okfEvidenceMode),
+    okfBundleToChatCitation(
+      result,
+      index + 1,
+      okfEvidenceMode,
+      knowledgeBundleId,
+    ),
   );
   const evidence = results.map((result, index) =>
     okfBundleToEvidence(result, index + 1, okfEvidenceMode),
@@ -491,9 +515,15 @@ function buildCombinedRetrievalResult(
   >,
   okfEvidenceMode: "direct" | "graph" = "direct",
   rerank: RagRerankTrace = { applied: false, dropped: 0, status: "not_applicable" },
+  knowledgeBundleId?: string,
 ): ChatRetrievalResult {
   const okfCitations = okfResults.map((result, index) =>
-    okfBundleToChatCitation(result, index + 1, okfEvidenceMode),
+    okfBundleToChatCitation(
+      result,
+      index + 1,
+      okfEvidenceMode,
+      knowledgeBundleId,
+    ),
   );
   const ragCitations = ragResults.map((result, index) =>
     toChatCitation(result, okfCitations.length + index + 1),
@@ -538,6 +568,7 @@ function toChatCitation(result: RetrievalResult, index: number): ChatCitation {
   return {
     coveredByOkfConceptIds: result.coveredByOkfConceptIds,
     documentTitle: result.documentTitle,
+    documentId: result.documentId,
     index,
     pageEnd: result.pageEnd,
     pageStart: result.pageStart,
@@ -550,11 +581,13 @@ function okfBundleToChatCitation(
   result: OkfBundleEvidence,
   index: number,
   okfEvidenceMode: "direct" | "graph" = "direct",
+  knowledgeBundleId?: string,
 ): ChatCitation {
   return {
     coveredByOkfConceptIds: [],
     documentTitle: result.title,
     index,
+    ...(knowledgeBundleId ? { knowledgeBundleId } : {}),
     okfEvidenceMode,
     okfFilePath: result.filePath,
     pageEnd: result.pageEnd,
@@ -616,7 +649,9 @@ function truncateExcerpt(text: string, maxChars: number): string {
 export type RetrievalAnswerInput = Pick<
   ChatRetrievalResult,
   "citations" | "retrievalError"
-> & { ragUsedForDiscoveryOnly?: boolean };
+> & Partial<Pick<ChatRetrievalResult, "retrievalToolsCalled" | "sourcesRead">> & {
+  ragUsedForDiscoveryOnly?: boolean;
+};
 
 export function buildRetrievalAnswer(
   route: ChatRoute,
@@ -627,7 +662,7 @@ export function buildRetrievalAnswer(
   }
 
   if (retrieval.citations.length === 0) {
-    return buildMissingEvidenceAnswer(route);
+    return buildMissingEvidenceAnswer(route, retrieval);
   }
 
   const body = retrieval.citations
@@ -680,14 +715,25 @@ function introForRetrieval(
   return "Approved knowledge plus supporting raw evidence:";
 }
 
-function buildMissingEvidenceAnswer(route: ChatRoute): string {
-  if (route === "okf_only") {
-    return "The approved knowledge base does not have a reviewed answer for this yet. No approved OKF topics matched this question.";
-  }
+function buildMissingEvidenceAnswer(
+  route: ChatRoute,
+  retrieval: RetrievalAnswerInput,
+): string {
+  const sourcesRead = retrieval.sourcesRead ?? [];
+  const toolsCalled = retrieval.retrievalToolsCalled ?? [];
+  const searched = sourcesRead.length > 0
+    ? sourcesRead.join(", ")
+    : toolsCalled.length > 0
+      ? toolsCalled.map(formatRetrievalTool).join(", ")
+      : route === "rag_only"
+        ? "the indexed source documents"
+        : route === "okf_only"
+          ? "the approved knowledge bundle and raw document fallback"
+          : "the approved knowledge bundle and indexed source documents";
 
-  if (route === "rag_only") {
-    return "No indexed document content matched this question yet.";
-  }
+  return `I could not find enough supported evidence to answer this reliably. I searched ${searched}. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.`;
+}
 
-  return "Neither the approved knowledge base nor the indexed documents have supporting evidence for this question yet.";
+function formatRetrievalTool(tool: string): string {
+  return tool.replaceAll("_", " ");
 }

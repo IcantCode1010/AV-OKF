@@ -536,9 +536,9 @@ test("a retrieval failure degrades to an error result instead of throwing", asyn
 
 test("buildRetrievalAnswer reports missing evidence per route when there are no citations", () => {
   const empty = { citations: [], retrievalError: false };
-  assert.match(buildRetrievalAnswer("okf_only", empty), /does not have a reviewed answer/i);
-  assert.match(buildRetrievalAnswer("rag_only", empty), /no indexed document content/i);
-  assert.match(buildRetrievalAnswer("hybrid", empty), /neither the approved knowledge base/i);
+  assert.match(buildRetrievalAnswer("okf_only", empty), /not find enough supported evidence/i);
+  assert.match(buildRetrievalAnswer("rag_only", empty), /indexed source documents/i);
+  assert.match(buildRetrievalAnswer("hybrid", empty), /approved knowledge bundle and indexed source documents/i);
 });
 
 test("buildRetrievalAnswer reports unavailable retrieval distinctly from missing evidence", () => {

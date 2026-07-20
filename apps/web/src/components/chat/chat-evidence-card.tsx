@@ -17,6 +17,7 @@ import { buildAnswerEvidenceProfile } from "@/lib/chat-evidence-profile";
 import type { ChatAnswerEvidenceProfile } from "@/lib/chat-router";
 import type { ChatCitation, ChatMessage } from "@/lib/chat-types";
 import { cn } from "@/lib/utils";
+import { getChatCitationHref } from "@/lib/chat-citation-links";
 
 export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
   const profile =
@@ -111,10 +112,17 @@ function SourceGroup({
         <p className="text-muted-foreground">{emptyText}</p>
       ) : (
         citations.map((citation) => (
-          <div
-            key={citation.index}
-            className="rounded-md border border-border/70 bg-background/45 p-2"
-          >
+          <CitationSource key={citation.index} citation={citation} />
+        ))
+      )}
+    </div>
+  );
+}
+
+function CitationSource({ citation }: { citation: ChatCitation }) {
+  const href = getChatCitationHref(citation);
+  const content = (
+    <>
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[0.625rem] font-bold text-accent-foreground">
                 {citation.index}
@@ -139,10 +147,26 @@ function SourceGroup({
             <p className="mt-1.5 leading-relaxed text-muted-foreground">
               {citation.text}
             </p>
-          </div>
-        ))
-      )}
-    </div>
+            {citation.lifecycleNotice ? (
+              <p className="mt-2 border-l-2 border-amber-400 pl-2 text-amber-200">
+                {citation.lifecycleNotice}
+              </p>
+            ) : null}
+    </>
+  );
+
+  const className = "block rounded-md border border-border/70 bg-background/45 p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  return href ? (
+    <a
+      className={cn(className, "transition-colors hover:bg-background/75")}
+      href={href}
+      rel={citation.sourceType === "rag" ? "noreferrer" : undefined}
+      target={citation.sourceType === "rag" ? "_blank" : undefined}
+    >
+      {content}
+    </a>
+  ) : (
+    <div className={className}>{content}</div>
   );
 }
 
@@ -200,7 +224,9 @@ function evidenceCardCopy(profile: ChatAnswerEvidenceProfile) {
 
 function sourceCountLabel(profile: ChatAnswerEvidenceProfile): string {
   if (profile.evidenceKind === "none") {
-    return "0 results";
+    return profile.sourceCounts.total > 0
+      ? `${profile.sourceCounts.total} related`
+      : "0 results";
   }
 
   if (profile.evidenceKind === "raw_rag") {

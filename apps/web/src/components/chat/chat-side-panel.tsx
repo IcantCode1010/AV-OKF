@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatMessage } from "@/lib/chat-types";
+import { getChatCitationHref } from "@/lib/chat-citation-links";
 
 export function ChatSidePanelContent({
   latestAssistantMessage,
@@ -22,11 +23,10 @@ export function ChatSidePanelContent({
               No sources for this reply.
             </p>
           ) : (
-            citations.map((citation) => (
-              <div
-                key={citation.index}
-                className="rounded-lg border border-border p-2 text-xs"
-              >
+            citations.map((citation) => {
+              const href = getChatCitationHref(citation);
+              const content = (
+                <>
                 <div className="flex items-center gap-1.5">
                   <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[0.625rem] font-bold text-accent-foreground">
                     {citation.index}
@@ -36,8 +36,26 @@ export function ChatSidePanelContent({
                 <Badge variant="secondary" className="mt-1.5">
                   {citation.sourceType === "okf" ? "OKF topic" : "raw extraction"}
                 </Badge>
-              </div>
-            ))
+                {citation.lifecycleNotice ? (
+                  <div className="mt-2 text-amber-300">{citation.lifecycleNotice}</div>
+                ) : null}
+                </>
+              );
+              const className = "rounded-lg border border-border p-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+              return href ? (
+                <a
+                  className={`${className} transition-colors hover:bg-muted/50`}
+                  href={href}
+                  key={citation.index}
+                  rel={citation.sourceType === "rag" ? "noreferrer" : undefined}
+                  target={citation.sourceType === "rag" ? "_blank" : undefined}
+                >
+                  {content}
+                </a>
+              ) : (
+                <div className={className} key={citation.index}>{content}</div>
+              );
+            })
           )}
         </CardContent>
       </Card>

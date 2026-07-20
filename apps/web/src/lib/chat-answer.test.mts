@@ -145,8 +145,11 @@ test("generateChatAnswer never calls the provider for empty or failed retrieval"
 
   assert.equal(providerCalls, 0);
   assert.equal(emptyAnswer.mode, "deterministic");
-  assert.match(emptyAnswer.content, /does not have a reviewed answer/i);
+  assert.equal(emptyAnswer.outcome, "insufficient_evidence");
+  assert.match(emptyAnswer.content, /not find enough supported evidence/i);
+  assert.match(emptyAnswer.content, /Next,/i);
   assert.equal(erroredAnswer.mode, "deterministic");
+  assert.equal(erroredAnswer.outcome, "retrieval_unavailable");
   assert.match(erroredAnswer.content, /temporarily unavailable/i);
 });
 
@@ -170,6 +173,7 @@ test("generateChatAnswer uses the LLM answer when it is supported and correctly 
   );
 
   assert.equal(answer.mode, "llm");
+  assert.equal(answer.outcome, "answered");
   assert.equal(answer.provider, "anthropic");
   assert.ok(answer.model);
   assert.equal(
@@ -225,6 +229,7 @@ test("generateChatAnswer reports not-directly-answered when the model says evide
   );
 
   assert.equal(answer.mode, "llm");
+  assert.equal(answer.outcome, "insufficient_evidence");
   assert.equal(answer.content, buildNotDirectlyAnsweredReply("hybrid"));
 });
 

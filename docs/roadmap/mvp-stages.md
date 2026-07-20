@@ -543,12 +543,15 @@ Deferred Stage 7 work:
 
 Purpose: close the remaining user-facing evidence gaps and expose the proven retrieval operations as bounded agent tools without replacing deterministic trust controls.
 
+Status: insufficient-evidence completion, bundle-scoped knowledge-gap capture, authenticated PDF page links, OKF explorer links, and historical citation lifecycle notices are implemented. Bounded agent tool contracts remain the next Stage 7C slice.
+
 Deliverables:
 
-- Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
-- Clickable citation-to-source navigation and `Open PDF page` verification.
+- [x] Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
+- [x] Capture bundle-scoped knowledge gaps and expose them in the bundle reviewer page.
+- [x] Clickable citation-to-source navigation and browser-native `Open PDF page` links.
 - Clear separation between router intent and evidence actually used in the trace UI.
-- Historical citation lifecycle notices.
+- [x] Historical citation lifecycle notices with stale links disabled.
 - Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
 - Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
 - Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.

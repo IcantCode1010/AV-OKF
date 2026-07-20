@@ -32,6 +32,13 @@ type AppendCall = {
   citations: ChatCitation[];
   content: string;
   context: AuthWorkspaceContext;
+  knowledgeGap?: {
+    question: string;
+    reason: string;
+    retrievalQuery: string;
+    route: string;
+    searchedSources: string[];
+  };
   sessionId: string;
 };
 
@@ -165,8 +172,16 @@ test("sendMessage reports no evidence when retrieval finds nothing", async () =>
   assert.equal(appendCalls[0]?.assistantTrace.answerMode, "deterministic");
   assert.equal(appendCalls[0]?.assistantTrace.approvedOkfAvailable, false);
   assert.equal(appendCalls[0]?.assistantTrace.finalEvidenceStatus, "no_evidence");
+  assert.equal(appendCalls[0]?.assistantTrace.answerOutcome, "insufficient_evidence");
+  assert.deepEqual(appendCalls[0]?.knowledgeGap, {
+    question: "What is the official manual path for GEN OFF BUS?",
+    reason: "no_matching_evidence",
+    retrievalQuery: "What is the official manual path for GEN OFF BUS?",
+    route: "okf_only",
+    searchedSources: ["okf_retrieval"],
+  });
   assert.equal(result.assistantMessage.citations.length, 0);
-  assert.match(result.assistantMessage.content, /does not have a reviewed answer/i);
+  assert.match(result.assistantMessage.content, /not find enough supported evidence/i);
 });
 
 function citedRetrievalResult(): ChatRetrievalResult {
@@ -221,6 +236,37 @@ test("sendMessage builds a cited answer from retrieval results", async () => {
   assert.deepEqual(appendCalls[0]?.assistantTrace.sourcesRead, ["737NG QRH (p. 12)"]);
   assert.equal(appendCalls[0]?.assistantTrace.okfEvidenceMode, "direct");
   assert.equal(appendCalls[0]?.assistantTrace.rerank?.status, "not_applicable");
+});
+
+test("supported-false completion is preserved and captured as a related-evidence knowledge gap", async () => {
+  const { appendCalls, repository } = createRepositoryStub();
+  const service = createProductionChatService(repository, {
+    generateAnswer: async () => ({
+      content: "Related material was found, but it does not answer this reliably.",
+      mode: "llm",
+      outcome: "insufficient_evidence",
+      provider: "openai",
+      model: "gpt-4o-mini",
+    }),
+    getContext: async () => context,
+    retrieve: async () => citedRetrievalResult(),
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the approved limit that is not documented?",
+  );
+
+  assert.equal(result.assistantMessage.content.includes("GEN OFF BUS"), false);
+  assert.equal(appendCalls[0]?.assistantTrace.answerOutcome, "insufficient_evidence");
+  assert.equal(
+    appendCalls[0]?.assistantTrace.answerEvidenceProfile?.evidenceKind,
+    "none",
+  );
+  assert.equal(
+    appendCalls[0]?.knowledgeGap?.reason,
+    "related_evidence_not_answering",
+  );
 });
 
 test("metadata clarification never reaches answer generation or evidence validation", async () => {

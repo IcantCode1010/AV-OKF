@@ -10,6 +10,7 @@ import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { getKnowledgeBundle, resolveKnowledgeBundleRoot } from "@/lib/knowledge-bundles";
 import { loadOkfExplorerSnapshot } from "@/lib/okf-explorer";
 import { listOkfRelationCandidates } from "@/lib/okf-relation-discovery";
+import { listKnowledgeGaps } from "@/lib/knowledge-gaps";
 import { isProductionBackend } from "@/lib/production-document-service";
 import {
   activateKnowledgeProfileAction,
@@ -56,6 +57,9 @@ export default async function KnowledgeBundlePage({
   const relationCandidates = isProductionBackend()
     ? await listOkfRelationCandidates({ knowledgeBundleId: bundle.id, workspaceId: context.workspaceId })
     : [];
+  const knowledgeGaps = isProductionBackend()
+    ? await listKnowledgeGaps({ context, knowledgeBundleId: bundle.id })
+    : [];
 
   return (
     <div className="-mx-4 sm:-mx-6 lg:-mx-8">
@@ -77,6 +81,39 @@ export default async function KnowledgeBundlePage({
       </div>
 
       <section className="px-4 py-6 sm:px-6 lg:px-8">
+        <details className="mb-4 border border-border bg-muted/10">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring">
+            Knowledge gaps ({knowledgeGaps.length})
+          </summary>
+          <div className="space-y-3 border-t border-border p-4">
+            <p className="text-xs text-muted-foreground">
+              Questions recorded when this bundle did not contain enough supported evidence for a reliable answer.
+            </p>
+            {knowledgeGaps.length === 0 ? (
+              <div className="border border-dashed border-border p-3 text-xs text-muted-foreground">
+                No open knowledge gaps have been recorded for this bundle.
+              </div>
+            ) : knowledgeGaps.map((gap) => (
+              <div className="border border-border p-3 text-xs" key={gap.id}>
+                <div className="font-medium">{gap.question}</div>
+                <div className="mt-1 text-muted-foreground">
+                  {gap.reason === "no_matching_evidence"
+                    ? "No matching evidence was found."
+                    : "Related evidence was found, but it did not answer the question."}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                  <span>Route: {gap.route}</span>
+                  <span>{new Date(gap.createdAt).toLocaleString()}</span>
+                </div>
+                {gap.searchedSources.length > 0 ? (
+                  <div className="mt-1 text-muted-foreground">
+                    Searched: {gap.searchedSources.join(", ")}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </details>
         <details className="mb-4 border border-border bg-muted/10">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring">Relation discovery</summary>
           <div className="space-y-4 border-t border-border p-4">

@@ -78,3 +78,31 @@ test("retrieval errors with no citations remain a safe no-evidence response", ()
   assert.equal(result.status, "pass");
   assert.equal(result.profile.fallbackReason?.includes("unavailable"), true);
 });
+
+test("an explicit insufficient-evidence response may retain related sources without citing them", () => {
+  const result = validateChatAnswerEvidence({
+    answerContent: "Related material was found, but it is not enough to answer reliably.",
+    answerOutcome: "insufficient_evidence",
+    citations: [citation("okf")],
+    retrievalError: false,
+    route: "okf_only",
+  });
+
+  assert.equal(result.status, "pass");
+  assert.equal(result.safeAnswerMode, "answer_with_missing_evidence");
+});
+
+test("insufficient-evidence responses cannot cite near-miss material as answer support", () => {
+  const result = validateChatAnswerEvidence({
+    answerContent: "The related source says this. [1]",
+    answerOutcome: "insufficient_evidence",
+    citations: [citation("okf")],
+    retrievalError: false,
+    route: "okf_only",
+  });
+
+  assert.equal(result.status, "fail");
+  assert.deepEqual(result.violations, [
+    "insufficient_evidence_must_not_cite_related_sources",
+  ]);
+});

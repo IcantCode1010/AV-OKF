@@ -3,6 +3,7 @@ import type { ChatMessage } from "@/lib/chat-types";
 import { ChatEvidenceCard } from "@/components/chat/chat-evidence-card";
 import { ChatMetadataClarification } from "@/components/chat/chat-metadata-clarification";
 import type { MetadataClarificationSelection } from "@/lib/chat-router";
+import { getChatCitationHref } from "@/lib/chat-citation-links";
 
 export function ChatMessageBubble({
   canAnswerClarification = false,
@@ -37,12 +38,25 @@ export function ChatMessageBubble({
           const citation = message.citations.find(
             (candidate) => candidate.index === segment.index,
           );
+          const href = citation ? getChatCitationHref(citation) : null;
+          const className = "mx-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[0.625rem] font-bold text-accent-foreground align-super focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-          return (
+          return href ? (
+            <a
+              className={className}
+              href={href}
+              key={index}
+              rel={citation?.sourceType === "rag" ? "noreferrer" : undefined}
+              target={citation?.sourceType === "rag" ? "_blank" : undefined}
+              title={`Open ${citation?.documentTitle ?? "source"}`}
+            >
+              {segment.index}
+            </a>
+          ) : (
             <span
               key={index}
               title={citation?.documentTitle}
-              className="mx-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[0.625rem] font-bold text-accent-foreground align-super"
+              className={className}
             >
               {segment.index}
             </span>

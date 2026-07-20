@@ -54,9 +54,9 @@ model VerificationToken {
 }
 
 model Workspace {
-  id                     String                  @id @default(cuid())
+  id                     String                   @id @default(cuid())
   name                   String
-  plan                   String                  @default("Production")
+  plan                   String                   @default("Production")
   members                WorkspaceMember[]
   documents              Document[]
   extractionJobs         ExtractionJob[]
@@ -73,8 +73,9 @@ model Workspace {
   okfConceptEmbeddings   OkfConceptEmbedding[]
   okfEmbeddingJobs       OkfConceptEmbeddingJob[]
   ragRerankDailyUsage    RagRerankDailyUsage[]
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
+  knowledgeGaps          KnowledgeGap[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 }
 
 model RagRerankDailyUsage {
@@ -180,6 +181,7 @@ model KnowledgeBundle {
   authoringRuns          KnowledgeAuthoringRun[]
   conceptEmbeddings      OkfConceptEmbedding[]
   conceptEmbeddingJobs   OkfConceptEmbeddingJob[]
+  knowledgeGaps          KnowledgeGap[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -491,7 +493,7 @@ model RagEmbedding {
 }
 
 model OkfConceptEmbedding {
-  id                String          @id @default(cuid())
+  id                String                      @id @default(cuid())
   workspaceId       String
   knowledgeBundleId String
   filePath          String
@@ -500,10 +502,10 @@ model OkfConceptEmbedding {
   dimensions        Int
   tokenCount        Int
   embedding         Unsupported("vector(1536)")
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  workspace         Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle             @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
 
   @@unique([knowledgeBundleId, filePath])
   @@index([workspaceId, knowledgeBundleId])
@@ -647,6 +649,7 @@ model ChatSession {
   workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
   messages          ChatMessage[]
+  knowledgeGaps     KnowledgeGap[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -655,15 +658,38 @@ model ChatSession {
 }
 
 model ChatMessage {
-  id          String      @id @default(cuid())
-  workspaceId String
-  sessionId   String
-  role        String
-  content     String      @db.Text
-  citations   Json        @default("[]")
-  trace       Json?
-  session     ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  createdAt   DateTime    @default(now())
+  id           String        @id @default(cuid())
+  workspaceId  String
+  sessionId    String
+  role         String
+  content      String        @db.Text
+  citations    Json          @default("[]")
+  trace        Json?
+  session      ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  knowledgeGap KnowledgeGap?
+  createdAt    DateTime      @default(now())
 
   @@index([workspaceId, sessionId, createdAt])
+}
+
+model KnowledgeGap {
+  id                 String          @id @default(cuid())
+  workspaceId        String
+  knowledgeBundleId  String
+  chatSessionId      String
+  assistantMessageId String          @unique
+  question           String          @db.Text
+  retrievalQuery     String          @db.Text
+  route              String
+  reason             String          @db.Text
+  searchedSources    String[]
+  status             String          @default("open")
+  workspace          Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle    KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  chatSession        ChatSession     @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  assistantMessage   ChatMessage     @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([workspaceId, knowledgeBundleId, status, createdAt])
 }

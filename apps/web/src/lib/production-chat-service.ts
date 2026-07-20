@@ -1,6 +1,7 @@
 import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
+  buildNotDirectlyAnsweredReply,
   discloseChatAssumptions,
   generateChatAnswer,
   type ChatAnswer,
@@ -30,6 +31,8 @@ import {
   type ChatRetrievalFn,
 } from "./chat-retrieval.ts";
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
+import { annotateChatCitationLifecycle } from "./chat-citation-lifecycle.ts";
+import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
 import {
   createPostgresChatRepository,
   type ProductionChatRepository,
@@ -62,6 +65,7 @@ type ProductionChatServiceOptions = {
   routeQuestion?: (input: ChatRouterInput) => Promise<ChatRouterDecision>;
   understandQuery?: ChatQueryUnderstandingFn;
   validateAnswer?: typeof validateChatAnswerEvidence;
+  annotateCitations?: typeof annotateChatCitationLifecycle;
 };
 
 export function getProductionChatService(): ProductionChatService {
@@ -85,6 +89,7 @@ export function createProductionChatService(
   const routeQuestion = options.routeQuestion ?? routeChatQuestionWithFallback;
   const understandQuery = options.understandQuery ?? understandChatQuery;
   const validateAnswer = options.validateAnswer ?? validateChatAnswerEvidence;
+  const annotateCitations = options.annotateCitations ?? annotateChatCitationLifecycle;
 
   return {
     async createSession(knowledgeBundleId: string, title?: string) {
@@ -105,7 +110,24 @@ export function createProductionChatService(
       const context = await getContext();
 
       try {
-        return await repository.getSessionWithMessages({ context, sessionId });
+        const result = await repository.getSessionWithMessages({ context, sessionId });
+        const annotatedCitations = await annotateCitations({
+          citations: result.messages.flatMap((message) => message.citations),
+          knowledgeBundleId: result.session.knowledgeBundleId,
+          workspaceId: context.workspaceId,
+        });
+        let citationOffset = 0;
+        return {
+          ...result,
+          messages: result.messages.map((message) => {
+            const citations = annotatedCitations.slice(
+              citationOffset,
+              citationOffset + message.citations.length,
+            );
+            citationOffset += message.citations.length;
+            return { ...message, citations };
+          }),
+        };
       } catch (error) {
         if (error instanceof Error && error.message === "chat_session_not_found") {
           return undefined;
@@ -196,11 +218,13 @@ export function createProductionChatService(
         ? {
             content: retrieval.metadataClarification.question,
             mode: "deterministic" as const,
+            outcome: "answered" as const,
           }
         : unresolvedVagueFollowUp
         ? {
             content: buildUnresolvedVagueFollowUpReply(),
             mode: "deterministic" as const,
+            outcome: "answered" as const,
           }
         : isRetrievalRoute(decision.route)
         ? await generateAnswer({
@@ -218,10 +242,12 @@ export function createProductionChatService(
                 ? queryUnderstanding.clarifyingQuestion
                 : buildStage6aRouterReply(decision),
             mode: "deterministic" as const,
+            outcome: "answered" as const,
           };
       const assistantTrace = {
         ...buildStage6aRouterTrace(decision),
         answerMode: answer.mode,
+        answerOutcome: answer.outcome,
         ...(answer.model ? { answerModel: answer.model } : {}),
         ...(answer.provider ? { answerProvider: answer.provider } : {}),
         queryUnderstanding: effectiveQueryUnderstanding,
@@ -251,6 +277,7 @@ export function createProductionChatService(
       const answerValidation = retrieval.metadataClarification || unresolvedVagueFollowUp
         ? undefined
         : validateAnswer({
+            answerOutcome: answer.outcome,
             answerContent: answer.content,
             citations: retrieval.citations,
             retrievalError: retrieval.retrievalError,
@@ -261,7 +288,9 @@ export function createProductionChatService(
         answerValidation?.status === "fail" && isRetrievalRoute(decision.route)
           ? {
               ...answer,
-              content: buildRetrievalAnswer(decision.route, retrieval),
+              content: answer.outcome === "insufficient_evidence"
+                ? buildNotDirectlyAnsweredReply(decision.route)
+                : buildRetrievalAnswer(decision.route, retrieval),
               mode: "deterministic" as const,
             }
           : answer;
@@ -272,12 +301,29 @@ export function createProductionChatService(
           effectiveQueryUnderstanding.assumptions,
         ),
       };
+      const knowledgeGap: KnowledgeGapDraft | undefined =
+        disclosedAnswer.outcome === "insufficient_evidence" &&
+        isRetrievalRoute(decision.route)
+          ? {
+              question: content,
+              reason: retrieval.citations.length === 0
+                ? "no_matching_evidence"
+                : "related_evidence_not_answering",
+              retrievalQuery,
+              route: decision.route,
+              searchedSources: Array.from(new Set([
+                ...retrieval.retrievalToolsCalled,
+                ...retrieval.sourcesRead,
+              ])),
+            }
+          : undefined;
 
       return repository.appendUserMessageAndAssistantReply({
         assistantContent: disclosedAnswer.content,
         assistantTrace: {
           ...assistantTrace,
           answerMode: disclosedAnswer.mode,
+          answerOutcome: disclosedAnswer.outcome,
           answerEvidenceProfile: buildAnswerEvidenceProfile({
             citations: retrieval.citations,
             trace: assistantTrace,
@@ -287,6 +333,7 @@ export function createProductionChatService(
         citations: retrieval.citations,
         content,
         context,
+        ...(knowledgeGap ? { knowledgeGap } : {}),
         sessionId,
       });
     },

@@ -126,11 +126,12 @@
 - [x] Add a Docker-backed route-coverage evaluation for every current router path and retrieval mode, with persisted-trace assertions and a committed baseline.
 - [x] Add a permanent five-question raw-RAG retrieval evaluation with saved baseline/post-change reports and a citation-regression guard.
 - [x] Add profile-driven metadata clarification for weak approved OKF candidates, with no diagnostic-candidate leakage into answers or validation and raw-RAG fallback after the single clarification round.
-- [ ] Preserve a concise insufficient-evidence response when the LLM returns `supported: false`; do not replace it with concatenated excerpts solely because citations were retrieved.
+- [x] Preserve a concise insufficient-evidence response when the LLM returns `supported: false`; do not replace it with concatenated excerpts solely because citations were retrieved.
 - [ ] Add a permanent mixed-domain chat evaluation set covering direct OKF, OKF via graph, raw RAG discovery, hybrid support, missing evidence, and retrieval failure.
-- [ ] Make citation markers focus or scroll to their matching source row.
-- [ ] Add `Open PDF page` for raw evidence and OKF source-page references.
-- [ ] Show lifecycle notices when a historical citation now points to archived or retracted knowledge.
+- [x] Make citation markers open their matching OKF concept or authenticated source PDF page.
+- [x] Add browser-native `Open PDF page` links for raw evidence and bundle-explorer links for OKF concepts.
+- [x] Show lifecycle notices and disable links when a historical citation now points to archived, retracted, or deleted knowledge.
+- [ ] Add custom PDF viewer behavior only if browser-native `#page=N` navigation proves inconsistent in supported browsers.
 - [ ] Add an explicit coverage-link reconciliation action separate from raw RAG reindex.
 
 ## Agent Tool Layer

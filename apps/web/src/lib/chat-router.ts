@@ -98,6 +98,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerMode?: "llm" | "deterministic";
   answerModel?: string;
   answerProvider?: string;
+  answerOutcome?: "answered" | "insufficient_evidence" | "retrieval_unavailable";
   queryUnderstanding?: ChatQueryUnderstandingTrace;
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";

@@ -24,6 +24,18 @@ export function buildAnswerEvidenceProfile(input: {
       ? "direct"
       : undefined;
 
+  if (input.trace?.answerOutcome === "insufficient_evidence") {
+    return {
+      evidenceKind: "none",
+      evidenceUsed: [],
+      fallbackReason:
+        "Related sources were found, but they did not contain enough evidence to answer reliably.",
+      requiresUserVerification: true,
+      sourceCounts,
+      trustLevel: "blocked",
+    };
+  }
+
   if (okfCount > 0 && ragCount > 0) {
     return {
       evidenceKind: "mixed",

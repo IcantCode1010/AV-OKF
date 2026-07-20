@@ -12,10 +12,13 @@ export type ChatCitation = {
   // because citations persisted before coverage threading lack it. Stage 7
   // validation treats a covering OKF concept as the controlling source.
   coveredByOkfConceptIds?: string[];
+  documentId?: string;
   documentTitle: string;
   index: number;
   okfEvidenceMode?: ChatOkfEvidenceMode;
   okfFilePath?: string;
+  knowledgeBundleId?: string;
+  lifecycleNotice?: string;
   pageEnd: number;
   pageStart: number;
   sourceFile?: string;
