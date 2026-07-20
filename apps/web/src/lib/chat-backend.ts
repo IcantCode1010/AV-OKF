@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
+import type { MetadataClarificationSelection } from "./chat-router.ts";
 import { isProductionBackend } from "./production-document-service.ts";
 import { getProductionChatService } from "./production-chat-service.ts";
 
@@ -46,7 +47,12 @@ export async function getChatSessionWithMessages(
 export async function sendChatMessage(
   sessionId: string,
   content: string,
+  metadataSelection?: MetadataClarificationSelection[],
 ): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }> {
   assertChatAvailable();
-  return getProductionChatService().sendMessage(sessionId, content);
+  return getProductionChatService().sendMessage(
+    sessionId,
+    content,
+    metadataSelection,
+  );
 }

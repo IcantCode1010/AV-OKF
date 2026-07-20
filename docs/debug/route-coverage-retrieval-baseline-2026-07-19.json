@@ -1,9 +1,9 @@
 {
   "bundleId": "cmrrtz602000025sdzp84n2x8",
-  "evaluatedAt": "2026-07-19T13:31:57.736Z",
+  "evaluatedAt": "2026-07-20T01:44:07.993Z",
   "failedCount": 0,
-  "passedCount": 8,
-  "phase": "baseline",
+  "passedCount": 9,
+  "phase": "metadata-clarification",
   "questions": [
     {
       "assertionErrors": [],
@@ -39,6 +39,71 @@
         "requiresGraphTraversal": false,
         "retrievalToolsCalled": [
           "okf_retrieval"
+        ],
+        "route": "okf_only"
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 3,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "metadata-weak-two-turn",
+      "passed": true,
+      "query": "What does ground leveling mean?",
+      "initialTrace": {
+        "finalEvidenceStatus": "weak_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": [
+            "metadata_driven_clarification"
+          ]
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval"
+        ],
+        "route": "okf_only"
+      },
+      "trace": {
+        "finalEvidenceStatus": "discovery_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "fallback_original",
+          "warnings": [
+            "optimized_query_route_conflict"
+          ]
+        },
+        "ragUsedForDiscoveryOnly": true,
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "rag_retrieval"
         ],
         "route": "okf_only"
       }
@@ -135,7 +200,7 @@
           "documentTitle": "Route Coverage Raw Operations Log",
           "okfEvidenceMode": null,
           "okfFilePath": null,
-          "pageEnd": 2,
+          "pageEnd": 3,
           "pageStart": 1,
           "sourceType": "rag"
         }
@@ -183,7 +248,7 @@
           "documentTitle": "Route Coverage Raw Operations Log",
           "okfEvidenceMode": null,
           "okfFilePath": null,
-          "pageEnd": 2,
+          "pageEnd": 3,
           "pageStart": 1,
           "sourceType": "rag"
         }
@@ -278,7 +343,7 @@
           "documentTitle": "Route Coverage Raw Operations Log",
           "okfEvidenceMode": null,
           "okfFilePath": null,
-          "pageEnd": 2,
+          "pageEnd": 3,
           "pageStart": 1,
           "sourceType": "rag"
         }
@@ -293,7 +358,7 @@
         "okfEvidenceMode": null,
         "okfMatchMode": null,
         "queryUnderstanding": {
-          "rewriteMode": "not_needed",
+          "rewriteMode": "llm",
           "warnings": []
         },
         "ragUsedForDiscoveryOnly": true,

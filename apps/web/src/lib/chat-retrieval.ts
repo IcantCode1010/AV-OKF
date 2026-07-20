@@ -6,8 +6,10 @@ import {
 } from "./chat-router.ts";
 import type { ChatCitation } from "./chat-types.ts";
 import {
-  retrieveOkfBundleEvidence,
+  retrieveOkfBundleEvidenceWithDiagnostics,
+  type MetadataClarification,
   type OkfBundleEvidence,
+  type OkfBundleRetrievalDiagnostics,
 } from "./okf-bundle-retriever.ts";
 import {
   traverseOkfRelations,
@@ -16,7 +18,10 @@ import {
 import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
 import { retrieveDocuments, retrieveDocumentsByChunkIds } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
-import { resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
+import {
+  getKnowledgeBundleByIdentity,
+  resolveKnowledgeBundleRoot,
+} from "./knowledge-bundles.ts";
 import { rerankRawRagCandidates, type RagRerankTrace } from "./rag-reranker.ts";
 
 const OKF_TOP_K = 4;
@@ -52,6 +57,7 @@ export type ChatRetrievalResult = {
   ragUsedForDiscoveryOnly: boolean;
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";
+  metadataClarification?: MetadataClarification;
   rerank: RagRerankTrace;
   retrievalError: boolean;
   retrievalToolsCalled: string[];
@@ -60,6 +66,7 @@ export type ChatRetrievalResult = {
 
 export type ChatRetrievalFn = (input: {
   decision: ChatRouterDecision;
+  clarificationAlreadyAsked?: boolean;
   knowledgeBundleId?: string;
   query: string;
   workspaceId: string;
@@ -70,7 +77,7 @@ export type OkfBundleRetrievalFn = (input: {
   query: string;
   topK: number;
   workspaceId: string;
-}) => Promise<OkfBundleEvidence[]>;
+}) => Promise<OkfBundleEvidence[] | OkfBundleRetrievalDiagnostics>;
 
 export type OkfGraphTraversalFn = (input: {
   knowledgeBundleId?: string;
@@ -86,16 +93,25 @@ export type CoveredRagRetrievalFn = (input: {
   workspaceId: string;
 }) => Promise<RetrievalResult[]>;
 
-async function retrieveOkfBundleEvidenceWithLifecycle(input: {
+async function retrieveOkfBundleDiagnosticsWithLifecycle(input: {
   knowledgeBundleId?: string;
   query: string;
   topK: number;
   workspaceId: string;
-}): Promise<OkfBundleEvidence[]> {
+}): Promise<OkfBundleRetrievalDiagnostics> {
   const knowledgeBundleId = input.knowledgeBundleId ?? "kb_general_local";
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle) {
+    return { nearMissCandidates: [], qualifiedEvidence: [] };
+  }
 
-  return retrieveOkfBundleEvidence({
+  return retrieveOkfBundleEvidenceWithDiagnostics({
     ...input,
+    bundleName: bundle.name,
+    clarificationFields: bundle.profile.clarificationFields,
     knowledgeBundleId,
     knowledgeRoot: resolveKnowledgeBundleRoot({
       bundleId: knowledgeBundleId,
@@ -126,18 +142,25 @@ async function traverseOkfRelationsWithLifecycle(input: {
 
 export async function runChatRetrieval(
   input: {
+    clarificationAlreadyAsked?: boolean;
     decision: ChatRouterDecision;
     knowledgeBundleId?: string;
     query: string;
     workspaceId: string;
   },
   retrieve: typeof retrieveDocuments = retrieveDocuments,
-  retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleEvidenceWithLifecycle,
+  retrieveOkf: OkfBundleRetrievalFn = retrieveOkfBundleDiagnosticsWithLifecycle,
   traverseGraph: OkfGraphTraversalFn = traverseOkfRelationsWithLifecycle,
   retrieveCoveredRag: CoveredRagRetrievalFn = retrieveDocumentsByChunkIds,
   rerank: typeof rerankRawRagCandidates = rerankRawRagCandidates,
 ): Promise<ChatRetrievalResult> {
-  const { decision, knowledgeBundleId, query, workspaceId } = input;
+  const {
+    clarificationAlreadyAsked = false,
+    decision,
+    knowledgeBundleId,
+    query,
+    workspaceId,
+  } = input;
   const effectiveKnowledgeBundleId = knowledgeBundleId ?? "kb_general_local";
 
   if (!isRetrievalRoute(decision.route)) {
@@ -157,12 +180,13 @@ export async function runChatRetrieval(
 
   try {
     if (decision.route === "okf_only") {
-      const okfResults = await retrieveOkf({
+      const okfDiagnostics = normalizeOkfDiagnostics(await retrieveOkf({
         knowledgeBundleId: effectiveKnowledgeBundleId,
         query,
         topK: OKF_TOP_K,
         workspaceId,
-      });
+      }));
+      const okfResults = okfDiagnostics.qualifiedEvidence;
 
       if (okfResults.length > 0) {
         if (decision.requiresGraphTraversal) {
@@ -239,6 +263,13 @@ export async function runChatRetrieval(
         });
       }
 
+      if (!clarificationAlreadyAsked && okfDiagnostics.metadataClarification) {
+        return buildMetadataClarificationResult(
+          okfDiagnostics.metadataClarification,
+          toolsForRoute,
+        );
+      }
+
       // query-router.md fallback rule: okf_only with no approved OKF object
       // downgrades to RAG for discovery only, never presented as official.
       const discovery = await fetchBySourceType(retrieve, rerank, {
@@ -278,12 +309,19 @@ export async function runChatRetrieval(
     // Hybrid reads OKF first, then RAG for the supporting evidence - kept
     // sequential (not parallel) per the design so a later slice can shape
     // the RAG fetch around what OKF already covered.
-    const okfResults = await retrieveOkf({
+    const okfDiagnostics = normalizeOkfDiagnostics(await retrieveOkf({
       knowledgeBundleId: effectiveKnowledgeBundleId,
       query,
       topK: OKF_TOP_K,
       workspaceId,
-    });
+    }));
+    const okfResults = okfDiagnostics.qualifiedEvidence;
+    if (!clarificationAlreadyAsked && okfDiagnostics.metadataClarification) {
+      return buildMetadataClarificationResult(
+        okfDiagnostics.metadataClarification,
+        ["okf_retrieval"],
+      );
+    }
     const rag = await fetchBySourceType(retrieve, rerank, {
       approvedOnly: false,
       knowledgeBundleId: effectiveKnowledgeBundleId,
@@ -312,6 +350,31 @@ export async function runChatRetrieval(
       sourcesRead: [],
     };
   }
+}
+
+function normalizeOkfDiagnostics(
+  result: OkfBundleEvidence[] | OkfBundleRetrievalDiagnostics,
+): OkfBundleRetrievalDiagnostics {
+  return Array.isArray(result)
+    ? { nearMissCandidates: [], qualifiedEvidence: result }
+    : result;
+}
+
+function buildMetadataClarificationResult(
+  metadataClarification: MetadataClarification,
+  retrievalToolsCalled: string[],
+): ChatRetrievalResult {
+  return {
+    approvedOkfAvailable: false,
+    citations: [],
+    evidence: [],
+    metadataClarification,
+    ragUsedForDiscoveryOnly: false,
+    rerank: { applied: false, dropped: 0, status: "not_applicable" },
+    retrievalError: false,
+    retrievalToolsCalled,
+    sourcesRead: [],
+  };
 }
 
 function retrievalToolsForRoute(route: ChatRoute): string[] {
@@ -576,11 +639,18 @@ export function buildRetrievalAnswer(
 export function resolveEvidenceStatus(
   retrieval: Pick<
     ChatRetrievalResult,
-    "approvedOkfAvailable" | "citations" | "retrievalError"
+    | "approvedOkfAvailable"
+    | "citations"
+    | "metadataClarification"
+    | "retrievalError"
   >,
 ): ChatEvidenceStatus {
   if (retrieval.retrievalError) {
     return "retrieval_error";
+  }
+
+  if (retrieval.metadataClarification) {
+    return "weak_evidence";
   }
 
   if (retrieval.citations.length === 0) {

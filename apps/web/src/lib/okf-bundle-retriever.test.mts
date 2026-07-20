@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { retrieveOkfBundleEvidence } from "./okf-bundle-retriever.ts";
+import {
+  deriveMetadataClarification,
+  retrieveOkfBundleEvidence,
+  retrieveOkfBundleEvidenceWithDiagnostics,
+  type OkfNearMissCandidate,
+} from "./okf-bundle-retriever.ts";
 
 test("approved system_topic returns normalized OKF evidence", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-"));
@@ -596,6 +601,116 @@ test("semantic lookup excludes stale hashes and queues their replacement", async
     await rm(root, { force: true, recursive: true });
   }
 });
+
+test("approved evidence exposes only profile-allowlisted user-answerable metadata", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-answerable-"));
+  try {
+    await writeTopic(root, "brakes.md", {
+      extraFrontmatter: [
+        'subject_family: "Forklift"',
+        'document_type: "Operations Manual"',
+        'source_authority: "Manufacturer"',
+        'revision: "12"',
+      ],
+    });
+    const [result] = await retrieveOkfBundleEvidence({
+      clarificationFields: [
+        "subject_family",
+        "document_type",
+        "source_authority",
+        "revision",
+      ],
+      knowledgeRoot: root,
+      query: "brake",
+      workspaceId: "wrk_1",
+    });
+
+    assert.deepEqual(result?.answerableMetadata, {
+      document_type: ["Operations Manual"],
+      subject_family: ["Forklift"],
+    });
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("weak approved candidates derive one metadata clarification without becoming evidence", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-near-miss-"));
+  try {
+    for (const [filename, family] of [["forklift.md", "Forklift"], ["automobile.md", "Automobile"]]) {
+      await writeTopic(root, filename, {
+        body: "Hydraulic fuse inspection appears only in the body text.",
+        description: "General maintenance information.",
+        extraFrontmatter: [`subject_family: "${family}"`],
+        title: `${family} Maintenance`,
+      });
+    }
+    const result = await retrieveOkfBundleEvidenceWithDiagnostics({
+      clarificationFields: ["subject_family", "source_authority"],
+      knowledgeRoot: root,
+      query: "hydraulic fuse",
+      semantic: {
+        getMetadata: async () => [],
+        search: async () => assert.fail("missing vectors must not be searched"),
+      },
+      workspaceId: "wrk_1",
+    });
+
+    assert.deepEqual(result.qualifiedEvidence, []);
+    assert.equal(result.nearMissCandidates.length, 2);
+    assert.equal("body" in result.nearMissCandidates[0]!, false);
+    assert.deepEqual(result.metadataClarification?.fields, [
+      {
+        field: "subject_family",
+        label: "Subject or family",
+        options: ["Automobile", "Forklift"],
+      },
+    ]);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("metadata clarification follows profile order and asks at most two fields", () => {
+  const candidates: OkfNearMissCandidate[] = [
+    makeNearMiss("a.md", { document_type: ["Manual"], subject_family: ["Forklift"], tags: ["Safety"] }),
+    makeNearMiss("b.md", { document_type: ["Policy"], subject_family: ["Automobile"], tags: ["Compliance"] }),
+  ];
+
+  const clarification = deriveMetadataClarification(candidates, [
+    "tags",
+    "document_type",
+    "subject_family",
+  ]);
+  assert.deepEqual(clarification?.fields.map((field) => field.field), [
+    "tags",
+    "document_type",
+  ]);
+});
+
+test("metadata clarification is absent when no allowlisted axis partitions candidates", () => {
+  const candidates = [
+    makeNearMiss("a.md", { subject_family: ["Forklift"] }),
+    makeNearMiss("b.md", { subject_family: ["Forklift"] }),
+  ];
+  assert.equal(
+    deriveMetadataClarification(candidates, ["subject_family"]),
+    undefined,
+  );
+});
+
+function makeNearMiss(
+  filePath: string,
+  answerableMetadata: Record<string, string[]>,
+): OkfNearMissCandidate {
+  return {
+    answerableMetadata,
+    filePath,
+    lexicalScore: 2,
+    matchReason: "Weak lexical match",
+    title: filePath,
+  };
+}
 
 async function writeTopic(
   root: string,

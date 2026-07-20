@@ -10,6 +10,7 @@ import {
   type PendingChatMessage,
 } from "@/components/chat/chat-thread";
 import type { ChatMessage } from "@/lib/chat-types";
+import type { MetadataClarificationSelection } from "@/lib/chat-router";
 
 // The message and reply are saved server-side, but if the client router ever
 // fails to apply the resulting RSC update, a reload re-reads the persisted
@@ -45,10 +46,16 @@ export function ChatConversationPanel({
     return () => window.clearTimeout(timer);
   }, [isPending]);
 
-  function handleSend(content: string) {
+  function handleSend(
+    content: string,
+    metadataSelection?: MetadataClarificationSelection[],
+  ) {
     const formData = new FormData();
     formData.set("sessionId", sessionId);
     formData.set("content", content);
+    if (metadataSelection) {
+      formData.set("metadataSelection", JSON.stringify(metadataSelection));
+    }
 
     setPendingMessage({
       content,
@@ -66,7 +73,12 @@ export function ChatConversationPanel({
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
-        <ChatThread messages={messages} pendingMessage={visiblePendingMessage} />
+        <ChatThread
+          isPending={isPending}
+          messages={messages}
+          onSend={handleSend}
+          pendingMessage={visiblePendingMessage}
+        />
       </div>
 
       <div className="shrink-0 border-t border-border bg-background/95 p-3">

@@ -1,8 +1,21 @@
 import { parseCitationMarkers } from "@/lib/chat-citation-markers";
 import type { ChatMessage } from "@/lib/chat-types";
 import { ChatEvidenceCard } from "@/components/chat/chat-evidence-card";
+import { ChatMetadataClarification } from "@/components/chat/chat-metadata-clarification";
+import type { MetadataClarificationSelection } from "@/lib/chat-router";
 
-export function ChatMessageBubble({ message }: { message: ChatMessage }) {
+export function ChatMessageBubble({
+  canAnswerClarification = false,
+  message,
+  onClarificationSubmit,
+}: {
+  canAnswerClarification?: boolean;
+  message: ChatMessage;
+  onClarificationSubmit?: (
+    content: string,
+    selection?: MetadataClarificationSelection[],
+  ) => void;
+}) {
   if (message.role === "user") {
     return (
       <div className="max-w-lg self-end rounded-2xl rounded-br-sm bg-secondary px-4 py-2.5 text-sm text-secondary-foreground">
@@ -36,6 +49,13 @@ export function ChatMessageBubble({ message }: { message: ChatMessage }) {
           );
         })}
       </div>
+      {message.trace?.metadataClarification ? (
+        <ChatMetadataClarification
+          clarification={message.trace.metadataClarification}
+          interactive={canAnswerClarification}
+          onSubmit={onClarificationSubmit}
+        />
+      ) : null}
       <ChatEvidenceCard message={message} />
     </div>
   );

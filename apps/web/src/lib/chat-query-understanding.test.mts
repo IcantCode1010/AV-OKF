@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildUnresolvedVagueQueryUnderstanding,
+  isUnresolvedVagueQuestion,
   shouldRunQueryUnderstanding,
   understandChatQuery,
 } from "./chat-query-understanding.ts";
@@ -293,4 +295,51 @@ test("empty required context never expands into every safe default", async () =>
   );
 
   assert.deepEqual(result.assumptions, []);
+});
+
+test("subjectless follow-ups are detected without blocking subject-bearing questions", () => {
+  for (const question of [
+    "What about it?",
+    "Tell me more.",
+    "Explain this.",
+    "Why?",
+    "What happened there?",
+  ]) {
+    assert.equal(isUnresolvedVagueQuestion(question), true, question);
+  }
+
+  for (const question of [
+    "What about forklift brakes?",
+    "Explain ground leveling.",
+    "What is ISO 9001?",
+    "Tell me about the operations manual.",
+  ]) {
+    assert.equal(isUnresolvedVagueQuestion(question), false, question);
+  }
+});
+
+test("unresolved vague query understanding adds no assumptions or invented search terms", () => {
+  const result = buildUnresolvedVagueQueryUnderstanding("What about it?");
+
+  assert.equal(result.ambiguityLevel, "high");
+  assert.deepEqual(result.assumptions, []);
+  assert.equal(result.retrievalQuery, "What about it?");
+  assert.deepEqual(result.warnings, ["unresolved_vague_follow_up"]);
+});
+
+test("an identical clarification origin is not duplicated in fallback retrieval text", async () => {
+  const question = "What about it?";
+  const decision = routeChatQuestion({ clarificationAlreadyAsked: true, question });
+  const result = await understandChatQuery(
+    {
+      clarificationAlreadyAsked: true,
+      clarificationOriginQuestion: question,
+      decision,
+      question,
+      workspaceId: "wrk_1",
+    },
+    { getApiKey: async () => null },
+  );
+
+  assert.equal(result.retrievalQuery, question);
 });

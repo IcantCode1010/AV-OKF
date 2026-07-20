@@ -105,6 +105,36 @@ export function buildSkippedQueryUnderstanding(
   };
 }
 
+export function buildUnresolvedVagueQueryUnderstanding(
+  question: string,
+): ChatQueryUnderstandingTrace {
+  const normalizedQuestion = normalizeWhitespace(question);
+
+  return {
+    ambiguityLevel: "high",
+    assumptions: [],
+    detectedEntities: extractProtectedEntities(normalizedQuestion),
+    originalQuestion: normalizedQuestion,
+    retrievalQuery: normalizedQuestion,
+    rewriteMode: "fallback_original",
+    warnings: ["unresolved_vague_follow_up"],
+  };
+}
+
+export function isUnresolvedVagueQuestion(question: string): boolean {
+  const normalizedQuestion = normalizeWhitespace(question);
+  if (!normalizedQuestion) return true;
+  if (extractProtectedEntities(normalizedQuestion).length > 0) return false;
+
+  const meaningfulTerms = normalizedQuestion
+    .toLowerCase()
+    .split(/[^a-z0-9-]+/)
+    .filter(Boolean)
+    .filter((term) => !UNRESOLVED_VAGUE_WORDS.has(term));
+
+  return meaningfulTerms.length === 0;
+}
+
 export async function understandChatQuery(
   input: ChatQueryUnderstandingInput,
   options: QueryUnderstandingOptions = {},
@@ -263,9 +293,20 @@ function buildQueryUnderstandingPrompt(
 }
 
 function buildRetrievalSeed(input: ChatQueryUnderstandingInput): string {
-  return normalizeWhitespace(
-    [input.clarificationOriginQuestion, input.question].filter(Boolean).join(" "),
-  );
+  const parts = [input.clarificationOriginQuestion, input.question]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeWhitespace)
+    .filter(Boolean);
+  const seen = new Set<string>();
+
+  return parts
+    .filter((part) => {
+      const key = part.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
 }
 
 function buildSafeDefaultAssumptions(
@@ -434,4 +475,30 @@ const QUERY_FILLER_WORDS = new Set([
   "this",
   "to",
   "what",
+]);
+
+const UNRESOLVED_VAGUE_WORDS = new Set([
+  ...QUERY_FILLER_WORDS,
+  "about",
+  "can",
+  "could",
+  "do",
+  "does",
+  "explain",
+  "happen",
+  "happened",
+  "issue",
+  "know",
+  "me",
+  "mean",
+  "more",
+  "please",
+  "problem",
+  "tell",
+  "there",
+  "thing",
+  "want",
+  "why",
+  "would",
+  "you",
 ]);

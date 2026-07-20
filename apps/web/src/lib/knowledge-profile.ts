@@ -14,12 +14,39 @@ export type KnowledgeFieldType =
   | "string_array";
 
 export type KnowledgeProfileSchema = {
+  clarificationFields: string[];
   fields: Record<string, { required?: boolean; type: KnowledgeFieldType }>;
   id: string;
   name: string;
   relations: string[];
   types: Record<string, { category: KnowledgeFolderCategory; label: string }>;
 };
+
+export const DEFAULT_CLARIFICATION_FIELDS = [
+  "subject_family",
+  "classification_code",
+  "document_type",
+  "tags",
+] as const;
+
+export const PROHIBITED_CLARIFICATION_FIELDS = new Set([
+  "coverage_type",
+  "covered_rag_chunk_ids",
+  "knowledge_version",
+  "last_verified",
+  "relations",
+  "review_status",
+  "revision",
+  "source_authority",
+  "source_pages",
+]);
+
+const CLARIFICATION_FIELD_TYPES = new Set<KnowledgeFieldType>([
+  "date",
+  "number",
+  "string",
+  "string_array",
+]);
 
 export const DEFAULT_RELATIONS = [
   "routes_to",
@@ -53,6 +80,7 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
 };
 
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
+  clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: BASE_FIELDS,
   id: "generic",
   name: "Generic",
@@ -71,6 +99,7 @@ export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
 
 export const AVIATION_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   ...GENERIC_PROFILE_TEMPLATE,
+  clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: {
     ...BASE_FIELDS,
     aircraft_family: { type: "string" },
@@ -98,6 +127,18 @@ export function getKnowledgeProfileTemplate(id: string): KnowledgeProfileSchema 
   return structuredClone(GENERIC_PROFILE_TEMPLATE);
 }
 
+export function normalizeKnowledgeProfile(
+  profile: KnowledgeProfileSchema,
+): KnowledgeProfileSchema {
+  const normalized = structuredClone(profile);
+  if (!Array.isArray(normalized.clarificationFields)) {
+    normalized.clarificationFields = ["generic", "aviation"].includes(normalized.id)
+      ? DEFAULT_CLARIFICATION_FIELDS.filter((field) => Boolean(normalized.fields[field]))
+      : [];
+  }
+  return normalized;
+}
+
 export function getTypeDirectory(profile: KnowledgeProfileSchema, type: string): string {
   const definition = profile.types[type];
   if (!definition) throw new Error(`knowledge_profile_type_not_allowed:${type}`);
@@ -113,6 +154,25 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
     if (!profile.fields[field]) errors.push(`knowledge_profile_base_field_missing:${field}`);
   }
   if (Object.keys(profile.types).length === 0) errors.push("knowledge_profile_types_required");
+  const clarificationFields = Array.isArray(profile.clarificationFields)
+    ? profile.clarificationFields
+    : [];
+  const seenClarificationFields = new Set<string>();
+  for (const field of clarificationFields) {
+    if (seenClarificationFields.has(field)) {
+      errors.push(`knowledge_profile_clarification_field_duplicate:${field}`);
+      continue;
+    }
+    seenClarificationFields.add(field);
+    const definition = profile.fields[field];
+    if (!definition) {
+      errors.push(`knowledge_profile_clarification_field_unknown:${field}`);
+    } else if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) {
+      errors.push(`knowledge_profile_clarification_field_prohibited:${field}`);
+    } else if (!CLARIFICATION_FIELD_TYPES.has(definition.type)) {
+      errors.push(`knowledge_profile_clarification_field_type_unsupported:${field}`);
+    }
+  }
   if (profile.relations.some((relation) => !/^[a-z][a-z0-9_]{0,63}$/.test(relation))) {
     errors.push("knowledge_profile_relation_invalid");
   }

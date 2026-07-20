@@ -9,6 +9,7 @@ if (process.argv[2] === "routes") {
     outputPath: process.env.EVAL_OUTPUT_PATH,
     phase: process.argv[3] ?? "current",
   });
+  process.exit(process.exitCode ?? 0);
 } else {
   await runRawRetrievalEval();
 }

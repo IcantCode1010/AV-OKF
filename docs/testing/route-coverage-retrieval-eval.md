@@ -3,7 +3,7 @@
 ## Purpose
 
 The route-coverage evaluation protects the full chat retrieval contract, not
-only answer wording or general citation quality. It runs eight golden questions
+only answer wording or general citation quality. It runs nine golden scenarios
 through the production chat service against Docker Postgres, Redis, the worker,
 the live OKF bundle, pgvector, and the configured workspace LLM provider.
 
@@ -15,10 +15,14 @@ The evaluator asserts persisted assistant trace fields for:
 - raw RAG discovery and reranking;
 - Hybrid OKF-first evidence ordering;
 - one-round missing-context clarification;
+- a two-turn metadata clarification from approved OKF near misses, followed by
+  raw-RAG discovery when the selected follow-up still has no qualified OKF;
 - unsupported live-data refusal;
 - clean RAG discovery fallback when the OKF semantic index is absent.
 
-It also checks every result for retracted-content leakage and compares each
+The metadata scenario also proves that diagnostic near misses create no
+citations and never enter answer validation. It checks every result for
+retracted-content leakage and compares each
 question's correct citation count with the committed baseline.
 
 ## Run Locally

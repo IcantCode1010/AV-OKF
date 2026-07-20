@@ -7,6 +7,7 @@ import {
   BASE_FIELDS,
   getTypeDirectory,
   getKnowledgeProfileTemplate,
+  normalizeKnowledgeProfile,
   type KnowledgeProfileSchema,
   validateKnowledgeProfile,
 } from "./knowledge-profile.ts";
@@ -422,7 +423,9 @@ function mapBundleRecord(record: {
     description: record.description,
     id: record.id,
     name: record.name,
-    profile: record.activeProfileVersion.schema as unknown as KnowledgeProfileSchema,
+    profile: normalizeKnowledgeProfile(
+      record.activeProfileVersion.schema as unknown as KnowledgeProfileSchema,
+    ),
     slug: record.slug,
     status: record.status,
     updatedAt: record.updatedAt.toISOString(),

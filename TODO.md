@@ -125,6 +125,7 @@
 
 - [x] Add a Docker-backed route-coverage evaluation for every current router path and retrieval mode, with persisted-trace assertions and a committed baseline.
 - [x] Add a permanent five-question raw-RAG retrieval evaluation with saved baseline/post-change reports and a citation-regression guard.
+- [x] Add profile-driven metadata clarification for weak approved OKF candidates, with no diagnostic-candidate leakage into answers or validation and raw-RAG fallback after the single clarification round.
 - [ ] Preserve a concise insufficient-evidence response when the LLM returns `supported: false`; do not replace it with concatenated excerpts solely because citations were retrieved.
 - [ ] Add a permanent mixed-domain chat evaluation set covering direct OKF, OKF via graph, raw RAG discovery, hybrid support, missing evidence, and retrieval failure.
 - [ ] Make citation markers focus or scroll to their matching source row.

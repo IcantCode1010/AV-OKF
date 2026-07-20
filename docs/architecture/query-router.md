@@ -195,6 +195,14 @@ If the next reply supplies enough context, routing and retrieval use those value
 
 Any remaining assumptions are bounded retrieval policy, not invented facts. Conversation-grounded values may refine the search query. Safe defaults may only widen scope to all available subjects/scopes, prefer approved OKF over labeled raw discovery, and limit the intended action to informational guidance. Every assumption used is stated in the visible answer so the user can correct it.
 
+Safe defaults may widen a real subject-bearing question, but they cannot manufacture a searchable subject. If a later message remains wholly referential or subjectless, such as `What about it?`, the service does not run query optimization, retrieval, reranking, or answer synthesis. It returns a concise recovery instruction asking the user to name the document, topic, policy, product, or other subject. This is not a second formal clarification round, and the trace records `unresolved_vague_follow_up`.
+
+Weak approved OKF candidates may use the same one-round gate for a deterministic metadata clarification. The active bundle profile defines an ordered allowlist of user-answerable fields; when one or two fields partition the near-miss set, the UI offers only values that actually occur in those approved candidates. Internal trust fields such as review status, source authority, revision, lifecycle, and relations are never clarification axes.
+
+Near misses are diagnostic records, not evidence. They contain only file identity, title, match diagnostics, and allowlisted metadata, and they cannot be passed to answer generation, citation assembly, or answer validation. If the selected follow-up still produces weak or zero qualified OKF evidence, the system cannot ask again: it searches raw RAG with the enriched query and labels any result as unreviewed discovery. It uses the honest-miss response only when that RAG search is also empty.
+
+The visible follow-up transcript uses natural field labels, for example `Subject or family: Forklift; Document type: Operations Manual.` The structured field IDs and selected values remain in the persisted trace for auditability.
+
 ### Unsupported
 
 Use unsupported when the question asks for something the platform should not answer from documents alone.

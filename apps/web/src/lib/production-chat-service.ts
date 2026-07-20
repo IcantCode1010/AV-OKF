@@ -9,6 +9,8 @@ import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
 import { validateChatAnswerEvidence } from "./chat-validation.ts";
 import {
   buildSkippedQueryUnderstanding,
+  buildUnresolvedVagueQueryUnderstanding,
+  isUnresolvedVagueQuestion,
   shouldRunQueryUnderstanding,
   understandChatQuery,
   type ChatQueryUnderstandingFn,
@@ -20,6 +22,7 @@ import {
   routeChatQuestionWithFallback,
 } from "./chat-router.ts";
 import type { ChatRouterDecision, ChatRouterInput } from "./chat-router.ts";
+import type { MetadataClarificationSelection } from "./chat-router.ts";
 import {
   buildRetrievalAnswer,
   resolveEvidenceStatus,
@@ -42,6 +45,7 @@ export type ProductionChatService = {
   sendMessage(
     sessionId: string,
     content: string,
+    metadataSelection?: MetadataClarificationSelection[],
   ): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }>;
 };
 
@@ -57,6 +61,7 @@ type ProductionChatServiceOptions = {
   retrieve?: ChatRetrievalFn;
   routeQuestion?: (input: ChatRouterInput) => Promise<ChatRouterDecision>;
   understandQuery?: ChatQueryUnderstandingFn;
+  validateAnswer?: typeof validateChatAnswerEvidence;
 };
 
 export function getProductionChatService(): ProductionChatService {
@@ -79,6 +84,7 @@ export function createProductionChatService(
   const generateAnswer = options.generateAnswer ?? generateChatAnswer;
   const routeQuestion = options.routeQuestion ?? routeChatQuestionWithFallback;
   const understandQuery = options.understandQuery ?? understandChatQuery;
+  const validateAnswer = options.validateAnswer ?? validateChatAnswerEvidence;
 
   return {
     async createSession(knowledgeBundleId: string, title?: string) {
@@ -109,7 +115,11 @@ export function createProductionChatService(
       }
     },
 
-    async sendMessage(sessionId: string, content: string) {
+    async sendMessage(
+      sessionId: string,
+      content: string,
+      metadataSelection?: MetadataClarificationSelection[],
+    ) {
       const context = await getContext();
       // Recent turns give the router (and its future LLM-fallback/agent
       // implementation) the conversation_context input from query-router.md.
@@ -127,7 +137,17 @@ export function createProductionChatService(
         question: content,
         workspaceId: context.workspaceId,
       });
-      const queryUnderstanding = shouldRunQueryUnderstanding({
+      const validatedMetadataSelection = validateMetadataClarificationSelection(
+        history.messages,
+        metadataSelection,
+      );
+      const unresolvedVagueFollowUp =
+        clarification.alreadyAsked &&
+        !validatedMetadataSelection &&
+        isUnresolvedVagueQuestion(content);
+      const queryUnderstanding = unresolvedVagueFollowUp
+        ? buildUnresolvedVagueQueryUnderstanding(content)
+        : shouldRunQueryUnderstanding({
         clarificationAlreadyAsked: clarification.alreadyAsked,
         clarificationOriginQuestion: clarification.originQuestion,
         decision,
@@ -143,8 +163,9 @@ export function createProductionChatService(
           })
         : buildSkippedQueryUnderstanding(content);
       const retrievalQuery = queryUnderstanding.retrievalQuery;
-      const retrieval = isRetrievalRoute(decision.route)
+      const retrieval = isRetrievalRoute(decision.route) && !unresolvedVagueFollowUp
           ? await retrieve({
+            clarificationAlreadyAsked: clarification.alreadyAsked,
             decision,
             knowledgeBundleId: history.session.knowledgeBundleId,
             query: retrievalQuery,
@@ -160,7 +181,28 @@ export function createProductionChatService(
             rerank: { applied: false, dropped: 0, status: "not_applicable" as const },
             sourcesRead: [],
           };
-      const answer: ChatAnswer = isRetrievalRoute(decision.route)
+      const effectiveQueryUnderstanding = retrieval.metadataClarification
+        ? {
+            ...queryUnderstanding,
+            ambiguityLevel: "high" as const,
+            clarifyingQuestion: retrieval.metadataClarification.question,
+            warnings: [
+              ...queryUnderstanding.warnings,
+              "metadata_driven_clarification",
+            ],
+          }
+        : queryUnderstanding;
+      const answer: ChatAnswer = retrieval.metadataClarification
+        ? {
+            content: retrieval.metadataClarification.question,
+            mode: "deterministic" as const,
+          }
+        : unresolvedVagueFollowUp
+        ? {
+            content: buildUnresolvedVagueFollowUpReply(),
+            mode: "deterministic" as const,
+          }
+        : isRetrievalRoute(decision.route)
         ? await generateAnswer({
             evidence: retrieval.evidence,
             query: retrievalQuery,
@@ -182,7 +224,13 @@ export function createProductionChatService(
         answerMode: answer.mode,
         ...(answer.model ? { answerModel: answer.model } : {}),
         ...(answer.provider ? { answerProvider: answer.provider } : {}),
-        queryUnderstanding,
+        queryUnderstanding: effectiveQueryUnderstanding,
+        ...(retrieval.metadataClarification
+          ? { metadataClarification: retrieval.metadataClarification }
+          : {}),
+        ...(validatedMetadataSelection
+          ? { metadataClarificationSelection: validatedMetadataSelection }
+          : {}),
         ...(isRetrievalRoute(decision.route)
           ? {
               approvedOkfAvailable: retrieval.approvedOkfAvailable,
@@ -200,15 +248,17 @@ export function createProductionChatService(
         retrievalToolsCalled: retrieval.retrievalToolsCalled,
         sourcesRead: retrieval.sourcesRead,
       };
-      const answerValidation = validateChatAnswerEvidence({
-        answerContent: answer.content,
-        citations: retrieval.citations,
-        retrievalError: retrieval.retrievalError,
-        route: decision.route,
-        trace: assistantTrace,
-      });
+      const answerValidation = retrieval.metadataClarification || unresolvedVagueFollowUp
+        ? undefined
+        : validateAnswer({
+            answerContent: answer.content,
+            citations: retrieval.citations,
+            retrievalError: retrieval.retrievalError,
+            route: decision.route,
+            trace: assistantTrace,
+          });
       const safeAnswer =
-        answerValidation.status === "fail" && isRetrievalRoute(decision.route)
+        answerValidation?.status === "fail" && isRetrievalRoute(decision.route)
           ? {
               ...answer,
               content: buildRetrievalAnswer(decision.route, retrieval),
@@ -219,7 +269,7 @@ export function createProductionChatService(
         ...safeAnswer,
         content: discloseChatAssumptions(
           safeAnswer.content,
-          queryUnderstanding.assumptions,
+          effectiveQueryUnderstanding.assumptions,
         ),
       };
 
@@ -232,7 +282,7 @@ export function createProductionChatService(
             citations: retrieval.citations,
             trace: assistantTrace,
           }),
-          answerValidation,
+          ...(answerValidation ? { answerValidation } : {}),
         },
         citations: retrieval.citations,
         content,
@@ -243,6 +293,14 @@ export function createProductionChatService(
   };
 }
 
+function buildUnresolvedVagueFollowUpReply(): string {
+  return [
+    "I still cannot identify the subject of the question.",
+    "Name the document, topic, policy, product, or other subject you want searched.",
+    'For example: "What does [term] mean in [document or topic]?"',
+  ].join(" ");
+}
+
 export function getClarificationState(messages: ChatMessage[]): {
   alreadyAsked: boolean;
   originQuestion?: string;
@@ -251,7 +309,7 @@ export function getClarificationState(messages: ChatMessage[]): {
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
-    if (message?.role !== "assistant" || message.trace?.route !== "missing_context") {
+    if (message?.role !== "assistant" || !isClarificationMessage(message)) {
       continue;
     }
 
@@ -261,7 +319,7 @@ export function getClarificationState(messages: ChatMessage[]): {
   const latestMessage = messages.at(-1);
   if (
     latestMessage?.role !== "assistant" ||
-    latestMessage.trace?.route !== "missing_context"
+    !isClarificationMessage(latestMessage)
   ) {
     return { alreadyAsked };
   }
@@ -274,4 +332,41 @@ export function getClarificationState(messages: ChatMessage[]): {
   }
 
   return { alreadyAsked: true };
+}
+
+function isClarificationMessage(message: ChatMessage): boolean {
+  return Boolean(
+    message.trace?.route === "missing_context" ||
+      message.trace?.metadataClarification,
+  );
+}
+
+export function validateMetadataClarificationSelection(
+  messages: ChatMessage[],
+  selection?: MetadataClarificationSelection[],
+): MetadataClarificationSelection[] | undefined {
+  if (!selection || selection.length === 0) return undefined;
+  const latest = messages.at(-1);
+  const clarification = latest?.role === "assistant"
+    ? latest.trace?.metadataClarification
+    : undefined;
+  if (!clarification) throw new Error("metadata_clarification_not_active");
+  if (selection.length !== clarification.fields.length) {
+    throw new Error("metadata_clarification_selection_incomplete");
+  }
+  const selectedByField = new Map(selection.map((entry) => [entry.field, entry]));
+  if (selectedByField.size !== selection.length) {
+    throw new Error("metadata_clarification_selection_duplicate");
+  }
+  return clarification.fields.map((field) => {
+    const selected = selectedByField.get(field.field);
+    if (
+      !selected ||
+      selected.label !== field.label ||
+      !field.options.includes(selected.value)
+    ) {
+      throw new Error("metadata_clarification_selection_invalid");
+    }
+    return selected;
+  });
 }

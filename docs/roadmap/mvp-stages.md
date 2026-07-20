@@ -460,7 +460,7 @@ Purpose: make the agent useful for questions that require more than one approved
 
 Status: core implementation complete. Bounded relation traversal, lifecycle/path/type guards, cycle prevention, coverage-linked RAG retrieval, graph-aware citations, and trace metadata are implemented. The broader response-state vocabulary and permanent graph-retrieval evaluation set remain Stage 7C closeout work.
 
-Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, unsupported live data, and missing-vector discovery fallback. It also blocks retracted evidence and per-question citation regressions. Failure injection, multi-bundle isolation, and the broader mixed-domain question corpus remain separate follow-up slices.
+Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, metadata-driven weak-evidence clarification, unsupported live data, and missing-vector discovery fallback. The metadata case is two-turn: diagnostic near misses cannot become citations or validation input, and a still-unresolved follow-up falls through to labeled raw RAG without asking again. The profile also blocks retracted evidence and per-question citation regressions. Failure injection, multi-bundle isolation, and the broader mixed-domain question corpus remain separate follow-up slices.
 
 Agent policy:
 
@@ -470,7 +470,7 @@ Agent policy:
 - Pull RAG chunks through existing `OkfConceptChunkLink` coverage links for concepts visited during traversal.
 - Use open raw RAG discovery only when graph-linked evidence is still incomplete or when graph traversal is not required.
 - Run validation on every path and label answers as direct OKF, OKF via graph, mixed supported evidence, raw RAG discovery, partial with limitations, clarification needed, or unsupported with a next step.
-- Never dead-stop without explaining what was searched and offering a useful clarification or next action. Ask for missing context at most once per session; after that, only bounded retrieval-scope assumptions are allowed, and every assumption must be disclosed in the visible answer. Evidence gaps must never be filled with invented facts.
+- Never dead-stop without explaining what was searched and offering a useful clarification or next action. Ask for missing context at most once per session; after that, bounded retrieval-scope assumptions may widen a real subject-bearing question and must be disclosed in the visible answer. A wholly subjectless follow-up skips retrieval and receives a concise recovery instruction instead of invented search context. Evidence gaps must never be filled with invented facts.
 
 Stage 7B deliverables:
 
@@ -480,6 +480,7 @@ Stage 7B deliverables:
 - Deterministic `requiresGraphTraversal` signal added to the existing router decision; deterministic rules remain first and LLM fallback remains limited to low-confidence routing.
 - Trace and evidence-card support for `direct_okf`, `okf_via_graph`, `mixed_supported`, `rag_discovery`, `partial_with_limitations`, `clarification_needed`, and `unsupported_with_next_step`.
 - Helpful bounded query reformulation, mixed-domain identifier preservation, and one-round clarification behavior with disclosed fallback assumptions.
+- Profile-driven metadata clarification for approved OKF near misses, using grouped selectors and the existing one-round gate; near-miss diagnostics remain structurally separate from citation-eligible evidence.
 - Tool contracts ready for Vercel AI SDK integration: `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
 
 Stage 7B exit criteria:

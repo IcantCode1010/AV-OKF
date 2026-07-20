@@ -57,11 +57,18 @@ export type ChatContextAssumption = {
 
 export type ChatRouterMode = "rules" | "llm_fallback";
 
+export type MetadataClarificationSelection = {
+  field: string;
+  label: string;
+  value: string;
+};
+
 // Evidence outcome of a routed answer, per the query-router.md trace
 // requirements (final_evidence_status).
 export type ChatEvidenceStatus =
   | "approved_evidence"
   | "discovery_evidence"
+  | "weak_evidence"
   | "no_evidence"
   | "retrieval_error";
 
@@ -94,6 +101,8 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   queryUnderstanding?: ChatQueryUnderstandingTrace;
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";
+  metadataClarification?: import("./okf-bundle-retriever.ts").MetadataClarification;
+  metadataClarificationSelection?: MetadataClarificationSelection[];
   rerank?: import("./rag-reranker.ts").RagRerankTrace;
   approvedOkfAvailable?: boolean;
   finalEvidenceStatus?: ChatEvidenceStatus;

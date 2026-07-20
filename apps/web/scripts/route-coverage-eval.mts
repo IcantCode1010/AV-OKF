@@ -35,12 +35,23 @@ const ACTIVE_FILES = {
   graphTarget: "concepts/procedure/power-balance-guard.md",
   thermal: "concepts/procedure/thermal-regulation-protocol.md",
 } as const;
+const WEAK_FILES = {
+  automobile: "concepts/procedure/facility-surface-assessment.md",
+  forklift: "concepts/procedure/operational-surface-preparation.md",
+} as const;
 const RETRACTED_FILE = "concepts/procedure/retired-thermal-regulation.md";
 
 type RouteCase = {
   expectedCitationTargets: string[];
+  followUp?: {
+    content: string;
+    selectionValues: Record<string, string>;
+    withdrawWeakCandidates?: boolean;
+  };
   id: string;
-  mutateBefore?: "remove_okf_embeddings";
+  initialVerify?: (input: PersistedTurn) => string[];
+  mutateBefore?: "remove_okf_embeddings" | "remove_weak_okf_embeddings";
+  preUseClarificationRound?: boolean;
   query: string;
   verify(input: PersistedTurn): string[];
 };
@@ -74,21 +85,61 @@ export async function runRouteCoverageEval(input: {
   for (const routeCase of cases) {
     if (routeCase.mutateBefore === "remove_okf_embeddings") {
       await removeOkfEmbeddings(bundle.id, workspaceId);
+    } else if (routeCase.mutateBefore === "remove_weak_okf_embeddings") {
+      await removeWeakOkfEmbeddings(bundle.id, workspaceId);
     }
 
     const session = await service.createSession(bundle.id, `Route eval: ${routeCase.id}`);
-    const sent = await service.sendMessage(session.id, routeCase.query);
-    const persisted = await db.chatMessage.findUnique({
+    if (routeCase.preUseClarificationRound) {
+      await service.sendMessage(session.id, "Should I delete production data?");
+    }
+    const firstSent = await service.sendMessage(session.id, routeCase.query);
+    const firstPersisted = await db.chatMessage.findUnique({
       select: { citations: true, content: true, trace: true },
-      where: { id: sent.assistantMessage.id },
+      where: { id: firstSent.assistantMessage.id },
     });
-    if (!persisted?.trace) throw new Error(`route_eval_trace_missing:${routeCase.id}`);
-    const turn: PersistedTurn = {
-      assistantContent: persisted.content,
-      citations: persisted.citations as unknown as ChatCitation[],
-      trace: persisted.trace as unknown as Stage6aRouterTrace,
+    if (!firstPersisted?.trace) throw new Error(`route_eval_trace_missing:${routeCase.id}`);
+    const firstTurn: PersistedTurn = {
+      assistantContent: firstPersisted.content,
+      citations: firstPersisted.citations as unknown as ChatCitation[],
+      trace: firstPersisted.trace as unknown as Stage6aRouterTrace,
     };
+    const initialAssertionErrors = routeCase.initialVerify?.(firstTurn) ?? [];
+    let turn = firstTurn;
+    if (routeCase.followUp) {
+      const clarification = firstTurn.trace.metadataClarification;
+      if (!clarification) {
+        initialAssertionErrors.push("metadata_clarification_missing");
+      } else {
+        if (routeCase.followUp.withdrawWeakCandidates) {
+          await withdrawWeakCandidates(bundle.id, workspaceId);
+        }
+        const selection = clarification.fields.map((field) => ({
+          field: field.field,
+          label: field.label,
+          value: routeCase.followUp?.selectionValues[field.field] ?? field.options[0] ?? "",
+        }));
+        const followed = await service.sendMessage(
+          session.id,
+          routeCase.followUp.content,
+          selection,
+        );
+        const persistedFollowUp = await db.chatMessage.findUnique({
+          select: { citations: true, content: true, trace: true },
+          where: { id: followed.assistantMessage.id },
+        });
+        if (!persistedFollowUp?.trace) {
+          throw new Error(`route_eval_follow_up_trace_missing:${routeCase.id}`);
+        }
+        turn = {
+          assistantContent: persistedFollowUp.content,
+          citations: persistedFollowUp.citations as unknown as ChatCitation[],
+          trace: persistedFollowUp.trace as unknown as Stage6aRouterTrace,
+        };
+      }
+    }
     const assertionErrors = [
+      ...initialAssertionErrors,
       ...routeCase.verify(turn),
       ...assertRetractedConceptAbsent(turn),
     ];
@@ -117,6 +168,7 @@ export async function runRouteCoverageEval(input: {
       id: routeCase.id,
       passed: assertionErrors.length === 0,
       query: routeCase.query,
+      ...(routeCase.followUp ? { initialTrace: summarizeTrace(firstTurn.trace) } : {}),
       trace: summarizeTrace(turn.trace),
     });
   }
@@ -229,6 +281,8 @@ async function seedConcepts(input: { bundleId: string; workspaceId: string }) {
     [ACTIVE_FILES.graphTarget, buildPowerBalanceConcept()],
     [ACTIVE_FILES.audit, buildAuditConcept()],
     [RETRACTED_FILE, buildRetractedConcept()],
+    [WEAK_FILES.forklift, buildForkliftSurfaceConcept()],
+    [WEAK_FILES.automobile, buildAutomobileSurfaceConcept()],
   ]);
   for (const [filePath, markdown] of markdownByPath) {
     const fullPath = path.join(root, ...filePath.split("/"));
@@ -247,7 +301,7 @@ async function seedConcepts(input: { bundleId: string; workspaceId: string }) {
   );
   await db.okfConceptLifecycle.deleteMany({
     where: {
-      filePath: { in: Object.values(ACTIVE_FILES) },
+      filePath: { in: [...Object.values(ACTIVE_FILES), ...Object.values(WEAK_FILES)] },
       knowledgeBundleId: input.bundleId,
       workspaceId: input.workspaceId,
     },
@@ -290,7 +344,10 @@ async function seedConcepts(input: { bundleId: string; workspaceId: string }) {
       });
     }
   }
-  await waitForOkfEmbeddings({ ...input, expected: Object.values(ACTIVE_FILES).length });
+  await waitForOkfEmbeddings({
+    ...input,
+    expected: Object.values(ACTIVE_FILES).length + Object.values(WEAK_FILES).length,
+  });
 }
 
 async function seedRagDocument(input: { bundleId: string; workspaceId: string }) {
@@ -299,12 +356,40 @@ async function seedRagDocument(input: { bundleId: string; workspaceId: string })
   await db.document.create({
     data: {
       description: "Unreviewed discovery-only route evaluation source.",
+      extractedPages: {
+        create: [
+          {
+            charCount: 369,
+            imageCount: 0,
+            pageNumber: 1,
+            tables: [],
+            text: "Calibration Drift Field Notes\n\nTechnicians observed calibration drift after repeated thermal cycles. The raw log recommends comparing sensor offsets across test runs and inspecting connector resistance before replacing instrumentation.",
+            workspaceId: input.workspaceId,
+          },
+          {
+            charCount: 360,
+            imageCount: 0,
+            pageNumber: 2,
+            tables: [],
+            text: "Unreviewed Heat Removal Observation\n\nExcess heat was removed from orbital test equipment by increasing coolant flow and checking radiator bypass position. This is an unreviewed field observation, not an approved operating instruction.",
+            workspaceId: input.workspaceId,
+          },
+          {
+            charCount: 326,
+            imageCount: 0,
+            pageNumber: 3,
+            tables: [],
+            text: "Ground Leveling Field Note\n\nFor the forklift operations manual, ground leveling means confirming the travel surface is level, stable, and free of unsupported edges before moving or lifting a load. This raw note is discovery evidence and requires review against approved guidance.",
+            workspaceId: input.workspaceId,
+          },
+        ],
+      },
       fileType: "PDF",
       id: DOCUMENT_ID,
       knowledgeBundleId: input.bundleId,
       mimeType: "application/pdf",
       owner: "Route Eval",
-      pages: 2,
+      pages: 3,
       ragStatus: "not_indexed",
       size: "2 KB",
       sizeBytes: 2048,
@@ -315,28 +400,6 @@ async function seedRagDocument(input: { bundleId: string; workspaceId: string })
       updatedLabel: "Now",
       workspaceId: input.workspaceId,
     },
-  });
-  await db.extractedPage.createMany({
-    data: [
-      {
-        charCount: 369,
-        documentId: DOCUMENT_ID,
-        imageCount: 0,
-        pageNumber: 1,
-        tables: [],
-        text: "Calibration Drift Field Notes\n\nTechnicians observed calibration drift after repeated thermal cycles. The raw log recommends comparing sensor offsets across test runs and inspecting connector resistance before replacing instrumentation.",
-        workspaceId: input.workspaceId,
-      },
-      {
-        charCount: 360,
-        documentId: DOCUMENT_ID,
-        imageCount: 0,
-        pageNumber: 2,
-        tables: [],
-        text: "Unreviewed Heat Removal Observation\n\nExcess heat was removed from orbital test equipment by increasing coolant flow and checking radiator bypass position. This is an unreviewed field observation, not an approved operating instruction.",
-        workspaceId: input.workspaceId,
-      },
-    ],
   });
   const repository = createRagRepository(db);
   const job = await repository.createIndexJob({
@@ -381,6 +444,39 @@ async function removeOkfEmbeddings(bundleId: string, workspaceId: string) {
   ]);
 }
 
+async function removeWeakOkfEmbeddings(bundleId: string, workspaceId: string) {
+  const db = getPrisma();
+  await db.$transaction([
+    db.okfConceptEmbedding.deleteMany({
+      where: {
+        filePath: { in: Object.values(WEAK_FILES) },
+        knowledgeBundleId: bundleId,
+        workspaceId,
+      },
+    }),
+    db.okfConceptEmbeddingJob.deleteMany({
+      where: {
+        filePath: { in: Object.values(WEAK_FILES) },
+        knowledgeBundleId: bundleId,
+        workspaceId,
+      },
+    }),
+  ]);
+}
+
+async function withdrawWeakCandidates(bundleId: string, workspaceId: string) {
+  const root = resolveKnowledgeBundleRoot({ bundleId, workspaceId });
+  for (const filePath of Object.values(WEAK_FILES)) {
+    const fullPath = path.join(root, ...filePath.split("/"));
+    const markdown = await readFile(fullPath, "utf8");
+    await writeFile(
+      fullPath,
+      markdown.replace("review_status: approved", "review_status: needs_review"),
+      "utf8",
+    );
+  }
+}
+
 function buildRouteCases(): RouteCase[] {
   return [
     {
@@ -392,6 +488,38 @@ function buildRouteCases(): RouteCase[] {
         ...expectEqual(turn.trace.okfMatchMode, "lexical", "okfMatchMode"),
         ...expectEqual(turn.trace.rerank?.status, "not_applicable", "rerank.status"),
         ...expectEqual(turn.trace.queryUnderstanding?.rewriteMode, "not_needed", "queryUnderstanding.rewriteMode"),
+      ],
+    },
+    {
+      expectedCitationTargets: [RAW_DOCUMENT_TITLE],
+      followUp: {
+        content: "Subject or family: Forklift; Document type: Operations Manual.",
+        selectionValues: {
+          document_type: "Operations Manual",
+          subject_family: "Forklift",
+        },
+        withdrawWeakCandidates: true,
+      },
+      id: "metadata-weak-two-turn",
+      initialVerify: (turn) => [
+        ...expectEqual(turn.trace.finalEvidenceStatus, "weak_evidence", "initial.finalEvidenceStatus"),
+        ...expectEqual(turn.trace.rerank?.status, "not_applicable", "initial.rerank.status"),
+        ...(turn.trace.metadataClarification ? [] : ["initial.metadataClarification:missing"]),
+        ...(turn.citations.length > 0 ? ["initial.weak_candidates_became_citations"] : []),
+        ...(turn.trace.answerValidation ? ["initial.weak_candidates_reached_validation"] : []),
+      ],
+      mutateBefore: "remove_weak_okf_embeddings",
+      query: "What does ground leveling mean?",
+      verify: (turn) => [
+        ...(turn.trace.route === "missing_context" ? ["follow_up_requested_second_clarification"] : []),
+        ...(turn.trace.metadataClarification ? ["follow_up_metadata_clarification_repeated"] : []),
+        ...expectEqual(turn.trace.ragUsedForDiscoveryOnly, true, "follow_up.ragUsedForDiscoveryOnly"),
+        ...(!turn.trace.metadataClarificationSelection
+          ? ["follow_up.metadataClarificationSelection:missing"]
+          : []),
+        ...(turn.citations.some((citation) => citation.sourceType === "okf")
+          ? ["follow_up.unqualified_okf_citation"]
+          : []),
       ],
     },
     {
@@ -465,6 +593,7 @@ function buildRouteCases(): RouteCase[] {
       expectedCitationTargets: [RAW_DOCUMENT_TITLE],
       id: "okf-vector-missing-fallback",
       mutateBefore: "remove_okf_embeddings",
+      preUseClarificationRound: true,
       query: "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "okf_only", "route"),
@@ -601,5 +730,53 @@ source_authority: Retired Archive
 # Retired Thermal Regulation Protocol
 
 This obsolete concept must never appear in current evidence.
+`;
+}
+
+function buildForkliftSurfaceConcept() {
+  return `---
+type: procedure
+title: Operational Surface Preparation
+description: Readiness checks for industrial material-handling equipment.
+tags:
+  - readiness
+  - equipment
+subject_family: Forklift
+document_type: Operations Manual
+updated: 2026-07-19
+review_status: approved
+source_file: Forklift Operations Manual.pdf
+source_pages:
+  - 18
+source_authority: Equipment Manufacturer
+---
+
+# Operational Surface Preparation
+
+Ground leveling means confirming the travel area is level and stable before moving or lifting a load.
+`;
+}
+
+function buildAutomobileSurfaceConcept() {
+  return `---
+type: procedure
+title: Facility Surface Assessment
+description: Workshop readiness checks for passenger-vehicle service areas.
+tags:
+  - workshop
+  - readiness
+subject_family: Automobile
+document_type: Service Bulletin
+updated: 2026-07-19
+review_status: approved
+source_file: Automobile Workshop Bulletin.pdf
+source_pages:
+  - 4
+source_authority: Vehicle Manufacturer
+---
+
+# Facility Surface Assessment
+
+Ground leveling means confirming that the workshop service area remains within the specified floor tolerance.
 `;
 }

@@ -21,8 +21,10 @@ import {
   type OkfSemanticMatch,
 } from "./okf-concept-embedding.ts";
 import { hashOkfSource } from "./okf-concept-embedding-content.ts";
+import { PROHIBITED_CLARIFICATION_FIELDS } from "./knowledge-profile.ts";
 
 export type OkfBundleEvidence = {
+  answerableMetadata: Record<string, string[]>;
   body: string;
   coveredRagChunkIds: string[];
   coverageType: string | null;
@@ -49,6 +51,33 @@ export type OkfBundleEvidence = {
   type: string;
 };
 
+export type OkfNearMissCandidate = {
+  answerableMetadata: Record<string, string[]>;
+  filePath: string;
+  lexicalScore?: number;
+  matchReason: string;
+  title: string;
+  vectorSimilarity?: number;
+};
+
+export type MetadataClarificationField = {
+  field: string;
+  label: string;
+  options: string[];
+};
+
+export type MetadataClarification = {
+  candidateCount: number;
+  fields: MetadataClarificationField[];
+  question: string;
+};
+
+export type OkfBundleRetrievalDiagnostics = {
+  metadataClarification?: MetadataClarification;
+  nearMissCandidates: OkfNearMissCandidate[];
+  qualifiedEvidence: OkfBundleEvidence[];
+};
+
 export type OkfConceptLifecycleStatus =
   | "active"
   | "archived"
@@ -69,6 +98,7 @@ export type OkfConceptLifecycleLookup = (input: {
 
 export type OkfBundleRetrievalInput = {
   bundleName?: string;
+  clarificationFields?: string[];
   knowledgeBundleId: string;
   knowledgeRoot?: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
@@ -83,6 +113,7 @@ export type OkfBundleRetrievalInput = {
 };
 
 export type OkfBundleFileReadInput = {
+  clarificationFields?: string[];
   filePath: string;
   knowledgeBundleId: string;
   knowledgeRoot?: string;
@@ -99,6 +130,10 @@ const DEFAULT_TOP_K = 4;
 const EXCERPT_MAX_CHARS = 1500;
 const MIN_QUALIFIED_SCORE = 8;
 const DEFAULT_VECTOR_MIN_SIMILARITY = 0.5;
+const NEAR_MISS_SIMILARITY_MARGIN = 0.15;
+const NEAR_MISS_TOP_K = 8;
+const MAX_CLARIFICATION_FIELDS = 2;
+const MAX_CLARIFICATION_OPTIONS = 8;
 const STOPWORDS = new Set([
   "a",
   "an",
@@ -149,40 +184,65 @@ const GENERIC_RETRIEVAL_TERMS = new Set([
 export async function retrieveOkfBundleEvidence(
   input: OkfBundleRetrievalInput,
 ): Promise<OkfBundleEvidence[]> {
+  return (await retrieveOkfBundleEvidenceWithDiagnostics(input)).qualifiedEvidence;
+}
+
+export async function retrieveOkfBundleEvidenceWithDiagnostics(
+  input: OkfBundleRetrievalInput,
+): Promise<OkfBundleRetrievalDiagnostics> {
   const queryTerms = tokenize(input.query);
 
   if (queryTerms.length === 0) {
-    return [];
+    return emptyDiagnostics();
   }
 
   const trustedCandidates = await listApprovedOkfBundleEvidence(input);
-
+  const lexicalNearMisses: OkfNearMissCandidate[] = [];
   const lexicalCandidates = trustedCandidates.flatMap((candidate) => {
-    const match = qualifyCandidate({
+    const evaluation = evaluateCandidate({
       body: candidate.body,
       description: candidate.description,
       metadata: candidate.searchableMetadata ?? "",
       queryTerms,
       title: candidate.title,
     });
-    return match
+    if (!evaluation.qualifies && evaluation.matchedTerms.length > 0) {
+      lexicalNearMisses.push(
+        toNearMiss(candidate, {
+          lexicalScore: evaluation.score,
+          matchReason: `Weak lexical match: ${evaluation.matchedTerms.join(", ")}`,
+        }),
+      );
+    }
+    return evaluation.qualifies
       ? [{
           ...candidate,
-          matchedTerms: match.matchedTerms,
-          matchReason: match.reason,
-          matchStrength: match.strength,
+          matchedTerms: evaluation.matchedTerms,
+          matchReason: evaluation.reason,
+          matchStrength: evaluation.strength,
           okfMatchMode: "lexical" as const,
-          score: match.score,
+          score: evaluation.score,
         }]
       : [];
   });
 
   if (lexicalCandidates.length > 0) {
-    return sortEvidence(lexicalCandidates).slice(0, input.topK ?? DEFAULT_TOP_K);
+    return {
+      nearMissCandidates: [],
+      qualifiedEvidence: sortEvidence(lexicalCandidates).slice(
+        0,
+        input.topK ?? DEFAULT_TOP_K,
+      ),
+    };
   }
 
   const semantic = input.semantic ?? createDefaultSemanticRetriever(input);
-  if (!semantic || trustedCandidates.length === 0) return [];
+  if (!semantic || trustedCandidates.length === 0) {
+    return buildWeakDiagnostics(
+      lexicalNearMisses,
+      input.clarificationFields ?? [],
+    );
+  }
   const candidateIdentities = trustedCandidates.flatMap(({ contentHash, filePath }) =>
     contentHash ? [{ contentHash, filePath }] : [],
   );
@@ -191,13 +251,35 @@ export async function retrieveOkfBundleEvidence(
   const missing = candidateIdentities.filter((row) => !current.has(`${row.filePath}:${row.contentHash}`));
   if (missing.length > 0) await semantic.enqueueMissing?.(missing);
   const eligible = candidateIdentities.filter((row) => current.has(`${row.filePath}:${row.contentHash}`));
-  if (eligible.length === 0) return [];
-  const matches = await semantic.search({ candidates: eligible, query: input.query, topK: input.topK ?? DEFAULT_TOP_K });
+  if (eligible.length === 0) {
+    return buildWeakDiagnostics(
+      lexicalNearMisses,
+      input.clarificationFields ?? [],
+    );
+  }
+  const matches = await semantic.search({
+    candidates: eligible,
+    query: input.query,
+    topK: Math.max(input.topK ?? DEFAULT_TOP_K, NEAR_MISS_TOP_K),
+  });
   const minimum = readSimilarityThreshold();
+  const nearMissMinimum = Math.max(-1, minimum - NEAR_MISS_SIMILARITY_MARGIN);
   const byPath = new Map(trustedCandidates.map((candidate) => [candidate.filePath, candidate]));
-  return sortEvidence(matches.flatMap((match) => {
+  const semanticNearMisses: OkfNearMissCandidate[] = [];
+  const qualifiedEvidence = sortEvidence(matches.flatMap((match) => {
     const candidate = byPath.get(match.filePath);
-    if (!candidate || match.score < minimum) return [];
+    if (!candidate) return [];
+    if (match.score < minimum) {
+      if (match.score >= nearMissMinimum) {
+        semanticNearMisses.push(
+          toNearMiss(candidate, {
+            matchReason: `Semantic similarity ${match.score.toFixed(3)} was below the ${minimum.toFixed(2)} evidence threshold.`,
+            vectorSimilarity: match.score,
+          }),
+        );
+      }
+      return [];
+    }
     return [{
       ...candidate,
       matchReason: `Semantic similarity ${match.score.toFixed(3)} met the ${minimum.toFixed(2)} threshold.`,
@@ -206,12 +288,23 @@ export async function retrieveOkfBundleEvidence(
       score: match.score,
     }];
   })).slice(0, input.topK ?? DEFAULT_TOP_K);
+  if (qualifiedEvidence.length > 0) {
+    return { nearMissCandidates: [], qualifiedEvidence };
+  }
+  return buildWeakDiagnostics(
+    mergeNearMisses(lexicalNearMisses, semanticNearMisses),
+    input.clarificationFields ?? [],
+  );
 }
 
 export async function listApprovedOkfBundleEvidence(
   input: Pick<
     OkfBundleRetrievalInput,
-    "knowledgeBundleId" | "knowledgeRoot" | "lifecycleLookup" | "workspaceId"
+    | "clarificationFields"
+    | "knowledgeBundleId"
+    | "knowledgeRoot"
+    | "lifecycleLookup"
+    | "workspaceId"
   >,
 ): Promise<OkfBundleEvidence[]> {
   const root = path.resolve(input.knowledgeRoot ?? getDefaultKnowledgeRoot());
@@ -260,6 +353,7 @@ export async function listApprovedOkfBundleEvidence(
       markdown,
       null,
       lifecycle.status,
+      input.clarificationFields ?? [],
     );
 
     if (evidence) {
@@ -314,7 +408,14 @@ export async function readOkfBundleEvidenceByPath(
       return null;
     }
 
-    return buildEvidenceCandidate(root, filePath, markdown, null, lifecycle.status);
+    return buildEvidenceCandidate(
+      root,
+      filePath,
+      markdown,
+      null,
+      lifecycle.status,
+      input.clarificationFields ?? [],
+    );
   } catch (error) {
     if (isMissingDirectoryError(error) || isMissingFileError(error)) {
       return null;
@@ -350,6 +451,7 @@ async function buildEvidenceCandidate(
   markdown: string,
   queryTerms: string[] | null,
   lifecycleStatus: OkfConceptLifecycleStatus,
+  clarificationFields: string[],
 ): Promise<OkfBundleEvidence | null> {
   const parsed = parseOkfMarkdown(markdown);
   const type = getFrontmatterScalar(parsed.frontmatter, "type");
@@ -365,6 +467,10 @@ async function buildEvidenceCandidate(
   const trustedTitle = title!;
   const trustedDescription = description ?? "";
   const trustedSourceFile = sourceFile!;
+  const answerableMetadata = buildAnswerableMetadata(
+    parsed.frontmatter,
+    clarificationFields,
+  );
 
   const searchableMetadata = [
     type,
@@ -394,6 +500,7 @@ async function buildEvidenceCandidate(
   }
 
   return {
+    answerableMetadata,
     body: parsed.body,
     contentHash: hashOkfSource(markdown),
     coveredRagChunkIds: getFrontmatterStringArray(
@@ -425,6 +532,151 @@ async function buildEvidenceCandidate(
     title: trustedTitle,
     type: type!,
   };
+}
+
+function emptyDiagnostics(): OkfBundleRetrievalDiagnostics {
+  return { nearMissCandidates: [], qualifiedEvidence: [] };
+}
+
+function toNearMiss(
+  candidate: OkfBundleEvidence,
+  match: Pick<OkfNearMissCandidate, "matchReason"> &
+    Partial<Pick<OkfNearMissCandidate, "lexicalScore" | "vectorSimilarity">>,
+): OkfNearMissCandidate {
+  return {
+    answerableMetadata: candidate.answerableMetadata,
+    filePath: candidate.filePath,
+    matchReason: match.matchReason,
+    title: candidate.title,
+    ...(match.lexicalScore === undefined ? {} : { lexicalScore: match.lexicalScore }),
+    ...(match.vectorSimilarity === undefined
+      ? {}
+      : { vectorSimilarity: match.vectorSimilarity }),
+  };
+}
+
+function mergeNearMisses(
+  lexical: OkfNearMissCandidate[],
+  semantic: OkfNearMissCandidate[],
+): OkfNearMissCandidate[] {
+  const merged = new Map<string, OkfNearMissCandidate>();
+  for (const candidate of [...lexical, ...semantic]) {
+    const current = merged.get(candidate.filePath);
+    merged.set(candidate.filePath, current ? { ...current, ...candidate } : candidate);
+  }
+  return [...merged.values()];
+}
+
+function buildWeakDiagnostics(
+  candidates: OkfNearMissCandidate[],
+  clarificationFields: string[],
+): OkfBundleRetrievalDiagnostics {
+  const nearMissCandidates = [...candidates]
+    .sort((left, right) => {
+      const vectorOrder =
+        (right.vectorSimilarity ?? -2) - (left.vectorSimilarity ?? -2);
+      if (vectorOrder !== 0) return vectorOrder;
+      const lexicalOrder = (right.lexicalScore ?? -1) - (left.lexicalScore ?? -1);
+      if (lexicalOrder !== 0) return lexicalOrder;
+      const titleOrder = left.title.localeCompare(right.title);
+      return titleOrder === 0
+        ? left.filePath.localeCompare(right.filePath)
+        : titleOrder;
+    })
+    .slice(0, NEAR_MISS_TOP_K);
+  const metadataClarification = deriveMetadataClarification(
+    nearMissCandidates,
+    clarificationFields,
+  );
+  return {
+    ...(metadataClarification ? { metadataClarification } : {}),
+    nearMissCandidates,
+    qualifiedEvidence: [],
+  };
+}
+
+export function deriveMetadataClarification(
+  candidates: OkfNearMissCandidate[],
+  clarificationFields: string[],
+): MetadataClarification | undefined {
+  if (candidates.length < 2) return undefined;
+  const fields = clarificationFields
+    .flatMap((field) => {
+      if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) return [];
+      const valuesByCandidate = candidates.map(
+        (candidate) => candidate.answerableMetadata[field] ?? [],
+      );
+      if (valuesByCandidate.some((values) => values.length === 0)) return [];
+      const options = dedupeDisplayValues(valuesByCandidate.flat());
+      if (options.length < 2 || options.length > MAX_CLARIFICATION_OPTIONS) {
+        return [];
+      }
+      const subsets = options.map((option) =>
+        candidates
+          .filter((candidate) =>
+            (candidate.answerableMetadata[field] ?? []).some(
+              (value) =>
+                value.toLocaleLowerCase() === option.toLocaleLowerCase(),
+            ),
+          )
+          .map((candidate) => candidate.filePath)
+          .sort()
+          .join("|"),
+      );
+      if (new Set(subsets).size < 2) return [];
+      return [{ field, label: formatFieldLabel(field), options }];
+    })
+    .slice(0, MAX_CLARIFICATION_FIELDS);
+  if (fields.length === 0) return undefined;
+  const labels = fields.map((field) => field.label.toLocaleLowerCase());
+  const requested = labels.length === 1
+    ? labels[0]
+    : `${labels[0]} and ${labels[1]}`;
+  return {
+    candidateCount: candidates.length,
+    fields,
+    question: `I found several related approved topics that differ by ${requested}. Select the applicable value${fields.length === 1 ? "" : "s"} so I can narrow the search.`,
+  };
+}
+
+function buildAnswerableMetadata(
+  frontmatter: Record<
+    string,
+    import("./okf-frontmatter.ts").OkfFrontmatterValue
+  >,
+  clarificationFields: string[],
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const field of clarificationFields) {
+    if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) continue;
+    const value = frontmatter[field];
+    const values = typeof value === "string"
+      ? [value]
+      : Array.isArray(value) && value.every((item) => typeof item === "string")
+        ? value
+        : [];
+    const normalized = dedupeDisplayValues(values);
+    if (normalized.length > 0) result[field] = normalized;
+  }
+  return result;
+}
+
+function dedupeDisplayValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim().replace(/\s+/g, " ");
+    const key = value.toLocaleLowerCase();
+    if (!value || seen.has(key)) continue;
+    seen.add(key);
+    result.push(value);
+  }
+  return result;
+}
+
+function formatFieldLabel(field: string): string {
+  if (field === "subject_family") return "Subject or family";
+  return field.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 async function resolveLifecycleStatus(input: {
@@ -540,18 +792,38 @@ async function buildRelationWarnings(
   return warnings;
 }
 
+type CandidateEvaluation = {
+  matchedTerms: string[];
+  qualifies: boolean;
+  reason: string;
+  score: number;
+  strength: "strong" | "medium";
+};
+
 function qualifyCandidate(input: {
   body: string;
   description: string;
   metadata: string;
   queryTerms: string[];
   title: string;
-}): {
-  matchedTerms: string[];
-  reason: string;
-  score: number;
-  strength: "strong" | "medium";
-} | null {
+}): Omit<CandidateEvaluation, "qualifies"> | null {
+  const evaluation = evaluateCandidate(input);
+  if (!evaluation.qualifies) return null;
+  return {
+    matchedTerms: evaluation.matchedTerms,
+    reason: evaluation.reason,
+    score: evaluation.score,
+    strength: evaluation.strength,
+  };
+}
+
+function evaluateCandidate(input: {
+  body: string;
+  description: string;
+  metadata: string;
+  queryTerms: string[];
+  title: string;
+}): CandidateEvaluation {
   const titleTokens = tokenizeField(input.title);
   const descriptionTokens = tokenizeField(input.description);
   const metadataTokens = tokenizeField(input.metadata);
@@ -589,10 +861,6 @@ function qualifyCandidate(input: {
       ? qualifyingTerms.length >= 1
       : qualifyingTerms.length >= 2;
 
-  if (!hasExactQualifyingPhrase && !hasEnoughQualifyingTerms) {
-    return null;
-  }
-
   let score = 0;
   if (exactTitlePhrase) {
     score += 100;
@@ -622,10 +890,6 @@ function qualifyCandidate(input: {
     }
   }
 
-  if (score < MIN_QUALIFIED_SCORE) {
-    return null;
-  }
-
   const matchedTerms = uniqueTerms([...qualifyingTerms, ...bodyMatches]);
   const strength =
     (hasExactQualifyingPhrase && input.queryTerms.length > 1) ||
@@ -635,6 +899,9 @@ function qualifyCandidate(input: {
 
   return {
     matchedTerms,
+    qualifies:
+      (hasExactQualifyingPhrase || hasEnoughQualifyingTerms) &&
+      score >= MIN_QUALIFIED_SCORE,
     reason: matchReason({
       exactDescriptionPhrase,
       exactMetadataPhrase,

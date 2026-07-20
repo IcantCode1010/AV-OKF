@@ -53,6 +53,10 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
   const profile = structuredClone(bundle.profile);
   profile.id = `custom-${bundle.id}`;
   profile.name = getFormString(formData, "profileName").trim() || `${bundle.name} profile`;
+  profile.clarificationFields = getFormString(formData, "clarificationFields")
+    .split(",")
+    .map((value) => normalizeProfileIdentifier(value))
+    .filter(Boolean);
 
   const typeId = normalizeProfileIdentifier(getFormString(formData, "typeId"));
   if (typeId) {

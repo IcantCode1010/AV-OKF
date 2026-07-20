@@ -40,6 +40,7 @@ function makeOkfEvidence(
   overrides: Partial<OkfBundleEvidence> = {},
 ): OkfBundleEvidence {
   return {
+    answerableMetadata: {},
     body: "GEN OFF BUS light indicates a generator bus fault.",
     coveredRagChunkIds: [],
     coverageType: null,
@@ -190,6 +191,72 @@ test("okf_only downgrades to labeled RAG discovery when no approved OKF evidence
   assert.match(answer, /no reviewed answer exists/i);
   assert.match(answer, /unreviewed/i);
   assert.doesNotMatch(answer, /^Approved knowledge base:/);
+});
+
+test("first weak OKF result returns metadata clarification before RAG", async () => {
+  const decision = routeChatQuestion("What is the approved hydraulic fuse guidance?");
+  let ragCalled = false;
+  const result = await runChatRetrieval(
+    { decision, query: "hydraulic fuse", workspaceId: "wrk_1" },
+    async () => {
+      ragCalled = true;
+      return [];
+    },
+    async () => ({
+      metadataClarification: {
+        candidateCount: 2,
+        fields: [{
+          field: "subject_family",
+          label: "Subject or family",
+          options: ["Automobile", "Forklift"],
+        }],
+        question: "Which subject or family applies?",
+      },
+      nearMissCandidates: [],
+      qualifiedEvidence: [],
+    }),
+  );
+
+  assert.equal(ragCalled, false);
+  assert.equal(result.metadataClarification?.candidateCount, 2);
+  assert.deepEqual(result.citations, []);
+  assert.deepEqual(result.evidence, []);
+  assert.equal(resolveEvidenceStatus(result), "weak_evidence");
+});
+
+test("weak follow-up cannot clarify again and falls through to RAG discovery", async () => {
+  const decision = routeChatQuestion("What is the approved hydraulic fuse guidance?");
+  let ragQuery = "";
+  const result = await runChatRetrieval(
+    {
+      clarificationAlreadyAsked: true,
+      decision,
+      query: "hydraulic fuse Forklift Operations Manual",
+      workspaceId: "wrk_1",
+    },
+    async (request) => {
+      ragQuery = request.query;
+      return [makeResult({ documentTitle: "Forklift Operations Manual" })];
+    },
+    async () => ({
+      metadataClarification: {
+        candidateCount: 2,
+        fields: [{
+          field: "subject_family",
+          label: "Subject or family",
+          options: ["Automobile", "Forklift"],
+        }],
+        question: "Which subject or family applies?",
+      },
+      nearMissCandidates: [],
+      qualifiedEvidence: [],
+    }),
+  );
+
+  assert.equal(result.metadataClarification, undefined);
+  assert.equal(result.ragUsedForDiscoveryOnly, true);
+  assert.equal(result.citations[0]?.sourceType, "rag");
+  assert.equal(ragQuery, "hydraulic fuse Forklift Operations Manual");
 });
 
 test("okf_only falls back to raw RAG when live OKF bundle relevance is too low", async () => {

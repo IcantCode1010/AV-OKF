@@ -12,6 +12,7 @@ import type { ChatCitation, ChatMessage } from "./chat-types.ts";
 import {
   createProductionChatService,
   getClarificationState,
+  validateMetadataClarificationSelection,
 } from "./production-chat-service.ts";
 
 // Runs the real answer builder but hermetically: no workspace key lookup,
@@ -105,6 +106,7 @@ function historyMessage(input: {
   content: string;
   id: string;
   role: "assistant" | "user";
+  metadataClarification?: Stage6aRouterTrace["metadataClarification"];
   route?: Stage6aRouterTrace["route"];
 }): ChatMessage {
   return {
@@ -125,6 +127,9 @@ function historyMessage(input: {
             rationale: "test trace",
             requiredContext: [],
             retrievalToolsCalled: [],
+            ...(input.metadataClarification
+              ? { metadataClarification: input.metadataClarification }
+              : {}),
             route: input.route,
             sourcesRead: [],
             stage: "router",
@@ -216,6 +221,105 @@ test("sendMessage builds a cited answer from retrieval results", async () => {
   assert.deepEqual(appendCalls[0]?.assistantTrace.sourcesRead, ["737NG QRH (p. 12)"]);
   assert.equal(appendCalls[0]?.assistantTrace.okfEvidenceMode, "direct");
   assert.equal(appendCalls[0]?.assistantTrace.rerank?.status, "not_applicable");
+});
+
+test("metadata clarification never reaches answer generation or evidence validation", async () => {
+  const { appendCalls, repository } = createRepositoryStub();
+  let answerCalled = false;
+  let validationCalled = false;
+  const service = createProductionChatService(repository, {
+    generateAnswer: async () => {
+      answerCalled = true;
+      throw new Error("near_miss_must_not_reach_answer");
+    },
+    getContext: async () => context,
+    retrieve: async () => ({
+      approvedOkfAvailable: false,
+      citations: [],
+      evidence: [],
+      metadataClarification: {
+        candidateCount: 2,
+        fields: [{
+          field: "subject_family",
+          label: "Subject or family",
+          options: ["Automobile", "Forklift"],
+        }],
+        question: "Which subject or family applies?",
+      },
+      ragUsedForDiscoveryOnly: false,
+      rerank: { applied: false, dropped: 0, status: "not_applicable" },
+      retrievalError: false,
+      retrievalToolsCalled: ["okf_retrieval"],
+      sourcesRead: [],
+    }),
+    validateAnswer: () => {
+      validationCalled = true;
+      throw new Error("near_miss_must_not_reach_validation");
+    },
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the approved hydraulic fuse guidance?",
+  );
+
+  assert.equal(answerCalled, false);
+  assert.equal(validationCalled, false);
+  assert.deepEqual(result.assistantMessage.citations, []);
+  assert.equal(result.assistantMessage.content, "Which subject or family applies?");
+  assert.equal(appendCalls[0]?.assistantTrace.finalEvidenceStatus, "weak_evidence");
+  assert.equal(appendCalls[0]?.assistantTrace.answerValidation, undefined);
+  assert.equal(
+    appendCalls[0]?.assistantTrace.queryUnderstanding?.clarifyingQuestion,
+    "Which subject or family applies?",
+  );
+});
+
+test("metadata clarification consumes the existing one-round gate and validates selections", () => {
+  const clarification = {
+    candidateCount: 2,
+    fields: [{
+      field: "subject_family",
+      label: "Subject or family",
+      options: ["Automobile", "Forklift"],
+    }],
+    question: "Which subject or family applies?",
+  };
+  const messages = [
+    historyMessage({ content: "What guidance applies?", id: "u1", role: "user" }),
+    historyMessage({
+      content: clarification.question,
+      id: "a1",
+      metadataClarification: clarification,
+      role: "assistant",
+      route: "okf_only",
+    }),
+  ];
+
+  assert.deepEqual(getClarificationState(messages), {
+    alreadyAsked: true,
+    originQuestion: "What guidance applies?",
+  });
+  assert.deepEqual(
+    validateMetadataClarificationSelection(messages, [{
+      field: "subject_family",
+      label: "Subject or family",
+      value: "Forklift",
+    }]),
+    [{
+      field: "subject_family",
+      label: "Subject or family",
+      value: "Forklift",
+    }],
+  );
+  assert.throws(
+    () => validateMetadataClarificationSelection(messages, [{
+      field: "subject_family",
+      label: "Subject or family",
+      value: "Invented",
+    }]),
+    /metadata_clarification_selection_invalid/,
+  );
 });
 
 test("sendMessage stores the LLM answer and records answer mode in the trace", async () => {
@@ -629,7 +733,7 @@ test("incomplete follow-up retrieves once with specific visible assumptions", as
   );
 });
 
-test("a third ambiguous message in the same session cannot request clarification again", async () => {
+test("a repeated subjectless follow-up does not search, synthesize, or ask another formal clarification", async () => {
   const history = [
     historyMessage({ content: "Can we approve this?", id: "u1", role: "user" }),
     historyMessage({
@@ -648,27 +752,34 @@ test("a third ambiguous message in the same session cannot request clarification
   ];
   const { repository } = createRepositoryStub(history);
   let retrievalCalls = 0;
+  let answerCalls = 0;
   const service = createProductionChatService(repository, {
-    generateAnswer: generateAnswerWithoutKey,
+    generateAnswer: async () => {
+      answerCalls += 1;
+      throw new Error("generate_answer_should_not_be_called");
+    },
     getContext: async () => context,
     retrieve: async () => {
       retrievalCalls += 1;
       return citedRetrievalResult();
     },
-    understandQuery: async ({ question }) =>
-      fallbackQueryUnderstanding(question, {
-        assumptions: [
-          {
-            basis: "safe_default",
-            field: "subject_or_entity",
-            value: "all subjects represented in the workspace",
-          },
-        ],
-      }),
+    understandQuery: async () => {
+      throw new Error("query_understanding_should_not_be_called");
+    },
   });
 
   const result = await service.sendMessage("session_1", "What about that?");
 
   assert.notEqual(result.assistantMessage.trace?.route, "missing_context");
-  assert.equal(retrievalCalls, 1);
+  assert.equal(retrievalCalls, 0);
+  assert.equal(answerCalls, 0);
+  assert.deepEqual(result.assistantMessage.citations, []);
+  assert.deepEqual(result.assistantMessage.trace?.queryUnderstanding?.assumptions, []);
+  assert.deepEqual(result.assistantMessage.trace?.retrievalToolsCalled, []);
+  assert.deepEqual(result.assistantMessage.trace?.queryUnderstanding?.warnings, [
+    "unresolved_vague_follow_up",
+  ]);
+  assert.match(result.assistantMessage.content, /cannot identify the subject/i);
+  assert.match(result.assistantMessage.content, /document, topic, policy, product/i);
+  assert.doesNotMatch(result.assistantMessage.content, /Assumptions used/i);
 });

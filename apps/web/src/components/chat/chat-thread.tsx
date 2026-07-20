@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
 import type { ChatMessage } from "@/lib/chat-types";
+import type { MetadataClarificationSelection } from "@/lib/chat-router";
 
 export type PendingChatMessage = {
   content: string;
@@ -12,10 +13,17 @@ export type PendingChatMessage = {
 };
 
 export function ChatThread({
+  isPending,
   messages,
+  onSend,
   pendingMessage,
 }: {
+  isPending: boolean;
   messages: ChatMessage[];
+  onSend: (
+    content: string,
+    selection?: MetadataClarificationSelection[],
+  ) => void;
   pendingMessage?: PendingChatMessage | null;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -41,8 +49,15 @@ export function ChatThread({
 
   return (
     <div className="flex min-h-full flex-col justify-end gap-6 py-4">
-      {messages.map((message) => (
-        <ChatMessageBubble key={message.id} message={message} />
+      {messages.map((message, index) => (
+        <ChatMessageBubble
+          canAnswerClarification={
+            !isPending && index === messages.length - 1 && message.role === "assistant"
+          }
+          key={message.id}
+          message={message}
+          onClarificationSubmit={onSend}
+        />
       ))}
       {pendingMessage ? (
         <>
