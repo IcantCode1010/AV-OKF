@@ -462,6 +462,8 @@ Status: core implementation complete. Bounded relation traversal, lifecycle/path
 
 Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, metadata-driven weak-evidence clarification, unsupported live data, and missing-vector discovery fallback. The metadata case is two-turn: diagnostic near misses cannot become citations or validation input, and a still-unresolved follow-up falls through to labeled raw RAG without asking again. The profile also blocks retracted evidence and per-question citation regressions. Failure injection, multi-bundle isolation, and the broader mixed-domain question corpus remain separate follow-up slices.
 
+Stage 7C release coverage now runs in that same Docker profile. It enforces the PDF-serving workspace boundary (including indistinguishable foreign and nonexistent responses), exercises persisted citation behavior after retraction/archive/source deletion, verifies exact positive and negative KnowledgeGap writes with final evidence status, and confirms honest misses report real searched-corpus counts without invented citation markers.
+
 Agent policy:
 
 - Search approved, active-lifecycle OKF concepts first.

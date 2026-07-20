@@ -220,6 +220,7 @@ test("appendUserMessageAndAssistantReply stores a knowledge gap in the message t
     content: "What is the official missing procedure?",
     context,
     knowledgeGap: {
+      finalEvidenceStatus: "no_evidence",
       question: "What is the official missing procedure?",
       reason: "no_matching_evidence",
       retrievalQuery: "official missing procedure",
@@ -232,6 +233,7 @@ test("appendUserMessageAndAssistantReply stores a knowledge gap in the message t
   assert.deepEqual(writes, [{
     assistantMessageId: "msg_assistant",
     chatSessionId: "session_1",
+    finalEvidenceStatus: "no_evidence",
     knowledgeBundleId,
     question: "What is the official missing procedure?",
     reason: "no_matching_evidence",

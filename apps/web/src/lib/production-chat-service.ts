@@ -189,6 +189,7 @@ export function createProductionChatService(
           ? await retrieve({
             clarificationAlreadyAsked: clarification.alreadyAsked,
             decision,
+            includeSearchSummary: true,
             knowledgeBundleId: history.session.knowledgeBundleId,
             query: retrievalQuery,
             workspaceId: context.workspaceId,
@@ -272,6 +273,9 @@ export function createProductionChatService(
           : {}),
         rerank: retrieval.rerank,
         retrievalToolsCalled: retrieval.retrievalToolsCalled,
+        ...(retrieval.searchSummary
+          ? { searchSummary: retrieval.searchSummary }
+          : {}),
         sourcesRead: retrieval.sourcesRead,
       };
       const answerValidation = retrieval.metadataClarification || unresolvedVagueFollowUp
@@ -305,6 +309,7 @@ export function createProductionChatService(
         disclosedAnswer.outcome === "insufficient_evidence" &&
         isRetrievalRoute(decision.route)
           ? {
+              finalEvidenceStatus: resolveEvidenceStatus(retrieval),
               question: content,
               reason: retrieval.citations.length === 0
                 ? "no_matching_evidence"

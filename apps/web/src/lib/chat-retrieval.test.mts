@@ -541,6 +541,23 @@ test("buildRetrievalAnswer reports missing evidence per route when there are no 
   assert.match(buildRetrievalAnswer("hybrid", empty), /approved knowledge bundle and indexed source documents/i);
 });
 
+test("buildRetrievalAnswer reports real corpus counts for an honest miss", () => {
+  const answer = buildRetrievalAnswer("okf_only", {
+    citations: [],
+    retrievalError: false,
+    searchSummary: {
+      approvedKnowledgeMatches: 0,
+      bundlesSearched: 1,
+      indexedDocumentsSearched: 3,
+    },
+  });
+
+  assert.match(answer, /1 active knowledge bundle \(0 approved knowledge matches\)/i);
+  assert.match(answer, /3 indexed documents/i);
+  assert.match(answer, /rephrase the question/i);
+  assert.doesNotMatch(answer, /\[\d+\]/);
+});
+
 test("buildRetrievalAnswer reports unavailable retrieval distinctly from missing evidence", () => {
   const answer = buildRetrievalAnswer("okf_only", { citations: [], retrievalError: true });
 

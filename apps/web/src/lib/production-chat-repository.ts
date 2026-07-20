@@ -146,6 +146,7 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
               data: {
                 assistantMessageId: assistantRecord.id,
                 chatSessionId: input.sessionId,
+                finalEvidenceStatus: input.knowledgeGap.finalEvidenceStatus,
                 knowledgeBundleId: sessionRecord.knowledgeBundleId,
                 question: input.knowledgeGap.question,
                 reason: input.knowledgeGap.reason,

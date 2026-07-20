@@ -222,7 +222,11 @@ export async function markOkfConceptLifecycle(input: {
     await input.embeddingCleanup(input);
   } else if (process.env.AV_OKF_BACKEND === "production") {
     const { createOkfConceptEmbeddingRepository } = await import("./okf-concept-embedding.ts");
-    await createOkfConceptEmbeddingRepository().deleteForFile(input);
+    await createOkfConceptEmbeddingRepository().deleteForFile({
+      filePath: input.filePath,
+      knowledgeBundleId: input.knowledgeBundleId,
+      workspaceId: input.workspaceId,
+    });
   }
 
   await appendLifecycleLogEntry({

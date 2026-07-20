@@ -33,6 +33,7 @@ type AppendCall = {
   content: string;
   context: AuthWorkspaceContext;
   knowledgeGap?: {
+    finalEvidenceStatus: string;
     question: string;
     reason: string;
     retrievalQuery: string;
@@ -174,6 +175,7 @@ test("sendMessage reports no evidence when retrieval finds nothing", async () =>
   assert.equal(appendCalls[0]?.assistantTrace.finalEvidenceStatus, "no_evidence");
   assert.equal(appendCalls[0]?.assistantTrace.answerOutcome, "insufficient_evidence");
   assert.deepEqual(appendCalls[0]?.knowledgeGap, {
+    finalEvidenceStatus: "no_evidence",
     question: "What is the official manual path for GEN OFF BUS?",
     reason: "no_matching_evidence",
     retrievalQuery: "What is the official manual path for GEN OFF BUS?",

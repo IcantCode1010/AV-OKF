@@ -3,7 +3,7 @@
 ## Purpose
 
 The route-coverage evaluation protects the full chat retrieval contract, not
-only answer wording or general citation quality. It runs nine golden scenarios
+only answer wording or general citation quality. It runs nine golden route scenarios
 through the production chat service against Docker Postgres, Redis, the worker,
 the live OKF bundle, pgvector, and the configured workspace LLM provider.
 
@@ -25,6 +25,23 @@ citations and never enter answer validation. It checks every result for
 retracted-content leakage and compares each
 question's correct citation count with the committed baseline.
 
+Stage 7C extends the same harness with thirteen release checks rather than a
+parallel evaluator:
+
+- authenticated PDF streaming for an owned document;
+- indistinguishable cross-workspace and nonexistent-document responses;
+- unauthenticated PDF rejection;
+- retracted, archived, and deleted-source citation races;
+- exact KnowledgeGap counts for true misses, resolved clarification, successful
+  RAG discovery, and failed OKF-to-RAG fallback;
+- an honest-miss response backed by persisted bundle/document search counts and
+  containing no citation markers.
+
+Any PDF authorization failure fails the whole run. Transport-generated HTTP
+headers (`date`, connection management, and transfer encoding) are excluded
+when comparing cross-workspace and nonexistent responses; every application
+header, status, and response body must otherwise be identical.
+
 ## Run Locally
 
 Start the production Docker stack and make sure Settings contains a usable LLM
@@ -35,6 +52,7 @@ provider key for at least one workspace. The worker must also have
 docker compose up -d --build --wait
 docker cp docs/debug/route-coverage-retrieval-baseline-2026-07-19.json av-okf-worker-1:/tmp/route-baseline.json
 docker compose exec -T `
+  -e EVAL_APP_BASE_URL=http://web:3000 `
   -e EVAL_BASELINE_PATH=/tmp/route-baseline.json `
   -e EVAL_OUTPUT_PATH=/tmp/route-report.json `
   worker node node_modules/tsx/dist/cli.mjs scripts/eval-retrieval-quality.mts routes local
@@ -45,8 +63,18 @@ To seed an otherwise empty CI workspace, also pass
 settings function used by the product. The seed is idempotent and uses the
 `Route Coverage Evaluation` bundle.
 
+The Docker worker authenticates through the deployed credentials provider for
+the HTTP checks. Its configured test-auth user must have the evaluation
+workspace as its first workspace membership; the harness fails explicitly
+rather than altering an existing user's workspace selection.
+
 The GitHub Actions `route-coverage-eval` workflow exposes the same profile as a
 manual CI job. It requires the repository secret `OPENAI_API_KEY`.
+
+The first complete Stage 7C run is recorded in
+[`docs/debug/stage-7c-route-coverage-report-2026-07-20.json`](../debug/stage-7c-route-coverage-report-2026-07-20.json).
+It is a post-change report; the existing route baseline remains the citation
+regression authority and was not rewritten simply to make this slice pass.
 
 ## Add A Golden Question
 

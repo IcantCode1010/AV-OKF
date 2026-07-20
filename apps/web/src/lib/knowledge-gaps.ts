@@ -1,7 +1,9 @@
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import type { ChatEvidenceStatus } from "./chat-router.ts";
 import { getPrisma } from "./prisma.ts";
 
 export type KnowledgeGapDraft = {
+  finalEvidenceStatus: ChatEvidenceStatus;
   question: string;
   reason: "no_matching_evidence" | "related_evidence_not_answering";
   retrievalQuery: string;
@@ -31,6 +33,7 @@ export async function listKnowledgeGaps(input: {
 
   return records.map((record) => ({
     createdAt: record.createdAt.toISOString(),
+    finalEvidenceStatus: record.finalEvidenceStatus as ChatEvidenceStatus,
     id: record.id,
     question: record.question,
     reason: record.reason as KnowledgeGap["reason"],

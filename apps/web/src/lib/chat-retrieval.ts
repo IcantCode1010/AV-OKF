@@ -23,6 +23,7 @@ import {
   resolveKnowledgeBundleRoot,
 } from "./knowledge-bundles.ts";
 import { rerankRawRagCandidates, type RagRerankTrace } from "./rag-reranker.ts";
+import { getPrisma } from "./prisma.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
@@ -61,12 +62,20 @@ export type ChatRetrievalResult = {
   rerank: RagRerankTrace;
   retrievalError: boolean;
   retrievalToolsCalled: string[];
+  searchSummary?: ChatSearchSummary;
   sourcesRead: string[];
+};
+
+export type ChatSearchSummary = {
+  approvedKnowledgeMatches: number;
+  bundlesSearched: number;
+  indexedDocumentsSearched: number;
 };
 
 export type ChatRetrievalFn = (input: {
   decision: ChatRouterDecision;
   clarificationAlreadyAsked?: boolean;
+  includeSearchSummary?: boolean;
   knowledgeBundleId?: string;
   query: string;
   workspaceId: string;
@@ -144,6 +153,7 @@ export async function runChatRetrieval(
   input: {
     clarificationAlreadyAsked?: boolean;
     decision: ChatRouterDecision;
+    includeSearchSummary?: boolean;
     knowledgeBundleId?: string;
     query: string;
     workspaceId: string;
@@ -290,14 +300,17 @@ export async function runChatRetrieval(
         topK: RAG_TOP_K,
         workspaceId,
       });
-      return buildRetrievalResult(
-        discovery.results,
-        ["okf_retrieval", "rag_retrieval"],
-        {
-          approvedOkfAvailable: false,
-          ragUsedForDiscoveryOnly: discovery.results.length > 0,
-        },
-        discovery.trace,
+      return attachSearchSummary(
+        buildRetrievalResult(
+          discovery.results,
+          ["okf_retrieval", "rag_retrieval"],
+          {
+            approvedOkfAvailable: false,
+            ragUsedForDiscoveryOnly: discovery.results.length > 0,
+          },
+          discovery.trace,
+        ),
+        input,
       );
     }
 
@@ -310,10 +323,13 @@ export async function runChatRetrieval(
         topK: RAG_TOP_K,
         workspaceId,
       });
-      return buildRetrievalResult(reranked.results, toolsForRoute, {
-        approvedOkfAvailable: false,
-        ragUsedForDiscoveryOnly: reranked.results.length > 0,
-      }, reranked.trace);
+      return attachSearchSummary(
+        buildRetrievalResult(reranked.results, toolsForRoute, {
+          approvedOkfAvailable: false,
+          ragUsedForDiscoveryOnly: reranked.results.length > 0,
+        }, reranked.trace),
+        input,
+      );
     }
 
     // Hybrid reads OKF first, then RAG for the supporting evidence - kept
@@ -341,17 +357,20 @@ export async function runChatRetrieval(
       workspaceId,
     });
 
-    return buildCombinedRetrievalResult(
-      okfResults,
-      rag.results,
-      toolsForRoute,
-      {
-        approvedOkfAvailable: okfResults.length > 0,
-        ragUsedForDiscoveryOnly: okfResults.length === 0 && rag.results.length > 0,
-      },
-      "direct",
-      rag.trace,
-      effectiveKnowledgeBundleId,
+    return attachSearchSummary(
+      buildCombinedRetrievalResult(
+        okfResults,
+        rag.results,
+        toolsForRoute,
+        {
+          approvedOkfAvailable: okfResults.length > 0,
+          ragUsedForDiscoveryOnly: okfResults.length === 0 && rag.results.length > 0,
+        },
+        "direct",
+        rag.trace,
+        effectiveKnowledgeBundleId,
+      ),
+      input,
     );
   } catch {
     // A retrieval failure (missing/invalid embedding credentials, budget
@@ -368,6 +387,55 @@ export async function runChatRetrieval(
       sourcesRead: [],
     };
   }
+}
+
+async function attachSearchSummary(
+  result: ChatRetrievalResult,
+  input: {
+    includeSearchSummary?: boolean;
+    knowledgeBundleId?: string;
+    workspaceId: string;
+  },
+): Promise<ChatRetrievalResult> {
+  if (
+    !input.includeSearchSummary ||
+    result.citations.length > 0 ||
+    result.metadataClarification ||
+    result.retrievalError
+  ) {
+    return result;
+  }
+
+  const knowledgeBundleId = input.knowledgeBundleId ?? "kb_general_local";
+  const db = getPrisma();
+  const [bundlesSearched, indexedDocumentsSearched] = await Promise.all([
+    db.knowledgeBundle.count({
+      where: {
+        id: knowledgeBundleId,
+        status: "active",
+        workspaceId: input.workspaceId,
+      },
+    }),
+    db.document.count({
+      where: {
+        deletedAt: null,
+        knowledgeBundleId,
+        ragChunks: {
+          some: { isActive: true, sourceType: "raw_extraction" },
+        },
+        workspaceId: input.workspaceId,
+      },
+    }),
+  ]);
+
+  return {
+    ...result,
+    searchSummary: {
+      approvedKnowledgeMatches: 0,
+      bundlesSearched,
+      indexedDocumentsSearched,
+    },
+  };
 }
 
 function normalizeOkfDiagnostics(
@@ -649,7 +717,7 @@ function truncateExcerpt(text: string, maxChars: number): string {
 export type RetrievalAnswerInput = Pick<
   ChatRetrievalResult,
   "citations" | "retrievalError"
-> & Partial<Pick<ChatRetrievalResult, "retrievalToolsCalled" | "sourcesRead">> & {
+> & Partial<Pick<ChatRetrievalResult, "retrievalToolsCalled" | "searchSummary" | "sourcesRead">> & {
   ragUsedForDiscoveryOnly?: boolean;
 };
 
@@ -719,6 +787,11 @@ function buildMissingEvidenceAnswer(
   route: ChatRoute,
   retrieval: RetrievalAnswerInput,
 ): string {
+  if (retrieval.searchSummary) {
+    const summary = retrieval.searchSummary;
+    return `I could not find enough supported evidence to answer this reliably. I searched ${summary.bundlesSearched} active knowledge bundle${summary.bundlesSearched === 1 ? "" : "s"} (${summary.approvedKnowledgeMatches} approved knowledge matches) and ${summary.indexedDocumentsSearched} indexed document${summary.indexedDocumentsSearched === 1 ? "" : "s"}. Next, rephrase the question with a specific document, subject, version, or scope, or add and review a source because the current knowledge does not cover this yet.`;
+  }
+
   const sourcesRead = retrieval.sourcesRead ?? [];
   const toolsCalled = retrieval.retrievalToolsCalled ?? [];
   const searched = sourcesRead.length > 0

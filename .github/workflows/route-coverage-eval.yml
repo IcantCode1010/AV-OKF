@@ -29,6 +29,7 @@ jobs:
         run: |
           docker cp docs/debug/route-coverage-retrieval-baseline-2026-07-19.json av-okf-worker-1:/tmp/route-baseline.json
           docker compose exec -T \
+            -e EVAL_APP_BASE_URL=http://web:3000 \
             -e EVAL_LLM_API_KEY="$OPENAI_API_KEY" \
             -e EVAL_BASELINE_PATH=/tmp/route-baseline.json \
             -e EVAL_OUTPUT_PATH=/tmp/route-report.json \

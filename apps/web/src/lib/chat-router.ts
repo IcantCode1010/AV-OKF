@@ -109,6 +109,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   finalEvidenceStatus?: ChatEvidenceStatus;
   ragUsedForDiscoveryOnly?: boolean;
   retrievalToolsCalled: string[];
+  searchSummary?: import("./chat-retrieval.ts").ChatSearchSummary;
   sourcesRead: string[];
   stage: "router";
 };

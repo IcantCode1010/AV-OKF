@@ -87,7 +87,7 @@ export function createOkfConceptEmbeddingRepository(db: PrismaLike = getPrisma()
     },
 
     async failJob(input: { errorCode: string; errorMessage: string; jobId: string }) {
-      await db.okfConceptEmbeddingJob.update({
+      await db.okfConceptEmbeddingJob.updateMany({
         data: {
           completedAt: new Date(),
           errorCode: input.errorCode,
@@ -276,7 +276,11 @@ export async function runOkfConceptEmbeddingJob(
     const parsed = parseOkfMarkdown(markdown);
     const contentHash = hashOkfSource(markdown);
     if (contentHash !== payload.contentHash || lifecycle.status !== "active" || !isAgentReadyOkfMetadata(parsed.frontmatter, parsed.body)) {
-      await repository.deleteForFile(payload);
+      await repository.deleteForFile({
+        filePath: payload.filePath,
+        knowledgeBundleId: payload.knowledgeBundleId,
+        workspaceId: payload.workspaceId,
+      });
       return;
     }
     const text = buildOkfConceptEmbeddingText({ bundleName: bundle.name, markdown });

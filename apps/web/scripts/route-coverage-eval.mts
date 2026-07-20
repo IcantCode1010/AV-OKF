@@ -1,4 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { getEmbeddingProvider } from "../src/lib/embedding-provider.ts";
@@ -20,6 +21,13 @@ import { runRagIndexJob } from "../src/lib/rag-indexer.ts";
 import { createRagRepository } from "../src/lib/rag-repository.ts";
 import type { Stage6aRouterTrace } from "../src/lib/chat-router.ts";
 import type { ChatCitation } from "../src/lib/chat-types.ts";
+import { getChatCitationHref } from "../src/lib/chat-citation-links.ts";
+import { parseCitationMarkers } from "../src/lib/chat-citation-markers.ts";
+import { markOkfConceptLifecycle } from "../src/lib/okf-lifecycle.ts";
+import {
+  buildDocumentObjectKey,
+  getObjectStorage,
+} from "../src/lib/production-storage.ts";
 import {
   getWorkspaceLlmApiKeyForEnrichment,
   saveWorkspaceLlmApiKey,
@@ -29,7 +37,13 @@ const EVAL_USER_ID = "e2e-route-coverage";
 const BUNDLE_NAME = "Route Coverage Evaluation";
 const BUNDLE_SLUG = "route-coverage-evaluation";
 const DOCUMENT_ID = "route_coverage_eval_document_v1";
+const FOREIGN_DOCUMENT_ID = "route_coverage_eval_foreign_document_v1";
+const FOREIGN_WORKSPACE_ID = "route_coverage_eval_foreign_workspace_v1";
 const RAW_DOCUMENT_TITLE = "Route Coverage Raw Operations Log";
+const EVAL_PDF_BYTES = Buffer.from(
+  "%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n",
+  "utf8",
+);
 const ACTIVE_FILES = {
   audit: "concepts/policy/audit-retention-standard.md",
   graphTarget: "concepts/procedure/power-balance-guard.md",
@@ -60,6 +74,12 @@ type PersistedTurn = {
   assistantContent: string;
   citations: ChatCitation[];
   trace: Stage6aRouterTrace;
+};
+
+type Stage7cScenarioResult = {
+  assertionErrors: string[];
+  id: string;
+  passed: boolean;
 };
 
 export async function runRouteCoverageEval(input: {
@@ -173,6 +193,17 @@ export async function runRouteCoverageEval(input: {
     });
   }
 
+  // Route cases intentionally mutate embeddings and lifecycle fixtures. Reset
+  // them before Stage 7C probes so every scenario begins from a known state.
+  await seedRagDocument({ bundleId: bundle.id, workspaceId });
+  await seedConcepts({ bundleId: bundle.id, workspaceId });
+  const stage7cScenarios = await runStage7cScenarios({
+    bundleId: bundle.id,
+    context,
+    service,
+    workspaceId,
+  });
+
   const baseline = input.baselinePath
     ? JSON.parse(await readFile(input.baselinePath, "utf8")) as RouteCoverageReport
     : null;
@@ -188,10 +219,15 @@ export async function runRouteCoverageEval(input: {
   const report = {
     bundleId: bundle.id,
     evaluatedAt: new Date().toISOString(),
-    failedCount: results.filter((result) => !result.passed).length,
-    passedCount: results.filter((result) => result.passed).length,
+    failedCount:
+      results.filter((result) => !result.passed).length +
+      stage7cScenarios.filter((result) => !result.passed).length,
+    passedCount:
+      results.filter((result) => result.passed).length +
+      stage7cScenarios.filter((result) => result.passed).length,
     phase: input.phase,
     questions: results,
+    stage7cScenarios,
     workspaceId,
   } satisfies RouteCoverageReport;
   const serialized = `${JSON.stringify(report, null, 2)}\n`;
@@ -215,14 +251,23 @@ type RouteCoverageReport = {
     id: string;
     passed: boolean;
   }>;
+  stage7cScenarios: Stage7cScenarioResult[];
   workspaceId: string;
 };
 
 async function resolveEvalWorkspace() {
   const db = getPrisma();
   const requestedId = process.env.EVAL_WORKSPACE_ID?.trim();
+  const testAuthEmail = getTestAuthEmail();
+  const testAuthUser = await db.user.findUnique({
+    include: { memberships: { orderBy: { createdAt: "asc" }, take: 1 } },
+    where: { email: testAuthEmail },
+  });
+  const testAuthWorkspaceId = testAuthUser?.memberships[0]?.workspaceId;
   let workspace = requestedId
     ? await db.workspace.findUnique({ where: { id: requestedId } })
+    : testAuthWorkspaceId
+      ? await db.workspace.findUnique({ where: { id: testAuthWorkspaceId } })
     : await db.workspace.findFirst({
         orderBy: { createdAt: "asc" },
         where: { llmSetting: { is: { encryptedApiKey: { not: null } } } },
@@ -242,7 +287,32 @@ async function resolveEvalWorkspace() {
   }
   const configuredKey = await getWorkspaceLlmApiKeyForEnrichment(workspace.id);
   if (!configuredKey) throw new Error("route_eval_workspace_llm_key_required");
+  await ensureTestAuthWorkspace(workspace.id);
   return workspace.id;
+}
+
+async function ensureTestAuthWorkspace(workspaceId: string) {
+  const db = getPrisma();
+  const user = await db.user.upsert({
+    create: { email: getTestAuthEmail(), name: "Route Coverage Test User" },
+    update: {},
+    where: { email: getTestAuthEmail() },
+  });
+  const firstMembership = await db.workspaceMember.findFirst({
+    orderBy: { createdAt: "asc" },
+    where: { userId: user.id },
+  });
+
+  if (firstMembership && firstMembership.workspaceId !== workspaceId) {
+    throw new Error(
+      `route_eval_test_auth_workspace_mismatch:${firstMembership.workspaceId}:${workspaceId}`,
+    );
+  }
+  if (!firstMembership) {
+    await db.workspaceMember.create({
+      data: { role: "admin", userId: user.id, workspaceId },
+    });
+  }
 }
 
 async function seedBundle(context: { role: "admin"; userId: string; workspaceId: string }) {
@@ -352,6 +422,16 @@ async function seedConcepts(input: { bundleId: string; workspaceId: string }) {
 
 async function seedRagDocument(input: { bundleId: string; workspaceId: string }) {
   const db = getPrisma();
+  const objectKey = buildDocumentObjectKey({
+    documentId: DOCUMENT_ID,
+    objectId: "route_coverage_eval",
+    workspaceId: input.workspaceId,
+  });
+  await getObjectStorage().putObject({
+    body: EVAL_PDF_BYTES,
+    contentType: "application/pdf",
+    key: objectKey,
+  });
   await db.document.deleteMany({ where: { id: DOCUMENT_ID, workspaceId: input.workspaceId } });
   await db.document.create({
     data: {
@@ -388,11 +468,22 @@ async function seedRagDocument(input: { bundleId: string; workspaceId: string })
       id: DOCUMENT_ID,
       knowledgeBundleId: input.bundleId,
       mimeType: "application/pdf",
+      objects: {
+        create: {
+          bucket: process.env.S3_BUCKET ?? "av-okf",
+          contentType: "application/pdf",
+          kind: "original_pdf",
+          objectKey,
+          sizeBytes: EVAL_PDF_BYTES.length,
+          workspaceId: input.workspaceId,
+        },
+      },
+      originalFilename: "route-coverage-evaluation.pdf",
       owner: "Route Eval",
       pages: 3,
       ragStatus: "not_indexed",
-      size: "2 KB",
-      sizeBytes: 2048,
+      size: `${EVAL_PDF_BYTES.length} B`,
+      sizeBytes: EVAL_PDF_BYTES.length,
       sourceType: "PDF",
       status: "ready",
       tags: ["evaluation", "raw"],
@@ -475,6 +566,496 @@ async function withdrawWeakCandidates(bundleId: string, workspaceId: string) {
       "utf8",
     );
   }
+}
+
+async function runStage7cScenarios(input: {
+  bundleId: string;
+  context: { role: "admin"; userId: string; workspaceId: string };
+  service: ReturnType<typeof createProductionChatService>;
+  workspaceId: string;
+}): Promise<Stage7cScenarioResult[]> {
+  const db = getPrisma();
+  const results: Stage7cScenarioResult[] = [];
+  const record = async (id: string, verify: () => Promise<string[]>) => {
+    try {
+      const assertionErrors = await verify();
+      results.push({ assertionErrors, id, passed: assertionErrors.length === 0 });
+    } catch (error) {
+      results.push({
+        assertionErrors: [`exception:${formatError(error)}`],
+        id,
+        passed: false,
+      });
+    }
+  };
+
+  await seedForeignPdfDocument();
+  const auth = await createTestAuthClient();
+  const crossWorkspace = await snapshotHttpResponse(
+    await auth.request(`/api/documents/${FOREIGN_DOCUMENT_ID}/file`),
+  );
+  const nonexistent = await snapshotHttpResponse(
+    await auth.request(`/api/documents/${randomUUID()}/file`),
+  );
+
+  await record("stage7c-pdf-cross-workspace", async () => [
+    ...expectEqual(crossWorkspace.status, 404, "status"),
+    ...expectEqual(crossWorkspace.body, nonexistent.body, "body_matches_nonexistent"),
+    ...expectEqual(
+      JSON.stringify(crossWorkspace.headers),
+      JSON.stringify(nonexistent.headers),
+      "headers_match_nonexistent",
+    ),
+  ]);
+  await record("stage7c-pdf-nonexistent", async () => [
+    ...expectEqual(nonexistent.status, 404, "status"),
+    ...expectEqual(nonexistent.body, "Document not found", "body"),
+  ]);
+  await record("stage7c-pdf-own-document", async () => {
+    const response = await auth.request(`/api/documents/${DOCUMENT_ID}/file`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return [
+      ...expectEqual(response.status, 200, "status"),
+      ...expectEqual(response.headers.get("content-type"), "application/pdf", "content-type"),
+      ...(response.headers.get("content-disposition")?.startsWith("inline")
+        ? []
+        : [`content-disposition:${response.headers.get("content-disposition")}`]),
+      ...expectEqual(response.headers.get("cache-control"), "private, no-store", "cache-control"),
+      ...expectEqual(bytes.length, EVAL_PDF_BYTES.length, "byte_length"),
+      ...expectEqual(bytes.equals(EVAL_PDF_BYTES), true, "bytes_match"),
+    ];
+  });
+  await record("stage7c-pdf-unauthenticated", async () => {
+    const response = await fetch(
+      `${getEvalAppBaseUrl()}/api/documents/${DOCUMENT_ID}/file`,
+      { redirect: "manual" },
+    );
+    return [...expectEqual(response.status, 401, "status")];
+  });
+
+  const zeroEvidence = await runGapQuestion(input, {
+    id: "zero-evidence",
+    question: "Search every document for zephyr quasar protocol 9917.",
+  });
+  await record("stage7c-gap-zero-evidence", async () => [
+    ...expectEqual(zeroEvidence.gaps.length, 1, "gap_count"),
+    ...expectEqual(zeroEvidence.gaps[0]?.question, zeroEvidence.question, "question"),
+    ...expectEqual(zeroEvidence.gaps[0]?.route, zeroEvidence.turn.trace.route, "route"),
+    ...expectEqual(
+      zeroEvidence.gaps[0]?.finalEvidenceStatus,
+      zeroEvidence.turn.trace.finalEvidenceStatus,
+      "finalEvidenceStatus",
+    ),
+  ]);
+  await record("stage7c-honest-miss-content", async () => {
+    const summary = zeroEvidence.turn.trace.searchSummary;
+    const citationMarkers = parseCitationMarkers(zeroEvidence.turn.assistantContent).filter(
+      (segment) => segment.type === "citation",
+    );
+    return [
+      ...(summary ? [] : ["searchSummary:missing"]),
+      ...expectEqual(summary?.approvedKnowledgeMatches, 0, "approvedKnowledgeMatches"),
+      ...(Number(summary?.bundlesSearched ?? 0) > 0 ? [] : ["bundlesSearched:not_positive"]),
+      ...(Number(summary?.indexedDocumentsSearched ?? 0) > 0
+        ? []
+        : ["indexedDocumentsSearched:not_positive"]),
+      ...(zeroEvidence.turn.assistantContent.includes(
+        `${summary?.bundlesSearched} active knowledge bundle`,
+      )
+        ? []
+        : ["response_missing_bundle_count"]),
+      ...(zeroEvidence.turn.assistantContent.includes(
+        `${summary?.indexedDocumentsSearched} indexed document`,
+      )
+        ? []
+        : ["response_missing_document_count"]),
+      ...(/rephrase|add and review a source/i.test(zeroEvidence.turn.assistantContent)
+        ? []
+        : ["response_missing_next_step"]),
+      ...expectEqual(citationMarkers.length, 0, "citation_marker_count"),
+    ];
+  });
+
+  await record("stage7c-gap-clarification-resolved", async () => {
+    await seedConcepts({ bundleId: input.bundleId, workspaceId: input.workspaceId });
+    const session = await input.service.createSession(
+      input.bundleId,
+      "Stage 7C resolved clarification",
+    );
+    const first = await input.service.sendMessage(session.id, "What does ground leveling mean?");
+    const firstTrace = first.assistantMessage.trace as Stage6aRouterTrace | undefined;
+    const clarification = firstTrace?.metadataClarification;
+    if (!clarification) return ["metadataClarification:missing"];
+    const selection = clarification.fields.map((field) => ({
+      field: field.field,
+      label: field.label,
+      value:
+        ({ document_type: "Operations Manual", subject_family: "Forklift" } as Record<string, string>)[field.field] ??
+        field.options[0] ??
+        "",
+    }));
+    const followUp = await input.service.sendMessage(
+      session.id,
+      "Forklift, Operations Manual",
+      selection,
+    );
+    const gapCount = await db.knowledgeGap.count({ where: { chatSessionId: session.id } });
+    return [
+      ...expectEqual(gapCount, 0, "gap_count"),
+      ...(followUp.assistantMessage.citations.length > 0
+        ? []
+        : ["follow_up_citations:missing"]),
+    ];
+  });
+
+  const ragFound = await runGapQuestion(input, {
+    id: "rag-found",
+    question: "Search every document for calibration drift examples.",
+  });
+  await record("stage7c-gap-rag-found", async () => [
+    ...expectEqual(ragFound.gaps.length, 0, "gap_count"),
+    ...(ragFound.turn.citations.some((citation) => citation.sourceType === "rag")
+      ? []
+      : ["rag_citation:missing"]),
+  ]);
+
+  const fallbackMiss = await runGapQuestion(input, {
+    id: "fallback-miss",
+    question: "What is the approved nebula orchard exception 8842 procedure?",
+    preUseClarificationRound: true,
+  });
+  await record("stage7c-gap-rag-fallback-miss", async () => [
+    ...expectEqual(fallbackMiss.gaps.length, 1, "gap_count"),
+    ...expectEqual(
+      fallbackMiss.gaps[0]?.finalEvidenceStatus,
+      "no_evidence",
+      "finalEvidenceStatus",
+    ),
+  ]);
+
+  await runCitationLifecycleScenarios({ ...input, auth, record });
+
+  // Keep the idempotent fixture ready for another evaluation run.
+  await db.okfConceptLifecycle.deleteMany({
+    where: {
+      filePath: { in: [ACTIVE_FILES.thermal, ACTIVE_FILES.audit] },
+      knowledgeBundleId: input.bundleId,
+      workspaceId: input.workspaceId,
+    },
+  });
+  await seedRagDocument({ bundleId: input.bundleId, workspaceId: input.workspaceId });
+  await seedConcepts({ bundleId: input.bundleId, workspaceId: input.workspaceId });
+  return results;
+}
+
+async function runCitationLifecycleScenarios(input: {
+  auth: TestAuthClient;
+  bundleId: string;
+  context: { role: "admin"; userId: string; workspaceId: string };
+  record(id: string, verify: () => Promise<string[]>): Promise<void>;
+  service: ReturnType<typeof createProductionChatService>;
+  workspaceId: string;
+}) {
+  const db = getPrisma();
+  const root = resolveKnowledgeBundleRoot({
+    bundleId: input.bundleId,
+    workspaceId: input.workspaceId,
+  });
+
+  await input.record("stage7c-citation-retracted", async () => {
+    const cited = await createCitedTurn(
+      input.service,
+      input.bundleId,
+      "What is the approved Thermal Regulation Protocol?",
+      "okf",
+    );
+    await markOkfConceptLifecycle({
+      actorId: EVAL_USER_ID,
+      filePath: ACTIVE_FILES.thermal,
+      knowledgeBundleId: input.bundleId,
+      knowledgeRoot: root,
+      reason: "Stage 7C citation-race evaluation.",
+      status: "retracted",
+      workspaceId: input.workspaceId,
+    });
+    const citation = await reloadCitation(input.service, cited.sessionId, cited.messageId);
+    const page = await input.auth.request(`/chat/${cited.sessionId}`);
+    const html = await page.text();
+    return [
+      ...expectEqual(
+        citation?.lifecycleNotice,
+        "This source was retracted after this answer was generated.",
+        "lifecycleNotice",
+      ),
+      ...expectEqual(citation ? getChatCitationHref(citation) : null, null, "citationHref"),
+      ...(html.includes("This source was retracted after this answer was generated.")
+        ? []
+        : ["rendered_notice:missing"]),
+    ];
+  });
+
+  await input.record("stage7c-citation-archived", async () => {
+    const cited = await createCitedTurn(
+      input.service,
+      input.bundleId,
+      "What is the approved Audit Retention Standard?",
+      "okf",
+    );
+    await markOkfConceptLifecycle({
+      actorId: EVAL_USER_ID,
+      filePath: ACTIVE_FILES.audit,
+      knowledgeBundleId: input.bundleId,
+      knowledgeRoot: root,
+      reason: "Stage 7C archived citation evaluation.",
+      status: "archived",
+      workspaceId: input.workspaceId,
+    });
+    const citation = await reloadCitation(input.service, cited.sessionId, cited.messageId);
+    return [
+      ...expectEqual(
+        citation?.lifecycleNotice,
+        "This source is now archived and may no longer reflect current approved knowledge.",
+        "lifecycleNotice",
+      ),
+      ...(citation?.lifecycleNotice?.includes("retracted")
+        ? ["archived_notice_uses_retracted_wording"]
+        : []),
+      ...expectEqual(citation ? getChatCitationHref(citation) : null, null, "citationHref"),
+    ];
+  });
+
+  await input.record("stage7c-citation-deleted-document", async () => {
+    const cited = await createCitedTurn(
+      input.service,
+      input.bundleId,
+      "Search every document for calibration drift examples.",
+      "rag",
+    );
+    const storedObject = await db.documentObject.findFirst({
+      where: { documentId: DOCUMENT_ID, workspaceId: input.workspaceId },
+    });
+    await db.document.delete({ where: { id: DOCUMENT_ID, workspaceId: input.workspaceId } });
+    if (storedObject) await getObjectStorage().deleteObject(storedObject.objectKey);
+    const citation = await reloadCitation(input.service, cited.sessionId, cited.messageId);
+    const response = await input.auth.request(`/api/documents/${DOCUMENT_ID}/file`);
+    return [
+      ...expectEqual(citation?.lifecycleNotice, "This source is no longer available.", "lifecycleNotice"),
+      ...expectEqual(citation ? getChatCitationHref(citation) : null, null, "citationHref"),
+      ...expectEqual(response.status, 404, "pdf_status"),
+      ...expectEqual(await response.text(), "Document not found", "pdf_body"),
+    ];
+  });
+}
+
+async function createCitedTurn(
+  service: ReturnType<typeof createProductionChatService>,
+  bundleId: string,
+  question: string,
+  sourceType: "okf" | "rag",
+) {
+  const session = await service.createSession(bundleId, `Stage 7C ${sourceType} citation`);
+  const sent = await service.sendMessage(session.id, question);
+  if (!sent.assistantMessage.citations.some((citation) => citation.sourceType === sourceType)) {
+    throw new Error(`stage7c_expected_${sourceType}_citation_missing`);
+  }
+  return { messageId: sent.assistantMessage.id, sessionId: session.id };
+}
+
+async function reloadCitation(
+  service: ReturnType<typeof createProductionChatService>,
+  sessionId: string,
+  messageId: string,
+) {
+  const session = await service.getSessionWithMessages(sessionId);
+  return session?.messages
+    .find((message) => message.id === messageId)
+    ?.citations[0];
+}
+
+async function runGapQuestion(
+  input: {
+    bundleId: string;
+    service: ReturnType<typeof createProductionChatService>;
+  },
+  options: { id: string; preUseClarificationRound?: boolean; question: string },
+) {
+  const db = getPrisma();
+  const session = await input.service.createSession(
+    input.bundleId,
+    `Stage 7C gap: ${options.id}`,
+  );
+  if (options.preUseClarificationRound) {
+    await input.service.sendMessage(session.id, "Should I delete production data?");
+  }
+  const sent = await input.service.sendMessage(session.id, options.question);
+  const persisted = await db.chatMessage.findUnique({
+    select: { citations: true, content: true, trace: true },
+    where: { id: sent.assistantMessage.id },
+  });
+  if (!persisted?.trace) throw new Error(`stage7c_gap_trace_missing:${options.id}`);
+  return {
+    gaps: await db.knowledgeGap.findMany({
+      orderBy: { createdAt: "asc" },
+      where: { chatSessionId: session.id },
+    }),
+    question: options.question,
+    turn: {
+      assistantContent: persisted.content,
+      citations: persisted.citations as unknown as ChatCitation[],
+      trace: persisted.trace as unknown as Stage6aRouterTrace,
+    } satisfies PersistedTurn,
+  };
+}
+
+async function seedForeignPdfDocument() {
+  const db = getPrisma();
+  const workspace = await db.workspace.upsert({
+    create: { id: FOREIGN_WORKSPACE_ID, name: "Route Coverage Foreign Workspace" },
+    update: {},
+    where: { id: FOREIGN_WORKSPACE_ID },
+  });
+  const bundle = await db.knowledgeBundle.upsert({
+    create: {
+      createdBy: EVAL_USER_ID,
+      description: "Cross-workspace PDF authorization fixture.",
+      id: "route_coverage_eval_foreign_bundle_v1",
+      name: "Foreign Route Coverage Bundle",
+      slug: "foreign-route-coverage-bundle",
+      workspaceId: workspace.id,
+    },
+    update: {},
+    where: {
+      workspaceId_slug: {
+        slug: "foreign-route-coverage-bundle",
+        workspaceId: workspace.id,
+      },
+    },
+  });
+  await db.document.deleteMany({ where: { id: FOREIGN_DOCUMENT_ID } });
+  const objectKey = buildDocumentObjectKey({
+    documentId: FOREIGN_DOCUMENT_ID,
+    objectId: "route_coverage_foreign",
+    workspaceId: workspace.id,
+  });
+  await getObjectStorage().putObject({
+    body: EVAL_PDF_BYTES,
+    contentType: "application/pdf",
+    key: objectKey,
+  });
+  await db.document.create({
+    data: {
+      description: "Foreign authorization boundary fixture.",
+      fileType: "PDF",
+      id: FOREIGN_DOCUMENT_ID,
+      knowledgeBundleId: bundle.id,
+      mimeType: "application/pdf",
+      objects: {
+        create: {
+          bucket: process.env.S3_BUCKET ?? "av-okf",
+          contentType: "application/pdf",
+          kind: "original_pdf",
+          objectKey,
+          sizeBytes: EVAL_PDF_BYTES.length,
+          workspaceId: workspace.id,
+        },
+      },
+      originalFilename: "foreign-route-coverage.pdf",
+      owner: "Route Eval Foreign",
+      size: `${EVAL_PDF_BYTES.length} B`,
+      sizeBytes: EVAL_PDF_BYTES.length,
+      sourceType: "PDF",
+      status: "ready",
+      tags: ["evaluation", "foreign"],
+      title: "Foreign Route Coverage PDF",
+      updatedLabel: "Now",
+      workspaceId: workspace.id,
+    },
+  });
+}
+
+type TestAuthClient = {
+  request(pathname: string, init?: RequestInit): Promise<Response>;
+};
+
+async function createTestAuthClient(): Promise<TestAuthClient> {
+  const cookies = new Map<string, string>();
+  const request = async (pathname: string, init: RequestInit = {}) => {
+    const response = await fetch(`${getEvalAppBaseUrl()}${pathname}`, {
+      ...init,
+      headers: {
+        ...(cookies.size > 0
+          ? { Cookie: [...cookies.entries()].map(([key, value]) => `${key}=${value}`).join("; ") }
+          : {}),
+        ...Object.fromEntries(new Headers(init.headers).entries()),
+      },
+      redirect: init.redirect ?? "manual",
+    });
+    absorbResponseCookies(response.headers, cookies);
+    return response;
+  };
+  const csrfResponse = await request("/api/auth/csrf");
+  if (!csrfResponse.ok) throw new Error(`route_eval_auth_csrf_failed:${csrfResponse.status}`);
+  const csrf = await csrfResponse.json() as { csrfToken?: string };
+  if (!csrf.csrfToken) throw new Error("route_eval_auth_csrf_token_missing");
+  const signIn = await request("/api/auth/callback/credentials?json=true", {
+    body: new URLSearchParams({
+      callbackUrl: `${getEvalAppBaseUrl()}/dashboard`,
+      csrfToken: csrf.csrfToken,
+      email: getTestAuthEmail(),
+      json: "true",
+      password: process.env.AV_OKF_TEST_AUTH_PASSWORD ?? "codex-local-test-password",
+    }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    method: "POST",
+  });
+  if (![200, 302].includes(signIn.status)) {
+    throw new Error(`route_eval_auth_sign_in_failed:${signIn.status}:${await signIn.text()}`);
+  }
+  const session = await request("/api/auth/session");
+  const sessionData = await session.json() as { user?: { email?: string } };
+  if (sessionData.user?.email !== getTestAuthEmail()) {
+    throw new Error("route_eval_auth_session_missing");
+  }
+  return { request };
+}
+
+function absorbResponseCookies(headers: Headers, cookies: Map<string, string>) {
+  const cookieHeaders = (
+    headers as Headers & { getSetCookie?: () => string[] }
+  ).getSetCookie?.() ?? splitCombinedSetCookie(headers.get("set-cookie"));
+  for (const header of cookieHeaders) {
+    const pair = header.split(";", 1)[0];
+    const separator = pair?.indexOf("=") ?? -1;
+    if (!pair || separator < 1) continue;
+    cookies.set(pair.slice(0, separator), pair.slice(separator + 1));
+  }
+}
+
+function splitCombinedSetCookie(value: string | null): string[] {
+  return value ? value.split(/,(?=\s*[^;,]+=)/) : [];
+}
+
+async function snapshotHttpResponse(response: Response) {
+  const ignoredHeaders = new Set(["connection", "date", "keep-alive", "transfer-encoding"]);
+  return {
+    body: await response.text(),
+    headers: [...response.headers.entries()]
+      .filter(([key]) => !ignoredHeaders.has(key.toLowerCase()))
+      .sort(([left], [right]) => left.localeCompare(right)),
+    status: response.status,
+  };
+}
+
+function getEvalAppBaseUrl() {
+  return (process.env.EVAL_APP_BASE_URL ?? "http://web:3000").replace(/\/$/, "");
+}
+
+function getTestAuthEmail() {
+  return (process.env.AV_OKF_TEST_AUTH_EMAIL ?? "test@av-okf.local").trim().toLowerCase();
+}
+
+function formatError(error: unknown) {
+  return error instanceof Error ? `${error.name}:${error.message}` : String(error);
 }
 
 function buildRouteCases(): RouteCase[] {
@@ -607,6 +1188,7 @@ function buildRouteCases(): RouteCase[] {
 
 function summarizeTrace(trace: Stage6aRouterTrace) {
   return {
+    answerOutcome: trace.answerOutcome ?? null,
     finalEvidenceStatus: trace.finalEvidenceStatus ?? null,
     okfEvidenceMode: trace.okfEvidenceMode ?? null,
     okfMatchMode: trace.okfMatchMode ?? null,
@@ -618,6 +1200,7 @@ function summarizeTrace(trace: Stage6aRouterTrace) {
     requiresGraphTraversal: trace.requiresGraphTraversal ?? false,
     retrievalToolsCalled: trace.retrievalToolsCalled,
     route: trace.route,
+    searchSummary: trace.searchSummary ?? null,
   };
 }
 
