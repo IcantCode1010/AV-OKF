@@ -4,6 +4,7 @@ This log tracks external sources reviewed during AV-OKF planning and implementat
 
 | Date Reviewed | Source | Topic | Product Impact | Notes File |
 | --- | --- | --- | --- | --- |
+| 2026-07-21 | YouTube: Local LLM Wiki as a persistent knowledge bookkeeper | Immutable sources, AI-maintained Markdown knowledge, compounding synthesis, and wiki linting | Confirms current architecture; suggests reviewed chat-to-concept promotion and bundle-maintenance diagnostics | [2026-07-21-local-llm-wiki-persistent-bookkeeper.md](2026-07-21-local-llm-wiki-persistent-bookkeeper.md) |
 | 2026-07-16 | LangChain: OpenWiki 0.2 brings OKF to codebase documentation | Agent-focused generated wikis and source-aware maintenance | Confirms current architecture; adds future source-revision and agent-instruction considerations | [2026-07-16-openwiki-02-okf-codebase-documentation.md](2026-07-16-openwiki-02-okf-codebase-documentation.md) |
 | 2026-07-15 | Analytics Vidhya: OKF - Redefining Knowledge Bases for AI Agents | OKF concept traversal and hybrid OKF/RAG architecture | Confirms current direction with a minor Stage 7C progressive-disclosure consideration | [2026-07-15-analytics-vidhya-okf-agent-knowledge-bases.md](2026-07-15-analytics-vidhya-okf-agent-knowledge-bases.md) |
 | 2026-07-06 | Agentic Resource Discovery Specification | Discovering callable agent resources before invocation | Future consideration with likely Stage 7/8 impact | [2026-07-06-agentic-resource-discovery.md](2026-07-06-agentic-resource-discovery.md) |

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { PdfUploadInput } from "@/components/pdf-upload-input";
 import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-backend";
 import { retryPermanentDocumentDeletionAction, uploadDocumentAction } from "./actions";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
@@ -108,14 +109,8 @@ export default async function DocumentsPage({
           >
             <div className="space-y-2">
               <Label htmlFor="file">PDF file</Label>
-              <Input
-                id="file"
-                name="file"
-                type="file"
-                accept="application/pdf,.pdf"
-                required
-              />
-              <p className="text-xs text-muted-foreground">
+              <PdfUploadInput maxBytes={MAX_UPLOAD_BYTES} />
+              <p id="pdf-upload-help" className="text-xs text-muted-foreground">
                 Files are stored under opaque keys in the local vault. Limit:{" "}
                 {Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.
               </p>

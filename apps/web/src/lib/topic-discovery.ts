@@ -6,6 +6,24 @@ import { getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 
 const DEFAULT_WINDOW_TOKEN_TARGET = 18_000;
 const DEFAULT_WINDOW_PAGE_LIMIT = 20;
+const WINDOW_MAX_OUTPUT_TOKENS = 4_000;
+const CONSOLIDATION_MAX_OUTPUT_TOKENS = 16_000;
+const CONTINUATION_BOUNDARY_LINE_LIMIT = 8;
+export const TOPIC_CONTINUATION_RESOLVER_VERSION = "explicit-continuation-v1";
+
+const CONTINUATION_CONNECTOR_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "continued",
+  "continuation",
+  "contd",
+  "for",
+  "of",
+  "or",
+  "the",
+  "to",
+]);
 
 const candidateSchema = z.object({
   confidence: z.enum(["low", "medium", "high"]),
@@ -21,6 +39,23 @@ const candidateListSchema = z.object({ topics: z.array(candidateSchema) });
 
 export type DiscoveredTopic = z.infer<typeof candidateSchema>;
 export type TopicDiscoveryStage = "window" | "consolidation";
+
+export type TopicContinuationEvidence = {
+  backwardMarker: string;
+  forwardMarker: string;
+  fromPage: number;
+  toPage: number;
+};
+
+export type ContinuationAmbiguity = TopicContinuationEvidence & {
+  candidateTitles: string[];
+  reason: "multiple_topic_candidates";
+};
+
+export type ResolvedDiscoveredTopic<Topic extends DiscoveredTopic = DiscoveredTopic> = Topic & {
+  continuationAmbiguities: ContinuationAmbiguity[];
+  continuationEvidence: TopicContinuationEvidence[];
+};
 
 export type TopicDiscoveryProvider = {
   model: string;
@@ -42,10 +77,17 @@ export type TopicDiscoveryAuditEntry = {
 
 export type TopicDiscoveryResult = {
   audits: TopicDiscoveryAuditEntry[];
+  continuationAmbiguities: ContinuationAmbiguity[];
   estimatedInputTokens: number;
-  topics: DiscoveredTopic[];
+  topics: ResolvedDiscoveredTopic[];
   totalWindows: number;
 };
+
+export function getTopicDiscoveryMaxOutputTokens(stage: TopicDiscoveryStage) {
+  return stage === "window"
+    ? WINDOW_MAX_OUTPUT_TOKENS
+    : CONSOLIDATION_MAX_OUTPUT_TOKENS;
+}
 
 export async function discoverDocumentTopics(input: {
   documentTitle: string;
@@ -100,7 +142,11 @@ export async function discoverDocumentTopics(input: {
       stage: "consolidation",
     });
     const parsed = candidateListSchema.parse(result.output);
-    const topics = validateDiscoveredTopics(parsed.topics, pages);
+    const continuationResult = resolveExplicitTopicContinuations({
+      pages,
+      topics: parsed.topics,
+    });
+    const topics = validateDiscoveredTopics(continuationResult.topics, pages);
     audits.push({
       errorMessage: null,
       promptSent: consolidationPrompt,
@@ -111,6 +157,7 @@ export async function discoverDocumentTopics(input: {
     });
     return {
       audits,
+      continuationAmbiguities: continuationResult.ambiguities,
       estimatedInputTokens: estimateTokens(pages.map((page) => page.text).join("\n")),
       topics,
       totalWindows: windows.length,
@@ -138,7 +185,7 @@ export function createSdkTopicDiscoveryProvider(input: {
     provider: input.provider,
     async discover({ prompt, stage }) {
       const result = await generateText({
-        maxOutputTokens: stage === "window" ? 4_000 : 8_000,
+        maxOutputTokens: getTopicDiscoveryMaxOutputTokens(stage),
         model: getSdkModel(input.provider, input.apiKey),
         output: Output.object({ schema: candidateListSchema }),
         prompt,
@@ -177,13 +224,13 @@ export function buildPageWindows(
   return windows;
 }
 
-export function validateDiscoveredTopics(
-  topics: DiscoveredTopic[],
+export function validateDiscoveredTopics<Topic extends DiscoveredTopic>(
+  topics: Topic[],
   pages: ExtractedPageRecord[],
-): DiscoveredTopic[] {
+): Topic[] {
   const validPages = new Set(pages.map((page) => page.pageNumber));
   const titles = new Set<string>();
-  const accepted: DiscoveredTopic[] = [];
+  const accepted: Topic[] = [];
 
   for (const topic of topics) {
     const title = normalizeTitle(topic.title);
@@ -208,6 +255,95 @@ export function validateDiscoveredTopics(
   }
   if (accepted.length === 0) throw new Error("topic_discovery_no_valid_topics");
   return accepted.sort((left, right) => left.pageNumbers[0]! - right.pageNumbers[0]! || left.title.localeCompare(right.title));
+}
+
+export function resolveExplicitTopicContinuations<Topic extends DiscoveredTopic>(input: {
+  pages: ExtractedPageRecord[];
+  topics: Topic[];
+}): { ambiguities: ContinuationAmbiguity[]; topics: ResolvedDiscoveredTopic<Topic>[] } {
+  const topics = input.topics.map<ResolvedDiscoveredTopic<Topic>>((topic) => ({
+    ...topic,
+    continuationAmbiguities: [],
+    continuationEvidence: [],
+    pageNumbers: uniqueSortedNumbers(topic.pageNumbers),
+  }));
+  const pages = new Map(input.pages.map((page) => [page.pageNumber, page]));
+  const evidenceByTopic = topics.map(() => new Map<string, TopicContinuationEvidence>());
+  const ambiguityByTopic = topics.map(() => new Map<string, ContinuationAmbiguity>());
+  const ambiguities = new Map<string, ContinuationAmbiguity>();
+  const boundaries = [...pages.keys()]
+    .sort((left, right) => left - right)
+    .flatMap((fromPage) => {
+      const toPage = fromPage + 1;
+      const current = pages.get(fromPage);
+      const next = pages.get(toPage);
+      if (!current || !next) return [];
+      const forwardMarker = findForwardContinuationMarker(current.text);
+      const backwardMarker = findBackwardContinuationMarker(next.text);
+      if (!forwardMarker || !backwardMarker) return [];
+      return [{ backwardMarker, forwardMarker, fromPage, toPage }];
+    });
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const boundary of boundaries) {
+      const candidates = topics
+        .map((topic, index) => ({ index, topic }))
+        .filter(({ topic }) => isTopicAtBoundary(topic, boundary.fromPage, boundary.toPage));
+      const markerLabels = [
+        boundary.forwardMarker.labelTokens,
+        boundary.backwardMarker.labelTokens,
+      ].filter((tokens) => tokens.length > 0);
+      if (markerLabels.length === 2 && !areMarkerLabelsCompatible(markerLabels[0]!, markerLabels[1]!)) {
+        continue;
+      }
+      const matched = filterContinuationCandidates(candidates, markerLabels);
+      if (matched.length === 0) continue;
+
+      const evidence: TopicContinuationEvidence = {
+        backwardMarker: boundary.backwardMarker.raw,
+        forwardMarker: boundary.forwardMarker.raw,
+        fromPage: boundary.fromPage,
+        toPage: boundary.toPage,
+      };
+      const key = continuationBoundaryKey(evidence);
+      if (matched.length > 1) {
+        const ambiguity: ContinuationAmbiguity = {
+          ...evidence,
+          candidateTitles: matched.map(({ topic }) => topic.title).sort(),
+          reason: "multiple_topic_candidates",
+        };
+        ambiguities.set(key, ambiguity);
+        for (const candidate of matched) {
+          ambiguityByTopic[candidate.index]!.set(key, ambiguity);
+        }
+        continue;
+      }
+
+      const selected = matched[0]!;
+      evidenceByTopic[selected.index]!.set(key, evidence);
+      ambiguityByTopic[selected.index]!.delete(key);
+      ambiguities.delete(key);
+      const pageNumbers = new Set(selected.topic.pageNumbers);
+      const before = pageNumbers.size;
+      pageNumbers.add(boundary.fromPage);
+      pageNumbers.add(boundary.toPage);
+      if (pageNumbers.size !== before) {
+        selected.topic.pageNumbers = [...pageNumbers].sort((left, right) => left - right);
+        changed = true;
+      }
+    }
+  }
+
+  topics.forEach((topic, index) => {
+    topic.continuationEvidence = [...evidenceByTopic[index]!.values()].sort(compareContinuationEvidence);
+    topic.continuationAmbiguities = [...ambiguityByTopic[index]!.values()].sort(compareContinuationEvidence);
+  });
+  return {
+    ambiguities: [...ambiguities.values()].sort(compareContinuationEvidence),
+    topics,
+  };
 }
 
 export class TopicDiscoveryError extends Error {
@@ -271,6 +407,129 @@ function buildConsolidationPrompt(title: string, pages: ExtractedPageRecord[], p
     "\nWindow candidates:",
     JSON.stringify(proposals),
   ].join("\n");
+}
+
+function findForwardContinuationMarker(text: string): {
+  labelTokens: string[];
+  raw: string;
+} | null {
+  const lines = boundaryLines(text).slice(-CONTINUATION_BOUNDARY_LINE_LIMIT).reverse();
+  for (const line of lines) {
+    const match = line.match(
+      /^(.*?)[\s:;,.–—-]*(?:continue|continued|continues)\s+(?:(?:on\s+)?(?:the\s+)?next\s+page|overleaf)\s*$/i,
+    );
+    if (!match) continue;
+    return {
+      labelTokens: canonicalContinuationTokens(match[1] ?? ""),
+      raw: line,
+    };
+  }
+  return null;
+}
+
+function findBackwardContinuationMarker(text: string): {
+  labelTokens: string[];
+  raw: string;
+} | null {
+  const lines = boundaryLines(text).slice(0, CONTINUATION_BOUNDARY_LINE_LIMIT);
+  for (const line of lines) {
+    if (/\bnext\s+page\b/i.test(line)) continue;
+    const match = line.match(
+      /^(.*?)[\s:;,.\-–—]*[([]?\s*(?:continued|continuation|cont\s*['’]?\s*d)(?:\s+from\s+(?:the\s+)?previous\s+page)?\s*[)\]]?\s*$/i,
+    );
+    if (!match) continue;
+    return {
+      labelTokens: canonicalContinuationTokens(match[1] ?? ""),
+      raw: line,
+    };
+  }
+  return null;
+}
+
+function boundaryLines(text: string): string[] {
+  return text
+    .normalize("NFKC")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function canonicalContinuationTokens(value: string): string[] {
+  return value
+    .normalize("NFKC")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .split(/\s+/)
+    .filter((token) => token && !CONTINUATION_CONNECTOR_WORDS.has(token));
+}
+
+function filterContinuationCandidates(
+  candidates: Array<{ index: number; topic: ResolvedDiscoveredTopic }>,
+  markerLabels: string[][],
+) {
+  if (markerLabels.length === 0) return candidates;
+  return candidates.filter(({ topic }) =>
+    markerLabels.every((labelTokens) => topicMatchesMarkerLabel(topic, labelTokens))
+  );
+}
+
+function topicMatchesMarkerLabel(
+  topic: ResolvedDiscoveredTopic,
+  labelTokens: string[],
+) {
+  if (labelTokens.length === 1) {
+    return topic.evidenceHeadings.some((heading) => {
+      const headingTokens = canonicalContinuationTokens(heading);
+      return headingTokens.length === 1 && headingTokens[0] === labelTokens[0];
+    });
+  }
+  return [topic.title, ...topic.evidenceHeadings].some((value) => {
+    const candidateTokens = canonicalContinuationTokens(value);
+    return containsTokenSequence(candidateTokens, labelTokens) ||
+      containsTokenSequence(labelTokens, candidateTokens);
+  });
+}
+
+function areMarkerLabelsCompatible(left: string[], right: string[]) {
+  if (left.length === 1 || right.length === 1) {
+    return left.length === right.length && left[0] === right[0];
+  }
+  return containsTokenSequence(left, right) || containsTokenSequence(right, left);
+}
+
+function containsTokenSequence(values: string[], expected: string[]): boolean {
+  if (expected.length < 2 || expected.length > values.length) return false;
+  for (let start = 0; start <= values.length - expected.length; start += 1) {
+    if (expected.every((token, index) => values[start + index] === token)) return true;
+  }
+  return false;
+}
+
+function isTopicAtBoundary(
+  topic: ResolvedDiscoveredTopic,
+  fromPage: number,
+  toPage: number,
+): boolean {
+  const pages = topic.pageNumbers;
+  if (pages.includes(fromPage) && pages.includes(toPage)) return true;
+  if (pages.at(-1) === fromPage && !pages.includes(toPage)) return true;
+  return pages[0] === toPage && !pages.includes(fromPage);
+}
+
+function continuationBoundaryKey(value: { fromPage: number; toPage: number }) {
+  return `${value.fromPage}:${value.toPage}`;
+}
+
+function compareContinuationEvidence(
+  left: { fromPage: number; toPage: number },
+  right: { fromPage: number; toPage: number },
+) {
+  return left.fromPage - right.fromPage || left.toPage - right.toPage;
+}
+
+function uniqueSortedNumbers(values: number[]) {
+  return [...new Set(values)].sort((left, right) => left - right);
 }
 
 function normalizeTitle(value: string) {

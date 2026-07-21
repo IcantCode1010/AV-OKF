@@ -13,6 +13,14 @@ import {
   createBullMqTopicDiscoveryQueue,
   type TopicDiscoveryJobPayload,
 } from "../lib/topic-discovery-queue.ts";
+import {
+  enqueuePendingTopicContinuationReconciliations,
+  runTopicContinuationReconciliation,
+} from "../lib/topic-continuation-reconciliation.ts";
+import {
+  createTopicContinuationReconciliationQueue,
+  type TopicContinuationReconciliationPayload,
+} from "../lib/topic-continuation-reconciliation-queue.ts";
 import { runKnowledgeAuthoringJob } from "../lib/knowledge-authoring.ts";
 import {
   createBullMqKnowledgeAuthoringQueue,
@@ -57,6 +65,7 @@ let knowledgeAuthoringWorker: Worker<KnowledgeAuthoringJobPayload> | null = null
 let okfEmbeddingWorker: Worker<OkfConceptEmbeddingJobPayload> | null = null;
 let bulkTopicApprovalWorker: Worker<BulkTopicApprovalJobPayload> | null = null;
 let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
+let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | null = null;
 
 void main();
 
@@ -73,6 +82,7 @@ async function main() {
   const queue = createBullMqExtractionQueue(redisUrl);
   const ragQueue = createBullMqRagIndexQueue(redisUrl);
   const topicDiscoveryQueue = createBullMqTopicDiscoveryQueue(redisUrl);
+  const topicContinuationQueue = createTopicContinuationReconciliationQueue(redisUrl);
   const knowledgeAuthoringQueue = createBullMqKnowledgeAuthoringQueue(redisUrl);
   const okfEmbeddingQueue = getOkfConceptEmbeddingQueue();
   const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
@@ -80,6 +90,12 @@ async function main() {
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
   await reconcileQueuedTopicDiscoveryJobs(repository, topicDiscoveryQueue);
+  const continuationDocuments = await enqueuePendingTopicContinuationReconciliations(
+    topicContinuationQueue.enqueue,
+  );
+  if (continuationDocuments > 0) {
+    console.log(`Queued continuation reconciliation for ${continuationDocuments} documents.`);
+  }
   await reconcileQueuedKnowledgeAuthoringRuns(repository, knowledgeAuthoringQueue);
   await reconcileOkfConceptEmbeddings({
     queue: okfEmbeddingQueue,
@@ -127,6 +143,12 @@ async function main() {
       concurrency: Number(process.env.TOPIC_DISCOVERY_WORKER_CONCURRENCY ?? "1"),
       connection: { url: redisUrl },
     },
+  );
+
+  topicContinuationWorker = new Worker<TopicContinuationReconciliationPayload>(
+    "topic-continuation-reconciliation",
+    async (job) => runTopicContinuationReconciliation(job.data),
+    { concurrency: 1, connection: { url: redisUrl } },
   );
 
   knowledgeAuthoringWorker = new Worker<KnowledgeAuthoringJobPayload>(
@@ -194,6 +216,14 @@ async function main() {
   });
   topicDiscoveryWorker.on("failed", (job, error) => {
     console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  topicContinuationWorker.on("completed", (job, result) => {
+    console.log(
+      `Topic continuation reconciliation completed: ${job.id} (${result.changedTopics} changed)`,
+    );
+  });
+  topicContinuationWorker.on("failed", (job, error) => {
+    console.error(`Topic continuation reconciliation failed: ${job?.id ?? "unknown"}`, error);
   });
   knowledgeAuthoringWorker.on("completed", (job) => {
     console.log(`Knowledge authoring run completed: ${job.id}`);
@@ -292,6 +322,7 @@ async function shutdown() {
   await ragWorker?.close();
   await bundleDeletionWorker?.close();
   await topicDiscoveryWorker?.close();
+  await topicContinuationWorker?.close();
   await knowledgeAuthoringWorker?.close();
   await okfEmbeddingWorker?.close();
   await bulkTopicApprovalWorker?.close();

@@ -17,9 +17,14 @@ export default function Error({
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            The shell hit an unexpected rendering error.
+            The request could not be completed. The application may have been updated while this page was open.
           </p>
-          <Button onClick={reset}>Try again</Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => window.location.reload()}>Reload page</Button>
+            <Button variant="outline" onClick={reset}>
+              Try again
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

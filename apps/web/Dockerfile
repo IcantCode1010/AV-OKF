@@ -11,7 +11,10 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN pnpm db:generate && pnpm build
+RUN pnpm db:generate \
+  && deployment_id="$(node -e "process.stdout.write(require('node:crypto').randomUUID())")" \
+  && NEXT_DEPLOYMENT_ID="$deployment_id" pnpm build \
+  && printf '%s' "$deployment_id" > .next/DEPLOYMENT_ID
 
 FROM node:24-alpine AS runner
 WORKDIR /app
@@ -40,4 +43,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
-CMD ["node", "node_modules/next/dist/bin/next", "start"]
+CMD ["sh", "-c", "NEXT_DEPLOYMENT_ID=\"$(cat .next/DEPLOYMENT_ID)\" exec node node_modules/next/dist/bin/next start"]
