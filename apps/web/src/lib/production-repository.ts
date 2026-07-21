@@ -116,7 +116,7 @@ type DbDocumentRecord = {
   topicDiscoveryJobs?: DbTopicDiscoveryJob[];
   fileType: string;
   id: string;
-  knowledgeBundleId: string;
+  knowledgeBundleId: string | null;
   documentType: string | null;
   mimeType: string;
   objects?: DbDocumentObject[];
@@ -328,6 +328,16 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       extractionJobId: string;
       workspaceId: string;
     }) {
+      const document = await db.document.findFirst({
+        where: {
+          deletedAt: null,
+          id: input.documentId,
+          knowledgeBundle: { status: "active" },
+          knowledgeBundleId: { not: null },
+          workspaceId: input.workspaceId,
+        },
+      });
+      if (!document) throw new Error("document_requires_active_knowledge_bundle");
       const { createRagRepository } = await import("./rag-repository.ts");
       return createRagRepository().createIndexJob(input);
     },
@@ -443,6 +453,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         input.context.workspaceId,
       );
       const mapped = mapDocument(document);
+      if (!document.knowledgeBundleId) throw new Error("document_requires_active_knowledge_bundle");
+      const knowledgeBundleId = document.knowledgeBundleId;
 
       if (mapped.extraction.status !== "completed") {
         throw new Error("document_extraction_not_completed");
@@ -479,7 +491,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             approvedContentSource: null,
             confidence: topic.confidence,
             documentId: input.documentId,
-            knowledgeBundleId: document.knowledgeBundleId,
+            knowledgeBundleId,
             enrichedSummary: null,
             enrichedTitle: null,
             enrichedBody: null,
@@ -1039,7 +1051,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         include: { knowledgeBundle: { include: { activeProfileVersion: true } } },
         where: { id: input.documentId, workspaceId: input.workspaceId },
       });
-      if (!document) throw new Error("document_not_found");
+      if (!document?.knowledgeBundleId || !document.knowledgeBundle || document.knowledgeBundle.status !== "active") {
+        throw new Error("document_requires_active_knowledge_bundle");
+      }
       if (!document.knowledgeBundle.activeProfileVersion) {
         throw new Error("knowledge_bundle_active_profile_missing");
       }
@@ -1070,7 +1084,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         select: { documentId: true, id: true, workspaceId: true },
         take: limit,
         where: {
-          document: { deletedAt: null },
+          document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
           status: { in: ["queued", "running"] },
         },
       });
@@ -1081,7 +1095,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         select: { documentId: true, id: true, workspaceId: true },
         take: limit,
         where: {
-          document: { deletedAt: null },
+          document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
           status: { in: ["queued", "analyzing", "consolidating"] },
         },
       });

@@ -164,7 +164,7 @@ export type TopicRecord = {
 export type Document = {
   id: string;
   workspaceId?: string;
-  knowledgeBundleId: string;
+  knowledgeBundleId: string | null;
   title: string;
   fileType: string;
   size: string;
@@ -843,7 +843,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         .map((candidate): TopicRecord => ({
           ...candidate,
           id: `topic-${randomUUID()}`,
-          knowledgeBundleId: document.knowledgeBundleId,
+          knowledgeBundleId: document.knowledgeBundleId ?? LOCAL_GENERAL_BUNDLE_ID,
           originalTitle: candidate.title,
           originalSummary: candidate.summary,
           approvedContentSource: null,

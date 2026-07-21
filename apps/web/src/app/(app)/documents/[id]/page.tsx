@@ -31,10 +31,11 @@ import { getOkfConceptLifecycleByFile } from "@/lib/okf-lifecycle";
 import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
 import { listOkfBundleFiles } from "@/lib/okf-bundle";
 import { formatOkfExportError } from "@/lib/okf-export-errors";
-import { runExtractionAction } from "../actions";
+import { assignDocumentToKnowledgeBundleAction, runExtractionAction } from "../actions";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import {
   getKnowledgeBundleByIdentity,
+  listKnowledgeBundles,
   resolveKnowledgeBundleRoot,
 } from "@/lib/knowledge-bundles";
 import { getLatestKnowledgeAuthoringRun } from "@/lib/knowledge-authoring";
@@ -88,46 +89,50 @@ export default async function DocumentDetailPage({
   }
 
   const currentDocument = document;
-  const bundle = await getKnowledgeBundleByIdentity({
-    bundleId: currentDocument.knowledgeBundleId,
-    workspaceId: context.workspaceId,
-  });
-  if (!bundle) notFound();
-  const currentBundle = bundle;
-  const knowledgeRoot = resolveKnowledgeBundleRoot({
-    bundleId: currentBundle.id,
-    workspaceId: context.workspaceId,
-  });
-  const [relationTargets, authoringRun] = await Promise.all([
-    getRelationTargets(knowledgeRoot),
-    getLatestKnowledgeAuthoringRun({ context, documentId: id }),
+  const currentBundle = currentDocument.knowledgeBundleId
+    ? await getKnowledgeBundleByIdentity({
+        bundleId: currentDocument.knowledgeBundleId,
+        workspaceId: context.workspaceId,
+      })
+    : null;
+  const assigned = Boolean(currentBundle);
+  const knowledgeRoot = currentBundle
+    ? resolveKnowledgeBundleRoot({ bundleId: currentBundle.id, workspaceId: context.workspaceId })
+    : null;
+  const [relationTargets, authoringRun, availableBundles] = await Promise.all([
+    knowledgeRoot ? getRelationTargets(knowledgeRoot) : Promise.resolve([]),
+    assigned ? getLatestKnowledgeAuthoringRun({ context, documentId: id }) : Promise.resolve(null),
+    assigned ? Promise.resolve([]) : listKnowledgeBundles(context),
   ]);
-  const allowedRelations = currentBundle.profile.relations;
+  const visibleTopics = assigned ? topicRecords : [];
+  const allowedRelations = currentBundle?.profile.relations ?? [];
   const processingState = buildDocumentProcessingState({
     authoringRun,
-    bundleName: currentBundle.name,
+    bundleName: currentBundle?.name ?? "Unassigned",
     document: currentDocument,
-    topicCount: topicRecords.length,
+    topicCount: visibleTopics.length,
   });
-  const activePanel = resolveDocumentPanel({
-    extractionStatus: currentDocument.extraction.status,
-    processingState,
-    requestedPanel: panel,
-    topicCount: topicRecords.length,
-  });
+  const activePanel = assigned
+    ? resolveDocumentPanel({
+        extractionStatus: currentDocument.extraction.status,
+        processingState,
+        requestedPanel: panel,
+        topicCount: visibleTopics.length,
+      })
+    : (["summary", "metadata", "extraction", "logs"].includes(panel ?? "") ? panel! : "summary");
   const processingFingerprint = buildDocumentProcessingFingerprint({
     authoringRun,
     document: currentDocument,
   });
   const selectedTopic =
     activePanel === "topics"
-      ? topicRecords.find((topic) => topic.id === topicId) ??
-        topicRecords[0] ??
+      ? visibleTopics.find((topic) => topic.id === topicId) ??
+        visibleTopics[0] ??
         null
       : null;
   const topicLifecycleById = await resolveTopicLifecycles({
     document: currentDocument,
-    topics: topicRecords,
+    topics: visibleTopics,
   });
   const selectedTopicLifecycle = selectedTopic
     ? topicLifecycleById.get(selectedTopic.id) ?? { status: "active" as const }
@@ -143,7 +148,7 @@ export default async function DocumentDetailPage({
 
   return (
     <>
-      <DocumentExtractionPoller
+      {assigned ? <DocumentExtractionPoller
         authoringStatus={authoringRun?.status}
         automaticApprovalStatus={authoringRun?.automaticApprovalRun?.status}
         documentId={currentDocument.id}
@@ -151,7 +156,7 @@ export default async function DocumentDetailPage({
         processingActive={processingState.active}
         status={currentDocument.extraction.status}
         topicDiscoveryStatus={currentDocument.topicDiscovery?.status}
-      />
+      /> : null}
       <div className="space-y-4">
         <Button asChild variant="ghost" className="w-fit px-0">
           <Link href="/documents">
@@ -169,11 +174,11 @@ export default async function DocumentDetailPage({
                 <Badge variant="outline" className="capitalize">
                   extraction {currentDocument.extraction.status}
                 </Badge>
-                <Badge variant="outline">{topicRecords.length} topics</Badge>
+                <Badge variant="outline">{visibleTopics.length} topics</Badge>
                 <Badge variant="outline" className="capitalize">
                   discovery {currentDocument.topicDiscovery?.status ?? "not started"}
                 </Badge>
-                <Badge variant="outline">{currentBundle.name}</Badge>
+                <Badge variant="outline">{currentBundle?.name ?? "Unassigned"}</Badge>
               </div>
               <h1 className="mt-3 text-2xl font-semibold tracking-tight md:text-3xl">
                 {currentDocument.title}
@@ -185,7 +190,15 @@ export default async function DocumentDetailPage({
                 {formatExtractionActivity(currentDocument.extraction)}
               </p>
             </div>
-            {currentDocument.storageKey ? (
+            {!assigned ? (
+              availableBundles.length > 0 ? (
+                <form action={assignDocumentToKnowledgeBundleAction} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <input name="documentId" type="hidden" value={currentDocument.id} />
+                  <label className="grid gap-1 text-xs text-muted-foreground">Assign to knowledge bundle<select className="h-9 min-w-52 rounded-md border border-input bg-background px-3 text-sm text-foreground" name="knowledgeBundleId" required>{availableBundles.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+                  <PendingSubmitButton pendingLabel="Assigning...">Assign</PendingSubmitButton>
+                </form>
+              ) : <Button asChild><Link href="/knowledge">Create a knowledge bundle</Link></Button>
+            ) : currentDocument.storageKey ? (
               <form action={runExtractionAction}>
                 <input type="hidden" name="id" value={currentDocument.id} />
                 <PendingSubmitButton pendingLabel="Starting...">
@@ -196,10 +209,10 @@ export default async function DocumentDetailPage({
               <Button disabled>Seed document has no stored PDF</Button>
             )}
           </div>
-          <DocumentProcessingStatusStrip
+          {assigned ? <DocumentProcessingStatusStrip
             documentId={currentDocument.id}
             state={processingState}
-          />
+          /> : <div className="border-t border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">This source is preserved but unassigned. Assign it to a bundle before authoring, indexing, export, or chat use.</div>}
           <DocumentHeaderDeleteRow
             deleteError={deleteErrorMessage}
             documentId={currentDocument.id}
@@ -212,9 +225,10 @@ export default async function DocumentDetailPage({
             <DocumentTreeNav
               activePanel={activePanel}
               activeTopicId={selectedTopic?.id ?? null}
+              assigned={assigned}
               documentId={currentDocument.id}
               key={`${activePanel}-${selectedTopic?.id ?? "none"}`}
-              topics={topicRecords.map((topic) => ({
+              topics={visibleTopics.map((topic) => ({
                 id: topic.id,
                 lifecycleStatus: topicLifecycleById.get(topic.id)?.status,
                 reviewStatus: topic.reviewStatus,
@@ -272,7 +286,7 @@ export default async function DocumentDetailPage({
           lifecycleStatus={selectedTopicLifecycle}
           lifecycleUpdated={lifecycleUpdatedMessage}
           okfExportError={okfExportErrorMessage}
-          profile={currentBundle.profile}
+          profile={currentBundle!.profile}
           relationError={relationErrorMessage}
           relationTargets={relationTargets}
           topic={selectedTopic}
@@ -284,7 +298,7 @@ export default async function DocumentDetailPage({
     return (
       <DocumentSummaryPanel
         document={currentDocument}
-        topicCount={topicRecords.length}
+        topicCount={visibleTopics.length}
       />
     );
   }
@@ -299,7 +313,7 @@ async function resolveTopicLifecycles({
 }) {
   const lifecycleByTopicId = new Map<string, OkfConceptLifecycleRecord>();
 
-  if (!document.workspaceId) {
+  if (!document.workspaceId || !document.knowledgeBundleId) {
     return lifecycleByTopicId;
   }
 

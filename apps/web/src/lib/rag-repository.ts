@@ -180,9 +180,9 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         },
         where: { id: input.indexJobId },
       });
-      await db.document.update({
+      await db.document.updateMany({
         data: { ragStatus: "failed" },
-        where: { id: input.documentId },
+        where: { id: input.documentId, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
       });
     },
 
@@ -205,6 +205,8 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         where: {
           deletedAt: null,
           id: input.documentId,
+          knowledgeBundle: { status: "active" },
+          knowledgeBundleId: { not: null },
           workspaceId: input.workspaceId,
         },
       });
@@ -217,7 +219,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         orderBy: { queuedAt: "asc" },
         take: limit,
         where: {
-          document: { deletedAt: null },
+          document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
           status: { in: ["queued", "running"] },
         },
       });
@@ -315,7 +317,12 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     }) {
       await db.document.updateMany({
         data: { ragStatus: input.status },
-        where: { id: input.documentId, workspaceId: input.workspaceId },
+        where: {
+          id: input.documentId,
+          knowledgeBundle: { status: "active" },
+          knowledgeBundleId: { not: null },
+          workspaceId: input.workspaceId,
+        },
       });
     },
 
@@ -561,6 +568,16 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       workspaceId: string;
     }) {
       await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        const document = await tx.document.findFirst({
+          select: { id: true },
+          where: {
+            id: input.documentId,
+            knowledgeBundle: { status: "active" },
+            knowledgeBundleId: { not: null },
+            workspaceId: input.workspaceId,
+          },
+        });
+        if (!document) throw new Error("document_requires_active_knowledge_bundle");
         await tx.ragChunk.updateMany({
           data: { isActive: false },
           where: {

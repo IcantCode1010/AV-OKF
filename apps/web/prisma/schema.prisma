@@ -54,30 +54,31 @@ model VerificationToken {
 }
 
 model Workspace {
-  id                     String                   @id @default(cuid())
-  name                   String
-  plan                   String                   @default("Production")
-  members                WorkspaceMember[]
-  documents              Document[]
-  extractionJobs         ExtractionJob[]
-  topicDiscoveryJobs     TopicDiscoveryJob[]
-  knowledgeAuthoringRuns KnowledgeAuthoringRun[]
-  ragIndexJobs           RagIndexJob[]
-  topicRecords           TopicRecord[]
-  activityEvents         ActivityEvent[]
-  llmSetting             WorkspaceLlmSetting?
-  chatSessions           ChatSession[]
-  okfConceptLifecycles   OkfConceptLifecycle[]
-  knowledgeBundles       KnowledgeBundle[]
-  bundleDeletionAudits   BundleDeletionAudit[]
-  okfConceptEmbeddings   OkfConceptEmbedding[]
-  okfEmbeddingJobs       OkfConceptEmbeddingJob[]
-  ragRerankDailyUsage    RagRerankDailyUsage[]
-  knowledgeGaps          KnowledgeGap[]
-  bulkTopicApprovalRuns BulkTopicApprovalRun[]
-  documentDeletionJobs  DocumentDeletionJob[]
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
+  id                          String                       @id @default(cuid())
+  name                        String
+  plan                        String                       @default("Production")
+  members                     WorkspaceMember[]
+  documents                   Document[]
+  extractionJobs              ExtractionJob[]
+  topicDiscoveryJobs          TopicDiscoveryJob[]
+  knowledgeAuthoringRuns      KnowledgeAuthoringRun[]
+  ragIndexJobs                RagIndexJob[]
+  topicRecords                TopicRecord[]
+  activityEvents              ActivityEvent[]
+  llmSetting                  WorkspaceLlmSetting?
+  chatSessions                ChatSession[]
+  okfConceptLifecycles        OkfConceptLifecycle[]
+  knowledgeBundles            KnowledgeBundle[]
+  bundleDeletionAudits        BundleDeletionAudit[]
+  okfConceptEmbeddings        OkfConceptEmbedding[]
+  okfEmbeddingJobs            OkfConceptEmbeddingJob[]
+  ragRerankDailyUsage         RagRerankDailyUsage[]
+  knowledgeGaps               KnowledgeGap[]
+  bulkTopicApprovalRuns       BulkTopicApprovalRun[]
+  documentDeletionJobs        DocumentDeletionJob[]
+  knowledgeBundleDeletionJobs KnowledgeBundleDeletionJob[]
+  createdAt                   DateTime                     @default(now())
+  updatedAt                   DateTime                     @updatedAt
 }
 
 model RagRerankDailyUsage {
@@ -115,7 +116,7 @@ model WorkspaceLlmSetting {
 model Document {
   id                     String                   @id @default(cuid())
   workspaceId            String
-  knowledgeBundleId      String
+  knowledgeBundleId      String?
   title                  String
   fileType               String
   size                   String
@@ -141,7 +142,7 @@ model Document {
   originalFilename       String?
   mimeType               String
   workspace              Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle        KnowledgeBundle          @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  knowledgeBundle        KnowledgeBundle?         @relation(fields: [knowledgeBundleId], references: [id], onDelete: SetNull)
   customProperties       DocumentCustomProperty[]
   objects                DocumentObject[]
   extractionJobs         ExtractionJob[]
@@ -231,35 +232,35 @@ model OkfRelationCandidate {
 }
 
 model KnowledgeAuthoringRun {
-  id                       String                         @id @default(cuid())
-  workspaceId              String
-  knowledgeBundleId        String
-  documentId               String
-  requestedBy              String?
-  profileVersion           Int                            @default(1)
-  automaticTopicApprovalEnabled Boolean                   @default(false)
-  status                   String                         @default("queued")
-  currentStage             String                         @default("metadata_discovery")
-  completedStages          String[]                       @default([])
-  estimatedInputTokens     Int                            @default(0)
-  enrichmentCandidateCount Int                            @default(0)
-  validationResults        Json                           @default("[]")
-  relationSuggestions      Json                           @default("[]")
-  errorCode                String?
-  errorMessage             String?
-  costConfirmedAt          DateTime?
-  costConfirmedBy          String?
-  startedAt                DateTime?
-  readyAt                  DateTime?
-  completedAt              DateTime?
-  createdAt                DateTime                       @default(now())
-  updatedAt                DateTime                       @updatedAt
-  workspace                Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle          KnowledgeBundle                @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  document                 Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  stageAudits              KnowledgeAuthoringStageAudit[]
-  metadataProposals        DocumentMetadataProposal[]
-  automaticApprovalRun     BulkTopicApprovalRun?
+  id                            String                         @id @default(cuid())
+  workspaceId                   String
+  knowledgeBundleId             String
+  documentId                    String
+  requestedBy                   String?
+  profileVersion                Int                            @default(1)
+  automaticTopicApprovalEnabled Boolean                        @default(false)
+  status                        String                         @default("queued")
+  currentStage                  String                         @default("metadata_discovery")
+  completedStages               String[]                       @default([])
+  estimatedInputTokens          Int                            @default(0)
+  enrichmentCandidateCount      Int                            @default(0)
+  validationResults             Json                           @default("[]")
+  relationSuggestions           Json                           @default("[]")
+  errorCode                     String?
+  errorMessage                  String?
+  costConfirmedAt               DateTime?
+  costConfirmedBy               String?
+  startedAt                     DateTime?
+  readyAt                       DateTime?
+  completedAt                   DateTime?
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
+  workspace                     Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle               KnowledgeBundle                @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document                      Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  stageAudits                   KnowledgeAuthoringStageAudit[]
+  metadataProposals             DocumentMetadataProposal[]
+  automaticApprovalRun          BulkTopicApprovalRun?
 
   @@index([workspaceId, status, createdAt])
   @@index([documentId, createdAt])
@@ -318,22 +319,42 @@ model BundleDeletionAudit {
   @@index([workspaceId, deletedAt])
 }
 
+model KnowledgeBundleDeletionJob {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  bundleId     String    @unique
+  bundleName   String
+  requestedBy  String
+  status       String    @default("queued")
+  manifest     Json
+  attempts     Int       @default(0)
+  errorCode    String?
+  errorMessage String?   @db.Text
+  queuedAt     DateTime  @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+  updatedAt    DateTime  @updatedAt
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status, queuedAt])
+}
+
 model DocumentDeletionJob {
-  id                String          @id @default(cuid())
+  id                String           @id @default(cuid())
   workspaceId       String
-  knowledgeBundleId String
-  documentId        String          @unique
+  knowledgeBundleId String?
+  documentId        String           @unique
   documentTitle     String
   requestedBy       String
-  status            String          @default("queued")
+  status            String           @default("queued")
   manifest          Json
-  attempts          Int             @default(0)
+  attempts          Int              @default(0)
   errorCode         String?
-  errorMessage      String?         @db.Text
-  queuedAt          DateTime        @default(now())
+  errorMessage      String?          @db.Text
+  queuedAt          DateTime         @default(now())
   startedAt         DateTime?
-  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle? @relation(fields: [knowledgeBundleId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, status, queuedAt])
   @@index([knowledgeBundleId, status])
@@ -601,7 +622,7 @@ model OkfConceptLifecycle {
 }
 
 model TopicRecord {
-  id                        String                 @id @default(cuid())
+  id                        String                  @id @default(cuid())
   workspaceId               String
   knowledgeBundleId         String
   documentId                String
@@ -612,10 +633,10 @@ model TopicRecord {
   summary                   String
   enrichedTitle             String?
   enrichedSummary           String?
-  enrichedBody              String?                @db.Text
-  proposedSourcePageNumbers Int[]                  @default([])
-  discoveryMetadata         Json                   @default("{}")
-  enrichmentStatus          String                 @default("none")
+  enrichedBody              String?                 @db.Text
+  proposedSourcePageNumbers Int[]                   @default([])
+  discoveryMetadata         Json                    @default("{}")
+  enrichmentStatus          String                  @default("none")
   approvedContentSource     String?
   approvalMode              String?
   approvedBy                String?
@@ -626,18 +647,18 @@ model TopicRecord {
   pageEnd                   Int
   confidence                String
   reviewStatus              String
-  relations                 Json                   @default("[]")
+  relations                 Json                    @default("[]")
   sourcePageNumbers         Int[]
   exportedFilePath          String?
   bulkApprovalRunId         String?
-  okfMetadata               Json                   @default("{}")
-  workspace                 Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle           KnowledgeBundle        @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  document                  Document               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  okfMetadata               Json                    @default("{}")
+  workspace                 Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle           KnowledgeBundle         @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document                  Document                @relation(fields: [documentId], references: [id], onDelete: Cascade)
   enrichmentAudits          TopicEnrichmentAudit[]
   bulkApprovalItems         BulkTopicApprovalItem[]
-  createdAt                 DateTime               @default(now())
-  updatedAt                 DateTime               @updatedAt
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
 
   @@index([workspaceId, documentId])
   @@index([knowledgeBundleId, documentId])
@@ -663,7 +684,7 @@ model BulkTopicApprovalRun {
   updatedAt                DateTime                @updatedAt
   workspace                Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   knowledgeBundle          KnowledgeBundle         @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  authoringRun             KnowledgeAuthoringRun?   @relation(fields: [authoringRunId], references: [id], onDelete: Cascade)
+  authoringRun             KnowledgeAuthoringRun?  @relation(fields: [authoringRunId], references: [id], onDelete: Cascade)
   items                    BulkTopicApprovalItem[]
 
   @@index([workspaceId, knowledgeBundleId, createdAt])
@@ -690,7 +711,7 @@ model BulkTopicApprovalItem {
   updatedAt                DateTime             @updatedAt
   run                      BulkTopicApprovalRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   document                 Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  topic                    TopicRecord           @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topic                    TopicRecord          @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@unique([runId, topicId])
   @@index([workspaceId, knowledgeBundleId, status])

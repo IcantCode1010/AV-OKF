@@ -98,6 +98,7 @@ export async function updateTopicRelationsAction(formData: FormData) {
   if (topic.reviewStatus !== "approved") {
     throw new Error("topic_relations_require_approved_topic");
   }
+  if (!document.knowledgeBundleId) throw new Error("document_requires_active_knowledge_bundle");
 
   const relations = buildNextRelations(topic.relations, relationAction, formData);
   const { RelationValidationError, validateTopicRelations } = await import(
@@ -172,6 +173,7 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
   if (!topic.exportedFilePath) {
     throw new Error("okf_lifecycle_requires_exported_topic");
   }
+  if (!document.knowledgeBundleId) throw new Error("document_requires_active_knowledge_bundle");
 
   try {
     await markOkfConceptLifecycle({

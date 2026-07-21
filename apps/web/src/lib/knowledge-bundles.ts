@@ -18,6 +18,7 @@ export type KnowledgeBundleRecord = {
   activeProfileVersion: number;
   createdAt: string;
   description: string;
+  documentCount: number;
   id: string;
   name: string;
   profile: KnowledgeProfileSchema;
@@ -37,7 +38,7 @@ export async function listKnowledgeBundles(
   }
 
   const records = await getPrisma().knowledgeBundle.findMany({
-    include: { activeProfileVersion: true },
+    include: { _count: { select: { documents: true } }, activeProfileVersion: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     where: { status: "active", workspaceId: context.workspaceId },
   });
@@ -56,7 +57,7 @@ export async function getKnowledgeBundle(input: {
   }
 
   const record = await getPrisma().knowledgeBundle.findFirst({
-    include: { activeProfileVersion: true },
+    include: { _count: { select: { documents: true } }, activeProfileVersion: true },
     where: {
       id: input.bundleId,
       status: "active",
@@ -78,7 +79,7 @@ export async function getKnowledgeBundleByIdentity(input: {
   }
 
   const record = await getPrisma().knowledgeBundle.findFirst({
-    include: { activeProfileVersion: true },
+    include: { _count: { select: { documents: true } }, activeProfileVersion: true },
     where: {
       id: input.bundleId,
       status: "active",
@@ -90,17 +91,12 @@ export async function getKnowledgeBundleByIdentity(input: {
 
 export async function getDefaultKnowledgeBundle(
   context: AuthWorkspaceContext,
-): Promise<KnowledgeBundleRecord> {
+): Promise<KnowledgeBundleRecord | null> {
   const bundles = await listKnowledgeBundles(context);
   const general = bundles.find((bundle) => bundle.slug === "general");
   if (general) return general;
   if (bundles[0]) return bundles[0];
-  return createKnowledgeBundle({
-    context,
-    description: "General-purpose reviewed knowledge.",
-    name: "General Knowledge",
-    templateId: "generic",
-  });
+  return null;
 }
 
 export async function createKnowledgeBundle(input: {
@@ -144,7 +140,7 @@ export async function createKnowledgeBundle(input: {
     });
     return tx.knowledgeBundle.update({
       data: { activeProfileVersionId: version.id },
-      include: { activeProfileVersion: true },
+      include: { _count: { select: { documents: true } }, activeProfileVersion: true },
       where: { id: created.id },
     });
   });
@@ -406,6 +402,7 @@ async function collectMarkdownFiles(root: string, directory: string): Promise<st
 }
 
 function mapBundleRecord(record: {
+  _count?: { documents: number };
   activeProfileVersion: { schema: unknown; version: number } | null;
   createdAt: Date;
   description: string;
@@ -421,6 +418,7 @@ function mapBundleRecord(record: {
     activeProfileVersion: record.activeProfileVersion.version,
     createdAt: record.createdAt.toISOString(),
     description: record.description,
+    documentCount: record._count?.documents ?? 0,
     id: record.id,
     name: record.name,
     profile: normalizeKnowledgeProfile(
@@ -438,6 +436,7 @@ function localGeneralBundle(workspaceId: string): KnowledgeBundleRecord {
     activeProfileVersion: 1,
     createdAt: new Date(0).toISOString(),
     description: "Local compatibility bundle.",
+    documentCount: 0,
     id: LOCAL_GENERAL_BUNDLE_ID,
     name: "General Knowledge",
     profile: getKnowledgeProfileTemplate("generic"),

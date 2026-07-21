@@ -30,6 +30,7 @@ type DocumentTreeTopic = {
 type DocumentTreeNavProps = {
   activePanel: string;
   activeTopicId: string | null;
+  assigned?: boolean;
   documentId: string;
   topics: DocumentTreeTopic[];
 };
@@ -45,6 +46,7 @@ const documentItems = [
 export function DocumentTreeNav({
   activePanel,
   activeTopicId,
+  assigned = true,
   documentId,
   topics,
 }: DocumentTreeNavProps) {
@@ -60,7 +62,7 @@ export function DocumentTreeNav({
     <>
       <nav aria-label="Document sections" className="md:hidden">
         <div className="grid gap-2 sm:grid-cols-2">
-          {documentItems.map((item) => (
+          {documentItems.filter((item) => assigned || ["summary", "metadata", "extraction"].includes(item.id)).map((item) => (
             <MobileTreeLink
               href={panelHref(documentId, item.hrefPanel)}
               key={item.id}
@@ -69,12 +71,12 @@ export function DocumentTreeNav({
               {item.label}
             </MobileTreeLink>
           ))}
-          <MobileTreeLink
+          {assigned ? <MobileTreeLink
             href={firstTopicHref(documentId, topics)}
             selected={activePanel === "topics"}
           >
             Topics ({topics.length})
-          </MobileTreeLink>
+          </MobileTreeLink> : null}
           <MobileTreeLink
             href={panelHref(documentId, "logs")}
             selected={logsSelected}
@@ -95,7 +97,7 @@ export function DocumentTreeNav({
             <span>Document</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="ml-3 border-l border-border pl-2">
-            {documentItems.map((item) => (
+            {documentItems.filter((item) => assigned || ["summary", "metadata", "extraction"].includes(item.id)).map((item) => (
               <TreeLeafLink
                 href={panelHref(documentId, item.hrefPanel)}
                 icon={item.id === "processing" ? <Workflow className="h-4 w-4 text-muted-foreground" /> : undefined}
@@ -108,7 +110,7 @@ export function DocumentTreeNav({
           </CollapsibleContent>
         </Collapsible>
 
-        <Collapsible open={topicsOpen} onOpenChange={setTopicsOpen}>
+        {assigned ? <Collapsible open={topicsOpen} onOpenChange={setTopicsOpen}>
           <CollapsibleTrigger className={branchButtonClassName}>
             <ChevronDown className="h-4 w-4 transition-transform duration-150 group-data-[state=closed]:-rotate-90 motion-reduce:transition-none" />
             {topicsOpen ? (
@@ -157,7 +159,7 @@ export function DocumentTreeNav({
               </p>
             )}
           </CollapsibleContent>
-        </Collapsible>
+        </Collapsible> : null}
 
         <TreeLeafLink
           href={panelHref(documentId, "logs")}
@@ -167,13 +169,13 @@ export function DocumentTreeNav({
           Logs
         </TreeLeafLink>
 
-        <div className="mt-2 rounded-md border border-dashed border-border p-2 text-xs text-muted-foreground">
+        {assigned ? <div className="mt-2 rounded-md border border-dashed border-border p-2 text-xs text-muted-foreground">
           <div className="mb-1 flex items-center gap-2 font-medium text-foreground">
             <Database className="h-3.5 w-3.5" />
             RAG Index
           </div>
           Index diagnostics stay on the admin reindex page for this pass.
-        </div>
+        </div> : null}
       </nav>
     </>
   );

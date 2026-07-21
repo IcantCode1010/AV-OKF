@@ -129,7 +129,7 @@ export function DocumentLibrary({ documents }: { documents: Document[] }) {
                         </span>
                         <span>
                           <span className="block font-medium">
-                            {document.title}
+                            {document.title} {document.knowledgeBundleId ? null : <Badge className="ml-2" variant="outline">Unassigned</Badge>}
                           </span>
                           <span className="block text-xs text-muted-foreground">
                             {document.fileType} - {document.size} -{" "}

@@ -33,6 +33,19 @@ export async function runTopicDiscoveryJob(
     where: { deletedAt: null, id: payload.documentId, workspaceId: payload.workspaceId },
   });
   if (!document) throw new Error("document_not_found");
+  if (!document.knowledgeBundleId) {
+    await db.topicDiscoveryJob.update({
+      data: { errorCode: "document_unassigned", errorMessage: "Assign the document to an active knowledge bundle before concept discovery.", status: "failed" },
+      where: { id: job.id },
+    });
+    return { status: "failed" as const, topicsCreated: 0 };
+  }
+  const knowledgeBundleId = document.knowledgeBundleId;
+  const bundle = await db.knowledgeBundle.findFirst({ where: { id: knowledgeBundleId, status: "active", workspaceId: payload.workspaceId } });
+  if (!bundle) {
+    await db.topicDiscoveryJob.update({ data: { errorCode: "knowledge_bundle_unavailable", status: "failed" }, where: { id: job.id } });
+    return { status: "failed" as const, topicsCreated: 0 };
+  }
   if (document.extractedPages.length === 0) throw new Error("topic_discovery_requires_extracted_pages");
 
   const getApiKey = options.getApiKey ?? getWorkspaceLlmApiKeyForEnrichment;
@@ -126,7 +139,7 @@ export async function runTopicDiscoveryJob(
             version: "llm-section-v1",
           },
           documentId: document.id,
-          knowledgeBundleId: document.knowledgeBundleId,
+          knowledgeBundleId,
           originalSummary: topic.summary,
           originalTitle: topic.title,
           pageEnd: Math.max(...topic.pageNumbers),

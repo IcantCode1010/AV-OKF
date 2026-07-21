@@ -270,7 +270,7 @@ Deliverables:
 - Generic `type`-required metadata contract with optional `title`, `description`, `tags`, and `updated`
 - Required upload/chat bundle assignment and bundle-isolated retrieval, relations, lifecycle, and RAG filtering
 - Dry-run/resumable migration into General Knowledge with backup and recovery journal
-- Durable BullMQ bundle deletion across MinIO, OKF files, documents, derived data, and chats
+- Durable BullMQ bundle deletion that removes OKF and derived knowledge while preserving source PDFs, document metadata, and extraction history as Unassigned documents
 - Bundle-first Knowledge page
 - Three-pane OKF bundle explorer with a physical file tree, force-directed typed-relation graph, and rendered Markdown reader
 - Shared `?file=` deep-link selection across tree rows, graph nodes, internal links, outgoing relations, and derived backlinks

@@ -18,7 +18,10 @@ import type {
   KnowledgeFieldType,
   KnowledgeFolderCategory,
 } from "@/lib/knowledge-profile";
-import { requestKnowledgeBundleDeletion } from "@/lib/knowledge-bundle-deletion";
+import {
+  requestKnowledgeBundleDeletion,
+  retryKnowledgeBundleDeletion,
+} from "@/lib/knowledge-bundle-deletion";
 import { discoverOkfRelationCandidates } from "@/lib/okf-relation-discovery";
 import {
   getDocumentById,
@@ -100,11 +103,20 @@ export async function deleteKnowledgeBundleAction(formData: FormData) {
   await requestKnowledgeBundleDeletion({
     actorId: context.userId,
     bundleId,
-    confirmedName: getFormString(formData, "confirmedName"),
     workspaceId: context.workspaceId,
   });
   revalidatePath("/knowledge");
   redirect("/knowledge?deletionQueued=1");
+}
+
+export async function retryKnowledgeBundleDeletionAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  await retryKnowledgeBundleDeletion({
+    context,
+    jobId: getFormString(formData, "jobId"),
+  });
+  revalidatePath("/knowledge");
+  redirect("/knowledge");
 }
 
 export async function discoverRelationsAction(formData: FormData) {

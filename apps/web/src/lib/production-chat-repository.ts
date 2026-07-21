@@ -35,7 +35,7 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 
   async function getSessionForWorkspace(sessionId: string, workspaceId: string) {
     const record = await db.chatSession.findFirst({
-      where: { id: sessionId, workspaceId },
+      where: { id: sessionId, knowledgeBundle: { status: "active" }, workspaceId },
     });
 
     if (!record) {
@@ -79,7 +79,7 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
     async getSessions(context: AuthWorkspaceContext): Promise<ChatSession[]> {
       const records = await db.chatSession.findMany({
         orderBy: { updatedAt: "desc" },
-        where: { workspaceId: context.workspaceId },
+        where: { knowledgeBundle: { status: "active" }, workspaceId: context.workspaceId },
       });
 
       return records.map(mapChatSession);

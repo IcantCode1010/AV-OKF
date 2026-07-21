@@ -129,6 +129,7 @@ export default async function DocumentsPage({
                   name="knowledgeBundleId"
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
                   required
+                  disabled={bundles.length === 0}
                 >
                   {bundles.map((bundle) => (
                     <option key={bundle.id} value={bundle.id}>
@@ -137,7 +138,7 @@ export default async function DocumentsPage({
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  Assignment locks when extraction starts. Documents and derived knowledge stay inside this bundle.
+                  {bundles.length === 0 ? "Create a knowledge bundle before uploading a document." : "Assignment locks when extraction starts. Documents and derived knowledge stay inside this bundle."}
                 </p>
               </div>
               <div className="space-y-2">
@@ -181,9 +182,7 @@ export default async function DocumentsPage({
             </div>
 
             <div className="flex items-end">
-              <PendingSubmitButton pendingLabel="Uploading...">
-                Upload PDF
-              </PendingSubmitButton>
+              {bundles.length > 0 ? <PendingSubmitButton pendingLabel="Uploading...">Upload PDF</PendingSubmitButton> : <button className="h-9 rounded-md border border-input px-4 text-sm text-muted-foreground" disabled type="button">Create a bundle first</button>}
             </div>
           </form>
         </CardContent>

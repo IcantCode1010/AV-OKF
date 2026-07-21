@@ -10,6 +10,10 @@ Document -> extracted pages -> topics -> OKF concepts -> RAG -> chat citations
 
 Source-document deletion is permanent. It removes the source and every product derived from it instead of retaining a restorable tombstone. Retraction and archive remain separate reviewer actions for OKF concepts whose source document is retained.
 
+Bundle deletion is a separate operation. It permanently removes the bundle's knowledge products but preserves its source documents, uploaded objects, metadata, extracted pages, extraction jobs, logs, and activity. Preserved documents become Unassigned and remain readable; they are excluded from authoring, indexing, retrieval, and chat until explicitly assigned to another active bundle and manually reprocessed.
+
+Any authenticated workspace member may request deletion of a bundle owned by that workspace. The bundle enters `deleting` immediately, disappears from active selection and retrieval, and is cleaned by a durable `KnowledgeBundleDeletionJob`. Deleting the final bundle leaves an empty vault; the application does not recreate General Knowledge implicitly.
+
 ## Document Deletion Policy
 
 Only workspace admins may request permanent deletion. The UI asks one clear confirmation and does not require typed text or a reason.

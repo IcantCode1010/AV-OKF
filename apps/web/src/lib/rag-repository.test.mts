@@ -631,6 +631,7 @@ test("storeCompletedIndex deactivates only raw extraction chunks before writing 
           calls.push("embedding.insert");
         },
         document: {
+          findFirst: async () => ({ id: "doc_1" }),
           update: async () => {
             calls.push("document.update");
           },
@@ -693,6 +694,30 @@ test("storeCompletedIndex deactivates only raw extraction chunks before writing 
     "job.update",
     "document.update",
   ]);
+});
+
+test("storeCompletedIndex cannot reactivate RAG after a document becomes unassigned", async () => {
+  let wroteChunk = false;
+  const repository = createRagRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<void>) => callback({
+      document: { async findFirst() { return null; } },
+      ragChunk: { async create() { wroteChunk = true; } },
+    }),
+  });
+
+  await assert.rejects(
+    repository.storeCompletedIndex({
+      chunks: [],
+      documentId: "doc_unassigned",
+      embeddings: [],
+      indexJobId: "job_1",
+      indexVersion: 2,
+      model: "text-embedding-3-small",
+      workspaceId: "wrk_1",
+    }),
+    /document_requires_active_knowledge_bundle/,
+  );
+  assert.equal(wroteChunk, false);
 });
 
 function createChunkRow(overrides: Partial<ReturnType<typeof baseChunkRow>>) {

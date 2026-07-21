@@ -34,12 +34,16 @@ export async function exportApprovedTopicForDocument(
   if (topic.reviewStatus !== "approved") {
     throw new Error("okf_export_requires_approved_topic");
   }
+  if (!input.document.knowledgeBundleId) {
+    throw new Error("document_requires_active_knowledge_bundle");
+  }
+  const knowledgeBundleId = input.document.knowledgeBundleId;
 
   const workspaceId = input.document.workspaceId ?? "local";
   const bundle = input.knowledgeRoot
     ? { profile: getKnowledgeProfileTemplate("generic") }
     : await getKnowledgeBundleByIdentity({
-        bundleId: input.document.knowledgeBundleId,
+        bundleId: knowledgeBundleId,
         workspaceId,
       });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
@@ -68,7 +72,7 @@ export async function exportApprovedTopicForDocument(
     knowledgeRoot:
       input.knowledgeRoot ??
       resolveKnowledgeBundleRoot({
-        bundleId: input.document.knowledgeBundleId,
+        bundleId: knowledgeBundleId,
         workspaceId,
       }),
     knowledgeVersion: input.knowledgeVersion ?? getKnowledgeVersion(),
@@ -85,7 +89,7 @@ export async function exportApprovedTopicForDocument(
     await syncOkfConceptCoverage({
       chunkIds: coverage.chunkIds,
       coverageType: coverage.coverageType,
-      knowledgeBundleId: input.document.knowledgeBundleId,
+      knowledgeBundleId,
       okfConceptId: topic.id,
       repository: input.coverageRepository,
       workspaceId: input.document.workspaceId,
@@ -94,6 +98,7 @@ export async function exportApprovedTopicForDocument(
 
   if (
     isProductionBackend() &&
+    !input.knowledgeRoot &&
     input.document.workspaceId &&
     input.document.knowledgeBundleId
   ) {

@@ -19,8 +19,10 @@ import {
   type KnowledgeAuthoringJobPayload,
 } from "../lib/knowledge-authoring-queue.ts";
 import {
+  enqueueKnowledgeBundleDeletionJob,
+  reconcileKnowledgeBundleDeletionJobs,
   runKnowledgeBundleDeletionJob,
-  type KnowledgeBundleDeletionJob,
+  type KnowledgeBundleDeletionJobPayload,
 } from "../lib/knowledge-bundle-deletion.ts";
 import {
   createOkfConceptEmbeddingRepository,
@@ -49,7 +51,7 @@ import {
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
-let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJob> | null = null;
+let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJobPayload> | null = null;
 let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
 let knowledgeAuthoringWorker: Worker<KnowledgeAuthoringJobPayload> | null = null;
 let okfEmbeddingWorker: Worker<OkfConceptEmbeddingJobPayload> | null = null;
@@ -85,6 +87,7 @@ async function main() {
   });
   await reconcileBulkTopicApprovalRuns(bulkTopicApprovalQueue.enqueue);
   await reconcileDocumentDeletionJobs(enqueueDocumentDeletionJob);
+  await reconcileKnowledgeBundleDeletionJobs(enqueueKnowledgeBundleDeletionJob);
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -144,9 +147,9 @@ async function main() {
     },
   );
 
-  bundleDeletionWorker = new Worker<KnowledgeBundleDeletionJob>(
+  bundleDeletionWorker = new Worker<KnowledgeBundleDeletionJobPayload>(
     "knowledge-bundle-deletion",
-    async (job) => runKnowledgeBundleDeletionJob(job.data, storage),
+    async (job) => runKnowledgeBundleDeletionJob(job.data),
     { concurrency: 1, connection: { url: redisUrl } },
   );
 

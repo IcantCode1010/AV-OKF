@@ -10,6 +10,8 @@ import type { OkfCoverageRepository } from "./okf-coverage.ts";
 
 const document: Document = {
   id: "doc-amm-32",
+  knowledgeBundleId: "kb_general",
+  workspaceId: "wrk_1",
   title: "737NG AMM 32 Landing Gear",
   fileType: "PDF",
   size: "1 MB",
@@ -147,6 +149,7 @@ test("exportApprovedTopicForDocument resolves and syncs coverage against the pro
       {
         chunkIds: ["chunk_1"],
         coverageType: "direct_source",
+        knowledgeBundleId: "kb_general",
         okfConceptId: approvedTopic.id,
         workspaceId: "wrk_1",
       },

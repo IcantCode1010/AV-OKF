@@ -119,6 +119,16 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
     where: { deletedAt: null, id: payload.documentId, workspaceId: payload.workspaceId },
   });
   if (!document) throw new Error("document_not_found");
+  if (!document.knowledgeBundleId || document.knowledgeBundleId !== run.knowledgeBundleId) {
+    return db.knowledgeAuthoringRun.update({
+      data: { errorCode: "document_unassigned", errorMessage: "The document is no longer assigned to this knowledge bundle.", status: "failed" },
+      where: { id: run.id },
+    });
+  }
+  const activeBundle = await getKnowledgeBundleByIdentity({ bundleId: document.knowledgeBundleId, workspaceId: payload.workspaceId });
+  if (!activeBundle) {
+    return db.knowledgeAuthoringRun.update({ data: { errorCode: "knowledge_bundle_unavailable", status: "failed" }, where: { id: run.id } });
+  }
 
   const key = await getWorkspaceLlmApiKeyForEnrichment(payload.workspaceId);
   if (!key) {
@@ -393,6 +403,7 @@ export async function createKnowledgeAuthoringRun(input: { context: AuthWorkspac
   });
   if (!document) throw new Error("knowledge_authoring_workspace_mismatch");
   if (document.status !== "ready") throw new Error("knowledge_authoring_requires_extracted_document");
+  if (!document.knowledgeBundleId) throw new Error("document_requires_active_knowledge_bundle");
   const bundle = await getKnowledgeBundleByIdentity({
     bundleId: document.knowledgeBundleId,
     workspaceId: input.context.workspaceId,

@@ -15,7 +15,6 @@ import { isProductionBackend } from "@/lib/production-document-service";
 import {
   activateKnowledgeProfileAction,
   createKnowledgeProfileDraftAction,
-  deleteKnowledgeBundleAction,
   deleteOkfBundleFilesAction,
   discoverRelationsAction,
   reviewRelationCandidateAction,
@@ -164,15 +163,6 @@ export default async function KnowledgeBundlePage({
               {snapshot.files.filter((file) => !file.isReserved).map((file) => <label className="flex min-w-0 items-center gap-2 border border-border px-3 py-2 text-xs" key={file.filename}><input className="size-4" name="filenames" type="checkbox" value={file.filename} /><span className="truncate">{file.title}</span></label>)}
             </div>
             {snapshot.files.every((file) => file.isReserved) ? <div className="mt-3 flex items-center gap-2 border border-dashed border-border p-3 text-xs text-muted-foreground"><Database className="size-4" />No active concept files can be managed.</div> : <div className="mt-4 flex gap-3"><textarea className="min-h-20 flex-1 border border-input bg-background p-3 text-sm" name="reason" placeholder="Lifecycle reason" required /><PendingSubmitButton pendingLabel="Deleting...">Delete selected files</PendingSubmitButton></div>}
-          </form>
-        </details>
-        <details className="mt-4 border border-red-400/30 bg-red-400/5">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-red-200 focus-visible:ring-2 focus-visible:ring-ring">Permanently delete bundle</summary>
-          <form action={deleteKnowledgeBundleAction} className="grid gap-3 border-t border-red-400/20 p-4 sm:grid-cols-[1fr_auto] sm:items-end">
-            <input name="knowledgeBundleId" type="hidden" value={bundle.id} />
-            <label className="grid gap-1 text-xs">Type <strong>{bundle.name}</strong> to confirm<input autoComplete="off" className="h-9 border border-red-400/30 bg-background px-3 text-sm" name="confirmedName" required /></label>
-            <PendingSubmitButton pendingLabel="Queueing deletion...">Delete bundle permanently</PendingSubmitButton>
-            <p className="text-xs text-muted-foreground sm:col-span-2">A durable worker removes PDFs, OKF files, documents, topics, RAG data, lifecycle data, and bundle chats. This cannot be undone.</p>
           </form>
         </details>
       </section>

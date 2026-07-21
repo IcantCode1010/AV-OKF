@@ -37,6 +37,7 @@ import {
   retryPermanentDocumentDeletion,
 } from "@/lib/document-deletion";
 import { getKnowledgeBundle, getKnowledgeBundleByIdentity } from "@/lib/knowledge-bundles";
+import { getPrisma } from "@/lib/prisma";
 import { requestTopicDiscovery, resolveProposedTopicPages } from "@/lib/topic-discovery-actions";
 import {
   confirmKnowledgeAuthoringCost,
@@ -107,6 +108,29 @@ export async function runExtractionAction(formData: FormData) {
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
   redirect(getDocumentProcessingHref(id));
+}
+
+export async function assignDocumentToKnowledgeBundleAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  if (!isProductionBackend()) throw new Error("document_assignment_requires_production_backend");
+  const documentId = getFormString(formData, "documentId");
+  const bundleId = getFormString(formData, "knowledgeBundleId");
+  const db = getPrisma();
+  const [document, bundle] = await Promise.all([
+    db.document.findFirst({ where: { deletedAt: null, id: documentId, workspaceId: context.workspaceId } }),
+    db.knowledgeBundle.findFirst({ where: { id: bundleId, status: "active", workspaceId: context.workspaceId } }),
+  ]);
+  if (!document) throw new Error("document_not_found");
+  if (document.knowledgeBundleId) throw new Error("document_already_assigned");
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  await db.document.update({
+    data: { knowledgeBundleId: bundle.id, ragStatus: "not_indexed" },
+    where: { id: document.id },
+  });
+  revalidatePath("/documents");
+  revalidatePath(`/documents/${document.id}`);
+  revalidatePath("/knowledge");
+  redirect(`/documents/${document.id}?panel=summary`);
 }
 
 export async function generateTopicsAction(formData: FormData) {
@@ -329,6 +353,7 @@ export async function updateTopicOkfMetadataAction(formData: FormData) {
   });
   const topic = topics.find((candidate) => candidate.id === topicId);
   if (!topic) throw new Error("topic_not_found");
+  if (!document.knowledgeBundleId) throw new Error("document_requires_active_knowledge_bundle");
   const bundle = await getKnowledgeBundleByIdentity({
     bundleId: document.knowledgeBundleId,
     workspaceId: context.workspaceId,

@@ -30,7 +30,7 @@ export type DocumentDeletionManifest = {
   documentId: string;
   documentTitle: string;
   exportedFilePaths: string[];
-  knowledgeBundleId: string;
+  knowledgeBundleId: string | null;
   objectKeys: string[];
   requestedAt: string;
   survivorFilesChanged?: string[];
@@ -111,17 +111,17 @@ export async function requestPermanentDocumentDeletion(input: {
   });
   if (!document) throw new Error("document_not_found");
 
-  const knowledgeRoot = resolveKnowledgeBundleRoot({
+  const knowledgeRoot = document.knowledgeBundleId ? resolveKnowledgeBundleRoot({
     bundleId: document.knowledgeBundleId,
     workspaceId: document.workspaceId,
-  });
-  const exportedFilePaths = await resolveExportedFilePaths({
+  }) : null;
+  const exportedFilePaths = knowledgeRoot ? await resolveExportedFilePaths({
     explicitPaths: document.topicRecords.flatMap((topic) =>
       topic.exportedFilePath ? [topic.exportedFilePath] : [],
     ),
     knowledgeRoot,
     topicIds: document.topicRecords.map((topic) => topic.id),
-  });
+  }) : [];
   const manifest: DocumentDeletionManifest = {
     documentId: document.id,
     documentTitle: document.title,
@@ -159,13 +159,13 @@ export async function requestPermanentDocumentDeletion(input: {
         data: { isActive: false },
         where: { documentId: document.id, workspaceId: document.workspaceId },
       });
-      for (const filePath of exportedFilePaths) {
+      for (const filePath of document.knowledgeBundleId ? exportedFilePaths : []) {
         await tx.okfConceptLifecycle.upsert({
           create: {
             changedAt: new Date(manifest.requestedAt),
             changedBy: input.context.userId,
             filePath,
-            knowledgeBundleId: document.knowledgeBundleId,
+            knowledgeBundleId: document.knowledgeBundleId!,
             reason: "Permanent source-document deletion in progress",
             status: "deleting",
             workspaceId: document.workspaceId,
@@ -179,7 +179,7 @@ export async function requestPermanentDocumentDeletion(input: {
           where: {
             knowledgeBundleId_filePath: {
               filePath,
-              knowledgeBundleId: document.knowledgeBundleId,
+              knowledgeBundleId: document.knowledgeBundleId!,
             },
           },
         });
@@ -305,7 +305,9 @@ export async function runPermanentDocumentDeletionJob(
     const ragChunkCount = manifest.counts?.ragChunks ?? await db.ragChunk.count({
       where: { documentId: manifest.documentId, workspaceId: manifest.workspaceId },
     });
-    const bundleResult = await cleanDocumentFromKnowledgeBundle(manifest);
+    const bundleResult = manifest.knowledgeBundleId
+      ? await cleanDocumentFromKnowledgeBundle(manifest)
+      : { bundleName: null, changedSurvivors: [], deletedFiles: 0, knowledgeRoot: null };
     for (const objectKey of manifest.objectKeys) await storage.deleteObject(objectKey);
 
     const assistantMessages = await db.chatMessage.findMany({
@@ -356,39 +358,21 @@ export async function runPermanentDocumentDeletionJob(
           where: { id: { in: affectedMessageIds } },
         });
       }
-      await tx.okfRelationCandidate.deleteMany({
-        where: {
-          knowledgeBundleId: manifest.knowledgeBundleId,
-          OR: [
-            { sourceFile: { in: manifest.exportedFilePaths } },
-            { targetFile: { in: manifest.exportedFilePaths } },
-          ],
-        },
-      });
-      await tx.okfConceptChunkLink.deleteMany({
-        where: {
-          knowledgeBundleId: manifest.knowledgeBundleId,
-          okfConceptId: { in: manifest.topicIds },
-        },
-      });
-      await tx.okfConceptEmbedding.deleteMany({
-        where: {
-          filePath: { in: manifest.exportedFilePaths },
-          knowledgeBundleId: manifest.knowledgeBundleId,
-        },
-      });
-      await tx.okfConceptEmbeddingJob.deleteMany({
-        where: {
-          filePath: { in: manifest.exportedFilePaths },
-          knowledgeBundleId: manifest.knowledgeBundleId,
-        },
-      });
-      await tx.okfConceptLifecycle.deleteMany({
-        where: {
-          filePath: { in: manifest.exportedFilePaths },
-          knowledgeBundleId: manifest.knowledgeBundleId,
-        },
-      });
+      if (manifest.knowledgeBundleId) {
+        await tx.okfRelationCandidate.deleteMany({
+          where: {
+            knowledgeBundleId: manifest.knowledgeBundleId,
+            OR: [
+              { sourceFile: { in: manifest.exportedFilePaths } },
+              { targetFile: { in: manifest.exportedFilePaths } },
+            ],
+          },
+        });
+        await tx.okfConceptChunkLink.deleteMany({ where: { knowledgeBundleId: manifest.knowledgeBundleId, okfConceptId: { in: manifest.topicIds } } });
+        await tx.okfConceptEmbedding.deleteMany({ where: { filePath: { in: manifest.exportedFilePaths }, knowledgeBundleId: manifest.knowledgeBundleId } });
+        await tx.okfConceptEmbeddingJob.deleteMany({ where: { filePath: { in: manifest.exportedFilePaths }, knowledgeBundleId: manifest.knowledgeBundleId } });
+        await tx.okfConceptLifecycle.deleteMany({ where: { filePath: { in: manifest.exportedFilePaths }, knowledgeBundleId: manifest.knowledgeBundleId } });
+      }
       await tx.activityEvent.deleteMany({ where: { documentId: manifest.documentId } });
       await tx.document.deleteMany({
         where: { id: manifest.documentId, workspaceId: manifest.workspaceId },
@@ -401,21 +385,22 @@ export async function runPermanentDocumentDeletionJob(
       }
     });
 
-    for (const filePath of survivorFilesChanged) {
+    const survivingKnowledgeRoot = bundleResult.knowledgeRoot;
+    for (const filePath of manifest.knowledgeBundleId && survivingKnowledgeRoot ? survivorFilesChanged : []) {
       const target = await resolveKnowledgePath({
-        knowledgeRoot: bundleResult.knowledgeRoot,
+        knowledgeRoot: survivingKnowledgeRoot!,
         relativePath: filePath,
       });
       if (!target) throw new Error("document_deletion_unsafe_knowledge_path");
       await queueOkfConceptEmbedding({
-        bundleName: bundleResult.bundleName,
+        bundleName: bundleResult.bundleName!,
         filePath,
-        knowledgeBundleId: manifest.knowledgeBundleId,
+        knowledgeBundleId: manifest.knowledgeBundleId!,
         markdown: await readFile(target, "utf8"),
         workspaceId: manifest.workspaceId,
       });
     }
-    await appendDeletionLog({
+    if (bundleResult.knowledgeRoot) await appendDeletionLog({
       chatAnswers: counts.chatAnswers,
       conceptFiles: counts.conceptFiles,
       documentTitle: manifest.documentTitle,
@@ -441,6 +426,7 @@ export async function runPermanentDocumentDeletionJob(
 }
 
 async function cleanDocumentFromKnowledgeBundle(manifest: DocumentDeletionManifest) {
+  if (!manifest.knowledgeBundleId) throw new Error("knowledge_bundle_not_found");
   const db = getPrisma();
   const bundle = await db.knowledgeBundle.findFirst({
     select: { name: true },
@@ -692,11 +678,13 @@ function parseDeletionManifest(value: Prisma.JsonValue): DocumentDeletionManifes
   const stringFields = [
     "documentId",
     "documentTitle",
-    "knowledgeBundleId",
     "requestedAt",
     "workspaceId",
   ] as const;
   if (stringFields.some((key) => typeof record[key] !== "string")) {
+    throw new Error("document_deletion_manifest_invalid");
+  }
+  if (record.knowledgeBundleId !== null && typeof record.knowledgeBundleId !== "string") {
     throw new Error("document_deletion_manifest_invalid");
   }
   if (![record.exportedFilePaths, record.objectKeys, record.topicIds].every(isStringArray)) {
