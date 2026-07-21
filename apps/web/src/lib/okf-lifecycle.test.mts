@@ -9,12 +9,12 @@ import {
   getOkfConceptLifecycleForFile,
   markOkfConceptLifecycle,
   normalizeOkfConceptLifecycleStatus,
-  softDeleteDocument,
 } from "./okf-lifecycle.ts";
 
 test("normalizeOkfConceptLifecycleStatus recognizes non-trusted lifecycle states", () => {
   assert.equal(normalizeOkfConceptLifecycleStatus("retracted"), "retracted");
   assert.equal(normalizeOkfConceptLifecycleStatus("archived"), "archived");
+  assert.equal(normalizeOkfConceptLifecycleStatus("deleting"), "deleting");
   assert.equal(normalizeOkfConceptLifecycleStatus("deleted"), "deleted");
 });
 
@@ -23,104 +23,6 @@ test("normalizeOkfConceptLifecycleStatus defaults unknown or missing values to a
   assert.equal(normalizeOkfConceptLifecycleStatus(""), "active");
   assert.equal(normalizeOkfConceptLifecycleStatus(null), "active");
   assert.equal(normalizeOkfConceptLifecycleStatus(undefined), "active");
-});
-
-test("softDeleteDocument soft-deletes the document, deactivates only raw-extraction RAG chunks, and leaves OKF bundle files untouched", async () => {
-  const deletedAt = new Date("2026-07-07T18:00:00.000Z");
-  const calls: unknown[] = [];
-  const client = {
-    activityEvent: {
-      async create(input: unknown) {
-        calls.push(["activityEvent.create", input]);
-      },
-    },
-    document: {
-      async update(input: unknown) {
-        calls.push(["document.update", input]);
-        return { title: "737NG AMM 29 Air Ground" };
-      },
-    },
-    okfConceptLifecycle: {
-      async upsert() {
-        assert.fail("soft-deleting a document must not touch OKF lifecycle records");
-      },
-    },
-    ragChunk: {
-      async updateMany(input: unknown) {
-        calls.push(["ragChunk.updateMany", input]);
-      },
-    },
-  };
-
-  await softDeleteDocument({
-    actorId: "user_1",
-    client,
-    deletedAt,
-    documentId: "doc_1",
-    reason: "Duplicate upload",
-    workspaceId: "wrk_1",
-  });
-
-  assert.deepEqual(calls, [
-    [
-      "document.update",
-      {
-        data: {
-          deleteReason: "Duplicate upload",
-          deletedAt,
-          deletedBy: "user_1",
-        },
-        select: { title: true },
-        where: { id: "doc_1", workspaceId: "wrk_1" },
-      },
-    ],
-    [
-      "ragChunk.updateMany",
-      {
-        data: { isActive: false },
-        where: {
-          documentId: "doc_1",
-          sourceType: "raw_extraction",
-          workspaceId: "wrk_1",
-        },
-      },
-    ],
-    [
-      "activityEvent.create",
-      {
-        data: {
-          documentId: "doc_1",
-          documentTitle: "737NG AMM 29 Air Ground",
-          label: "Document soft-deleted: Duplicate upload",
-          status: "blocked",
-          timestamp: "Just now",
-          workspaceId: "wrk_1",
-        },
-      },
-    ],
-  ]);
-});
-
-test("softDeleteDocument requires a reason", async () => {
-  const client = {
-    document: {
-      async update() {
-        assert.fail("document.update should not run without a reason");
-      },
-    },
-  };
-
-  await assert.rejects(
-    () =>
-      softDeleteDocument({
-        actorId: "user_1",
-        client,
-        documentId: "doc_1",
-        reason: " ",
-        workspaceId: "wrk_1",
-      }),
-    /document_delete_reason_required/,
-  );
 });
 
 test("getOkfConceptLifecycleForFile returns projected lifecycle state", async () => {

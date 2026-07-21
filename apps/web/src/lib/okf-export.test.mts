@@ -88,6 +88,23 @@ test("buildOkfSystemTopic keeps AV-OKF extension metadata optional", () => {
   assert.doesNotMatch(exported.content, /subject_family|effectivity|source_authority/);
 });
 
+test("buildOkfSystemTopic exports automatic approval provenance", () => {
+  const exported = buildOkfSystemTopic({
+    document: exportDocument,
+    exportedAt: new Date("2026-07-20T12:00:00.000Z"),
+    knowledgeVersion: "0.1.0",
+    topic: {
+      ...approvedTopic,
+      approvalMode: "automated",
+      approvedAt: "2026-07-20T12:00:00.000Z",
+      approvedBy: "user-1",
+    },
+  });
+  const frontmatter = parseFrontmatter(exported.content);
+  assert.equal(frontmatter.approved_by, "automation:user-1");
+  assert.equal(frontmatter.approved_at, "2026-07-20");
+});
+
 test("buildOkfSystemTopic creates deterministic safe classification-code-prefixed filenames", () => {
   const exported = buildOkfSystemTopic({
     document: { ...exportDocument, classificationCode: "32-41" },

@@ -73,6 +73,7 @@ function createFakeRepository(input: {
   const workspaceId = input.workspaceId ?? "wrk_1";
   let topic = input.topic ?? baseTopic();
   const audits: AuditRow[] = [];
+  const completedProposals: number[][] = [];
   const sourcePages = input.sourcePages ?? [
     page(1, "Hydraulic system overview source text."),
     page(2, "Pump operation source text."),
@@ -149,6 +150,7 @@ function createFakeRepository(input: {
         succeeded: true,
         topicId: input.topicId,
       });
+      completedProposals.push(input.proposedSourcePageNumbers ?? []);
       topic = {
         ...topic,
         enrichedAt: "Jan 1, 2026, 12:01 PM",
@@ -170,6 +172,7 @@ function createFakeRepository(input: {
 
   return {
     audits,
+    completedProposals,
     get topic() {
       return topic;
     },
@@ -269,6 +272,36 @@ test("successful enrichment stores latest enriched values and success audit", as
     fake.audits[0]?.promptSent ?? "",
     /Hydraulic system overview source text/,
   );
+});
+
+test("exact-page enrichment excludes nearby context and cannot propose new pages", async () => {
+  const fake = createFakeRepository({
+    sourcePages: [
+      page(1, "Nearby page one."),
+      page(2, "Established source page."),
+      page(3, "Nearby page three."),
+    ],
+    topic: baseTopic({ pageEnd: 2, pageStart: 2, sourcePageNumbers: [2] }),
+  });
+  const { calls, provider } = createProvider("anthropic", async () => ({
+    body: "Grounded article.",
+    proposedSourcePageNumbers: [1, 2, 3],
+    rawResponse: "response",
+    summary: "Grounded summary.",
+    title: "Grounded title",
+  }));
+
+  await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => "sk-ant-test",
+    provider,
+    repository: fake.repository,
+    sourcePageMode: "exact",
+  });
+
+  assert.deepEqual(calls[0]?.sourcePages.map((sourcePage) => sourcePage.pageNumber), [2]);
+  assert.match(calls[0]?.prompt ?? "", /return an empty proposedSourcePageNumbers array/i);
+  assert.deepEqual(fake.completedProposals, [[]]);
 });
 
 test("failed enrichment stores failure audit and returns failed state", async () => {

@@ -22,6 +22,9 @@ type ExportTopic = {
   okfMetadata?: Record<string, unknown>;
   topicType?: string;
   approvedContentSource?: string | null;
+  approvalMode?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
   enrichedBody?: string | null;
 };
 
@@ -86,6 +89,15 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
     knowledge_version: input.knowledgeVersion,
     updated,
   };
+
+  if (input.topic.approvedBy) {
+    frontmatterFields.approved_by = input.topic.approvalMode === "automated"
+      ? `automation:${input.topic.approvedBy}`
+      : input.topic.approvedBy;
+  }
+  if (input.topic.approvedAt) {
+    frontmatterFields.approved_at = toIsoDate(new Date(input.topic.approvedAt));
+  }
 
   addOptionalField(frontmatterFields, "subject_family", input.document.subjectFamily);
   addOptionalField(frontmatterFields, "document_type", input.document.documentType);

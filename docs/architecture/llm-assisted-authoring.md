@@ -18,7 +18,9 @@ The LLM prepares a review package. It is not a knowledge publisher and has no de
 
 ## Durable Run
 
-`KnowledgeAuthoringRun` is the parent workflow record. It stores the current stage, completed stages, cost estimate, errors, validation results, and review readiness. `KnowledgeAuthoringStageAudit` is append-only stage history. Provider calls remain audited by the existing topic discovery and enrichment audit tables, while metadata proposals have their own reversible record.
+`KnowledgeAuthoringRun` is the parent workflow record. It stores the current stage, completed stages, cost estimate, errors, validation results, review readiness, and an immutable snapshot of the bundle profile version and automatic-publication setting. `KnowledgeAuthoringStageAudit` is append-only stage history. Provider calls remain audited by the existing topic discovery and enrichment audit tables, while metadata proposals have their own reversible record.
+
+Publication is human-controlled by default. A bundle admin may activate `automation.autoApproveEnrichedTopics` through a versioned profile draft. Enabled runs automatically publish only high-confidence, fully enriched, metadata-valid, non-overlapping topics with established source pages. All other topics remain in review with explicit blocker reasons. Automatic publication records provenance and never approves relation suggestions or performs archive, retraction, or deletion actions.
 
 Each stage audit carries an explicit attempt number. The worker persists `currentStage` before stage execution and reports failures against that in-memory active stage rather than re-reading potentially stale run state. The product UI shows one latest row per stage and keeps every underlying attempt in an expandable history.
 

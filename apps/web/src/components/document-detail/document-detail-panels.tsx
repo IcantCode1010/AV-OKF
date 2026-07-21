@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FileText, Layers, Tags } from "lucide-react";
 
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { DocumentDeleteControl } from "@/components/document-delete-control";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +21,6 @@ import {
   enrichTopicAction,
   generateTopicsAction,
   resolveProposedTopicPagesAction,
-  softDeleteDocumentAction,
   updateDocumentMetadataAction,
   updateTopicContentAction,
   updateTopicOkfMetadataAction,
@@ -122,12 +122,14 @@ export function DocumentSummaryPanel({
 
 export function DocumentMetadataPanel({
   deleteError,
-  metadataError,
   document,
+  isAdmin,
+  metadataError,
 }: {
   deleteError: string | null;
-  metadataError: string | null;
   document: Document;
+  isAdmin: boolean;
+  metadataError: string | null;
 }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
@@ -351,41 +353,25 @@ export function DocumentMetadataPanel({
           </CardContent>
         </Card>
 
-        <Card className="border-red-400/30">
-          <CardHeader>
-            <CardTitle>Lifecycle</CardTitle>
-            <CardDescription>
-              Soft-delete hides the document and deactivates its raw RAG
-              chunks. Exported OKF topic bundles are left untouched — manage
-              those separately from the Knowledge Bundle page. This is
-              reversible at the database level.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {deleteError ? (
-              <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
-                {deleteError}
-              </div>
-            ) : null}
-            <form action={softDeleteDocumentAction} className="space-y-3">
-              <input type="hidden" name="id" value={document.id} />
-              <div className="space-y-2">
-                <Label htmlFor="delete-reason">Delete reason</Label>
-                <textarea
-                  id="delete-reason"
-                  name="reason"
-                  rows={3}
-                  className={textareaClassName}
-                  placeholder="Why this source document should be removed from active use"
-                  required
-                />
-              </div>
-              <PendingSubmitButton pendingLabel="Deleting...">
-                Soft-delete document
-              </PendingSubmitButton>
-            </form>
-          </CardContent>
-        </Card>
+        {isAdmin ? (
+          <Card className="border-red-400/30">
+            <CardHeader>
+              <CardTitle>Permanent deletion</CardTitle>
+              <CardDescription>
+                Removes this source and every derived product through a durable,
+                retryable cleanup job. There is no restore path.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {deleteError ? (
+                <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
+                  {deleteError}
+                </div>
+              ) : null}
+              <DocumentDeleteControl documentId={document.id} />
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

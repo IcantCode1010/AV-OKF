@@ -11,6 +11,7 @@ import { createPostgresDocumentRepository } from "./production-repository.ts";
 import { runTopicDiscoveryJob } from "./topic-discovery-service.ts";
 import { estimateTokens } from "./topic-discovery.ts";
 import type { KnowledgeAuthoringJobPayload } from "./knowledge-authoring-queue.ts";
+import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
@@ -174,7 +175,11 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
     const topics = await db.topicRecord.findMany({
       where: { documentId: document.id, reviewStatus: { in: ["needs_review", "needs_cleanup"] }, workspaceId: run.workspaceId },
     });
-    const enrichmentTopics = topics.filter((topic) => topic.confidence === "medium" || topic.confidence === "high");
+    const enrichmentTopics = topics.filter((topic) =>
+      run.automaticTopicApprovalEnabled
+        ? topic.confidence === "high"
+        : topic.confidence === "medium" || topic.confidence === "high"
+    );
     const estimatedInputTokens = enrichmentTopics.reduce((total, topic) => {
       const source = document.extractedPages
         .filter((page) => topic.sourcePageNumbers.includes(page.pageNumber))
@@ -200,6 +205,7 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       for (const topic of enrichmentTopics) {
         await enrichTopic(topic.id, {
           context,
+          sourcePageMode: run.automaticTopicApprovalEnabled ? "exact" : "expanded",
           repository: {
             approveTopicContent: topicRepository.approveTopicContent,
             completeTopicEnrichment: topicRepository.completeTopicEnrichment,
@@ -387,14 +393,34 @@ export async function createKnowledgeAuthoringRun(input: { context: AuthWorkspac
   });
   if (!document) throw new Error("knowledge_authoring_workspace_mismatch");
   if (document.status !== "ready") throw new Error("knowledge_authoring_requires_extracted_document");
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: document.knowledgeBundleId,
+    workspaceId: input.context.workspaceId,
+  });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
   return db.knowledgeAuthoringRun.create({
-    data: { documentId: document.id, knowledgeBundleId: document.knowledgeBundleId, requestedBy: input.context.userId, workspaceId: input.context.workspaceId },
+    data: {
+      automaticTopicApprovalEnabled: bundle.profile.automation.autoApproveEnrichedTopics,
+      documentId: document.id,
+      knowledgeBundleId: document.knowledgeBundleId,
+      profileVersion: bundle.activeProfileVersion,
+      requestedBy: input.context.userId,
+      workspaceId: input.context.workspaceId,
+    },
   });
 }
 
 export async function getLatestKnowledgeAuthoringRun(input: { context: AuthWorkspaceContext; documentId: string }) {
   return getPrisma().knowledgeAuthoringRun.findFirst({
-    include: { metadataProposals: { orderBy: { createdAt: "desc" }, take: 1 }, stageAudits: { orderBy: { createdAt: "asc" } } },
+    include: {
+      automaticApprovalRun: {
+        include: {
+          items: { select: { status: true } },
+        },
+      },
+      metadataProposals: { orderBy: { createdAt: "desc" }, take: 1 },
+      stageAudits: { orderBy: { createdAt: "asc" } },
+    },
     orderBy: { createdAt: "desc" },
     where: { documentId: input.documentId, workspaceId: input.context.workspaceId },
   });

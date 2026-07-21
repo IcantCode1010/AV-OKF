@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Database, Trash2 } from "lucide-react";
+import { ArrowLeft, Database, Layers3, Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { KnowledgeExplorer } from "@/components/knowledge-explorer/knowledge-explorer";
@@ -72,7 +72,7 @@ export default async function KnowledgeBundlePage({
               <h1 className="mt-3 text-2xl font-semibold">{bundle.name}</h1>
               <p className="mt-1 text-sm text-muted-foreground">{bundle.description}</p>
             </div>
-            <div className="flex gap-2"><Badge variant="outline">{snapshot.files.length} files</Badge><Badge variant="outline">{snapshot.nodes.length} concepts</Badge><Badge variant="outline">{snapshot.edges.length} relations</Badge></div>
+            <div className="flex flex-wrap gap-2"><Button asChild size="sm"><Link href={`/knowledge/${bundle.id}/review`}><Layers3 className="size-4" />Review and export topics</Link></Button><Badge variant="outline">{snapshot.files.length} files</Badge><Badge variant="outline">{snapshot.nodes.length} concepts</Badge><Badge variant="outline">{snapshot.edges.length} relations</Badge></div>
           </div>
         </header>
 
@@ -129,6 +129,19 @@ export default async function KnowledgeBundlePage({
               <input name="knowledgeBundleId" type="hidden" value={bundle.id} />
               <p className="text-xs text-muted-foreground">Edits clone profile v{bundle.activeProfileVersion} into a draft. Base field semantics cannot be changed.</p>
               <input className="h-9 border border-input bg-background px-3 text-sm" defaultValue={bundle.profile.name} name="profileName" placeholder="Profile name" />
+              <label className="flex items-start gap-3 border border-border bg-background/40 p-3 text-sm">
+                <input
+                  className="mt-0.5 size-4"
+                  defaultChecked={bundle.profile.automation.autoApproveEnrichedTopics}
+                  name="autoApproveEnrichedTopics"
+                  type="checkbox"
+                  value="true"
+                />
+                <span>
+                  <span className="block font-medium">Automatically approve eligible enriched topics</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">High-confidence topics only. Automated approvals remain visibly distinct from human-reviewed knowledge.</span>
+                </span>
+              </label>
               <div className="grid gap-2 sm:grid-cols-3"><input className="h-9 border border-input bg-background px-3 text-sm" name="typeId" placeholder="New type id" /><input className="h-9 border border-input bg-background px-3 text-sm" name="typeLabel" placeholder="Type label" /><select className="h-9 border border-input bg-background px-3 text-sm" name="typeCategory"><option value="concepts">Concepts</option><option value="procedures">Procedures</option><option value="references">References</option><option value="routing">Routing</option><option value="indexes">Indexes</option></select></div>
               <div className="grid gap-2 sm:grid-cols-3"><input className="h-9 border border-input bg-background px-3 text-sm" name="fieldId" placeholder="New field id" /><select className="h-9 border border-input bg-background px-3 text-sm" name="fieldType"><option value="string">String</option><option value="string_array">String list</option><option value="date">Date</option><option value="number">Number</option><option value="number_array">Number list</option></select><select className="h-9 border border-input bg-background px-3 text-sm" name="fieldRequired"><option value="false">Optional</option><option value="true">Required</option></select></div>
               <label className="grid gap-1 text-xs">Clarification fields<input className="h-9 border border-input bg-background px-3 text-sm" defaultValue={bundle.profile.clarificationFields.join(", ")} name="clarificationFields" placeholder="subject_family, document_type, tags" /></label>

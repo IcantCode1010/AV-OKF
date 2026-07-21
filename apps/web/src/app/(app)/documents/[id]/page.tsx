@@ -12,6 +12,10 @@ import {
 } from "@/components/document-detail/document-detail-panels";
 import { DocumentTreeNav } from "@/components/document-tree-nav";
 import { KnowledgeAuthoringPanel } from "@/components/document-detail/knowledge-authoring-panel";
+import {
+  DocumentProcessingPanel,
+  DocumentProcessingStatusStrip,
+} from "@/components/document-detail/document-processing-panel";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -33,10 +37,13 @@ import {
   resolveKnowledgeBundleRoot,
 } from "@/lib/knowledge-bundles";
 import { getLatestKnowledgeAuthoringRun } from "@/lib/knowledge-authoring";
+import {
+  buildDocumentProcessingFingerprint,
+  buildDocumentProcessingState,
+  resolveDocumentPanel,
+} from "@/lib/document-processing-state";
 
 export const dynamic = "force-dynamic";
-
-const documentPanels = ["summary", "metadata", "extraction", "authoring", "topics", "logs"];
 
 export default async function DocumentDetailPage({
   params,
@@ -95,11 +102,22 @@ export default async function DocumentDetailPage({
     getLatestKnowledgeAuthoringRun({ context, documentId: id }),
   ]);
   const allowedRelations = currentBundle.profile.relations;
-  const activePanel = resolvePanel(
-    panel,
-    topicRecords.length,
-    currentDocument.extraction.status,
-  );
+  const processingState = buildDocumentProcessingState({
+    authoringRun,
+    bundleName: currentBundle.name,
+    document: currentDocument,
+    topicCount: topicRecords.length,
+  });
+  const activePanel = resolveDocumentPanel({
+    extractionStatus: currentDocument.extraction.status,
+    processingState,
+    requestedPanel: panel,
+    topicCount: topicRecords.length,
+  });
+  const processingFingerprint = buildDocumentProcessingFingerprint({
+    authoringRun,
+    document: currentDocument,
+  });
   const selectedTopic =
     activePanel === "topics"
       ? topicRecords.find((topic) => topic.id === topicId) ??
@@ -125,6 +143,10 @@ export default async function DocumentDetailPage({
     <>
       <DocumentExtractionPoller
         authoringStatus={authoringRun?.status}
+        automaticApprovalStatus={authoringRun?.automaticApprovalRun?.status}
+        documentId={currentDocument.id}
+        fingerprint={processingFingerprint}
+        processingActive={processingState.active}
         status={currentDocument.extraction.status}
         topicDiscoveryStatus={currentDocument.topicDiscovery?.status}
       />
@@ -136,8 +158,8 @@ export default async function DocumentDetailPage({
           </Link>
         </Button>
 
-        <header className="rounded-lg border border-border bg-card p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <header className="overflow-hidden rounded-lg border border-border bg-card">
+          <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{currentDocument.fileType}</Badge>
@@ -172,6 +194,10 @@ export default async function DocumentDetailPage({
               <Button disabled>Seed document has no stored PDF</Button>
             )}
           </div>
+          <DocumentProcessingStatusStrip
+            documentId={currentDocument.id}
+            state={processingState}
+          />
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -196,12 +222,25 @@ export default async function DocumentDetailPage({
   );
 
   function renderPanel(selectedPanel: string) {
+    if (selectedPanel === "processing") {
+      return (
+        <DocumentProcessingPanel
+          documentId={currentDocument.id}
+          extractionReady={currentDocument.extraction.status === "completed"}
+          firstTopicId={topicRecords[0]?.id ?? null}
+          run={authoringRun}
+          state={processingState}
+        />
+      );
+    }
+
     if (selectedPanel === "metadata") {
       return (
         <DocumentMetadataPanel
           deleteError={deleteErrorMessage}
           metadataError={metadataErrorMessage}
           document={currentDocument}
+          isAdmin={context.role === "admin"}
         />
       );
     }
@@ -329,24 +368,6 @@ function formatExtractionActivity(extraction: Document["extraction"]) {
   }
 
   return "Extraction has not been run yet";
-}
-
-function resolvePanel(
-  panel: string | undefined,
-  topicCount: number,
-  extractionStatus: Document["extraction"]["status"],
-) {
-  if (panel && documentPanels.includes(panel)) {
-    return panel;
-  }
-
-  // Once extraction finishes, the next required action is generating topics,
-  // so land there even with zero topics instead of the unchanging summary tab.
-  if (topicCount > 0 || extractionStatus === "completed") {
-    return "topics";
-  }
-
-  return "summary";
 }
 
 function parseTopicsGeneratedCount(raw: string | undefined) {

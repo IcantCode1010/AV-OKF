@@ -9,6 +9,7 @@ import {
   Folder,
   FolderOpen,
   ScrollText,
+  Workflow,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ type DocumentTreeNavProps = {
 };
 
 const documentItems = [
+  { id: "processing", label: "Processing", hrefPanel: "processing" },
   { id: "summary", label: "Summary", hrefPanel: "summary" },
   { id: "metadata", label: "Metadata", hrefPanel: "metadata" },
   { id: "extraction", label: "Extraction", hrefPanel: "extraction" },
@@ -46,7 +48,7 @@ export function DocumentTreeNav({
   documentId,
   topics,
 }: DocumentTreeNavProps) {
-  const activeDocumentBranch = ["summary", "metadata", "extraction", "authoring"].includes(
+  const activeDocumentBranch = ["processing", "summary", "metadata", "extraction", "authoring"].includes(
     activePanel,
   );
   const activeTopicsBranch = activePanel === "topics";
@@ -96,6 +98,7 @@ export function DocumentTreeNav({
             {documentItems.map((item) => (
               <TreeLeafLink
                 href={panelHref(documentId, item.hrefPanel)}
+                icon={item.id === "processing" ? <Workflow className="h-4 w-4 text-muted-foreground" /> : undefined}
                 key={item.id}
                 selected={activePanel === item.hrefPanel}
               >

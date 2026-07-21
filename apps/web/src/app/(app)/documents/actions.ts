@@ -32,7 +32,10 @@ import {
   approveTopicContentSource,
   enrichTopic,
 } from "@/lib/topic-enrichment";
-import { softDeleteDocument } from "@/lib/okf-lifecycle";
+import {
+  requestPermanentDocumentDeletion,
+  retryPermanentDocumentDeletion,
+} from "@/lib/document-deletion";
 import { getKnowledgeBundle, getKnowledgeBundleByIdentity } from "@/lib/knowledge-bundles";
 import { requestTopicDiscovery, resolveProposedTopicPages } from "@/lib/topic-discovery-actions";
 import {
@@ -42,6 +45,7 @@ import {
   undoAuthoringMetadata,
 } from "@/lib/knowledge-authoring";
 import { createBullMqKnowledgeAuthoringQueue } from "@/lib/knowledge-authoring-queue";
+import { getDocumentProcessingHref } from "@/lib/document-row-navigation";
 
 const RECOVERABLE_UPLOAD_ERRORS = new Set([
   "missing_pdf_file",
@@ -91,7 +95,7 @@ export async function uploadDocumentAction(formData: FormData) {
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");
-  redirect(`/documents/${document.id}`);
+  redirect(getDocumentProcessingHref(document.id));
 }
 
 export async function runExtractionAction(formData: FormData) {
@@ -102,7 +106,7 @@ export async function runExtractionAction(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/documents");
   revalidatePath(`/documents/${id}`);
-  redirect(`/documents/${id}`);
+  redirect(getDocumentProcessingHref(id));
 }
 
 export async function generateTopicsAction(formData: FormData) {
@@ -129,7 +133,7 @@ export async function startKnowledgeAuthoringAction(formData: FormData) {
   const run = await createKnowledgeAuthoringRun({ context, documentId });
   await enqueueKnowledgeAuthoringRun(run);
   revalidatePath(`/documents/${documentId}`);
-  redirect(`/documents/${documentId}?panel=authoring`);
+  redirect(getAuthoringReturnHref(documentId, formData));
 }
 
 export async function confirmKnowledgeAuthoringCostAction(formData: FormData) {
@@ -138,7 +142,7 @@ export async function confirmKnowledgeAuthoringCostAction(formData: FormData) {
   const run = await confirmKnowledgeAuthoringCost({ context, runId: getFormString(formData, "runId") });
   await enqueueKnowledgeAuthoringRun(run);
   revalidatePath(`/documents/${documentId}`);
-  redirect(`/documents/${documentId}?panel=authoring`);
+  redirect(getAuthoringReturnHref(documentId, formData));
 }
 
 export async function retryKnowledgeAuthoringAction(formData: FormData) {
@@ -151,7 +155,7 @@ export async function retryKnowledgeAuthoringAction(formData: FormData) {
   const queued = await prisma.knowledgeAuthoringRun.update({ data: { errorCode: null, errorMessage: null, status: "queued" }, where: { id: run.id } });
   await enqueueKnowledgeAuthoringRun(queued);
   revalidatePath(`/documents/${documentId}`);
-  redirect(`/documents/${documentId}?panel=authoring`);
+  redirect(getAuthoringReturnHref(documentId, formData));
 }
 
 export async function undoAuthoringMetadataAction(formData: FormData) {
@@ -403,19 +407,9 @@ export async function updateDocumentMetadataAction(formData: FormData) {
   redirect(`/documents/${id}`);
 }
 
-export async function softDeleteDocumentAction(formData: FormData) {
+export async function permanentDeleteDocumentAction(formData: FormData) {
   const id = getFormString(formData, "id");
-  const reason = getFormString(formData, "reason");
   const context = await requireAuthWorkspaceContext();
-  const workspaceId = await getDocumentWorkspaceId(id);
-
-  assertActionDocumentWorkspace({
-    // Local Stage 1 JSON-vault records may predate workspace metadata.
-    allowMissingWorkspace: !isProductionBackend(),
-    context,
-    document: { workspaceId },
-    mismatchError: "document_workspace_mismatch",
-  });
 
   if (!isProductionBackend()) {
     redirect(
@@ -425,36 +419,33 @@ export async function softDeleteDocumentAction(formData: FormData) {
     );
   }
 
-  try {
-    await softDeleteDocument({
-      actorId: context.userId,
-      documentId: id,
-      reason,
-      workspaceId: context.workspaceId,
-    });
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === "document_delete_reason_required"
-    ) {
-      redirect(
-        `/documents/${id}?deleteError=${encodeURIComponent(error.message)}`,
-      );
-    }
-
-    throw error;
-  }
+  const job = await requestPermanentDocumentDeletion({ context, documentId: id });
 
   revalidatePath("/dashboard");
   revalidatePath("/documents");
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/bundle");
-  redirect("/documents");
+  redirect(`/documents?deletionJob=${encodeURIComponent(job.id)}`);
+}
+
+export async function retryPermanentDocumentDeletionAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  await retryPermanentDocumentDeletion({
+    context,
+    jobId: getFormString(formData, "jobId"),
+  });
+  revalidatePath("/documents");
+  redirect(`/documents?deletionJob=${encodeURIComponent(getFormString(formData, "jobId"))}`);
 }
 
 function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function getAuthoringReturnHref(documentId: string, formData: FormData) {
+  const returnPanel = getFormString(formData, "returnPanel");
+  return `/documents/${documentId}?panel=${returnPanel === "processing" ? "processing" : "authoring"}`;
 }
 
 function getNullableFormString(formData: FormData, key: string) {

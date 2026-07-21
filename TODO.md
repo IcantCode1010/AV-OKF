@@ -2,13 +2,17 @@
 
 ## LLM-Assisted Authoring
 
+- [x] Add a unified post-upload Processing panel, persistent attention strip, automatic-approval polling, and domain-neutral workflow status derived from existing job records.
 - [x] Add a durable parent run for metadata discovery, concept discovery, enrichment, relation classification, and validation.
 - [x] Automatically start guided authoring after production extraction.
 - [x] Keep metadata changes reversible with original/proposed/applied values and actor-independent audit history.
 - [x] Pause high-cost enrichment runs for explicit confirmation.
 - [x] Restrict relation classification to deterministic candidate pairs and the active profile vocabulary.
-- [x] Stop the agent at `ready_for_review`; approval, export, lifecycle changes, and deletion remain human actions.
-- [ ] Add a single package-review screen for bulk raw/enriched choices and publishing valid topics; current review uses the existing per-topic controls.
+- [x] Stop at `ready_for_review` by default; allow bundle admins to opt into high-confidence-only automatic enriched-topic approval/export while keeping relation and lifecycle actions human-only.
+- [x] Add a bundle-scoped review screen for selecting already-enriched topics and publishing them through a durable, sequential approval/export batch.
+- [x] Add bundle-scoped automatic approval/export with profile snapshots, exact-page enrichment, persisted skip reasons, and distinct chat provenance.
+- [ ] Evaluate automatic approval quality over real bundles before considering medium-confidence eligibility.
+- [ ] Consider a future per-row raw/enriched choice in bulk review; the current bulk workflow intentionally approves enriched content only while raw approval remains individual.
 - [ ] Add run-level token usage and provider cost reporting from provider response metadata.
 - [x] Attribute failures to the exact active stage and preserve explicit retry attempt numbers.
 - [x] Condense stage status in the authoring panel while retaining expandable append-only attempt history.

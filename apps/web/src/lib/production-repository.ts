@@ -17,6 +17,7 @@ import type {
   SourceType,
   TopicConfidence,
   TopicEnrichmentStatus,
+  TopicApprovalMode,
   TopicRecord,
   TopicReviewStatus,
 } from "./document-vault.ts";
@@ -144,6 +145,9 @@ type DbActivityEvent = {
 
 type DbTopicRecord = {
   approvedContentSource: string | null;
+  approvalMode: string | null;
+  approvedAt: Date | null;
+  approvedBy: string | null;
   confidence: string;
   createdAt: Date;
   documentId: string;
@@ -599,7 +603,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       return db.extractionJob.findMany({
         orderBy: { queuedAt: "asc" },
         take: limit,
-        where: { status: { in: ["queued", "running"] } },
+        where: {
+          document: { deletedAt: null },
+          status: { in: ["queued", "running"] },
+        },
       }) as Promise<QueuedExtractionJob[]>;
     },
     async getTopicRecordsByDocumentId(input: {
@@ -760,6 +767,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async approveTopicContent(input: {
       approvedContentSource: ApprovedContentSource;
+      approvalMode?: TopicApprovalMode;
+      approvedAt?: Date;
+      approvedBy?: string;
       context: AuthWorkspaceContext;
       topicId: string;
     }) {
@@ -787,6 +797,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const topic = await db.topicRecord.update({
         data: {
           approvedContentSource: input.approvedContentSource,
+          approvalMode: input.approvalMode ?? "human_individual",
+          approvedAt: input.approvedAt ?? new Date(),
+          approvedBy: input.approvedBy ?? input.context.userId,
           reviewStatus: "approved",
           ...(input.approvedContentSource === "enriched"
             ? {
@@ -809,6 +822,15 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     }) {
       await db.$transaction(async (tx: Prisma.TransactionClient) => {
         const now = new Date();
+        const activeDocument = await tx.document.findFirst({
+          select: { id: true },
+          where: {
+            deletedAt: null,
+            id: input.documentId,
+            workspaceId: input.workspaceId,
+          },
+        });
+        if (!activeDocument) throw new Error("document_deletion_in_progress");
         const document = await tx.document.update({
           data: {
             status: "processing",
@@ -1014,10 +1036,16 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       workspaceId: string;
     }) {
       const document = await db.document.findFirst({
-        select: { knowledgeBundleId: true },
+        include: { knowledgeBundle: { include: { activeProfileVersion: true } } },
         where: { id: input.documentId, workspaceId: input.workspaceId },
       });
       if (!document) throw new Error("document_not_found");
+      if (!document.knowledgeBundle.activeProfileVersion) {
+        throw new Error("knowledge_bundle_active_profile_missing");
+      }
+      const profile = document.knowledgeBundle.activeProfileVersion.schema as {
+        automation?: { autoApproveEnrichedTopics?: boolean };
+      };
       const member = await db.workspaceMember.findFirst({
         orderBy: { createdAt: "asc" },
         select: { userId: true },
@@ -1025,8 +1053,11 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return db.knowledgeAuthoringRun.create({
         data: {
+          automaticTopicApprovalEnabled:
+            profile.automation?.autoApproveEnrichedTopics === true,
           documentId: input.documentId,
           knowledgeBundleId: document.knowledgeBundleId,
+          profileVersion: document.knowledgeBundle.activeProfileVersion.version,
           requestedBy: member?.userId,
           workspaceId: input.workspaceId,
         },
@@ -1038,7 +1069,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         orderBy: { createdAt: "asc" },
         select: { documentId: true, id: true, workspaceId: true },
         take: limit,
-        where: { status: { in: ["queued", "running"] } },
+        where: {
+          document: { deletedAt: null },
+          status: { in: ["queued", "running"] },
+        },
       });
     },
     async getQueuedTopicDiscoveryJobs(limit = 100) {
@@ -1046,7 +1080,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         orderBy: { queuedAt: "asc" },
         select: { documentId: true, id: true, workspaceId: true },
         take: limit,
-        where: { status: { in: ["queued", "analyzing", "consolidating"] } },
+        where: {
+          document: { deletedAt: null },
+          status: { in: ["queued", "analyzing", "consolidating"] },
+        },
       });
     },
     async updateTopicOkfMetadata(input: {
@@ -1185,6 +1222,9 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     approvedContentSource: normalizeApprovedContentSource(
       record.approvedContentSource,
     ),
+    approvalMode: normalizeTopicApprovalMode(record.approvalMode),
+    approvedAt: record.approvedAt ? formatTimestamp(record.approvedAt) : null,
+    approvedBy: record.approvedBy,
     confidence: normalizeTopicConfidence(record.confidence),
     createdAt: formatTimestamp(record.createdAt),
     documentId: record.documentId,
@@ -1218,6 +1258,12 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     topicType: record.topicType,
     updatedAt: formatTimestamp(record.updatedAt),
   };
+}
+
+function normalizeTopicApprovalMode(value: string | null): TopicApprovalMode | null {
+  return value === "human_individual" || value === "human_bulk" || value === "automated"
+    ? value
+    : null;
 }
 
 function normalizeTopicDiscoveryStatus(value: string | undefined) {

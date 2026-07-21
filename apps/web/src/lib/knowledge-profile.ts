@@ -14,6 +14,9 @@ export type KnowledgeFieldType =
   | "string_array";
 
 export type KnowledgeProfileSchema = {
+  automation: {
+    autoApproveEnrichedTopics: boolean;
+  };
   clarificationFields: string[];
   fields: Record<string, { required?: boolean; type: KnowledgeFieldType }>;
   id: string;
@@ -32,6 +35,8 @@ export const DEFAULT_CLARIFICATION_FIELDS = [
 export const PROHIBITED_CLARIFICATION_FIELDS = new Set([
   "coverage_type",
   "covered_rag_chunk_ids",
+  "approved_at",
+  "approved_by",
   "knowledge_version",
   "last_verified",
   "relations",
@@ -64,6 +69,8 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   description: { type: "string" },
   tags: { type: "string_array" },
   updated: { type: "date" },
+  approved_at: { type: "date" },
+  approved_by: { type: "string" },
   review_status: { type: "string" },
   source_file: { type: "string" },
   source_pages: { type: "number_array" },
@@ -80,6 +87,7 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
 };
 
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
+  automation: { autoApproveEnrichedTopics: false },
   clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: BASE_FIELDS,
   id: "generic",
@@ -131,6 +139,10 @@ export function normalizeKnowledgeProfile(
   profile: KnowledgeProfileSchema,
 ): KnowledgeProfileSchema {
   const normalized = structuredClone(profile);
+  normalized.automation = {
+    autoApproveEnrichedTopics:
+      normalized.automation?.autoApproveEnrichedTopics === true,
+  };
   if (!Array.isArray(normalized.clarificationFields)) {
     normalized.clarificationFields = ["generic", "aviation"].includes(normalized.id)
       ? DEFAULT_CLARIFICATION_FIELDS.filter((field) => Boolean(normalized.fields[field]))
@@ -147,6 +159,9 @@ export function getTypeDirectory(profile: KnowledgeProfileSchema, type: string):
 
 export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): string[] {
   const errors: string[] = [];
+  if (typeof profile.automation?.autoApproveEnrichedTopics !== "boolean") {
+    errors.push("knowledge_profile_automation_invalid");
+  }
   if (profile.fields.type?.required !== true || profile.fields.type.type !== "string") {
     errors.push("knowledge_profile_type_field_required");
   }

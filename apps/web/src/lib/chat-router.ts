@@ -77,6 +77,7 @@ export type ChatAnswerEvidenceKind = "approved_okf" | "raw_rag" | "mixed" | "non
 export type ChatAnswerTrustLevel = "high" | "medium" | "blocked";
 
 export type ChatAnswerEvidenceProfile = {
+  approvalProvenance?: "automated" | "human" | "legacy" | "mixed";
   evidenceKind: ChatAnswerEvidenceKind;
   evidenceUsed: Array<"okf" | "rag">;
   fallbackReason?: string;

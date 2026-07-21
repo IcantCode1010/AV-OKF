@@ -15,6 +15,7 @@ export function buildAnswerEvidenceProfile(input: {
     (citation) => citation.sourceType === "rag",
   ).length;
   const total = input.citations.length;
+  const approvalProvenance = summarizeApprovalProvenance(input.citations);
   const sourceCounts = { okf: okfCount, rag: ragCount, total };
   const okfEvidenceMode = input.citations.some(
     (citation) => citation.okfEvidenceMode === "graph",
@@ -43,17 +44,20 @@ export function buildAnswerEvidenceProfile(input: {
       requiresUserVerification: true,
       sourceCounts,
       trustLevel: "medium",
+      ...(approvalProvenance ? { approvalProvenance } : {}),
       ...(okfEvidenceMode ? { okfEvidenceMode } : {}),
     };
   }
 
   if (okfCount > 0) {
+    const humanReviewed = approvalProvenance === "human" || approvalProvenance === "legacy";
     return {
       evidenceKind: "approved_okf",
       evidenceUsed: ["okf"],
-      requiresUserVerification: false,
+      requiresUserVerification: !humanReviewed,
       sourceCounts,
-      trustLevel: "high",
+      trustLevel: humanReviewed ? "high" : "medium",
+      ...(approvalProvenance ? { approvalProvenance } : {}),
       ...(okfEvidenceMode ? { okfEvidenceMode } : {}),
     };
   }
@@ -77,6 +81,19 @@ export function buildAnswerEvidenceProfile(input: {
     sourceCounts,
     trustLevel: "blocked",
   };
+}
+
+function summarizeApprovalProvenance(
+  citations: ChatCitation[],
+): "automated" | "human" | "legacy" | "mixed" | undefined {
+  const values = new Set(
+    citations
+      .filter((citation) => citation.sourceType === "okf")
+      .map((citation) => citation.approvalProvenance ?? "legacy"),
+  );
+  if (values.size === 0) return undefined;
+  if (values.size > 1) return "mixed";
+  return [...values][0];
 }
 
 function rawRagFallbackReason(

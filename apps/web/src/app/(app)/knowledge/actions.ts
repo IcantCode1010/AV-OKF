@@ -47,12 +47,15 @@ export async function createKnowledgeBundleAction(formData: FormData) {
 
 export async function createKnowledgeProfileDraftAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
+  if (context.role !== "admin") throw new Error("knowledge_profile_admin_required");
   const bundleId = getFormString(formData, "knowledgeBundleId");
   const bundle = await getKnowledgeBundle({ bundleId, context });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
   const profile = structuredClone(bundle.profile);
   profile.id = `custom-${bundle.id}`;
   profile.name = getFormString(formData, "profileName").trim() || `${bundle.name} profile`;
+  profile.automation.autoApproveEnrichedTopics =
+    getFormString(formData, "autoApproveEnrichedTopics") === "true";
   profile.clarificationFields = getFormString(formData, "clarificationFields")
     .split(",")
     .map((value) => normalizeProfileIdentifier(value))
@@ -82,6 +85,7 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
 
 export async function activateKnowledgeProfileAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
+  if (context.role !== "admin") throw new Error("knowledge_profile_admin_required");
   const bundleId = getFormString(formData, "knowledgeBundleId");
   const version = Number.parseInt(getFormString(formData, "version"), 10);
   if (!Number.isInteger(version)) throw new Error("knowledge_profile_version_invalid");

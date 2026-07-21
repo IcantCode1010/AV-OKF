@@ -35,6 +35,7 @@ export function normalizeOkfConceptLifecycleStatus(
 ): OkfConceptLifecycleStatus {
   if (
     value === "archived" ||
+    value === "deleting" ||
     value === "deleted" ||
     value === "retracted"
   ) {
@@ -115,56 +116,6 @@ export async function getOkfConceptLifecycleByFile(input: {
   }
 
   return lifecycles;
-}
-
-export async function softDeleteDocument(input: {
-  actorId: string;
-  client?: LifecycleClient;
-  deletedAt?: Date;
-  documentId: string;
-  reason: string;
-  workspaceId: string;
-}): Promise<void> {
-  const client = input.client ?? getPrisma();
-  const deletedAt = input.deletedAt ?? new Date();
-  const reason = input.reason.trim();
-
-  if (reason.length === 0) {
-    throw new Error("document_delete_reason_required");
-  }
-
-  const document = await client.document!.update({
-    data: {
-      deleteReason: reason,
-      deletedAt,
-      deletedBy: input.actorId,
-    },
-    select: { title: true },
-    where: { id: input.documentId, workspaceId: input.workspaceId },
-  });
-
-  // Only raw-extraction chunks are tied to the deleted source document.
-  // okf_topic chunks index the exported OKF bundle files, which are left
-  // in place, so they stay active and searchable.
-  await client.ragChunk!.updateMany({
-    data: { isActive: false },
-    where: {
-      documentId: input.documentId,
-      sourceType: "raw_extraction",
-      workspaceId: input.workspaceId,
-    },
-  });
-
-  await client.activityEvent!.create({
-    data: {
-      documentId: input.documentId,
-      documentTitle: document.title,
-      label: `Document soft-deleted: ${reason}`,
-      status: "blocked",
-      timestamp: "Just now",
-      workspaceId: input.workspaceId,
-    },
-  });
 }
 
 export async function markOkfConceptLifecycle(input: {

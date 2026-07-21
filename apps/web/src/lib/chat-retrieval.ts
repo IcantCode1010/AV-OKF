@@ -35,6 +35,7 @@ const EVIDENCE_EXCERPT_MAX_CHARS = 1500;
 // Fuller-text counterpart to a ChatCitation, keyed by the same index. Used
 // only to prompt the answer builder; never persisted or rendered.
 export type ChatRetrievalEvidence = {
+  approvalProvenance?: "automated" | "human" | "legacy";
   documentTitle: string;
   index: number;
   okfEvidenceMode?: "direct" | "graph";
@@ -652,6 +653,7 @@ function okfBundleToChatCitation(
   knowledgeBundleId?: string,
 ): ChatCitation {
   return {
+    approvalProvenance: result.approvalProvenance,
     coveredByOkfConceptIds: [],
     documentTitle: result.title,
     index,
@@ -683,6 +685,7 @@ function okfBundleToEvidence(
   okfEvidenceMode: "direct" | "graph" = "direct",
 ): ChatRetrievalEvidence {
   return {
+    approvalProvenance: result.approvalProvenance,
     documentTitle: result.title,
     index,
     okfEvidenceMode,

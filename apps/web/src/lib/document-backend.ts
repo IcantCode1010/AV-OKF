@@ -39,6 +39,7 @@ import {
   type TopicRecord,
   type TopicReviewStatus,
   type ApprovedContentSource,
+  type TopicApprovalMode,
   type User,
   type Workspace,
 } from "./document-vault.ts";
@@ -289,13 +290,19 @@ export async function failTopicEnrichment(
 export async function approveTopicContent(
   topicId: string,
   approvedContentSource: ApprovedContentSource,
+  provenance?: {
+    approvalMode?: TopicApprovalMode;
+    approvedAt?: Date;
+    approvedBy?: string;
+  },
 ): Promise<TopicRecord> {
   if (isProductionBackend()) {
     return getProductionDocumentService().approveTopicContent(
       topicId,
       approvedContentSource,
+      provenance,
     );
   }
 
-  return approveLocalTopicContent(topicId, approvedContentSource);
+  return approveLocalTopicContent(topicId, approvedContentSource, provenance);
 }

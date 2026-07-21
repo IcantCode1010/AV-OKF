@@ -189,7 +189,11 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     async getExtractedPages(input: { documentId: string; workspaceId: string }) {
       const pages = await db.extractedPage.findMany({
         orderBy: { pageNumber: "asc" },
-        where: { documentId: input.documentId, workspaceId: input.workspaceId },
+        where: {
+          document: { deletedAt: null },
+          documentId: input.documentId,
+          workspaceId: input.workspaceId,
+        },
       });
 
       return pages.map(mapExtractedPageRecord);
@@ -198,7 +202,11 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     async getDocumentTitle(input: { documentId: string; workspaceId: string }) {
       const document = await db.document.findFirst({
         select: { title: true },
-        where: { id: input.documentId, workspaceId: input.workspaceId },
+        where: {
+          deletedAt: null,
+          id: input.documentId,
+          workspaceId: input.workspaceId,
+        },
       });
       if (!document) throw new Error("document_not_found");
       return document.title;
@@ -208,7 +216,10 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
       return db.ragIndexJob.findMany({
         orderBy: { queuedAt: "asc" },
         take: limit,
-        where: { status: { in: ["queued", "running"] } },
+        where: {
+          document: { deletedAt: null },
+          status: { in: ["queued", "running"] },
+        },
       });
     },
 

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   getDocumentDetailHref,
+  getDocumentProcessingHref,
   shouldIgnoreDocumentRowNavigation,
 } from "./document-row-navigation.ts";
 
@@ -10,6 +11,13 @@ test("getDocumentDetailHref builds document detail route", () => {
   assert.equal(
     getDocumentDetailHref("doc_0c8d735e-3664-4695-b709-9db23a0ad25f"),
     "/documents/doc_0c8d735e-3664-4695-b709-9db23a0ad25f",
+  );
+});
+
+test("getDocumentProcessingHref builds the post-upload processing route", () => {
+  assert.equal(
+    getDocumentProcessingHref("doc_0c8d735e-3664-4695-b709-9db23a0ad25f"),
+    "/documents/doc_0c8d735e-3664-4695-b709-9db23a0ad25f?panel=processing",
   );
 });
 

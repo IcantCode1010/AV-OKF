@@ -5,8 +5,13 @@ import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
 import type { Stage6aRouterTrace } from "./chat-router.ts";
 import type { ChatCitation } from "./chat-types.ts";
 
-function citation(sourceType: "okf" | "rag", index = 1): ChatCitation {
+function citation(
+  sourceType: "okf" | "rag",
+  index = 1,
+  approvalProvenance?: ChatCitation["approvalProvenance"],
+): ChatCitation {
   return {
+    ...(approvalProvenance ? { approvalProvenance } : {}),
     documentTitle: sourceType === "okf" ? "Approved Topic" : "Raw Manual",
     index,
     pageEnd: index,
@@ -59,6 +64,30 @@ test("RAG-only citations produce a medium-trust raw RAG profile", () => {
   assert.equal(profile.requiresUserVerification, true);
   assert.deepEqual(profile.sourceCounts, { okf: 0, rag: 1, total: 1 });
   assert.equal(profile.fallbackReason, undefined);
+});
+
+test("automation-approved OKF is answer eligible but distinct from human review", () => {
+  const profile = buildAnswerEvidenceProfile({
+    citations: [citation("okf", 1, "automated")],
+    trace: trace({ finalEvidenceStatus: "approved_evidence" }),
+  });
+  assert.equal(profile.evidenceKind, "approved_okf");
+  assert.equal(profile.approvalProvenance, "automated");
+  assert.equal(profile.trustLevel, "medium");
+  assert.equal(profile.requiresUserVerification, true);
+});
+
+test("human and automated OKF citations produce mixed review provenance", () => {
+  const profile = buildAnswerEvidenceProfile({
+    citations: [
+      citation("okf", 1, "human"),
+      citation("okf", 2, "automated"),
+    ],
+    trace: trace({ finalEvidenceStatus: "approved_evidence" }),
+  });
+  assert.equal(profile.evidenceKind, "approved_okf");
+  assert.equal(profile.approvalProvenance, "mixed");
+  assert.equal(profile.trustLevel, "medium");
 });
 
 test("mixed citations produce a mixed profile with both source counts", () => {

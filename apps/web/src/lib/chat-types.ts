@@ -3,11 +3,13 @@ import type { Stage6aRouterTrace } from "./chat-router.ts";
 export type ChatRole = "user" | "assistant";
 
 export type ChatOkfEvidenceMode = "direct" | "graph";
+export type ChatOkfApprovalProvenance = "automated" | "human" | "legacy";
 
 // Persisted, render-facing projection of a RetrievalResult (rag-types.ts):
 // text is a short excerpt sized for citation chips and stored trace JSON,
 // not the full retrieved chunk (see ChatRetrievalEvidence for that).
 export type ChatCitation = {
+  approvalProvenance?: ChatOkfApprovalProvenance;
   // Approved OKF concepts governing this chunk via coverage links; optional
   // because citations persisted before coverage threading lack it. Stage 7
   // validation treats a covering OKF concept as the controlling source.

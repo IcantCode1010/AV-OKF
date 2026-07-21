@@ -18,6 +18,8 @@ As of 2026-07-18:
 | 5 | Complete: reviewed OKF export, linting, typed relations, coverage links, and bundle explorer |
 | 5.5 | Complete: generic metadata contract, workspace multi-bundle vault, profile versioning, migration, and durable bundle deletion |
 | 5.6 | Complete: durable LLM-assisted metadata, concept discovery, enrichment, relation classification, validation, and human-review handoff |
+| 5.7 | Complete: bundle-scoped bulk enriched-topic approval and durable sequential OKF export |
+| 5.8 | Complete: opt-in bundle-scoped automatic high-confidence approval/export with provenance-aware trust presentation |
 | 6 | Complete: persistent chat, rules-first router with LLM fallback, OKF/RAG/Hybrid retrieval, synthesis, citations, and trace |
 | 6.5 | Complete: live uncached OKF bundle retrieval with precision gating and lifecycle filtering |
 | 6.6 | Core implemented; restore, historical citation notices, and coverage reconciliation remain |
@@ -305,6 +307,12 @@ Architecture note:
 
 - [LLM-Assisted Knowledge Authoring](../architecture/llm-assisted-authoring.md)
 
+## Stage 5.8: Bundle-Scoped Automatic Publication
+
+Purpose: let a bundle admin opt into automatic approval and export for enriched topics that satisfy the strongest deterministic review gates, without extending automation into relations or lifecycle actions.
+
+Implementation status: complete. Every bundle profile defaults automation off. Authoring runs snapshot the active profile version and setting; enabled runs enrich only high-confidence topics using established source pages, persist every ineligible topic as skipped with reasons, and create one idempotent durable bulk run. Automatic publication reuses the existing sequential claim, approval, export, embedding, retry, and reconciliation services. Exported frontmatter and chat citations preserve approval provenance, with automation-approved evidence visibly below human-reviewed OKF but above raw discovery evidence.
+
 ## Stage 6: Chat Agent
 
 Purpose: let users ask questions across the document collection through a router-first agent flow.
@@ -365,7 +373,7 @@ Architecture note:
 
 ## Stage 6.6: Knowledge Lifecycle Management
 
-Purpose: define what happens when documents, topics, OKF files, coverage links, and chat citations are deleted, retracted, archived, restored, or superseded.
+Purpose: permanently remove a source document and every product derived from it without leaving stale retrieval, bundle, relation, or citation state.
 
 Every prior stage answered how knowledge gets created or updated. This stage answers what happens when knowledge is removed from one layer of the derived-data chain:
 
@@ -375,43 +383,42 @@ document -> extraction -> topics -> OKF concepts -> RAG chunks -> coverage links
 
 Implementation status:
 
-- The reviewed lifecycle design is implemented for the core single-bundle workflow.
-- Source-document deletion is a soft delete with reason, actor, and timestamp; normal reads hide the document and its raw RAG chunks are deactivated.
-- Source-document deletion does not automatically retract exported OKF. Bundle files have separate explicit `deleted`, `retracted`, and `archived` lifecycle controls.
-- Trusted OKF retrieval excludes inactive lifecycle states and degrades safely when relation targets are missing.
-- Restore/reactivation UI, historical citation notices, explicit coverage reconciliation, and deletion/retrieval race tests remain closeout work.
+- Source-document deletion is an irreversible, workspace-admin-only durable job.
+- Confirmation immediately removes document, PDF, RAG, and exported concepts from active access.
+- PostgreSQL cascades direct dependencies; the worker explicitly cleans MinIO, bundle files, path-based projections, relations, and citation JSON.
+- Assistant answers supported by deleted raw or OKF evidence are tombstoned, including mixed-source answers.
+- Successful deletion removes temporary job state and appends one minimal count summary to the bundle log.
 
 Deliverables:
 
-- Document deletion policy and cascade rules.
-- Uploaded object deletion policy for disk/S3 storage.
-- Extracted-page cleanup policy.
-- Topic deletion, rejection, and orphaning policy.
-- RAG chunk and embedding cleanup policy.
-- Approved OKF concept protection policy when its source document is deleted.
+- Durable document-deletion claim, retry, and worker-startup reconciliation.
+- MinIO source-object deletion and verified database cascades.
+- Removal of extraction, topics, authoring, enrichment, RAG, embeddings, and coverage links.
+- Removal of approved/exported OKF concepts with their deleted source document.
+- Reserved-file cleanup and incoming relation pruning for surviving concepts.
+- Chat-answer tombstoning with citation and trace removal.
 - OKF file lifecycle states such as `approved`, `retracted`, and `archived`.
 - Supersession derived from the existing `supersedes` typed relation, not a separate lifecycle source of truth.
 - Multi-bundle lifecycle states deferred until multi-bundle support exists.
 - Runtime guard for broken typed relations during live OKF bundle retrieval.
 - Coverage-link cleanup or stale-link marking rules.
-- Explicit soft-delete versus hard-delete decision by data type.
-- Append-only lifecycle entries in `log.md`.
+- Explicit permanent deletion for source documents and their derived products.
+- Minimal automatic count entry in `log.md` after success.
 - Agent retrieval rules that exclude deleted, retracted, archived, superseded, or invalid lifecycle states from trusted evidence.
 
 Implemented policy:
 
-- Soft-delete source documents and retain their uploaded object, extracted pages, and topics as an audit-bearing tombstone.
-- Deactivate raw-document RAG for a deleted source; do not silently delete or demote independently reviewed OKF files.
-- Manage exported OKF lifecycle explicitly from the Knowledge Bundle workflow.
-- Derive supersession from the existing `supersedes` typed relation.
-- Reconcile OKF-to-RAG coverage links through an explicit trigger, not as a hidden side effect of raw RAG reindex.
+- Hide and quarantine immediately, then hard-delete through one idempotent worker.
+- Do not block deletion for approved concepts and do not retain a restore path.
+- Keep retraction/archive/supersession as independent concept workflows only when the source document remains.
+- Preserve unrelated user messages and surviving concepts while removing references to deleted evidence.
 
-Remaining closeout test plan:
+Closeout test plan:
 
-- Restore a soft-deleted document and confirm raw RAG and OKF trust are not silently reactivated.
-- Reopen a historical chat citation after its OKF source is archived/retracted and show the lifecycle notice.
-- Reconcile stale coverage links explicitly after raw RAG reindex.
-- Race-style test where a referenced file changes during chat retrieval and chat degrades without crashing.
+- Verify concurrent requests create one deletion job.
+- Verify running workers cannot recreate data after deletion starts.
+- Verify partial storage/filesystem/database failure resumes idempotently.
+- Verify Docker restart does not restore deleted source, knowledge, retrieval, or citations.
 - Regression:
   - `pnpm --dir apps/web test`
   - `pnpm --dir apps/web lint`
@@ -421,8 +428,8 @@ Remaining closeout test plan:
 Core exit criteria (met):
 
 - The project has a reviewed lifecycle design covering document deletion, OKF concept retirement, relation breakage, coverage cleanup, and chat-citation history.
-- A soft-deleted source document is hidden from normal reads and cannot contribute active raw RAG evidence.
-- Exported OKF knowledge remains independently managed by explicit lifecycle actions rather than being silently removed with its source document.
+- A deletion request immediately blocks reads and trusted retrieval.
+- Completed deletion removes the source and all derived OKF/RAG products while preserving one minimal bundle-log summary.
 - The agent retriever treats OKF lifecycle state as part of trust, not just file existence.
 
 Architecture note:

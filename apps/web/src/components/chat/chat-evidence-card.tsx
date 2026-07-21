@@ -133,7 +133,11 @@ function CitationSource({ citation }: { citation: ChatCitation }) {
               </span>
               <span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-[0.625rem] uppercase text-muted-foreground">
                 {citation.sourceType === "okf"
-                  ? "Approved OKF topic"
+                  ? citation.approvalProvenance === "automated"
+                    ? "Automation-approved OKF"
+                    : citation.approvalProvenance === "human"
+                      ? "Human-approved OKF"
+                      : "Legacy approved OKF"
                   : "Raw PDF extraction"}
               </span>
             </div>
@@ -172,13 +176,49 @@ function CitationSource({ citation }: { citation: ChatCitation }) {
 
 function evidenceCardCopy(profile: ChatAnswerEvidenceProfile) {
   if (profile.evidenceKind === "approved_okf") {
+    if (profile.approvalProvenance === "automated") {
+      return {
+        Icon: ShieldCheck,
+        containerClass: "border-cyan-500/40 bg-cyan-500/5",
+        description: "Approved by bundle automation - answer eligible, not human reviewed",
+        detailTitle: "Automation-approved OKF sources",
+        iconClass: "text-cyan-400",
+        label: "Automation-approved - OKF",
+        labelClass: "text-cyan-300",
+        noticeClass: "bg-cyan-500/10 text-cyan-100",
+      };
+    }
+    if (profile.approvalProvenance === "mixed") {
+      return {
+        Icon: GitMerge,
+        containerClass: "border-sky-500/40 bg-sky-500/5",
+        description: "Human-reviewed and automation-approved OKF evidence",
+        detailTitle: "Approved OKF sources with mixed review provenance",
+        iconClass: "text-sky-400",
+        label: "Approved - mixed review",
+        labelClass: "text-sky-300",
+        noticeClass: "bg-sky-500/10 text-sky-100",
+      };
+    }
+    if (profile.approvalProvenance === "legacy") {
+      return {
+        Icon: ShieldCheck,
+        containerClass: "border-slate-400/40 bg-slate-400/5",
+        description: "Approved OKF knowledge - historical approval method unavailable",
+        detailTitle: "Legacy approved OKF sources",
+        iconClass: "text-slate-300",
+        label: "Approved - legacy",
+        labelClass: "text-slate-200",
+        noticeClass: "bg-slate-400/10 text-slate-100",
+      };
+    }
     return {
       Icon: ShieldCheck,
       containerClass: "border-emerald-500/40 bg-emerald-500/5",
-      description: "Evidence from curated OKF topics only - highest trust",
-      detailTitle: "Approved OKF sources",
+      description: "Evidence from human-reviewed OKF topics - highest trust",
+      detailTitle: "Human-approved OKF sources",
       iconClass: "text-emerald-400",
-      label: "Approved - OKF",
+      label: "Human-approved - OKF",
       labelClass: "text-emerald-300",
       noticeClass: "bg-emerald-500/10 text-emerald-100",
     };

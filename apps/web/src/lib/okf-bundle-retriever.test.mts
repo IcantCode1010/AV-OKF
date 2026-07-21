@@ -45,6 +45,31 @@ test("approved system_topic returns normalized OKF evidence", async () => {
   }
 });
 
+test("retriever exposes automated and human approval provenance from live frontmatter", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-provenance-"));
+  try {
+    await writeTopic(root, "automated.md", {
+      extraFrontmatter: ['approved_by: "automation:user-1"'],
+      title: "Automated Brake Procedure",
+    });
+    await writeTopic(root, "human.md", {
+      extraFrontmatter: ['approved_by: "user-2"'],
+      title: "Human Brake Procedure",
+    });
+    const results = await retrieveOkfBundleEvidence({
+      knowledgeRoot: root,
+      query: "brake procedure",
+      workspaceId: "wrk_1",
+    });
+    assert.deepEqual(
+      Object.fromEntries(results.map((result) => [result.filePath, result.approvalProvenance])),
+      { "automated.md": "automated", "human.md": "human" },
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("retriever ignores unapproved, missing-review, and reserved files", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-ignore-"));
 

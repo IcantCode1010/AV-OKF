@@ -13,6 +13,7 @@ import {
   type ExtractedPageRecord,
   type TopicRecord,
 } from "./document-backend.ts";
+import type { TopicApprovalMode } from "./document-vault.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import {
   getLlmProvider,
@@ -54,7 +55,10 @@ type TopicEnrichmentOutputGenerator = (input: {
 
 export type TopicEnrichmentRepository = {
   approveTopicContent(input: {
-    approvedContentSource: ApprovedContentSource;
+      approvedContentSource: ApprovedContentSource;
+      approvalMode?: TopicApprovalMode;
+      approvedAt?: Date;
+      approvedBy?: string;
     context: AuthWorkspaceContext;
     topicId: string;
   }): Promise<TopicRecord>;
@@ -99,9 +103,13 @@ type EnrichTopicOptions = {
   provider?: TopicEnrichmentProvider;
   providerFactory?: (providerId: LlmProviderId) => TopicEnrichmentProvider;
   repository?: TopicEnrichmentRepository;
+  sourcePageMode?: "expanded" | "exact";
 };
 
 type ApproveTopicOptions = {
+  approvalMode?: TopicApprovalMode;
+  approvedAt?: Date;
+  approvedBy?: string;
   context?: AuthWorkspaceContext;
   repository?: Pick<TopicEnrichmentRepository, "approveTopicContent">;
 };
@@ -121,10 +129,14 @@ export async function enrichTopic(
 ): Promise<TopicRecord> {
   const context = options.context ?? (await requireAuthWorkspaceContext());
   const repository = options.repository ?? createDefaultTopicEnrichmentRepository();
-  const { topic, sourcePages } = await repository.getTopicEnrichmentInput({
+  const enrichmentInput = await repository.getTopicEnrichmentInput({
     context,
     topicId,
   });
+  const topic = enrichmentInput.topic;
+  const sourcePages = options.sourcePageMode === "exact"
+    ? enrichmentInput.sourcePages.filter((page) => topic.sourcePageNumbers.includes(page.pageNumber))
+    : enrichmentInput.sourcePages;
 
   if (topic.reviewStatus === "approved") {
     throw new Error("topic_enrichment_requires_unapproved_topic");
@@ -142,7 +154,11 @@ export async function enrichTopic(
 
   await repository.markTopicEnrichmentPending({ context, topicId });
 
-  const prompt = buildTopicEnrichmentPrompt({ sourcePages, topic });
+  const prompt = buildTopicEnrichmentPrompt({
+    allowSourcePageProposals: options.sourcePageMode !== "exact",
+    sourcePages,
+    topic,
+  });
   try {
     const result = await provider.enrich({
       apiKey: key.apiKey,
@@ -200,12 +216,16 @@ export async function approveTopicContentSource(
 
   return repository.approveTopicContent({
     approvedContentSource,
+    approvalMode: options.approvalMode,
+    approvedAt: options.approvedAt,
+    approvedBy: options.approvedBy,
     context,
     topicId,
   });
 }
 
 export function buildTopicEnrichmentPrompt(input: {
+  allowSourcePageProposals?: boolean;
   sourcePages: ExtractedPageRecord[];
   topic: TopicRecord;
 }) {
@@ -219,7 +239,9 @@ export function buildTopicEnrichmentPrompt(input: {
     "Do not change the technical meaning. Improve clarity, structure, and wording only.",
     "Return strict JSON with title, summary, body, and proposedSourcePageNumbers.",
     "Keep summary concise. Body must be a structured Markdown article grounded only in source text.",
-    "Only propose page numbers from the supplied source context; proposals require reviewer acceptance.",
+    input.allowSourcePageProposals === false
+      ? "Use only the established source pages and return an empty proposedSourcePageNumbers array."
+      : "Only propose page numbers from the supplied source context; proposals require reviewer acceptance.",
     "",
     `Current title: ${input.topic.title}`,
     `Current summary: ${input.topic.summary}`,
@@ -248,7 +270,11 @@ export function createTopicEnrichmentProvider(
 function createDefaultTopicEnrichmentRepository(): TopicEnrichmentRepository {
   return {
     approveTopicContent: async (input) =>
-      approveTopicContent(input.topicId, input.approvedContentSource),
+      approveTopicContent(input.topicId, input.approvedContentSource, {
+        approvalMode: input.approvalMode,
+        approvedAt: input.approvedAt,
+        approvedBy: input.approvedBy,
+      }),
     completeTopicEnrichment: async (input) =>
       completeTopicEnrichment(input.topicId, input),
     failTopicEnrichment: async (input) => failTopicEnrichment(input.topicId, input),

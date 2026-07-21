@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BrainCircuit, CheckCircle2, CircleAlert, Clock3, RotateCcw } from "lucide-react";
 
 import {
@@ -12,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 type AuthoringRun = {
+  automaticApprovalRun: { id: string; knowledgeBundleId: string; status: string } | null;
+  automaticTopicApprovalEnabled: boolean;
   completedStages: string[];
   currentStage: string;
   enrichmentCandidateCount: number;
@@ -35,7 +38,7 @@ export function KnowledgeAuthoringPanel({ documentId, extractionReady, run }: { 
             <h2 className="text-lg font-semibold">AI-assisted authoring</h2>
           </div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Prepares metadata, concepts, enrichments, relation suggestions, and validation results. A person still approves and exports every topic.
+            Prepares metadata, concepts, enrichments, relation suggestions, and validation results. Eligible high-confidence topics may be approved automatically when bundle automation is enabled.
           </p>
         </div>
         {run ? <Badge variant="outline" className="capitalize">{run.status.replaceAll("_", " ")}</Badge> : null}
@@ -119,7 +122,12 @@ export function KnowledgeAuthoringPanel({ documentId, extractionReady, run }: { 
 
           {run.status === "ready_for_review" ? (
             <div className="space-y-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm">
-              <p>Review package ready. Select each topic in the tree to edit, compare enrichment, approve it, and export it to OKF.</p>
+              <p>{run.automaticTopicApprovalEnabled ? "Review package ready. Eligible high-confidence topics were sent to the automatic approval queue; skipped topics still require review." : "Review package ready. Select each topic in the tree to edit, compare enrichment, approve it, and export it to OKF."}</p>
+              {run.automaticApprovalRun ? (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/knowledge/${run.automaticApprovalRun.knowledgeBundleId}/review/${run.automaticApprovalRun.id}`}>View automatic approval results</Link>
+                </Button>
+              ) : null}
               {Array.isArray(run.relationSuggestions) && run.relationSuggestions.length > 0 ? (
                 <form action={promoteAuthoringRelationsAction}>
                   <input name="documentId" type="hidden" value={documentId} />

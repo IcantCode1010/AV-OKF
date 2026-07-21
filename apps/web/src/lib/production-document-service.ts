@@ -10,6 +10,7 @@ import {
   type DocumentMetrics,
   type DocumentStatus,
   type ApprovedContentSource,
+  type TopicApprovalMode,
   type SourceType,
   type TopicRecord,
   type TopicReviewStatus,
@@ -121,6 +122,11 @@ export type ProductionDocumentService = {
   approveTopicContent(
     topicId: string,
     approvedContentSource: ApprovedContentSource,
+    provenance?: {
+      approvalMode?: TopicApprovalMode;
+      approvedAt?: Date;
+      approvedBy?: string;
+    },
   ): Promise<TopicRecord>;
 };
 
@@ -358,9 +364,11 @@ export function createProductionDocumentService(
     async approveTopicContent(
       topicId: string,
       approvedContentSource: ApprovedContentSource,
+      provenance,
     ): Promise<TopicRecord> {
       return repository.approveTopicContent({
         approvedContentSource,
+        ...provenance,
         context: await requireAuthWorkspaceContext(),
         topicId,
       });

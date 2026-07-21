@@ -5,6 +5,10 @@ export function getDocumentDetailHref(documentId: string) {
   return `/documents/${documentId}`;
 }
 
+export function getDocumentProcessingHref(documentId: string) {
+  return `/documents/${documentId}?panel=processing`;
+}
+
 export function shouldIgnoreDocumentRowNavigation(target: EventTarget | null) {
   if (!target || !("closest" in target)) {
     return false;

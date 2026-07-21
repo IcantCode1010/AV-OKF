@@ -110,6 +110,7 @@ export type TopicEnrichmentStatus =
   | "failed";
 
 export type ApprovedContentSource = "raw" | "enriched";
+export type TopicApprovalMode = "human_individual" | "human_bulk" | "automated";
 
 export type TopicEnrichmentAudit = {
   id: string;
@@ -140,6 +141,9 @@ export type TopicRecord = {
   discoveryMetadata: Record<string, unknown>;
   enrichmentStatus: TopicEnrichmentStatus;
   approvedContentSource: ApprovedContentSource | null;
+  approvalMode: TopicApprovalMode | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
   enrichedAt: string | null;
   enrichmentModel: string | null;
   enrichmentErrorMessage: string | null;
@@ -843,6 +847,9 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           originalTitle: candidate.title,
           originalSummary: candidate.summary,
           approvedContentSource: null,
+          approvalMode: null,
+          approvedBy: null,
+          approvedAt: null,
           enrichedAt: null,
           enrichedSummary: null,
           enrichedBody: null,
@@ -1078,6 +1085,11 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
   async function approveTopicContent(
     topicId: string,
     approvedContentSource: ApprovedContentSource,
+    provenance?: {
+      approvalMode?: TopicApprovalMode;
+      approvedAt?: Date;
+      approvedBy?: string;
+    },
   ) {
     return mutateStore(async (store) => {
       const topic = getStoreTopic(store, topicId);
@@ -1092,6 +1104,9 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         topic.summary = topic.enrichedSummary;
       }
       topic.approvedContentSource = approvedContentSource;
+      topic.approvalMode = provenance?.approvalMode ?? "human_individual";
+      topic.approvedBy = provenance?.approvedBy ?? null;
+      topic.approvedAt = formatTimestamp(provenance?.approvedAt ?? new Date());
       topic.reviewStatus = "approved";
       topic.updatedAt = formatTimestamp(new Date());
       return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
@@ -1258,8 +1273,9 @@ export async function failTopicEnrichment(
 export async function approveTopicContent(
   topicId: string,
   approvedContentSource: ApprovedContentSource,
+  provenance?: Parameters<typeof defaultVault.approveTopicContent>[2],
 ) {
-  return defaultVault.approveTopicContent(topicId, approvedContentSource);
+  return defaultVault.approveTopicContent(topicId, approvedContentSource, provenance);
 }
 
 export function getDefaultDataRoot() {
@@ -1349,6 +1365,9 @@ function normalizeTopicRecord(
   topic.discoveryMetadata ??= { version: "legacy-heading-v1" };
   topic.enrichmentStatus ??= "none";
   topic.approvedContentSource ??= null;
+  topic.approvalMode ??= null;
+  topic.approvedBy ??= null;
+  topic.approvedAt ??= null;
   topic.exportedFilePath ??= null;
   const topicAudits = audits
     .filter((audit) => audit.topicId === topic.id)

@@ -31,6 +31,21 @@ import {
   getOkfConceptEmbeddingQueue,
   type OkfConceptEmbeddingJobPayload,
 } from "../lib/okf-concept-embedding-queue.ts";
+import {
+  createBulkTopicApprovalQueue,
+  type BulkTopicApprovalJobPayload,
+} from "../lib/bulk-topic-approval-queue.ts";
+import {
+  createAutomaticBulkApprovalRun,
+  reconcileBulkTopicApprovalRuns,
+  runBulkTopicApprovalJob,
+} from "../lib/bulk-topic-approval.ts";
+import {
+  enqueueDocumentDeletionJob,
+  reconcileDocumentDeletionJobs,
+  runPermanentDocumentDeletionJob,
+  type DocumentDeletionJobPayload,
+} from "../lib/document-deletion.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
@@ -38,6 +53,8 @@ let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJob> | null = null;
 let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
 let knowledgeAuthoringWorker: Worker<KnowledgeAuthoringJobPayload> | null = null;
 let okfEmbeddingWorker: Worker<OkfConceptEmbeddingJobPayload> | null = null;
+let bulkTopicApprovalWorker: Worker<BulkTopicApprovalJobPayload> | null = null;
+let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
 
 void main();
 
@@ -56,6 +73,7 @@ async function main() {
   const topicDiscoveryQueue = createBullMqTopicDiscoveryQueue(redisUrl);
   const knowledgeAuthoringQueue = createBullMqKnowledgeAuthoringQueue(redisUrl);
   const okfEmbeddingQueue = getOkfConceptEmbeddingQueue();
+  const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
 
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
@@ -65,6 +83,8 @@ async function main() {
     queue: okfEmbeddingQueue,
     repository: createOkfConceptEmbeddingRepository(),
   });
+  await reconcileBulkTopicApprovalRuns(bulkTopicApprovalQueue.enqueue);
+  await reconcileDocumentDeletionJobs(enqueueDocumentDeletionJob);
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -108,7 +128,16 @@ async function main() {
 
   knowledgeAuthoringWorker = new Worker<KnowledgeAuthoringJobPayload>(
     "knowledge-authoring",
-    async (job) => runKnowledgeAuthoringJob(job.data),
+    async (job) => {
+      const result = await runKnowledgeAuthoringJob(job.data);
+      if (result.status === "ready_for_review") {
+        await createAutomaticBulkApprovalRun({
+          authoringRunId: result.id,
+          enqueue: bulkTopicApprovalQueue.enqueue,
+        });
+      }
+      return result;
+    },
     {
       concurrency: Number(process.env.KNOWLEDGE_AUTHORING_WORKER_CONCURRENCY ?? "1"),
       connection: { url: redisUrl },
@@ -124,6 +153,18 @@ async function main() {
   okfEmbeddingWorker = new Worker<OkfConceptEmbeddingJobPayload>(
     "okf-concept-embedding",
     async (job) => runOkfConceptEmbeddingJob(job.data),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
+  bulkTopicApprovalWorker = new Worker<BulkTopicApprovalJobPayload>(
+    "bulk-topic-approval",
+    async (job) => runBulkTopicApprovalJob(job.data),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
+  documentDeletionWorker = new Worker<DocumentDeletionJobPayload>(
+    "document-deletion",
+    async (job) => runPermanentDocumentDeletionJob(job.data, { storage }),
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
@@ -159,6 +200,12 @@ async function main() {
   });
   okfEmbeddingWorker.on("failed", (job, error) => {
     console.error(`OKF concept embedding job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  bulkTopicApprovalWorker.on("failed", (job, error) => {
+    console.error(`Bulk topic approval job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  documentDeletionWorker.on("failed", (job, error) => {
+    console.error(`Document deletion failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -244,5 +291,7 @@ async function shutdown() {
   await topicDiscoveryWorker?.close();
   await knowledgeAuthoringWorker?.close();
   await okfEmbeddingWorker?.close();
+  await bulkTopicApprovalWorker?.close();
+  await documentDeletionWorker?.close();
   process.exit(0);
 }

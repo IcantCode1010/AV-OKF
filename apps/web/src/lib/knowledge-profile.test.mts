@@ -14,6 +14,8 @@ test("generic and aviation profiles share the base contract without leaking avia
   const aviation = getKnowledgeProfileTemplate("aviation");
   assert.deepEqual(validateKnowledgeProfile(generic), []);
   assert.equal(generic.fields.type.required, true);
+  assert.equal(generic.automation.autoApproveEnrichedTopics, false);
+  assert.equal(aviation.automation.autoApproveEnrichedTopics, false);
   assert.equal(generic.fields.aircraft_family, undefined);
   assert.equal(generic.fields.covered_rag_chunk_ids?.type, "string_array");
   assert.equal(generic.fields.classification_code?.type, "string");
@@ -57,6 +59,8 @@ test("legacy built-in profiles gain safe defaults while legacy custom profiles f
     Omit<ReturnType<typeof getKnowledgeProfileTemplate>, "clarificationFields">;
   delete builtIn.clarificationFields;
   delete custom.clarificationFields;
+  delete builtIn.automation;
+  delete custom.automation;
 
   assert.deepEqual(
     normalizeKnowledgeProfile(builtIn as ReturnType<typeof getKnowledgeProfileTemplate>)
@@ -68,6 +72,19 @@ test("legacy built-in profiles gain safe defaults while legacy custom profiles f
       .clarificationFields,
     [],
   );
+  assert.equal(
+    normalizeKnowledgeProfile(custom as ReturnType<typeof getKnowledgeProfileTemplate>)
+      .automation.autoApproveEnrichedTopics,
+    false,
+  );
+});
+
+test("bundle automation is cloned per profile and does not leak between bundles", () => {
+  const first = getKnowledgeProfileTemplate("generic");
+  const second = getKnowledgeProfileTemplate("generic");
+  first.automation.autoApproveEnrichedTopics = true;
+  assert.equal(first.automation.autoApproveEnrichedTopics, true);
+  assert.equal(second.automation.autoApproveEnrichedTopics, false);
 });
 
 test("bundle manifest makes only profile-required fields required", () => {

@@ -24,6 +24,7 @@ import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 import { PROHIBITED_CLARIFICATION_FIELDS } from "./knowledge-profile.ts";
 
 export type OkfBundleEvidence = {
+  approvalProvenance: "automated" | "human" | "legacy";
   answerableMetadata: Record<string, string[]>;
   body: string;
   coveredRagChunkIds: string[];
@@ -81,6 +82,7 @@ export type OkfBundleRetrievalDiagnostics = {
 export type OkfConceptLifecycleStatus =
   | "active"
   | "archived"
+  | "deleting"
   | "deleted"
   | "retracted";
 
@@ -370,6 +372,8 @@ function sortEvidence(candidates: OkfBundleEvidence[]) {
       if (right.score !== left.score) {
         return right.score - left.score;
       }
+      const provenanceOrder = approvalRank(left.approvalProvenance) - approvalRank(right.approvalProvenance);
+      if (provenanceOrder !== 0) return provenanceOrder;
 
       const titleOrder = left.title.localeCompare(right.title);
       return titleOrder === 0 ? left.filePath.localeCompare(right.filePath) : titleOrder;
@@ -500,6 +504,9 @@ async function buildEvidenceCandidate(
   }
 
   return {
+    approvalProvenance: getApprovalProvenance(
+      getFrontmatterScalar(parsed.frontmatter, "approved_by"),
+    ),
     answerableMetadata,
     body: parsed.body,
     contentHash: hashOkfSource(markdown),
@@ -532,6 +539,15 @@ async function buildEvidenceCandidate(
     title: trustedTitle,
     type: type!,
   };
+}
+
+function getApprovalProvenance(approvedBy: string | null): "automated" | "human" | "legacy" {
+  if (!approvedBy) return "legacy";
+  return approvedBy.startsWith("automation:") ? "automated" : "human";
+}
+
+function approvalRank(provenance: OkfBundleEvidence["approvalProvenance"]): number {
+  return provenance === "human" ? 0 : provenance === "automated" ? 1 : 2;
 }
 
 function emptyDiagnostics(): OkfBundleRetrievalDiagnostics {
