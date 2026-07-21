@@ -3,7 +3,6 @@ import Link from "next/link";
 import { FileText, Layers, Tags } from "lucide-react";
 
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { DocumentDeleteControl } from "@/components/document-delete-control";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -121,14 +120,10 @@ export function DocumentSummaryPanel({
 }
 
 export function DocumentMetadataPanel({
-  deleteError,
   document,
-  isAdmin,
   metadataError,
 }: {
-  deleteError: string | null;
   document: Document;
-  isAdmin: boolean;
   metadataError: string | null;
 }) {
   return (
@@ -353,25 +348,6 @@ export function DocumentMetadataPanel({
           </CardContent>
         </Card>
 
-        {isAdmin ? (
-          <Card className="border-red-400/30">
-            <CardHeader>
-              <CardTitle>Permanent deletion</CardTitle>
-              <CardDescription>
-                Removes this source and every derived product through a durable,
-                retryable cleanup job. There is no restore path.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {deleteError ? (
-                <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
-                  {deleteError}
-                </div>
-              ) : null}
-              <DocumentDeleteControl documentId={document.id} />
-            </CardContent>
-          </Card>
-        ) : null}
       </div>
     </div>
   );

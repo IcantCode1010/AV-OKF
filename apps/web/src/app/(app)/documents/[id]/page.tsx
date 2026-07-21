@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 
 import { DocumentExtractionPoller } from "@/components/document-extraction-poller";
+import { DocumentHeaderDeleteRow } from "@/components/document-header-delete-row";
 import {
   DocumentExtractionPanel,
   DocumentLogsPanel,
@@ -134,6 +135,7 @@ export default async function DocumentDetailPage({
   const relationErrorMessage = formatRelationError(relationError);
   const enrichmentErrorMessage = formatEnrichmentError(enrichmentError);
   const deleteErrorMessage = formatDeleteError(deleteError);
+  const isAdmin = context.role === "admin";
   const metadataErrorMessage = formatMetadataError(metadataError);
   const lifecycleErrorMessage = formatLifecycleError(lifecycleError);
   const lifecycleUpdatedMessage = formatLifecycleUpdated(lifecycleUpdated);
@@ -198,6 +200,11 @@ export default async function DocumentDetailPage({
             documentId={currentDocument.id}
             state={processingState}
           />
+          <DocumentHeaderDeleteRow
+            deleteError={deleteErrorMessage}
+            documentId={currentDocument.id}
+            isAdmin={isAdmin}
+          />
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
@@ -237,10 +244,8 @@ export default async function DocumentDetailPage({
     if (selectedPanel === "metadata") {
       return (
         <DocumentMetadataPanel
-          deleteError={deleteErrorMessage}
           metadataError={metadataErrorMessage}
           document={currentDocument}
-          isAdmin={context.role === "admin"}
         />
       );
     }

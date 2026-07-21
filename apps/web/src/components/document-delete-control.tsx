@@ -20,7 +20,10 @@ export function DocumentDeleteControl({ documentId }: { documentId: string }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="destructive">
+        <Button
+          className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          variant="outline"
+        >
           <Trash2 className="h-4 w-4" />
           Permanently delete document
         </Button>

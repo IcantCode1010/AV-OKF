@@ -3,10 +3,10 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 type DocumentProcessingStatusDependencies = {
   allowMissingWorkspace?: boolean;
   getContext(): Promise<AuthWorkspaceContext>;
-  getFingerprint(
+  getSnapshot(
     documentId: string,
     context: AuthWorkspaceContext,
-  ): Promise<string | null>;
+  ): Promise<{ active: boolean; fingerprint: string } | null>;
   getWorkspaceId(documentId: string): Promise<string | undefined>;
 };
 
@@ -24,11 +24,11 @@ export async function createDocumentProcessingStatusResponse(
       return notFoundResponse();
     }
 
-    const fingerprint = await dependencies.getFingerprint(documentId, context);
-    if (!fingerprint) return notFoundResponse();
+    const snapshot = await dependencies.getSnapshot(documentId, context);
+    if (!snapshot) return notFoundResponse();
 
     return Response.json(
-      { fingerprint },
+      snapshot,
       {
         headers: {
           "Cache-Control": "private, no-store",

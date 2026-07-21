@@ -60,6 +60,26 @@ type DocumentMetadataLike = {
   title: string;
 };
 
+type BulkRunStatusLike = {
+  errorCode: string | null;
+  errorMessage: string | null;
+  id: string;
+  items: Array<{
+    exportedFilePath: string | null;
+    failureCode: string | null;
+    failureMessage: string | null;
+    id: string;
+    retryCount: number;
+    status: string;
+  }>;
+  status: string;
+};
+
+export type BulkTopicApprovalStatusSnapshot = {
+  active: boolean;
+  fingerprint: string;
+};
+
 export function topicRevisionFingerprint(topic: TopicLike): string {
   return createHash("sha256").update(JSON.stringify({
     confidence: topic.confidence,
@@ -188,6 +208,64 @@ export async function getBulkTopicApprovalRun(input: { context: AuthWorkspaceCon
     include: { items: { include: { document: true, topic: true }, orderBy: { createdAt: "asc" } }, knowledgeBundle: true },
     where: { id: input.runId, workspaceId: input.context.workspaceId },
   });
+}
+
+export async function getBulkTopicApprovalStatusSnapshot(input: {
+  context: AuthWorkspaceContext;
+  runId: string;
+}): Promise<BulkTopicApprovalStatusSnapshot | null> {
+  const run = await getPrisma().bulkTopicApprovalRun.findFirst({
+    select: {
+      errorCode: true,
+      errorMessage: true,
+      id: true,
+      items: {
+        orderBy: { id: "asc" },
+        select: {
+          exportedFilePath: true,
+          failureCode: true,
+          failureMessage: true,
+          id: true,
+          retryCount: true,
+          status: true,
+        },
+      },
+      status: true,
+    },
+    where: { id: input.runId, workspaceId: input.context.workspaceId },
+  });
+
+  return run ? buildBulkTopicApprovalStatusSnapshot(run) : null;
+}
+
+export function buildBulkTopicApprovalStatusSnapshot(
+  run: BulkRunStatusLike,
+): BulkTopicApprovalStatusSnapshot {
+  const fingerprint = createHash("sha256")
+    .update(
+      JSON.stringify({
+        errorCode: run.errorCode,
+        errorMessage: run.errorMessage,
+        id: run.id,
+        items: run.items
+          .map((item) => ({
+            exportedFilePath: item.exportedFilePath,
+            failureCode: item.failureCode,
+            failureMessage: item.failureMessage,
+            id: item.id,
+            retryCount: item.retryCount,
+            status: item.status,
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        status: run.status,
+      }),
+    )
+    .digest("hex");
+
+  return {
+    active: ["queued", "running"].includes(run.status),
+    fingerprint,
+  };
 }
 
 export async function confirmBulkTopicApprovalRun(input: {

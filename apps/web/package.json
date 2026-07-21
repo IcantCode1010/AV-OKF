@@ -10,7 +10,7 @@
     "db:migrate": "prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/**/*.test.mts",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/**/*.test.mts && tsx --test src/**/*.test.tsx",
     "test:e2e:llm": "tsx scripts/e2e-llm-authoring.mts",
     "test:e2e:auto-approval": "tsx scripts/e2e-automatic-topic-approval.mts",
     "test:e2e:document-deletion": "tsx scripts/e2e-document-deletion.mts",

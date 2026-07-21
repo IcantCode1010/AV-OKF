@@ -47,6 +47,12 @@ export type DocumentDeletionStatus = {
   status: string;
 };
 
+export type DocumentDeletionStatusSnapshot = {
+  active: boolean;
+  fingerprint: string;
+  jobs: DocumentDeletionStatus[];
+};
+
 type EnqueueDeletion = (payload: DocumentDeletionJobPayload) => Promise<void>;
 
 let cachedQueue: Queue<DocumentDeletionJobPayload> | null = null;
@@ -217,7 +223,7 @@ export async function listDocumentDeletionJobs(
 ): Promise<DocumentDeletionStatus[]> {
   if (context.role !== "admin") return [];
   return getPrisma().documentDeletionJob.findMany({
-    orderBy: { queuedAt: "desc" },
+    orderBy: [{ queuedAt: "desc" }, { id: "asc" }],
     select: {
       documentId: true,
       documentTitle: true,
@@ -228,6 +234,39 @@ export async function listDocumentDeletionJobs(
     },
     where: { workspaceId: context.workspaceId },
   });
+}
+
+export async function getDocumentDeletionStatusSnapshot(
+  context: AuthWorkspaceContext,
+): Promise<DocumentDeletionStatusSnapshot> {
+  return buildDocumentDeletionStatusSnapshot(
+    await listDocumentDeletionJobs(context),
+  );
+}
+
+export function buildDocumentDeletionStatusSnapshot(
+  jobs: DocumentDeletionStatus[],
+): DocumentDeletionStatusSnapshot {
+  const fingerprint = createHash("sha256")
+    .update(
+      JSON.stringify(
+        jobs
+          .map((job) => ({
+            errorCode: job.errorCode,
+            errorMessage: job.errorMessage,
+            id: job.id,
+            status: job.status,
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+      ),
+    )
+    .digest("hex");
+
+  return {
+    active: jobs.some((job) => ["queued", "running"].includes(job.status)),
+    fingerprint,
+    jobs,
+  };
 }
 
 export async function reconcileDocumentDeletionJobs(

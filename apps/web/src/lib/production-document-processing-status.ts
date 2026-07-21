@@ -2,10 +2,10 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { serializeDocumentProcessingFingerprint } from "./document-processing-state.ts";
 import { getPrisma } from "./prisma.ts";
 
-export async function getProductionDocumentProcessingFingerprint(input: {
+export async function getProductionDocumentProcessingStatusSnapshot(input: {
   context: AuthWorkspaceContext;
   documentId: string;
-}): Promise<string | null> {
+}): Promise<{ active: boolean; fingerprint: string } | null> {
   const document = await getPrisma().document.findFirst({
     select: {
       _count: { select: { extractedPages: true } },
@@ -59,7 +59,7 @@ export async function getProductionDocumentProcessingFingerprint(input: {
   const automaticApproval = authoring?.automaticApprovalRun;
   const topicDiscovery = document.topicDiscoveryJobs[0];
 
-  return serializeDocumentProcessingFingerprint({
+  const fingerprint = serializeDocumentProcessingFingerprint({
     authoring: authoring
       ? {
           completedStages: authoring.completedStages,
@@ -79,7 +79,7 @@ export async function getProductionDocumentProcessingFingerprint(input: {
     extraction: {
       errorCode: extraction?.errorCode ?? null,
       pageCount: document._count.extractedPages,
-      status: extraction?.status ?? "not_started",
+      status: extraction?.status ?? "queued",
     },
     topicDiscovery: {
       completedWindows: topicDiscovery?.completedWindows ?? 0,
@@ -88,4 +88,15 @@ export async function getProductionDocumentProcessingFingerprint(input: {
       totalWindows: topicDiscovery?.totalWindows ?? 0,
     },
   });
+
+  return {
+    active:
+      ["queued", "running"].includes(extraction?.status ?? "") ||
+      ["queued", "analyzing", "consolidating"].includes(
+        topicDiscovery?.status ?? "",
+      ) ||
+      ["queued", "running"].includes(authoring?.status ?? "") ||
+      ["queued", "running"].includes(automaticApproval?.status ?? ""),
+    fingerprint,
+  };
 }

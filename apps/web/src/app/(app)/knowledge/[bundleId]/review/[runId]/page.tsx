@@ -8,7 +8,11 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
-import { getBulkTopicApprovalRun, isRetryableBulkFailure } from "@/lib/bulk-topic-approval";
+import {
+  buildBulkTopicApprovalStatusSnapshot,
+  getBulkTopicApprovalRun,
+  isRetryableBulkFailure,
+} from "@/lib/bulk-topic-approval";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +20,15 @@ export default async function BulkTopicApprovalRunPage({ params, searchParams }:
   const [{ bundleId, runId }, query, context] = await Promise.all([params, searchParams, requireAuthWorkspaceContext()]);
   const run = await getBulkTopicApprovalRun({ context, runId });
   if (!run || run.knowledgeBundleId !== bundleId) notFound();
-  const active = run.status === "queued" || run.status === "running";
+  const statusSnapshot = buildBulkTopicApprovalStatusSnapshot(run);
   const retryableCount = run.items.filter((item) => item.status === "failed" && isRetryableBulkFailure(item.failureCode)).length;
   return (
     <div className="space-y-5">
-      <BulkRunPoller active={active} />
+      <BulkRunPoller
+        active={statusSnapshot.active}
+        fingerprint={statusSnapshot.fingerprint}
+        runId={run.id}
+      />
       <Button asChild size="sm" variant="ghost"><Link href={`/knowledge/${bundleId}/review`}><ArrowLeft className="size-4" />Back to topic review</Link></Button>
       <header className="border-b border-border pb-5">
         <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{run.knowledgeBundle.name}</Badge><Badge className="capitalize" variant="outline">{run.mode}</Badge><Badge className="capitalize" variant="outline">{run.status.replaceAll("_", " ")}</Badge></div>
@@ -58,7 +66,7 @@ export default async function BulkTopicApprovalRunPage({ params, searchParams }:
         ))}
       </div>
 
-      {retryableCount > 0 && !active ? (
+      {retryableCount > 0 && !statusSnapshot.active ? (
         <form action={retryBulkTopicApprovalAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Queueing retry...">Retry {retryableCount} failed {retryableCount === 1 ? "topic" : "topics"}</PendingSubmitButton></form>
       ) : null}
     </div>

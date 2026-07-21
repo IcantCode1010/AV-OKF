@@ -9,7 +9,7 @@ import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-backend";
 import { retryPermanentDocumentDeletionAction, uploadDocumentAction } from "./actions";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
-import { listDocumentDeletionJobs } from "@/lib/document-deletion";
+import { getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
 
 export const dynamic = "force-dynamic";
 
@@ -20,20 +20,21 @@ export default async function DocumentsPage({
 }) {
   const { deletionJob, uploadError } = await searchParams;
   const context = await requireAuthWorkspaceContext();
-  const [documents, bundles, deletionJobs] = await Promise.all([
+  const [documents, bundles, deletionSnapshot] = await Promise.all([
     getDocuments(),
     listKnowledgeBundles(context),
-    listDocumentDeletionJobs(context),
+    getDocumentDeletionStatusSnapshot(context),
   ]);
+  const deletionJobs = deletionSnapshot.jobs;
   const uploadErrorMessage = formatUploadError(uploadError);
   const selectedDeletion = deletionJobs.find((job) => job.id === deletionJob);
-  const deletionActive = deletionJobs.some((job) =>
-    ["queued", "running"].includes(job.status),
-  );
 
   return (
     <>
-      <DocumentDeletionPoller active={deletionActive} />
+      <DocumentDeletionPoller
+        active={deletionSnapshot.active}
+        fingerprint={deletionSnapshot.fingerprint}
+      />
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <Badge variant="secondary">Document library</Badge>

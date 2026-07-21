@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildDocumentDeletionStatusSnapshot,
   citationsReferenceDocument,
   DELETED_CHAT_ANSWER,
   replaceRelationsBlock,
@@ -93,4 +94,45 @@ Body
   assert.deepEqual(getFrontmatterRelations(parseOkfMarkdown(updated).frontmatter), []);
   assert.doesNotMatch(updated, /^relations:/m);
   assert.match(updated, /\nBody\n$/);
+});
+
+test("deletion status snapshots are stable and change at terminal state", () => {
+  const runningJob = {
+    documentId: "doc-1",
+    documentTitle: "Document one",
+    errorCode: null,
+    errorMessage: null,
+    id: "job-1",
+    status: "running",
+  };
+  const first = buildDocumentDeletionStatusSnapshot([runningJob]);
+  const repeated = buildDocumentDeletionStatusSnapshot([runningJob]);
+  const secondRunningJob = {
+    ...runningJob,
+    documentId: "doc-2",
+    documentTitle: "Document two",
+    id: "job-2",
+  };
+  const ordered = buildDocumentDeletionStatusSnapshot([
+    runningJob,
+    secondRunningJob,
+  ]);
+  const reversed = buildDocumentDeletionStatusSnapshot([
+    secondRunningJob,
+    runningJob,
+  ]);
+  const failed = buildDocumentDeletionStatusSnapshot([
+    {
+      ...runningJob,
+      errorCode: "document_deletion_failed",
+      errorMessage: "Retry required",
+      status: "failed",
+    },
+  ]);
+
+  assert.equal(first.active, true);
+  assert.equal(first.fingerprint, repeated.fingerprint);
+  assert.equal(ordered.fingerprint, reversed.fingerprint);
+  assert.equal(failed.active, false);
+  assert.notEqual(first.fingerprint, failed.fingerprint);
 });

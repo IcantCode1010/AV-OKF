@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   automaticTopicBlockers,
   automaticTopicEligibilityErrors,
+  buildBulkTopicApprovalStatusSnapshot,
   claimBulkTopicForRun,
   findPageOverlapErrors,
   topicEligibilityErrors,
@@ -23,6 +24,51 @@ test("page overlap is scoped to one source document", () => {
     ["bulk_topic_page_overlap:topic-a:topic-c"],
   );
 });
+
+test("bulk run status fingerprints are deterministic and track item progress", () => {
+  const firstItem = makeBulkStatusItem("item-a", "approving");
+  const secondItem = makeBulkStatusItem("item-b", "pending");
+  const running = buildBulkTopicApprovalStatusSnapshot({
+    errorCode: null,
+    errorMessage: null,
+    id: "run-1",
+    items: [firstItem, secondItem],
+    status: "running",
+  });
+  const reversed = buildBulkTopicApprovalStatusSnapshot({
+    errorCode: null,
+    errorMessage: null,
+    id: "run-1",
+    items: [secondItem, firstItem],
+    status: "running",
+  });
+  const completed = buildBulkTopicApprovalStatusSnapshot({
+    errorCode: null,
+    errorMessage: null,
+    id: "run-1",
+    items: [
+      { ...firstItem, exportedFilePath: "concepts/topic.md", status: "succeeded" },
+      secondItem,
+    ],
+    status: "completed_with_failures",
+  });
+
+  assert.equal(running.active, true);
+  assert.equal(running.fingerprint, reversed.fingerprint);
+  assert.equal(completed.active, false);
+  assert.notEqual(running.fingerprint, completed.fingerprint);
+});
+
+function makeBulkStatusItem(id: string, status: string) {
+  return {
+    exportedFilePath: null,
+    failureCode: null,
+    failureMessage: null,
+    id,
+    retryCount: 0,
+    status,
+  };
+}
 
 test("page overlap against a prior approval blocks the selected topic", () => {
   assert.deepEqual(
