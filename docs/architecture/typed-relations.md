@@ -57,6 +57,28 @@ target_type matches the resolved target file's frontmatter type
 
 Relation targets are internal bundle links for MVP. See [Link Resolution](link-resolution.md) for the exact Markdown and path rules.
 
+## Reviewed Discovery
+
+Relation discovery is a review aid, not a graph-writing agent. There are two staged inputs:
+
+1. Bundle discovery compares approved exported concepts with deterministic signals.
+2. Assisted authoring may ask the configured LLM to classify up to 50 deterministically filtered draft-topic pairs, but stores the result only in `KnowledgeAuthoringRun.relationSuggestions`.
+
+Neither path writes OKF frontmatter. Authoring suggestions require a user to promote them to pending review, and every pending candidate requires a second explicit approval before the source topic is updated and re-exported. Automatic topic approval does not promote or approve relations.
+
+Candidate quality is profile-scoped. Basic English function words remain code-owned; Generic and Aviation discovery stopwords live in the versioned bundle profile. A title/description signal requires at least two meaningful shared terms. The UI records the actual sorted shared terms and tags, not only category names. Concepts are sorted by bundle-relative path before pairing, so rerunning discovery produces stable proposed direction and ordering.
+
+One shared graph preflight runs during bundle discovery, authoring-suggestion promotion, and final approval. It rejects:
+
+- exact and symmetric `conflicts_with` reverse duplicates;
+- unsafe, missing, inactive, cross-bundle, or type-mismatched targets;
+- cycles in `depends_on`, `routes_to`, and `supersedes`;
+- competing active `supersedes` edges targeting one concept.
+
+Reverse `references` and `supports` edges remain possible when independently justified, but carry a warning. Reviewers may swap a directional proposal; the selected direction is preflighted again immediately before export. Pending and rejected candidates never enter the explorer graph or agent traversal.
+
+Run `pnpm --dir apps/web eval:relations` with `RELATION_EVAL_WORKSPACE_ID` and optional comma-separated `RELATION_EVAL_BUNDLE_IDS` to write a dry-run before/after report. The report includes candidate counts, terms, tags, direction, warnings, and suppression reasons and leaves explicit human-review fields incomplete. Semantic neighbor generation, weighted scoring, broader LLM classification, and bulk relation approval remain blocked until a representative sample is reviewed.
+
 ## Agent Rules
 
 The Retrieval Agent may use `references` as a recall signal, but it should give stronger weight to `routes_to`, `supports`, and `covered_by`.

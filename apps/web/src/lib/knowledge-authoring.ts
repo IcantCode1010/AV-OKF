@@ -5,7 +5,15 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { enrichTopic } from "./topic-enrichment.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import { getLlmProvider, getSdkModel } from "./llm-providers.ts";
-import { buildDeterministicRelationCandidates } from "./okf-relation-discovery.ts";
+import {
+  buildDeterministicRelationCandidates,
+  tokenizeRelationTerms,
+} from "./okf-relation-discovery.ts";
+import {
+  loadOkfRelationPreflightContext,
+  preflightOkfRelationCandidate,
+  relationPreflightSignal,
+} from "./okf-relation-preflight.ts";
 import { getPrisma } from "./prisma.ts";
 import { createPostgresDocumentRepository } from "./production-repository.ts";
 import { runTopicDiscoveryJob } from "./topic-discovery-service.ts";
@@ -311,22 +319,35 @@ async function runMetadataDiscovery(input: {
 
 async function classifyDraftRelations(input: { apiKey: string; documentId: string; knowledgeBundleId: string; model: string; provider: "anthropic" | "openai"; runId: string; workspaceId: string }) {
   const db = getPrisma();
-  const topics = await db.topicRecord.findMany({ where: { documentId: input.documentId, reviewStatus: { in: ["needs_review", "needs_cleanup"] }, workspaceId: input.workspaceId } });
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: input.knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const topics = await db.topicRecord.findMany({
+    orderBy: [{ pageStart: "asc" }, { id: "asc" }],
+    where: {
+      documentId: input.documentId,
+      knowledgeBundleId: input.knowledgeBundleId,
+      reviewStatus: { in: ["needs_review", "needs_cleanup"] },
+      workspaceId: input.workspaceId,
+    },
+  });
   const concepts = topics.map((topic) => ({
     filePath: `topic:${topic.id}`,
     pages: topic.sourcePageNumbers,
     sourceFile: input.documentId,
     tags: [],
-    terms: [...new Set(`${topic.title} ${topic.summary}`.toLowerCase().match(/[a-z0-9][a-z0-9_-]{2,}/g) ?? [])],
+    terms: tokenizeRelationTerms(`${topic.title} ${topic.summary}`),
   }));
-  const candidates = buildDeterministicRelationCandidates(concepts).slice(0, 50);
+  const candidates = buildDeterministicRelationCandidates(concepts, {
+    stopwords: bundle.profile.relationDiscovery.stopwords,
+  }).slice(0, 50);
   if (candidates.length === 0) {
     await stageAudit(input.runId, "relation_classification", "completed");
     return;
   }
-  const bundle = await db.knowledgeBundle.findUnique({ include: { activeProfileVersion: true }, where: { id: input.knowledgeBundleId } });
-  const profile = bundle?.activeProfileVersion?.schema as { relations?: string[] } | null;
-  const allowed = profile?.relations ?? ["references", "supports"];
+  const allowed = bundle.profile.relations;
   const prompt = [
     "Classify only the supplied deterministic candidate pairs.",
     `Allowed relation values: ${allowed.join(", ")}.`,
@@ -448,6 +469,10 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
   }
 
   const suggestions = normalizeAuthoringRelationSuggestions(run.relationSuggestions);
+  const graphContext = await loadOkfRelationPreflightContext({
+    knowledgeBundleId: run.knowledgeBundleId,
+    workspaceId: run.workspaceId,
+  });
   let promoted = 0;
   let skipped = 0;
   for (const suggestion of suggestions) {
@@ -478,9 +503,38 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
       skipped += 1;
       continue;
     }
+    const proposedCandidate = {
+      reason: suggestion.reason,
+      relation: suggestion.relation,
+      sourceFile: sourceTopic.exportedFilePath,
+      targetFile: targetTopic.exportedFilePath,
+    };
+    const existingEdges = existingCandidate
+      ? graphContext.existingEdges.filter((edge) => !(
+          edge.relation === proposedCandidate.relation &&
+          edge.sourceFile === proposedCandidate.sourceFile &&
+          edge.targetFile === proposedCandidate.targetFile
+        ))
+      : graphContext.existingEdges;
+    const preflight = preflightOkfRelationCandidate({
+      activeFiles: graphContext.activeFiles,
+      allowedRelations: graphContext.allowedRelations,
+      candidate: proposedCandidate,
+      existingEdges,
+    });
+    if (!preflight.accepted) {
+      skipped += 1;
+      continue;
+    }
+    const signals = [
+      ...suggestion.signals,
+      ...preflight.issues
+        .filter((issue) => issue.severity === "warning")
+        .map(relationPreflightSignal),
+    ];
     if (existingCandidate) {
       await db.okfRelationCandidate.update({
-        data: { reason: suggestion.reason, signals: suggestion.signals },
+        data: { reason: suggestion.reason, signals },
         where: candidateKey,
       });
     } else {
@@ -489,12 +543,13 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
           knowledgeBundleId: run.knowledgeBundleId,
           reason: suggestion.reason,
           relation: suggestion.relation,
-          signals: suggestion.signals,
+          signals,
           sourceFile: sourceTopic.exportedFilePath,
           targetFile: targetTopic.exportedFilePath,
           workspaceId: run.workspaceId,
         },
       });
+      graphContext.existingEdges.push(proposedCandidate);
     }
     promoted += 1;
   }

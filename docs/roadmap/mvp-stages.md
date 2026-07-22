@@ -511,11 +511,13 @@ Deferred from Stage 7B:
 
 Purpose: populate the typed OKF graph with useful relationships without allowing inferred links to become trusted agent evidence automatically.
 
+Implementation status: Relation Discovery V2 deterministic quality and graph-integrity phases are complete. Bundle discovery now uses profile-versioned stopwords, two-term title/description overlap, visible matched terms/tags, stable path-based direction, and a shared preflight. Assisted-authoring LLM classifications remain staged suggestions with the same pending-only promotion and final human-approval boundary. The first 31-concept Aviation dry run reduced 346 prior-heuristic pairs to 156 proposals and 69 preflight-accepted candidates; a 12-item human sample accepted 4, so deterministic stopword/proximity tuning remains next and semantic neighbors or broader LLM authority remain evaluation-gated.
+
 Workflow:
 
 - Scan approved, active-lifecycle OKF concepts within the current workspace bundle.
 - Generate relation candidates from deterministic signals first: explicit Markdown links, shared source/classification metadata, source-page proximity, and meaningful title/description overlap.
-- Use the configured workspace LLM only to propose a controlled-vocabulary relation type and concise reason when deterministic evidence identifies a plausible candidate; it may not create an authoritative edge directly.
+- Bundle discovery proposes a deterministic relation type and reason without an LLM. Assisted authoring may use the configured workspace LLM only after deterministic filtering to classify at most 50 draft-topic pairs; it may not create an authoritative edge directly.
 - Present candidates to a reviewer with source concept, target concept, proposed relation, reason, supporting signals, and duplicate/conflict warnings.
 - Allow the reviewer to approve, edit, or reject each candidate.
 - On approval, run the existing relation vocabulary, safe-path, target existence, and `target_type` validation; then update the topic working record and re-export the source OKF file.
@@ -525,11 +527,12 @@ Workflow:
 Deliverables:
 
 - Workspace-scoped relation-candidate projection with `pending`, `approved`, and `rejected` review states.
-- Idempotent candidate generation that excludes self-links, existing relations, inactive concepts, unsafe targets, and duplicate source/target/type proposals.
+- Idempotent candidate generation that excludes self-links, existing relations, inactive concepts, unsafe targets, and duplicate source/target/type proposals, with versioned profile stopwords and stable path ordering.
+- Shared graph preflight across bundle discovery, authoring promotion, and final approval, including acyclic directional relations, symmetric duplicate handling, competing supersession, and reviewer direction swap.
 - Knowledge Explorer review surface for candidate approval, editing, rejection, and rerun.
 - Re-export integration that writes approved relations into OKF frontmatter and refreshes the live graph.
 - Audit record for candidate generation and reviewer decisions.
-- Mixed-domain evaluation fixtures proving discovery works without aviation-specific assumptions.
+- Dry-run before/after evaluation reports and mixed-domain fixtures proving discovery works without aviation-specific assumptions; reviewer acceptance metrics gate semantic expansion.
 
 Exit criteria:
 

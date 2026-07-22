@@ -21,6 +21,9 @@ export type KnowledgeProfileSchema = {
   fields: Record<string, { required?: boolean; type: KnowledgeFieldType }>;
   id: string;
   name: string;
+  relationDiscovery: {
+    stopwords: string[];
+  };
   relations: string[];
   types: Record<string, { category: KnowledgeFolderCategory; label: string }>;
 };
@@ -63,6 +66,26 @@ export const DEFAULT_RELATIONS = [
   "depends_on",
 ] as const;
 
+export const GENERIC_RELATION_DISCOVERY_STOPWORDS = [
+  "concept",
+  "document",
+  "general",
+  "information",
+  "overview",
+  "procedure",
+  "system",
+] as const;
+
+export const AVIATION_RELATION_DISCOVERY_STOPWORDS = [
+  ...GENERIC_RELATION_DISCOVERY_STOPWORDS,
+  "aircraft",
+  "airplane",
+  "flight",
+  "manual",
+  "operation",
+  "operations",
+] as const;
+
 export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   type: { required: true, type: "string" },
   title: { type: "string" },
@@ -92,6 +115,9 @@ export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   fields: BASE_FIELDS,
   id: "generic",
   name: "Generic",
+  relationDiscovery: {
+    stopwords: [...GENERIC_RELATION_DISCOVERY_STOPWORDS],
+  },
   relations: [...DEFAULT_RELATIONS],
   types: {
     concept: { category: "concepts", label: "Concept" },
@@ -119,6 +145,9 @@ export const AVIATION_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   },
   id: "aviation",
   name: "Aviation",
+  relationDiscovery: {
+    stopwords: [...AVIATION_RELATION_DISCOVERY_STOPWORDS],
+  },
   types: {
     ...GENERIC_PROFILE_TEMPLATE.types,
     aircraft_index: { category: "indexes", label: "Aircraft index" },
@@ -147,6 +176,18 @@ export function normalizeKnowledgeProfile(
     normalized.clarificationFields = ["generic", "aviation"].includes(normalized.id)
       ? DEFAULT_CLARIFICATION_FIELDS.filter((field) => Boolean(normalized.fields[field]))
       : [];
+  }
+  const defaultStopwords = normalized.id === "aviation"
+    ? AVIATION_RELATION_DISCOVERY_STOPWORDS
+    : GENERIC_RELATION_DISCOVERY_STOPWORDS;
+  if (!Array.isArray(normalized.relationDiscovery?.stopwords)) {
+    normalized.relationDiscovery = {
+      stopwords: [...defaultStopwords],
+    };
+  } else {
+    normalized.relationDiscovery.stopwords = normalizeRelationDiscoveryStopwords(
+      normalized.relationDiscovery.stopwords,
+    );
   }
   return normalized;
 }
@@ -191,5 +232,26 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
   if (profile.relations.some((relation) => !/^[a-z][a-z0-9_]{0,63}$/.test(relation))) {
     errors.push("knowledge_profile_relation_invalid");
   }
+  if (!Array.isArray(profile.relationDiscovery?.stopwords)) {
+    errors.push("knowledge_profile_relation_discovery_stopwords_invalid");
+  } else if (profile.relationDiscovery.stopwords.length > 256) {
+    errors.push("knowledge_profile_relation_discovery_stopwords_too_many");
+  } else if (
+    profile.relationDiscovery.stopwords.some(
+      (stopword) =>
+        typeof stopword !== "string" ||
+        !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(stopword),
+    )
+  ) {
+    errors.push("knowledge_profile_relation_discovery_stopword_invalid");
+  }
   return errors;
+}
+
+export function normalizeRelationDiscoveryStopwords(values: string[]) {
+  return [...new Set(
+    values
+      .map((value) => value.normalize("NFKC").trim().toLowerCase())
+      .filter(Boolean),
+  )].sort((left, right) => left.localeCompare(right));
 }

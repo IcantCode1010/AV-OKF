@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { buildBundleManifest, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import {
+  GENERIC_RELATION_DISCOVERY_STOPWORDS,
   getKnowledgeProfileTemplate,
   getTypeDirectory,
   normalizeKnowledgeProfile,
@@ -27,6 +28,9 @@ test("generic and aviation profiles share the base contract without leaking avia
     "tags",
   ]);
   assert.equal(getTypeDirectory(generic, "procedure"), "procedures/procedure");
+  assert.deepEqual(generic.relationDiscovery.stopwords, GENERIC_RELATION_DISCOVERY_STOPWORDS);
+  assert.equal(generic.relationDiscovery.stopwords.includes("aircraft"), false);
+  assert.equal(aviation.relationDiscovery.stopwords.includes("aircraft"), true);
 });
 
 test("profile clarification fields reject unsafe, unknown, duplicate, and unsupported fields", () => {
@@ -61,6 +65,8 @@ test("legacy built-in profiles gain safe defaults while legacy custom profiles f
   delete custom.clarificationFields;
   delete builtIn.automation;
   delete custom.automation;
+  delete builtIn.relationDiscovery;
+  delete custom.relationDiscovery;
 
   assert.deepEqual(
     normalizeKnowledgeProfile(builtIn as ReturnType<typeof getKnowledgeProfileTemplate>)
@@ -77,6 +83,28 @@ test("legacy built-in profiles gain safe defaults while legacy custom profiles f
       .automation.autoApproveEnrichedTopics,
     false,
   );
+  assert.deepEqual(
+    normalizeKnowledgeProfile(builtIn as ReturnType<typeof getKnowledgeProfileTemplate>)
+      .relationDiscovery.stopwords,
+    GENERIC_RELATION_DISCOVERY_STOPWORDS,
+  );
+  assert.deepEqual(
+    normalizeKnowledgeProfile(custom as ReturnType<typeof getKnowledgeProfileTemplate>)
+      .relationDiscovery.stopwords,
+    GENERIC_RELATION_DISCOVERY_STOPWORDS,
+  );
+});
+
+test("relation discovery stopwords are normalized and validated with bounded profile limits", () => {
+  const profile = getKnowledgeProfileTemplate("generic");
+  profile.relationDiscovery.stopwords = [" Overview ", "overview", "SYSTEM"];
+  assert.deepEqual(normalizeKnowledgeProfile(profile).relationDiscovery.stopwords, ["overview", "system"]);
+
+  profile.relationDiscovery.stopwords = ["not valid"];
+  assert.deepEqual(validateKnowledgeProfile(profile), ["knowledge_profile_relation_discovery_stopword_invalid"]);
+
+  profile.relationDiscovery.stopwords = Array.from({ length: 257 }, (_, index) => `word_${index}`);
+  assert.deepEqual(validateKnowledgeProfile(profile), ["knowledge_profile_relation_discovery_stopwords_too_many"]);
 });
 
 test("bundle automation is cloned per profile and does not leak between bundles", () => {

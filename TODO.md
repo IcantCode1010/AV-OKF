@@ -42,13 +42,19 @@
 ## Reviewed Relation Discovery
 
 - [x] Add a design for workspace-scoped relation candidates with `pending`, `approved`, and `rejected` states.
-- [x] Discover candidate concept pairs from deterministic signals before using the workspace LLM to suggest a controlled-vocabulary relation and reason.
+- [x] Discover bundle candidate pairs deterministically; keep assisted-authoring LLM classification limited to the separately staged suggestion path.
 - [x] Exclude self-links, existing edges, inactive concepts, unsafe targets, and duplicate candidates.
 - [x] Add deterministic bundle-local relation discovery with reviewer approval/rejection and re-export before graph traversal.
 - [x] Validate approved candidates with the existing vocabulary, path, target existence, and `target_type` checks.
 - [x] Re-export the source concept so approved relations enter OKF frontmatter, the live graph, backlinks, and agent traversal together.
 - [x] Keep pending/rejected candidates out of the graph retriever and chat evidence path.
-- [ ] Add audit records and mixed-domain relation-discovery evaluations.
+- [x] Add profile-versioned discovery stopwords, two-term overlap, visible term/tag evidence, deterministic path ordering, and reviewer direction swap.
+- [x] Share graph preflight across discovery, authoring promotion, and final approval, including duplicate, path, type, cycle, and supersession checks.
+- [x] Add a dry-run before/after relation-evaluation command with suppression reasons and reviewer-metric placeholders.
+- [x] Human-review a 12-candidate Aviation dry-run sample and record acceptance, false-positive, missed-relation, and direction-correction findings.
+- [ ] Repeat the human review against a populated live Generic bundle; the current Generic coverage is deterministic fixture-only.
+- [ ] Tune profile stopwords and the source-page-proximity companion rule, then rerun the same evaluation before adding semantic candidates.
+- [ ] Decide from those metrics whether semantic top-K neighbors, weighted scoring, or expanded LLM classification are justified.
 
 ## Chat Source Clarity
 
