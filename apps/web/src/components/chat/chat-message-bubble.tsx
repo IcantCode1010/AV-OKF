@@ -38,7 +38,9 @@ export function ChatMessageBubble({
           const citation = message.citations.find(
             (candidate) => candidate.index === segment.index,
           );
-          const href = citation ? getChatCitationHref(citation) : null;
+          const href = citation
+            ? getChatCitationHref(citation, { returnTo: `/chat/${message.sessionId}` })
+            : null;
           const className = "mx-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[0.625rem] font-bold text-accent-foreground align-super focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
           return href ? (

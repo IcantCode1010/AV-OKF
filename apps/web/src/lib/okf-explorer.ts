@@ -16,6 +16,7 @@ import {
 import { getOkfConceptLifecycleByFile } from "./okf-lifecycle.ts";
 import type { OkfConceptLifecycleRecord } from "./okf-bundle-retriever.ts";
 import { isAgentReadyOkfMetadata, validateGenericOkfMetadata } from "./okf-generic-metadata.ts";
+import { buildOkfArticleReaderContent } from "./okf-article-content.ts";
 
 export type OkfExplorerNode = {
   degree: number;
@@ -45,6 +46,7 @@ export type OkfExplorerBacklink = {
 export type OkfExplorerFile = {
   body: string;
   description: string | null;
+  descriptionRepeatedExactly: boolean;
   filename: string;
   isParseable: boolean;
   isReserved: boolean;
@@ -158,6 +160,14 @@ export async function buildOkfExplorerSnapshot(
       const parsed = parseOkfMarkdown(content.content);
       const title = getFrontmatterScalar(parsed.frontmatter, "title");
       const type = getFrontmatterScalar(parsed.frontmatter, "type");
+      const description = getFrontmatterScalar(parsed.frontmatter, "description");
+      const readerContent = file.isReserved
+        ? { body: parsed.body, descriptionRepeatedExactly: false }
+        : buildOkfArticleReaderContent({
+            body: parsed.body,
+            description,
+            title: title ?? file.title,
+          });
       const isParseable = file.isReserved || Boolean(title && type);
       const genericValidation = validateGenericOkfMetadata(parsed.frontmatter);
       const hasAnyTrustMetadata = ["review_status", "source_file", "source_pages"].some(
@@ -182,8 +192,9 @@ export async function buildOkfExplorerSnapshot(
       }
 
       return {
-        body: parsed.body,
-        description: getFrontmatterScalar(parsed.frontmatter, "description"),
+        body: readerContent.body,
+        description,
+        descriptionRepeatedExactly: readerContent.descriptionRepeatedExactly,
         filename: file.filename,
         isParseable,
         isReserved: file.isReserved,
@@ -257,6 +268,7 @@ export async function buildOkfExplorerSnapshot(
     .map((file) => ({
       body: file.body,
       description: file.description,
+      descriptionRepeatedExactly: file.descriptionRepeatedExactly,
       filename: file.filename,
       isParseable: file.isParseable,
       isReserved: file.isReserved,

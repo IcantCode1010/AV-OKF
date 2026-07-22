@@ -105,6 +105,23 @@ test("buildOkfSystemTopic exports automatic approval provenance", () => {
   assert.equal(frontmatter.approved_at, "2026-07-20");
 });
 
+test("buildOkfSystemTopic owns the single title and Source framing", () => {
+  const exported = buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.1.0",
+    topic: {
+      ...approvedTopic,
+      approvedContentSource: "enriched",
+      enrichedBody: "# Main Gear Brake System\n\n# Main Gear Brake System!\n\n## Procedure\nApply the brakes.\n\n## Source\n- stale source",
+    },
+  });
+
+  assert.equal((exported.content.match(/^# Main Gear Brake System$/gm) ?? []).length, 1);
+  assert.equal((exported.content.match(/^## Source$/gm) ?? []).length, 1);
+  assert.match(exported.content, /## Procedure\nApply the brakes\./);
+  assert.doesNotMatch(exported.content, /stale source/);
+});
+
 test("buildOkfSystemTopic creates deterministic safe classification-code-prefixed filenames", () => {
   const exported = buildOkfSystemTopic({
     document: { ...exportDocument, classificationCode: "32-41" },

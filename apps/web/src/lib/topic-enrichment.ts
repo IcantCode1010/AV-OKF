@@ -21,6 +21,7 @@ import {
   LLM_PROVIDERS,
   type LlmProviderId,
 } from "./llm-providers.ts";
+import { normalizeOkfArticleBody } from "./okf-article-content.ts";
 
 export type TopicEnrichmentProviderInput = {
   apiKey: string;
@@ -169,7 +170,7 @@ export async function enrichTopic(
     });
     const enrichedTitle = result.title.trim();
     const enrichedSummary = result.summary.trim();
-    const enrichedBody = (result.body ?? result.summary).trim();
+    const enrichedBodyInput = (result.body ?? result.summary).trim();
     const proposedSourcePageNumbers = [...new Set(result.proposedSourcePageNumbers ?? [])]
       .filter((page) => sourcePages.some((sourcePage) => sourcePage.pageNumber === page))
       .filter((page) => !topic.sourcePageNumbers.includes(page))
@@ -178,6 +179,11 @@ export async function enrichTopic(
     if (!enrichedTitle || !enrichedSummary) {
       throw new Error("llm_enrichment_empty_response");
     }
+    const normalizedBody = normalizeOkfArticleBody({
+      body: enrichedBodyInput,
+      title: enrichedTitle,
+    }).body;
+    const enrichedBody = normalizedBody || enrichedSummary;
 
     return repository.completeTopicEnrichment({
       context,
@@ -239,6 +245,8 @@ export function buildTopicEnrichmentPrompt(input: {
     "Do not change the technical meaning. Improve clarity, structure, and wording only.",
     "Return strict JSON with title, summary, body, and proposedSourcePageNumbers.",
     "Keep summary concise. Body must be a structured Markdown article grounded only in source text.",
+    "The body is an article fragment: do not include a top-level H1 or repeat the title.",
+    "Do not restate the summary as the opening paragraph, and do not add a Source, Sources, References, or provenance section.",
     input.allowSourcePageProposals === false
       ? "Use only the established source pages and return an empty proposedSourcePageNumbers array."
       : "Only propose page numbers from the supplied source context; proposals require reviewer acceptance.",

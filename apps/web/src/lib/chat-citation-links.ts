@@ -1,6 +1,10 @@
 import type { ChatCitation } from "./chat-types.ts";
+import { buildOkfTopicViewHref } from "./okf-topic-routing.ts";
 
-export function getChatCitationHref(citation: ChatCitation): string | null {
+export function getChatCitationHref(
+  citation: ChatCitation,
+  options: { returnTo?: string } = {},
+): string | null {
   if (citation.lifecycleNotice) return null;
 
   if (citation.sourceType === "rag" && citation.documentId) {
@@ -13,7 +17,11 @@ export function getChatCitationHref(citation: ChatCitation): string | null {
     citation.knowledgeBundleId &&
     citation.okfFilePath
   ) {
-    return `/knowledge/${encodeURIComponent(citation.knowledgeBundleId)}?file=${encodeURIComponent(citation.okfFilePath)}`;
+    return buildOkfTopicViewHref({
+      bundleId: citation.knowledgeBundleId,
+      filePath: citation.okfFilePath,
+      returnTo: options.returnTo,
+    });
   }
 
   return null;

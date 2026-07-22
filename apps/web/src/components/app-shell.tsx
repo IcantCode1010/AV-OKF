@@ -61,19 +61,20 @@ export function AppShell({
   workspace: Workspace;
 }) {
   const pathname = usePathname();
-  const usesWideWorkspace = pathname === "/knowledge/bundle";
+  const usesEdgeToEdgeWorkspace = pathname === "/knowledge/bundle" ||
+    /^\/knowledge\/[^/]+$/.test(pathname);
 
   return (
     <div className="min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-72 border-r border-border/70 bg-card/40 lg:block">
         <SidebarContent workspace={workspace} />
       </aside>
-      <div className="lg:pl-72">
+      <div className="min-w-0 lg:pl-72">
         <TopBar user={user} workspace={workspace} />
         <main
           className={cn(
-            "mx-auto flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8",
-            usesWideWorkspace ? "max-w-none py-0" : "max-w-7xl",
+            "flex min-w-0 w-full max-w-none flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8",
+            usesEdgeToEdgeWorkspace && "py-0",
           )}
         >
           {children}

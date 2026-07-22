@@ -73,20 +73,24 @@ export function ChatConversationPanel({
   return (
     <>
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
-        <ChatThread
-          isPending={isPending}
-          messages={messages}
-          onSend={handleSend}
-          pendingMessage={visiblePendingMessage}
-        />
+        <div className="mx-auto min-h-full w-full max-w-5xl">
+          <ChatThread
+            isPending={isPending}
+            messages={messages}
+            onSend={handleSend}
+            pendingMessage={visiblePendingMessage}
+          />
+        </div>
       </div>
 
       <div className="shrink-0 border-t border-border bg-background/95 p-3">
-        <ChatComposer
-          isPending={isPending}
-          onSend={handleSend}
-          sessionId={sessionId}
-        />
+        <div className="mx-auto w-full max-w-5xl">
+          <ChatComposer
+            isPending={isPending}
+            onSend={handleSend}
+            sessionId={sessionId}
+          />
+        </div>
       </div>
     </>
   );

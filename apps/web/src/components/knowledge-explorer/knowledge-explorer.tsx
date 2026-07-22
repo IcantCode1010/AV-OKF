@@ -485,7 +485,7 @@ function ExplorerReaderPane({
           </Badge>
         </div>
         <h2 className="mt-3 text-xl font-semibold">{document.title}</h2>
-        {document.description ? <p className="mt-2 text-sm text-muted-foreground">{document.description}</p> : null}
+        {document.description && !document.descriptionRepeatedExactly ? <p className="mt-2 text-sm text-muted-foreground">{document.description}</p> : null}
         <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           <dt className="text-muted-foreground">File</dt><dd className="truncate font-mono">{document.filename}</dd>
           <dt className="text-muted-foreground">Source</dt><dd>{document.sourceFile ?? "Not specified"}</dd>

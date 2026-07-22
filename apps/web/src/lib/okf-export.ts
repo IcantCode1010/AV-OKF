@@ -7,6 +7,7 @@ import {
   type TopicRelation,
 } from "./okf-relation-types.ts";
 import { validateTopicRelations } from "./okf-relations.ts";
+import { normalizeOkfArticleBody } from "./okf-article-content.ts";
 
 type ExportTopic = {
   id: string;
@@ -125,10 +126,14 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
     input.topic.pageStart === input.topic.pageEnd
       ? `page ${input.topic.pageStart}`
       : `pages ${input.topic.pageStart}-${input.topic.pageEnd}`;
-  const body =
+  const rawBody =
     input.topic.approvedContentSource === "enriched" && input.topic.enrichedBody
       ? input.topic.enrichedBody
       : input.topic.summary;
+  const body = normalizeOkfArticleBody({
+    body: rawBody,
+    title: input.topic.title,
+  }).body || input.topic.summary;
 
   return {
     content: `---\n${frontmatter}---\n\n# ${input.topic.title}\n\n${body}\n\n## Source\n\n- ${input.document.title}, ${pageRange}\n`,

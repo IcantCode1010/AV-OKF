@@ -27,6 +27,15 @@ test("physical nested paths build a directory-first tree and reserved files stay
   });
 });
 
+test("concept reader projection removes exported framing without fuzzy description matching", async () => {
+  await withFixture(async (root) => {
+    await writeTopic(root, "systems/inspection.md", { title: "Vehicle Inspection" });
+    const snapshot = await buildSnapshot(root, "systems/inspection.md");
+    assert.equal(snapshot.selectedDocument?.body, "");
+    assert.equal(snapshot.selectedDocument?.descriptionRepeatedExactly, false);
+  });
+});
+
 test("typed relations produce deterministic edges, backlinks, and degree", async () => {
   await withFixture(async (root) => {
     await writeTopic(root, "systems/a.md", {

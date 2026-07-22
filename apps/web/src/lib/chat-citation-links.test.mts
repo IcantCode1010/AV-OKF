@@ -23,14 +23,14 @@ test("raw citations link to the authenticated PDF route and page fragment", () =
   );
 });
 
-test("OKF citations link to their bundle explorer file", () => {
+test("OKF citations link to the approved topic page and originating chat", () => {
   assert.equal(
     getChatCitationHref(citation({
       knowledgeBundleId: "kb_1",
       okfFilePath: "concepts/system/brakes.md",
       sourceType: "okf",
-    })),
-    "/knowledge/kb_1?file=concepts%2Fsystem%2Fbrakes.md",
+    }), { returnTo: "/chat/chat-1" }),
+    "/knowledge/kb_1/topic?file=concepts%2Fsystem%2Fbrakes.md&returnTo=%2Fchat%2Fchat-1",
   );
 });
 

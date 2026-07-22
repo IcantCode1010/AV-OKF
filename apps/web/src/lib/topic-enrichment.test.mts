@@ -154,6 +154,7 @@ function createFakeRepository(input: {
       topic = {
         ...topic,
         enrichedAt: "Jan 1, 2026, 12:01 PM",
+        enrichedBody: input.enrichedBody ?? input.enrichedSummary,
         enrichedSummary: input.enrichedSummary,
         enrichedTitle: input.enrichedTitle,
         enrichmentErrorMessage: null,
@@ -272,6 +273,27 @@ test("successful enrichment stores latest enriched values and success audit", as
     fake.audits[0]?.promptSent ?? "",
     /Hydraulic system overview source text/,
   );
+});
+
+test("successful enrichment stores a framing-free article body", async () => {
+  const fake = createFakeRepository();
+  const { provider } = createProvider("anthropic", async () => ({
+    body: "# Polished enriched title\n\n## Procedure\nPerform the check.\n\n## Source\nmanual.pdf, page 1",
+    rawResponse: "response",
+    summary: "Polished enriched summary",
+    title: "Polished enriched title",
+  }));
+
+  const enriched = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => "sk-ant-test",
+    provider,
+    repository: fake.repository,
+  });
+
+  assert.equal(enriched.enrichedBody, "## Procedure\nPerform the check.");
+  assert.match(fake.audits[0]?.promptSent ?? "", /do not include a top-level H1/i);
+  assert.match(fake.audits[0]?.promptSent ?? "", /do not restate the summary/i);
 });
 
 test("exact-page enrichment excludes nearby context and cannot propose new pages", async () => {
