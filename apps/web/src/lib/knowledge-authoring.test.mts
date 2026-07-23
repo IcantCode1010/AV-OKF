@@ -69,9 +69,9 @@ test("authoring queue job identity is stable per durable run", () => {
 
 test("authoring relation suggestions remain topic references until review promotion", () => {
   assert.deepEqual(normalizeAuthoringRelationSuggestions([
-    { relation: "supports", sourceFile: "topic:source", targetFile: "topic:target", reason: "Shared source.", signals: ["shared_source_file", 1] },
+    { evidenceQuote: "The source explicitly supports the target.", rationale: "Shared source.", relation: "supports", sourceFile: "topic:source", targetFile: "topic:target", reason: "Shared source.", signals: ["shared_source_file", 1] },
     { relation: "", sourceFile: "topic:bad", targetFile: "topic:target", reason: "Invalid", signals: [] },
-  ]), [{ relation: "supports", sourceFile: "topic:source", targetFile: "topic:target", reason: "Shared source.", signals: ["shared_source_file"] }]);
+  ]), [{ evidenceQuote: "The source explicitly supports the target.", rationale: "Shared source.", relation: "supports", sourceFile: "topic:source", targetFile: "topic:target", reason: "Shared source.", signals: ["shared_source_file"] }]);
   assert.equal(parseTopicReference("topic:source"), "source");
   assert.equal(parseTopicReference("concepts/source.md"), null);
 });

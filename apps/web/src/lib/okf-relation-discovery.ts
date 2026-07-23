@@ -5,6 +5,7 @@ import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringAr
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import { getKnowledgeBundleByIdentity, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
+import { getOkfRelationVerificationQueue, type OkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 import {
   loadOkfRelationPreflightContext,
   preflightOkfRelationCandidate,
@@ -50,9 +51,25 @@ export type RelationDiscoverySuppression = {
   issues: Array<{ code: string; severity: "error" | "warning" }>;
 };
 
-export async function discoverOkfRelationCandidates(input: { knowledgeBundleId: string; workspaceId: string }) {
+export async function discoverOkfRelationCandidates(
+  input: { knowledgeBundleId: string; requestedBy: string; workspaceId: string },
+  options: { queue?: OkfRelationVerificationQueue } = {},
+) {
   const bundle = await getKnowledgeBundleByIdentity({ bundleId: input.knowledgeBundleId, workspaceId: input.workspaceId });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const activeRun = await getPrisma().okfRelationDiscoveryRun.findFirst({
+    orderBy: { createdAt: "desc" },
+    where: { knowledgeBundleId: bundle.id, status: "running", workspaceId: input.workspaceId },
+  });
+  if (activeRun) {
+    return {
+      alreadyRunning: true,
+      discovered: activeRun.totalCandidates,
+      runId: activeRun.id,
+      suppressed: activeRun.suppressedCount,
+      warnings: activeRun.warningCount,
+    };
+  }
   const concepts = await loadRelationDiscoveryConcepts(input);
 
   const discoveredCandidates = buildDeterministicRelationCandidates(concepts, {
@@ -62,7 +79,10 @@ export async function discoverOkfRelationCandidates(input: { knowledgeBundleId: 
     knowledgeBundleId: bundle.id,
     workspaceId: input.workspaceId,
   });
-  const candidates = [];
+  const candidates: Array<RelationDiscoveryCandidate & {
+    knowledgeBundleId: string;
+    workspaceId: string;
+  }> = [];
   let suppressed = 0;
   let warningCount = 0;
   for (const candidate of discoveredCandidates) {
@@ -84,8 +104,85 @@ export async function discoverOkfRelationCandidates(input: { knowledgeBundleId: 
     });
     context.existingEdges.push(candidate);
   }
-  if (candidates.length > 0) await getPrisma().okfRelationCandidate.createMany({ data: candidates, skipDuplicates: true });
-  return { discovered: candidates.length, suppressed, warnings: warningCount };
+  const created = await getPrisma().$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483011, hashtext(${bundle.id}))`;
+    const concurrent = await tx.okfRelationDiscoveryRun.findFirst({
+      where: { knowledgeBundleId: bundle.id, status: "running", workspaceId: input.workspaceId },
+    });
+    if (concurrent) return { candidates: [], run: concurrent };
+    const run = await tx.okfRelationDiscoveryRun.create({
+      data: {
+        knowledgeBundleId: bundle.id,
+        requestedBy: input.requestedBy,
+        suppressedCount: suppressed,
+        totalCandidates: candidates.length,
+        warningCount,
+        workspaceId: input.workspaceId,
+      },
+    });
+    const rows: Array<{ id: string }> = [];
+    for (const candidate of candidates) {
+      const existing = await tx.okfRelationCandidate.findUnique({
+        where: {
+          knowledgeBundleId_sourceFile_targetFile_relation: {
+            knowledgeBundleId: bundle.id,
+            relation: candidate.relation,
+            sourceFile: candidate.sourceFile,
+            targetFile: candidate.targetFile,
+          },
+        },
+      });
+      if (existing) {
+        if (existing.status !== "pending" || !["failed", "filtered", "legacy"].includes(existing.verificationStatus)) continue;
+        rows.push(await tx.okfRelationCandidate.update({
+          data: {
+            discoveryRunId: run.id,
+            reason: candidate.reason,
+            requestedDirection: null,
+            signals: candidate.signals,
+            verificationConfidence: null,
+            verificationDirection: null,
+            verificationError: null,
+            verificationEvidenceQuote: null,
+            verificationRationale: null,
+            verificationRelation: null,
+            verificationStatus: "queued",
+            verifiedAt: null,
+          },
+          where: { id: existing.id },
+        }));
+        continue;
+      }
+      rows.push(await tx.okfRelationCandidate.create({
+        data: {
+          ...candidate,
+          discoveryRunId: run.id,
+          verificationStatus: "queued",
+        },
+      }));
+    }
+    const updatedRun = await tx.okfRelationDiscoveryRun.update({
+      data: {
+        completedAt: rows.length === 0 ? new Date() : null,
+        queuedCount: rows.length,
+        status: rows.length === 0 ? "completed" : "running",
+        totalCandidates: rows.length,
+      },
+      where: { id: run.id },
+    });
+    return { candidates: rows, run: updatedRun };
+  });
+  const queue = options.queue ?? getOkfRelationVerificationQueue();
+  for (const candidate of created.candidates) {
+    await queue.enqueue({ candidateId: candidate.id, knowledgeBundleId: bundle.id, workspaceId: input.workspaceId });
+  }
+  return {
+    alreadyRunning: created.run.status === "running" && created.candidates.length === 0,
+    discovered: created.run.totalCandidates,
+    runId: created.run.id,
+    suppressed,
+    warnings: warningCount,
+  };
 }
 
 export function buildDeterministicRelationCandidates(
@@ -256,7 +353,14 @@ export async function loadRelationDiscoveryConcepts(input: {
 
 export async function listOkfRelationCandidates(input: { knowledgeBundleId: string; workspaceId: string }) {
   return getPrisma().okfRelationCandidate.findMany({
-    orderBy: [{ status: "asc" }, { sourceFile: "asc" }, { targetFile: "asc" }],
+    orderBy: [{ verificationConfidence: "desc" }, { status: "asc" }, { sourceFile: "asc" }, { targetFile: "asc" }],
+    where: { knowledgeBundleId: input.knowledgeBundleId, workspaceId: input.workspaceId },
+  });
+}
+
+export async function getLatestOkfRelationDiscoveryRun(input: { knowledgeBundleId: string; workspaceId: string }) {
+  return getPrisma().okfRelationDiscoveryRun.findFirst({
+    orderBy: { createdAt: "desc" },
     where: { knowledgeBundleId: input.knowledgeBundleId, workspaceId: input.workspaceId },
   });
 }

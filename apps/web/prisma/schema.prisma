@@ -182,6 +182,7 @@ model KnowledgeBundle {
   coverageLinks          OkfConceptChunkLink[]
   chatSessions           ChatSession[]
   relationCandidates     OkfRelationCandidate[]
+  relationDiscoveryRuns  OkfRelationDiscoveryRun[]
   authoringRuns          KnowledgeAuthoringRun[]
   conceptEmbeddings      OkfConceptEmbedding[]
   conceptEmbeddingJobs   OkfConceptEmbeddingJob[]
@@ -212,23 +213,82 @@ model KnowledgeBundleProfileVersion {
 }
 
 model OkfRelationCandidate {
-  id                String          @id @default(cuid())
-  workspaceId       String
-  knowledgeBundleId String
-  sourceFile        String
-  targetFile        String
-  relation          String
-  reason            String          @db.Text
-  signals           Json            @default("[]")
-  status            String          @default("pending")
-  reviewedBy        String?
-  reviewedAt        DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  bundle            KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  id                        String                           @id @default(cuid())
+  workspaceId               String
+  knowledgeBundleId         String
+  sourceFile                String
+  targetFile                String
+  relation                  String
+  reason                    String                           @db.Text
+  signals                   Json                             @default("[]")
+  status                    String                           @default("pending")
+  discoveryRunId            String?
+  discoveryVersion          String                           @default("deterministic-v2")
+  verificationStatus        String                           @default("legacy")
+  verificationProvider      String?
+  verificationModel         String?
+  verificationRelation      String?
+  verificationDirection     String?
+  verificationEvidenceQuote String?                          @db.Text
+  verificationConfidence    Float?
+  verificationRationale     String?                          @db.Text
+  verificationError         String?                          @db.Text
+  verifierVersion           String?
+  sourceContentHash         String?
+  targetContentHash         String?
+  requestedDirection        String?
+  verifiedAt                DateTime?
+  reviewedBy                String?
+  reviewedAt                DateTime?
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  bundle                    KnowledgeBundle                  @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  discoveryRun              OkfRelationDiscoveryRun?         @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
+  verificationAttempts      OkfRelationVerificationAttempt[]
 
   @@unique([knowledgeBundleId, sourceFile, targetFile, relation])
   @@index([workspaceId, knowledgeBundleId, status])
+  @@index([knowledgeBundleId, verificationStatus])
+}
+
+model OkfRelationDiscoveryRun {
+  id                String                 @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  requestedBy       String
+  status            String                 @default("running")
+  totalCandidates   Int                    @default(0)
+  suppressedCount   Int                    @default(0)
+  warningCount      Int                    @default(0)
+  queuedCount       Int                    @default(0)
+  runningCount      Int                    @default(0)
+  confirmedCount    Int                    @default(0)
+  filteredCount     Int                    @default(0)
+  failedCount       Int                    @default(0)
+  startedAt         DateTime               @default(now())
+  completedAt       DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  bundle            KnowledgeBundle        @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  candidates        OkfRelationCandidate[]
+
+  @@index([workspaceId, knowledgeBundleId, status])
+}
+
+model OkfRelationVerificationAttempt {
+  id           String               @id @default(cuid())
+  candidateId  String
+  provider     String?
+  model        String?
+  promptSent   String               @db.Text
+  rawResponse  String?              @db.Text
+  result       Json?
+  succeeded    Boolean              @default(false)
+  errorMessage String?              @db.Text
+  createdAt    DateTime             @default(now())
+  candidate    OkfRelationCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId, createdAt])
 }
 
 model KnowledgeAuthoringRun {

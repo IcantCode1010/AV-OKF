@@ -52,9 +52,13 @@
 - [x] Share graph preflight across discovery, authoring promotion, and final approval, including duplicate, path, type, cycle, and supersession checks.
 - [x] Add a dry-run before/after relation-evaluation command with suppression reasons and reviewer-metric placeholders.
 - [x] Human-review a 12-candidate Aviation dry-run sample and record acceptance, false-positive, missed-relation, and direction-correction findings.
+- [x] Add asynchronous one-pair LLM verification with exact source quotes, content hashes, append-only attempts, retry/reconciliation, and confirmed-only human review.
+- [x] Require direction changes to reverify evidence against the new source and revalidate verified evidence at approval/export time.
+- [ ] Run the V3 configured-provider Docker evaluation and record whether a representative sample reaches the 80% internal precision checkpoint.
+- [ ] Require approximately 90% precision before considering reduced review, bulk relation approval, semantic expansion, or stronger operational-relation trust.
 - [ ] Repeat the human review against a populated live Generic bundle; the current Generic coverage is deterministic fixture-only.
 - [ ] Tune profile stopwords and the source-page-proximity companion rule, then rerun the same evaluation before adding semantic candidates.
-- [ ] Decide from those metrics whether semantic top-K neighbors, weighted scoring, or expanded LLM classification are justified.
+- [ ] Decide from those metrics whether semantic top-K neighbors or weighted scoring are justified; free-form LLM pair generation remains out of scope.
 
 ## Chat Source Clarity
 

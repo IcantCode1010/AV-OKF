@@ -511,15 +511,15 @@ Deferred from Stage 7B:
 
 Purpose: populate the typed OKF graph with useful relationships without allowing inferred links to become trusted agent evidence automatically.
 
-Implementation status: Relation Discovery V2 deterministic quality and graph-integrity phases are complete. Bundle discovery now uses profile-versioned stopwords, two-term title/description overlap, visible matched terms/tags, stable path-based direction, and a shared preflight. Assisted-authoring LLM classifications remain staged suggestions with the same pending-only promotion and final human-approval boundary. The first 31-concept Aviation dry run reduced 346 prior-heuristic pairs to 156 proposals and 69 preflight-accepted candidates; a 12-item human sample accepted 4, so deterministic stopword/proximity tuning remains next and semantic neighbors or broader LLM authority remain evaluation-gated.
+Implementation status: Relation Discovery V3 is implemented around the unchanged V2 deterministic candidate generator. New candidates are verified asynchronously one pair per configured-provider call, require an exact canonical source quote and an allowed typed relation, and are bound to source/target content hashes. Only confirmed results reach human review or count as pending graph edges; filtered, failed, queued, and running candidates cannot influence frontmatter, the explorer graph, or agent traversal. Human approval and re-export remain mandatory, and changing direction requires re-verification against the new source. The next checkpoint is a configured-provider Docker sample at 80% precision; approximately 90% is required before considering any reduction in review or expansion of LLM authority.
 
 Workflow:
 
 - Scan approved, active-lifecycle OKF concepts within the current workspace bundle.
 - Generate relation candidates from deterministic signals first: explicit Markdown links, shared source/classification metadata, source-page proximity, and meaningful title/description overlap.
-- Bundle discovery proposes a deterministic relation type and reason without an LLM. Assisted authoring may use the configured workspace LLM only after deterministic filtering to classify at most 50 draft-topic pairs; it may not create an authoritative edge directly.
-- Present candidates to a reviewer with source concept, target concept, proposed relation, reason, supporting signals, and duplicate/conflict warnings.
-- Allow the reviewer to approve, edit, or reject each candidate.
+- Bundle discovery proposes a deterministic pair, relation type, and reason without an LLM. The configured workspace provider then verifies exactly one proposed pair per call and must supply an allowed relation, direction, confidence, rationale, and exact source quote. It cannot create pairs or edges.
+- Present only confirmed candidates to a reviewer with source concept, target concept, deterministic signals, verified relation and direction, exact quote, confidence, rationale, provider/model, and duplicate/conflict warnings.
+- Allow the reviewer to approve, reject, or swap and reverify each candidate.
 - On approval, run the existing relation vocabulary, safe-path, target existence, and `target_type` validation; then update the topic working record and re-export the source OKF file.
 - Treat the exported `relations` frontmatter as the only graph source of truth. Rejected and pending candidates are never exposed to agent graph traversal.
 - Continue deriving incoming backlinks by reversing approved directed edges; do not write a second backlink source of truth.
@@ -532,6 +532,7 @@ Deliverables:
 - Knowledge Explorer review surface for candidate approval, editing, rejection, and rerun.
 - Re-export integration that writes approved relations into OKF frontmatter and refreshes the live graph.
 - Audit record for candidate generation and reviewer decisions.
+- Append-only verification-attempt audit records containing provider/model, prompt, raw response, result, and errors.
 - Dry-run before/after evaluation reports and mixed-domain fixtures proving discovery works without aviation-specific assumptions; reviewer acceptance metrics gate semantic expansion.
 
 Exit criteria:

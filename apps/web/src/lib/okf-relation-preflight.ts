@@ -164,6 +164,7 @@ export async function loadOkfRelationPreflightContext(input: {
         id: input.excludeCandidateId ? { not: input.excludeCandidateId } : undefined,
         knowledgeBundleId: bundle.id,
         status: "pending",
+        verificationStatus: "confirmed",
         workspaceId: input.workspaceId,
       },
     }),

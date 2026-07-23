@@ -4,12 +4,13 @@ import { notFound } from "next/navigation";
 
 import { KnowledgeExplorer } from "@/components/knowledge-explorer/knowledge-explorer";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { RelationVerificationPoller } from "@/components/relation-verification-poller";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { getKnowledgeBundle, resolveKnowledgeBundleRoot } from "@/lib/knowledge-bundles";
 import { loadOkfExplorerSnapshot } from "@/lib/okf-explorer";
-import { listOkfRelationCandidates } from "@/lib/okf-relation-discovery";
+import { getLatestOkfRelationDiscoveryRun, listOkfRelationCandidates } from "@/lib/okf-relation-discovery";
 import { listKnowledgeGaps } from "@/lib/knowledge-gaps";
 import { isProductionBackend } from "@/lib/production-document-service";
 import {
@@ -17,6 +18,7 @@ import {
   createKnowledgeProfileDraftAction,
   deleteOkfBundleFilesAction,
   discoverRelationsAction,
+  retryRelationCandidateVerificationAction,
   reviewRelationCandidateAction,
 } from "../actions";
 
@@ -59,6 +61,9 @@ export default async function KnowledgeBundlePage({
   const relationCandidates = isProductionBackend()
     ? await listOkfRelationCandidates({ knowledgeBundleId: bundle.id, workspaceId: context.workspaceId })
     : [];
+  const relationRun = isProductionBackend()
+    ? await getLatestOkfRelationDiscoveryRun({ knowledgeBundleId: bundle.id, workspaceId: context.workspaceId })
+    : null;
   const knowledgeGaps = isProductionBackend()
     ? await listKnowledgeGaps({ context, knowledgeBundleId: bundle.id })
     : [];
@@ -119,14 +124,22 @@ export default async function KnowledgeBundlePage({
         <details className="mb-4 border border-border bg-muted/10">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring">Relation discovery</summary>
           <div className="space-y-4 border-t border-border p-4">
-            {query.relationError ? <div className="border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">Relation approval was blocked by graph preflight: {query.relationError.replaceAll("_", " ")}.</div> : null}
-            <div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Deterministic signals create pending candidates only. Candidates cannot affect graph traversal until a reviewer approves them and the source concept is re-exported.</p><form action={discoverRelationsAction}><input name="knowledgeBundleId" type="hidden" value={bundle.id} /><PendingSubmitButton pendingLabel="Discovering...">Discover relations</PendingSubmitButton></form></div>
-            {query.relationsDiscovered ? <div className="border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm">Relation discovery created {query.relationsDiscovered} review candidates, suppressed {query.relationsSuppressed ?? "0"} invalid or duplicate pairs, and retained {query.relationWarnings ?? "0"} warnings.</div> : null}
-            <div className="space-y-2">{relationCandidates.filter((candidate) => candidate.status === "pending").map((candidate) => {
+            <RelationVerificationPoller active={relationCandidates.some((candidate) => ["queued", "running"].includes(candidate.verificationStatus))} />
+            {query.relationError ? <div className="border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">Relation approval was blocked: {query.relationError.replaceAll("_", " ")}.</div> : null}
+            <div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Deterministic V2 signals propose pairs. The LLM verifies each pair against an exact source quote. Only confirmed candidates reach this human review list; only approval writes OKF frontmatter.</p><form action={discoverRelationsAction}><input name="knowledgeBundleId" type="hidden" value={bundle.id} /><PendingSubmitButton pendingLabel="Starting...">Discover and verify</PendingSubmitButton></form></div>
+            {relationRun ? <div className="grid gap-2 border border-border bg-background/30 p-3 text-xs sm:grid-cols-3 xl:grid-cols-6"><span>Total {relationRun.totalCandidates}</span><span>Queued {relationRun.queuedCount}</span><span>Running {relationRun.runningCount}</span><span>Confirmed {relationRun.confirmedCount}</span><span>Filtered {relationRun.filteredCount}</span><span>Failed {relationRun.failedCount}</span></div> : null}
+            {query.relationsDiscovered ? <div className="border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm">Relation discovery queued {query.relationsDiscovered} candidates for evidence verification, suppressed {query.relationsSuppressed ?? "0"} invalid or duplicate pairs, and retained {query.relationWarnings ?? "0"} warnings.</div> : null}
+            <div className="space-y-2">{relationCandidates.filter((candidate) => candidate.status === "pending" && candidate.verificationStatus === "confirmed").map((candidate) => {
               const signals = Array.isArray(candidate.signals) ? candidate.signals.filter((signal): signal is string => typeof signal === "string") : [];
               const warnings = signals.filter((signal) => signal.startsWith("preflight_warning:"));
-              return <div className="grid gap-3 border border-border p-3 text-xs lg:grid-cols-[1fr_auto] lg:items-center" key={candidate.id}><div><div className="font-medium">{candidate.sourceFile} <span className="text-muted-foreground">{candidate.relation}</span> {candidate.targetFile}</div><div className="mt-1 text-muted-foreground">{candidate.reason}</div>{warnings.length > 0 ? <div className="mt-2 text-amber-300">{warnings.map((warning) => warning.split(":").at(-1)?.replaceAll("_", " ")).join(", ")}</div> : null}</div><div className="flex flex-wrap gap-2"><form action={reviewRelationCandidateAction}><input name="candidateId" type="hidden" value={candidate.id} /><input name="decision" type="hidden" value="approve" /><input name="direction" type="hidden" value="proposed" /><PendingSubmitButton pendingLabel="Approving...">Approve</PendingSubmitButton></form>{candidate.relation !== "conflicts_with" ? <form action={reviewRelationCandidateAction}><input name="candidateId" type="hidden" value={candidate.id} /><input name="decision" type="hidden" value="approve" /><input name="direction" type="hidden" value="reverse" /><PendingSubmitButton pendingLabel="Swapping...">Swap direction</PendingSubmitButton></form> : null}<form action={reviewRelationCandidateAction}><input name="candidateId" type="hidden" value={candidate.id} /><input name="decision" type="hidden" value="reject" /><PendingSubmitButton pendingLabel="Rejecting...">Reject</PendingSubmitButton></form></div></div>;
+              const reverse = candidate.verificationDirection === "reverse";
+              const source = reverse ? candidate.targetFile : candidate.sourceFile;
+              const target = reverse ? candidate.sourceFile : candidate.targetFile;
+              const swapDirection = reverse ? "proposed" : "reverse";
+              return <div className="grid gap-3 border border-border p-3 text-xs lg:grid-cols-[1fr_auto] lg:items-start" key={candidate.id}><div><div className="font-medium">{source} <span className="text-muted-foreground">{candidate.verificationRelation}</span> {target}</div><div className="mt-1 text-muted-foreground">Deterministic proposal: {candidate.reason}</div><div className="mt-2">Confidence: {Math.round((candidate.verificationConfidence ?? 0) * 100)}% · {candidate.verificationProvider}/{candidate.verificationModel}</div><blockquote className="mt-2 border-l-2 border-emerald-400 pl-3 text-muted-foreground">{candidate.verificationEvidenceQuote}</blockquote><div className="mt-2 text-muted-foreground">{candidate.verificationRationale}</div>{warnings.length > 0 ? <div className="mt-2 text-amber-300">{warnings.map((warning) => warning.split(":").at(-1)?.replaceAll("_", " ")).join(", ")}</div> : null}</div><div className="flex flex-wrap gap-2"><form action={reviewRelationCandidateAction}><input name="candidateId" type="hidden" value={candidate.id} /><input name="decision" type="hidden" value="approve" /><PendingSubmitButton pendingLabel="Approving...">Approve</PendingSubmitButton></form>{candidate.verificationRelation !== "conflicts_with" ? <form action={retryRelationCandidateVerificationAction}><input name="candidateId" type="hidden" value={candidate.id} /><input name="direction" type="hidden" value={swapDirection} /><PendingSubmitButton pendingLabel="Queuing...">Swap and reverify</PendingSubmitButton></form> : null}<form action={reviewRelationCandidateAction}><input name="candidateId" type="hidden" value={candidate.id} /><input name="decision" type="hidden" value="reject" /><PendingSubmitButton pendingLabel="Rejecting...">Reject</PendingSubmitButton></form></div></div>;
             })}</div>
+            {relationCandidates.some((candidate) => candidate.status === "pending" && candidate.verificationStatus === "failed") ? <div className="space-y-2"><div className="flex items-center justify-between gap-3 text-xs font-medium"><span>Verification failures</span><Link className="text-primary underline underline-offset-4" href="/settings">Configure AI provider</Link></div>{relationCandidates.filter((candidate) => candidate.status === "pending" && candidate.verificationStatus === "failed").map((candidate) => <div className="flex items-center justify-between gap-3 border border-red-400/30 bg-red-400/10 p-3 text-xs" key={candidate.id}><div><div>{candidate.sourceFile} → {candidate.targetFile}</div><div className="text-red-200">{candidate.verificationError}</div></div><form action={retryRelationCandidateVerificationAction}><input name="candidateId" type="hidden" value={candidate.id} /><PendingSubmitButton pendingLabel="Queuing...">Retry</PendingSubmitButton></form></div>)}</div> : null}
+            {relationCandidates.some((candidate) => candidate.verificationStatus === "filtered") ? <details className="border border-border"><summary className="cursor-pointer p-3 text-xs font-medium">Verifier rejection audit ({relationCandidates.filter((candidate) => candidate.verificationStatus === "filtered").length})</summary><div className="space-y-2 border-t border-border p-3">{relationCandidates.filter((candidate) => candidate.verificationStatus === "filtered").map((candidate) => <div className="text-xs" key={candidate.id}><span className="font-medium">{candidate.sourceFile} → {candidate.targetFile}</span><span className="ml-2 text-muted-foreground">{candidate.verificationRationale}</span></div>)}</div></details> : null}
           </div>
         </details>
         <details className="mb-4 border border-border bg-muted/10">

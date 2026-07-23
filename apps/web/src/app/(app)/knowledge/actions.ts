@@ -24,6 +24,12 @@ import {
   retryKnowledgeBundleDeletion,
 } from "@/lib/knowledge-bundle-deletion";
 import { discoverOkfRelationCandidates } from "@/lib/okf-relation-discovery";
+import { retryOkfRelationVerification } from "@/lib/okf-relation-verification";
+import {
+  buildRelationVerifierConcept,
+  formatVerifiedRelationReason,
+  validateRelationVerifierDecision,
+} from "@/lib/okf-relation-verifier";
 import {
   getDocumentById,
   getTopicRecordsByDocumentId,
@@ -38,7 +44,6 @@ import { normalizeTopicRelations } from "@/lib/okf-relation-types";
 import {
   loadOkfRelationPreflightContext,
   preflightOkfRelationCandidate,
-  resolveRelationDirectionReview,
 } from "@/lib/okf-relation-preflight";
 
 export async function createKnowledgeBundleAction(formData: FormData) {
@@ -133,7 +138,11 @@ export async function retryKnowledgeBundleDeletionAction(formData: FormData) {
 export async function discoverRelationsAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
   const bundleId = getFormString(formData, "knowledgeBundleId");
-  const result = await discoverOkfRelationCandidates({ knowledgeBundleId: bundleId, workspaceId: context.workspaceId });
+  const result = await discoverOkfRelationCandidates({
+    knowledgeBundleId: bundleId,
+    requestedBy: context.userId,
+    workspaceId: context.workspaceId,
+  });
   revalidatePath(`/knowledge/${bundleId}`);
   redirect(`/knowledge/${bundleId}?relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
 }
@@ -143,7 +152,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   const candidateId = getFormString(formData, "candidateId");
   const decision = getFormString(formData, "decision");
   const candidate = await getPrisma().okfRelationCandidate.findFirst({
-    where: { id: candidateId, status: "pending", workspaceId: context.workspaceId },
+    where: { id: candidateId, status: "pending", verificationStatus: "confirmed", workspaceId: context.workspaceId },
   });
   if (!candidate) throw new Error("relation_candidate_not_found");
   if (decision === "reject") {
@@ -153,11 +162,54 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   }
   const bundle = await getKnowledgeBundle({ bundleId: candidate.knowledgeBundleId, context });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
-  if (!bundle.profile.relations.includes(candidate.relation)) throw new Error("relation_type_not_allowed");
+  if (!candidate.verificationRelation || !candidate.verificationDirection || !candidate.verificationEvidenceQuote || !candidate.verificationRationale) {
+    throw new Error("relation_verification_required");
+  }
+  if (!bundle.profile.relations.includes(candidate.verificationRelation)) throw new Error("relation_type_not_allowed");
   const root = resolveKnowledgeBundleRoot({ bundleId: bundle.id, workspaceId: context.workspaceId });
-  const reverseDirection = getFormString(formData, "direction") === "reverse";
+  const reverseDirection = candidate.verificationDirection === "reverse";
   const sourceFile = reverseDirection ? candidate.targetFile : candidate.sourceFile;
   const targetFile = reverseDirection ? candidate.sourceFile : candidate.targetFile;
+  const [originalSourceFile, originalTargetFile] = await Promise.all([
+    readOkfBundleFile(root, candidate.sourceFile),
+    readOkfBundleFile(root, candidate.targetFile),
+  ]);
+  const originalSourceParsed = parseOkfMarkdown(originalSourceFile.content);
+  const originalTargetParsed = parseOkfMarkdown(originalTargetFile.content);
+  const originalSource = buildRelationVerifierConcept({
+    body: originalSourceParsed.body,
+    description: getFrontmatterScalar(originalSourceParsed.frontmatter, "description"),
+    filePath: candidate.sourceFile,
+    title: getFrontmatterScalar(originalSourceParsed.frontmatter, "title"),
+  });
+  const originalTarget = buildRelationVerifierConcept({
+    body: originalTargetParsed.body,
+    description: getFrontmatterScalar(originalTargetParsed.frontmatter, "description"),
+    filePath: candidate.targetFile,
+    title: getFrontmatterScalar(originalTargetParsed.frontmatter, "title"),
+  });
+  if (originalSource.contentHash !== candidate.sourceContentHash || originalTarget.contentHash !== candidate.targetContentHash) {
+    await retryOkfRelationVerification({ candidateId: candidate.id, workspaceId: context.workspaceId });
+    revalidatePath(`/knowledge/${bundle.id}`);
+    redirect(`/knowledge/${bundle.id}?relationError=relation_verification_stale_content`);
+  }
+  validateRelationVerifierDecision({
+    allowedRelations: bundle.profile.relations,
+    decision: {
+      confidence: candidate.verificationConfidence,
+      direction: candidate.verificationDirection,
+      evidenceQuote: candidate.verificationEvidenceQuote,
+      rationale: candidate.verificationRationale,
+      related: true,
+      relation: candidate.verificationRelation,
+    },
+    proposedSource: originalSource,
+    proposedTarget: originalTarget,
+  });
+  const verifiedReason = formatVerifiedRelationReason({
+    evidenceQuote: candidate.verificationEvidenceQuote,
+    rationale: candidate.verificationRationale,
+  });
   const graphContext = await loadOkfRelationPreflightContext({
     excludeCandidateId: candidate.id,
     knowledgeBundleId: bundle.id,
@@ -167,8 +219,8 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   const preflight = preflightOkfRelationCandidate({
     ...graphContext,
     candidate: {
-      reason: candidate.reason,
-      relation: candidate.relation,
+      reason: verifiedReason,
+      relation: candidate.verificationRelation,
       sourceFile,
       targetFile,
       targetType: targetDefinition?.type ?? null,
@@ -178,33 +230,14 @@ export async function reviewRelationCandidateAction(formData: FormData) {
     const code = preflight.issues.find((issue) => issue.severity === "error")?.code ?? "relation_preflight_failed";
     redirect(`/knowledge/${bundle.id}?relationError=${encodeURIComponent(code)}`);
   }
-  const directionCandidate = reverseDirection
-    ? await getPrisma().okfRelationCandidate.findUnique({
-        where: {
-          knowledgeBundleId_sourceFile_targetFile_relation: {
-            knowledgeBundleId: bundle.id,
-            relation: candidate.relation,
-            sourceFile,
-            targetFile,
-          },
-        },
-      })
-    : candidate;
-  const directionReview = resolveRelationDirectionReview({
-    currentCandidateId: candidate.id,
-    selectedCandidate: directionCandidate,
-  });
-  if (directionReview === "conflict") {
-    redirect(`/knowledge/${bundle.id}?relationError=relation_exact_duplicate`);
-  }
   const sourceTopic = await getPrisma().topicRecord.findFirst({ where: { exportedFilePath: sourceFile, knowledgeBundleId: bundle.id, workspaceId: context.workspaceId } });
   if (!sourceTopic) throw new Error("relation_source_topic_not_found");
   const target = await readOkfBundleFile(root, targetFile);
   const targetType = getFrontmatterScalar(parseOkfMarkdown(target.content).frontmatter, "type");
   if (!targetType) throw new Error("relation_target_type_mismatch");
   const relations = [...normalizeTopicRelations(sourceTopic.relations), {
-    reason: candidate.reason,
-    relation: candidate.relation,
+    reason: verifiedReason,
+    relation: candidate.verificationRelation,
     target: targetFile,
     targetType,
   }];
@@ -217,33 +250,29 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   const exported = await exportApprovedTopicForDocument({ document, topicId: sourceTopic.id, topics });
   await updateTopicExportedFilePath(sourceTopic.id, exported.filename);
   const reviewedAt = new Date();
-  if (directionReview === "reuse_rejected" && directionCandidate) {
-    await getPrisma().$transaction([
-      getPrisma().okfRelationCandidate.update({
-        data: { reviewedAt, reviewedBy: context.userId, status: "rejected" },
-        where: { id: candidate.id },
-      }),
-      getPrisma().okfRelationCandidate.update({
-        data: {
-          reason: candidate.reason,
-          reviewedAt,
-          reviewedBy: context.userId,
-          signals: Array.isArray(candidate.signals)
-            ? candidate.signals.filter((signal): signal is string => typeof signal === "string")
-            : [],
-          status: "approved",
-        },
-        where: { id: directionCandidate.id },
-      }),
-    ]);
-  } else {
-    await getPrisma().okfRelationCandidate.update({
-      data: { reviewedAt, reviewedBy: context.userId, sourceFile, status: "approved", targetFile },
-      where: { id: candidate.id },
-    });
-  }
+  await getPrisma().okfRelationCandidate.update({
+    data: { reason: verifiedReason, reviewedAt, reviewedBy: context.userId, status: "approved" },
+    where: { id: candidate.id },
+  });
   revalidatePath(`/knowledge/${bundle.id}`);
   redirect(`/knowledge/${bundle.id}?file=${encodeURIComponent(exported.filename)}`);
+}
+
+export async function retryRelationCandidateVerificationAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const candidateId = getFormString(formData, "candidateId");
+  const direction = getFormString(formData, "direction");
+  const candidate = await getPrisma().okfRelationCandidate.findFirst({
+    where: { id: candidateId, status: "pending", workspaceId: context.workspaceId },
+  });
+  if (!candidate) throw new Error("relation_candidate_not_found");
+  await retryOkfRelationVerification({
+    candidateId,
+    requestedDirection: direction === "reverse" || direction === "proposed" ? direction : null,
+    workspaceId: context.workspaceId,
+  });
+  revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
+  redirect(`/knowledge/${candidate.knowledgeBundleId}`);
 }
 
 export async function deleteOkfBundleFilesAction(formData: FormData) {

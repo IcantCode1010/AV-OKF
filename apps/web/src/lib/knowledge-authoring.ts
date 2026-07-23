@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
@@ -20,6 +21,11 @@ import { runTopicDiscoveryJob } from "./topic-discovery-service.ts";
 import { estimateTokens } from "./topic-discovery.ts";
 import type { KnowledgeAuthoringJobPayload } from "./knowledge-authoring-queue.ts";
 import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
+import {
+  buildRelationVerifierConcept,
+  verifyOkfRelationCandidate,
+} from "./okf-relation-verifier.ts";
+import { getOkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
@@ -54,14 +60,6 @@ const metadataSchema = z.object({
   subjectFamily: z.string().nullable(),
   tags: z.array(z.string()),
   title: z.string(),
-});
-
-const relationClassificationSchema = z.object({
-  relations: z.array(z.object({
-    candidateIndex: z.number().int().nonnegative(),
-    reason: z.string(),
-    relation: z.string(),
-  })),
 });
 
 export type MetadataProposal = z.infer<typeof metadataSchema>;
@@ -348,37 +346,63 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
     return;
   }
   const allowed = bundle.profile.relations;
-  const prompt = [
-    "Classify only the supplied deterministic candidate pairs.",
-    `Allowed relation values: ${allowed.join(", ")}.`,
-    "Omit candidates that do not have a clear relationship. Do not create new pairs.",
-    JSON.stringify(candidates.map((candidate, candidateIndex) => ({ candidateIndex, ...candidate }))),
-  ].join("\n\n");
-  await stageAudit(input.runId, "relation_classification", "running", undefined, input.provider, input.model, prompt);
-  const result = await generateText({
-    model: getSdkModel(input.provider, input.apiKey),
-    output: Output.object({ schema: relationClassificationSchema }),
-    prompt,
-  });
-  const output = relationClassificationSchema.parse(result.output);
-  const accepted = output.relations.flatMap((classification) => {
-    const candidate = candidates[classification.candidateIndex];
-    if (!candidate || !allowed.includes(classification.relation)) return [];
-    return [{
-      knowledgeBundleId: input.knowledgeBundleId,
-      reason: classification.reason.trim() || candidate.reason,
-      relation: classification.relation,
-      signals: candidate.signals,
-      sourceFile: candidate.sourceFile,
-      targetFile: candidate.targetFile,
-      workspaceId: input.workspaceId,
-    }];
-  });
+  const topicByReference = new Map(topics.map((topic) => [`topic:${topic.id}`, topic]));
+  const accepted: Array<Record<string, unknown>> = [];
+  const auditResults: Array<Record<string, unknown>> = [];
+  await stageAudit(input.runId, "relation_classification", "running", undefined, input.provider, input.model, JSON.stringify({ candidateCount: candidates.length }));
+  for (const candidate of candidates) {
+    const sourceTopic = topicByReference.get(candidate.sourceFile);
+    const targetTopic = topicByReference.get(candidate.targetFile);
+    if (!sourceTopic || !targetTopic) continue;
+    const source = buildRelationVerifierConcept({
+      body: sourceTopic.enrichedBody ?? sourceTopic.summary,
+      description: sourceTopic.enrichedSummary ?? sourceTopic.summary,
+      filePath: candidate.sourceFile,
+      title: sourceTopic.enrichedTitle ?? sourceTopic.title,
+    });
+    const target = buildRelationVerifierConcept({
+      body: targetTopic.enrichedBody ?? targetTopic.summary,
+      description: targetTopic.enrichedSummary ?? targetTopic.summary,
+      filePath: candidate.targetFile,
+      title: targetTopic.enrichedTitle ?? targetTopic.title,
+    });
+    try {
+      const verification = await verifyOkfRelationCandidate({
+        allowedRelations: allowed,
+        proposedRelation: candidate.relation,
+        proposedSource: source,
+        proposedTarget: target,
+        signals: candidate.signals,
+        workspaceId: input.workspaceId,
+      }, {
+        getApiKey: async () => ({ apiKey: input.apiKey, provider: input.provider }),
+      });
+      auditResults.push({ candidate, decision: verification.decision });
+      if (!verification.decision.related) continue;
+      accepted.push({
+        confidence: verification.decision.confidence,
+        direction: verification.decision.direction,
+        evidenceQuote: verification.decision.evidenceQuote,
+        knowledgeBundleId: input.knowledgeBundleId,
+        rationale: verification.decision.rationale,
+        reason: verification.decision.rationale,
+        relation: verification.decision.relation!,
+        signals: candidate.signals,
+        sourceContentHash: verification.sourceContentHash,
+        sourceFile: candidate.sourceFile,
+        targetContentHash: verification.targetContentHash,
+        targetFile: candidate.targetFile,
+        workspaceId: input.workspaceId,
+      });
+    } catch (error) {
+      auditResults.push({ candidate, error: error instanceof Error ? error.message : "relation_verification_failed" });
+    }
+  }
   await db.knowledgeAuthoringRun.update({
-    data: { relationSuggestions: accepted },
+    data: { relationSuggestions: accepted as unknown as Prisma.InputJsonValue },
     where: { id: input.runId },
   });
-  await stageAudit(input.runId, "relation_classification", "completed", undefined, input.provider, input.model, prompt, JSON.stringify(output));
+  await stageAudit(input.runId, "relation_classification", "completed", undefined, input.provider, input.model, JSON.stringify({ candidateCount: candidates.length }), JSON.stringify(auditResults));
 }
 
 async function completeStage(runId: string, stage: string, nextStage: string) {
@@ -532,13 +556,14 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
         .filter((issue) => issue.severity === "warning")
         .map(relationPreflightSignal),
     ];
+    let promotedCandidate;
     if (existingCandidate) {
-      await db.okfRelationCandidate.update({
-        data: { reason: suggestion.reason, signals },
+      promotedCandidate = await db.okfRelationCandidate.update({
+        data: { reason: suggestion.reason, signals, verificationStatus: "queued" },
         where: candidateKey,
       });
     } else {
-      await db.okfRelationCandidate.create({
+      promotedCandidate = await db.okfRelationCandidate.create({
         data: {
           knowledgeBundleId: run.knowledgeBundleId,
           reason: suggestion.reason,
@@ -547,10 +572,15 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
           sourceFile: sourceTopic.exportedFilePath,
           targetFile: targetTopic.exportedFilePath,
           workspaceId: run.workspaceId,
+          verificationStatus: "queued",
         },
       });
-      graphContext.existingEdges.push(proposedCandidate);
     }
+    await getOkfRelationVerificationQueue().enqueue({
+      candidateId: promotedCandidate.id,
+      knowledgeBundleId: run.knowledgeBundleId,
+      workspaceId: run.workspaceId,
+    });
     promoted += 1;
   }
   return { knowledgeBundleId: run.knowledgeBundleId, promoted, skipped };
@@ -565,7 +595,9 @@ export function normalizeAuthoringRelationSuggestions(value: unknown) {
     const targetFile = "targetFile" in candidate && typeof candidate.targetFile === "string" ? candidate.targetFile : "";
     const reason = "reason" in candidate && typeof candidate.reason === "string" ? candidate.reason : "";
     const signals = "signals" in candidate && Array.isArray(candidate.signals) ? (candidate.signals as unknown[]).filter((signal): signal is string => typeof signal === "string") : [];
-    return relation && sourceFile && targetFile && reason ? [{ reason, relation, signals, sourceFile, targetFile }] : [];
+    const evidenceQuote = "evidenceQuote" in candidate && typeof candidate.evidenceQuote === "string" ? candidate.evidenceQuote : "";
+    const rationale = "rationale" in candidate && typeof candidate.rationale === "string" ? candidate.rationale : reason;
+    return relation && sourceFile && targetFile && reason && evidenceQuote ? [{ evidenceQuote, rationale, reason, relation, signals, sourceFile, targetFile }] : [];
   });
 }
 

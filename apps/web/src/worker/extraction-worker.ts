@@ -56,6 +56,14 @@ import {
   runPermanentDocumentDeletionJob,
   type DocumentDeletionJobPayload,
 } from "../lib/document-deletion.ts";
+import {
+  reconcileOkfRelationVerificationJobs,
+  runOkfRelationVerificationJob,
+} from "../lib/okf-relation-verification.ts";
+import {
+  createOkfRelationVerificationQueue,
+  type OkfRelationVerificationJobPayload,
+} from "../lib/okf-relation-verification-queue.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
@@ -66,6 +74,7 @@ let okfEmbeddingWorker: Worker<OkfConceptEmbeddingJobPayload> | null = null;
 let bulkTopicApprovalWorker: Worker<BulkTopicApprovalJobPayload> | null = null;
 let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
 let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | null = null;
+let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null = null;
 
 void main();
 
@@ -86,6 +95,7 @@ async function main() {
   const knowledgeAuthoringQueue = createBullMqKnowledgeAuthoringQueue(redisUrl);
   const okfEmbeddingQueue = getOkfConceptEmbeddingQueue();
   const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
+  const relationVerificationQueue = createOkfRelationVerificationQueue(redisUrl);
 
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
@@ -104,6 +114,7 @@ async function main() {
   await reconcileBulkTopicApprovalRuns(bulkTopicApprovalQueue.enqueue);
   await reconcileDocumentDeletionJobs(enqueueDocumentDeletionJob);
   await reconcileKnowledgeBundleDeletionJobs(enqueueKnowledgeBundleDeletionJob);
+  await reconcileOkfRelationVerificationJobs(relationVerificationQueue);
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -193,6 +204,12 @@ async function main() {
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
+  relationVerificationWorker = new Worker<OkfRelationVerificationJobPayload>(
+    "okf-relation-verification",
+    async (job) => runOkfRelationVerificationJob(job.data, { attemptNumber: job.attemptsMade + 1 }),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
   extractionWorker.on("completed", (job) => {
     console.log(`Extraction job completed: ${job.id}`);
   });
@@ -239,6 +256,9 @@ async function main() {
   });
   documentDeletionWorker.on("failed", (job, error) => {
     console.error(`Document deletion failed: ${job?.id ?? "unknown"}`, error);
+  });
+  relationVerificationWorker.on("failed", (job, error) => {
+    console.error(`OKF relation verification failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -327,5 +347,6 @@ async function shutdown() {
   await okfEmbeddingWorker?.close();
   await bulkTopicApprovalWorker?.close();
   await documentDeletionWorker?.close();
+  await relationVerificationWorker?.close();
   process.exit(0);
 }

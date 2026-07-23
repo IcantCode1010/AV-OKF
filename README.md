@@ -116,7 +116,7 @@ pnpm --dir apps/web migrate:knowledge-vault -- --workspace <workspace-id>
 pnpm --dir apps/web migrate:knowledge-vault -- --workspace <workspace-id> --apply
 ```
 
-Each Knowledge Bundle explorer provides a synchronized physical file tree, force-directed typed-relation graph, and rendered Markdown reader at `/knowledge/[bundleId]`. The explorer labels generic validity separately from agent readiness. Reviewed relation discovery creates pending candidates; only approved and re-exported relations enter frontmatter or graph traversal.
+Each Knowledge Bundle explorer provides a synchronized physical file tree, force-directed typed-relation graph, and rendered Markdown reader at `/knowledge/[bundleId]`. The explorer labels generic validity separately from agent readiness. Reviewed relation discovery generates candidate pairs deterministically, verifies each pair asynchronously with an exact source quote, and shows only confirmed results for human review; only human-approved and re-exported relations enter frontmatter or graph traversal.
 
 Chat uses deterministic routing first, with an LLM classifier only for low-confidence routes. OpenAI and Anthropic are supported through the Vercel AI SDK provider layer. Generated answers must use retrieved evidence and valid `[n]` citation markers or they fall back to a deterministic evidence response.
 
