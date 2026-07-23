@@ -144,7 +144,7 @@ export async function discoverRelationsAction(formData: FormData) {
     workspaceId: context.workspaceId,
   });
   revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
+  redirect(`/knowledge/${bundleId}?section=relations&relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}#relation-discovery`);
 }
 
 export async function reviewRelationCandidateAction(formData: FormData) {
@@ -158,7 +158,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   if (decision === "reject") {
     await getPrisma().okfRelationCandidate.update({ data: { reviewedAt: new Date(), reviewedBy: context.userId, status: "rejected" }, where: { id: candidate.id } });
     revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
-    redirect(`/knowledge/${candidate.knowledgeBundleId}`);
+    return;
   }
   const bundle = await getKnowledgeBundle({ bundleId: candidate.knowledgeBundleId, context });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
@@ -191,7 +191,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   if (originalSource.contentHash !== candidate.sourceContentHash || originalTarget.contentHash !== candidate.targetContentHash) {
     await retryOkfRelationVerification({ candidateId: candidate.id, workspaceId: context.workspaceId });
     revalidatePath(`/knowledge/${bundle.id}`);
-    redirect(`/knowledge/${bundle.id}?relationError=relation_verification_stale_content`);
+    redirect(`/knowledge/${bundle.id}?section=relations&relationError=relation_verification_stale_content#relation-discovery`);
   }
   validateRelationVerifierDecision({
     allowedRelations: bundle.profile.relations,
@@ -228,7 +228,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   });
   if (!preflight.accepted) {
     const code = preflight.issues.find((issue) => issue.severity === "error")?.code ?? "relation_preflight_failed";
-    redirect(`/knowledge/${bundle.id}?relationError=${encodeURIComponent(code)}`);
+    redirect(`/knowledge/${bundle.id}?section=relations&relationError=${encodeURIComponent(code)}#relation-discovery`);
   }
   const sourceTopic = await getPrisma().topicRecord.findFirst({ where: { exportedFilePath: sourceFile, knowledgeBundleId: bundle.id, workspaceId: context.workspaceId } });
   if (!sourceTopic) throw new Error("relation_source_topic_not_found");
@@ -255,7 +255,6 @@ export async function reviewRelationCandidateAction(formData: FormData) {
     where: { id: candidate.id },
   });
   revalidatePath(`/knowledge/${bundle.id}`);
-  redirect(`/knowledge/${bundle.id}?file=${encodeURIComponent(exported.filename)}`);
 }
 
 export async function retryRelationCandidateVerificationAction(formData: FormData) {
@@ -272,7 +271,6 @@ export async function retryRelationCandidateVerificationAction(formData: FormDat
     workspaceId: context.workspaceId,
   });
   revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
-  redirect(`/knowledge/${candidate.knowledgeBundleId}`);
 }
 
 export async function deleteOkfBundleFilesAction(formData: FormData) {

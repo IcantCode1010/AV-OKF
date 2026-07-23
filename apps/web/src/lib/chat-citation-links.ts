@@ -26,3 +26,12 @@ export function getChatCitationHref(
 
   return null;
 }
+
+export function getChatMessageCitationHref(
+  citation: ChatCitation,
+  sessionId: string,
+): string | null {
+  return getChatCitationHref(citation, {
+    returnTo: `/chat/${sessionId}`,
+  });
+}

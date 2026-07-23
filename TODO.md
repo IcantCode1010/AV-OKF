@@ -85,6 +85,7 @@
 - [x] Show explicit fallback messaging when OKF-first routing falls back to raw RAG:
   - `No approved OKF topic matched. Answered from raw document evidence instead.`
 - [ ] Make answer citation markers clickable and link them to matching source cards.
+- [ ] Require every new chat citation surface to use the centralized message-aware citation-link helper so OKF navigation always returns to the originating `/chat/{sessionId}` conversation.
 - [ ] Add `Open PDF page` for raw PDF/RAG evidence so users can verify the answer against the original source document.
 - [ ] Add a compact `Why this answer?` panel showing:
   - Route selected

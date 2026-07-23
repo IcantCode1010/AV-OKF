@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatMessage } from "@/lib/chat-types";
-import { getChatCitationHref } from "@/lib/chat-citation-links";
+import { getChatMessageCitationHref } from "@/lib/chat-citation-links";
 
 export function ChatSidePanelContent({
   latestAssistantMessage,
@@ -24,7 +24,12 @@ export function ChatSidePanelContent({
             </p>
           ) : (
             citations.map((citation) => {
-              const href = getChatCitationHref(citation);
+              const href = latestAssistantMessage
+                ? getChatMessageCitationHref(
+                    citation,
+                    latestAssistantMessage.sessionId,
+                  )
+                : null;
               const content = (
                 <>
                 <div className="flex items-center gap-1.5">

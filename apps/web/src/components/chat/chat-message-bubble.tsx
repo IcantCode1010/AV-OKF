@@ -3,7 +3,7 @@ import type { ChatMessage } from "@/lib/chat-types";
 import { ChatEvidenceCard } from "@/components/chat/chat-evidence-card";
 import { ChatMetadataClarification } from "@/components/chat/chat-metadata-clarification";
 import type { MetadataClarificationSelection } from "@/lib/chat-router";
-import { getChatCitationHref } from "@/lib/chat-citation-links";
+import { getChatMessageCitationHref } from "@/lib/chat-citation-links";
 
 export function ChatMessageBubble({
   canAnswerClarification = false,
@@ -39,7 +39,7 @@ export function ChatMessageBubble({
             (candidate) => candidate.index === segment.index,
           );
           const href = citation
-            ? getChatCitationHref(citation, { returnTo: `/chat/${message.sessionId}` })
+            ? getChatMessageCitationHref(citation, message.sessionId)
             : null;
           const className = "mx-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[0.625rem] font-bold text-accent-foreground align-super focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 

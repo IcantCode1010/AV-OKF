@@ -39,6 +39,7 @@ export default async function KnowledgeBundlePage({
     relationWarnings?: string;
     relationsDiscovered?: string;
     relationsSuppressed?: string;
+    section?: string;
   }>;
 }) {
   const [{ bundleId }, query, context] = await Promise.all([
@@ -121,7 +122,11 @@ export default async function KnowledgeBundlePage({
             ))}
           </div>
         </details>
-        <details className="mb-4 border border-border bg-muted/10">
+        <details
+          className="mb-4 scroll-mt-4 border border-border bg-muted/10"
+          id="relation-discovery"
+          open={query.section === "relations"}
+        >
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring">Relation discovery</summary>
           <div className="space-y-4 border-t border-border p-4">
             <RelationVerificationPoller active={relationCandidates.some((candidate) => ["queued", "running"].includes(candidate.verificationStatus))} />

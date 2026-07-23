@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getChatCitationHref } from "./chat-citation-links.ts";
+import {
+  getChatCitationHref,
+  getChatMessageCitationHref,
+} from "./chat-citation-links.ts";
 import type { ChatCitation } from "./chat-types.ts";
 
 function citation(overrides: Partial<ChatCitation>): ChatCitation {
@@ -31,6 +34,17 @@ test("OKF citations link to the approved topic page and originating chat", () =>
       sourceType: "okf",
     }), { returnTo: "/chat/chat-1" }),
     "/knowledge/kb_1/topic?file=concepts%2Fsystem%2Fbrakes.md&returnTo=%2Fchat%2Fchat-1",
+  );
+});
+
+test("message-aware OKF citation links always preserve the active chat session", () => {
+  assert.equal(
+    getChatMessageCitationHref(citation({
+      knowledgeBundleId: "kb_1",
+      okfFilePath: "concepts/system/brakes.md",
+      sourceType: "okf",
+    }), "session-42"),
+    "/knowledge/kb_1/topic?file=concepts%2Fsystem%2Fbrakes.md&returnTo=%2Fchat%2Fsession-42",
   );
 });
 

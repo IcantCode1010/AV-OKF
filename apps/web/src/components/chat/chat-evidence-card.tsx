@@ -17,7 +17,7 @@ import { buildAnswerEvidenceProfile } from "@/lib/chat-evidence-profile";
 import type { ChatAnswerEvidenceProfile } from "@/lib/chat-router";
 import type { ChatCitation, ChatMessage } from "@/lib/chat-types";
 import { cn } from "@/lib/utils";
-import { getChatCitationHref } from "@/lib/chat-citation-links";
+import { getChatMessageCitationHref } from "@/lib/chat-citation-links";
 
 export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
   const profile =
@@ -72,11 +72,13 @@ export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
                 <SourceGroup
                   citations={okfSources}
                   emptyText="No approved OKF sources in this answer."
+                  sessionId={message.sessionId}
                   title="Controlling OKF"
                 />
                 <SourceGroup
                   citations={ragSources}
                   emptyText="No raw document sources in this answer."
+                  sessionId={message.sessionId}
                   title="Supporting raw documents"
                 />
               </div>
@@ -84,6 +86,7 @@ export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
               <SourceGroup
                 citations={message.citations}
                 emptyText="No source citations were stored for this answer."
+                sessionId={message.sessionId}
                 title={copy.detailTitle}
               />
             )}
@@ -97,10 +100,12 @@ export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
 function SourceGroup({
   citations,
   emptyText,
+  sessionId,
   title,
 }: {
   citations: ChatCitation[];
   emptyText: string;
+  sessionId: string;
   title: string;
 }) {
   return (
@@ -112,15 +117,25 @@ function SourceGroup({
         <p className="text-muted-foreground">{emptyText}</p>
       ) : (
         citations.map((citation) => (
-          <CitationSource key={citation.index} citation={citation} />
+          <CitationSource
+            key={citation.index}
+            citation={citation}
+            sessionId={sessionId}
+          />
         ))
       )}
     </div>
   );
 }
 
-function CitationSource({ citation }: { citation: ChatCitation }) {
-  const href = getChatCitationHref(citation);
+function CitationSource({
+  citation,
+  sessionId,
+}: {
+  citation: ChatCitation;
+  sessionId: string;
+}) {
+  const href = getChatMessageCitationHref(citation, sessionId);
   const content = (
     <>
             <div className="flex flex-wrap items-center gap-2">
