@@ -88,8 +88,8 @@ export function DocumentSummaryPanel({
         <CardHeader>
           <CardTitle>Topic trace</CardTitle>
           <CardDescription>
-            Stage 2 extracts page records. Stage 3 creates reviewable topics
-            from those records, and approved topics can be exported to OKF.
+            Page extraction feeds reviewable topic discovery, and approved
+            topics can be exported to the assigned OKF bundle.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">

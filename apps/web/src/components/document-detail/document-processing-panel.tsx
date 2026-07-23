@@ -5,6 +5,7 @@ import {
   CircleAlert,
   Clock3,
   FileText,
+  Layers3,
   LoaderCircle,
   Minus,
   RotateCcw,
@@ -42,13 +43,13 @@ type ProcessingPanelRun = {
 export function DocumentProcessingPanel({
   documentId,
   extractionReady,
-  firstTopicId,
+  knowledgeBundleId,
   run,
   state,
 }: {
   documentId: string;
   extractionReady: boolean;
-  firstTopicId: string | null;
+  knowledgeBundleId: string;
   run: ProcessingPanelRun | null;
   state: DocumentProcessingState;
 }) {
@@ -87,7 +88,7 @@ export function DocumentProcessingPanel({
         <ProcessingAction
           documentId={documentId}
           extractionReady={extractionReady}
-          firstTopicId={firstTopicId}
+          knowledgeBundleId={knowledgeBundleId}
           run={run}
           state={state}
         />
@@ -162,13 +163,13 @@ export function DocumentProcessingStatusStrip({
 function ProcessingAction({
   documentId,
   extractionReady,
-  firstTopicId,
+  knowledgeBundleId,
   run,
   state,
 }: {
   documentId: string;
   extractionReady: boolean;
-  firstTopicId: string | null;
+  knowledgeBundleId: string;
   run: ProcessingPanelRun | null;
   state: DocumentProcessingState;
 }) {
@@ -232,8 +233,9 @@ function ProcessingAction({
   if (["ready_for_review", "completed"].includes(run.status)) {
     return (
       <Button asChild>
-        <Link href={firstTopicId ? `/documents/${documentId}?panel=topics&topic=${firstTopicId}` : `/documents/${documentId}?panel=topics`}>
-          Review topics
+        <Link href={`/knowledge/${knowledgeBundleId}/review`}>
+          <Layers3 className="h-4 w-4" />
+          Review and export topics
         </Link>
       </Button>
     );

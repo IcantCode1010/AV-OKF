@@ -25,7 +25,7 @@ export async function listKnowledgeGaps(input: {
     orderBy: { createdAt: "desc" },
     take: 100,
     where: {
-      knowledgeBundleId: input.knowledgeBundleId,
+      primaryKnowledgeBundleId: input.knowledgeBundleId,
       status: "open",
       workspaceId: input.context.workspaceId,
     },

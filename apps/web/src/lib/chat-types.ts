@@ -20,6 +20,7 @@ export type ChatCitation = {
   okfEvidenceMode?: ChatOkfEvidenceMode;
   okfFilePath?: string;
   knowledgeBundleId?: string;
+  knowledgeBundleName?: string;
   lifecycleNotice?: string;
   pageEnd: number;
   pageStart: number;
@@ -33,15 +34,25 @@ export type ChatMessage = {
   content: string;
   createdAt: string;
   id: string;
+  knowledgeBundleIds: string[];
   role: ChatRole;
+  scopeVersion: number;
   sessionId: string;
   trace: Stage6aRouterTrace | null;
+};
+
+export type ChatKnowledgeBundleScope = {
+  id: string;
+  name: string;
+  position: number;
 };
 
 export type ChatSession = {
   createdAt: string;
   id: string;
-  knowledgeBundleId: string;
+  knowledgeBundles: ChatKnowledgeBundleScope[];
+  primaryKnowledgeBundleId: string | null;
+  scopeVersion: number;
   title: string;
   updatedAt: string;
   userId: string;

@@ -43,8 +43,8 @@ export default async function DocumentsPage({
             Documents
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Upload PDFs into the local Stage 1 vault, edit metadata, and keep
-            processing status visible before extraction exists.
+            Upload PDFs, assign them to a knowledge bundle, and monitor
+            extraction and AI authoring from one workflow.
           </p>
         </div>
         <Badge variant="outline">Max upload 25 MB</Badge>

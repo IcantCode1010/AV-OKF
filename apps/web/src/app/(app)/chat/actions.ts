@@ -8,6 +8,7 @@ import {
   createChatSession,
   getChatSessionWorkspaceId,
   sendChatMessage,
+  updateChatSessionKnowledgeBundles,
 } from "@/lib/chat-backend";
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
@@ -50,6 +51,20 @@ export async function sendChatMessageAction(formData: FormData) {
   redirect(`/chat/${sessionId}`);
 }
 
+export async function updateChatKnowledgeSourcesAction(formData: FormData) {
+  const sessionId = getFormString(formData, "sessionId");
+  const bundleIds = parseBundleIds(getFormString(formData, "knowledgeBundleIds"));
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getChatSessionWorkspaceId(sessionId);
+  assertActionDocumentWorkspace({
+    context,
+    document: { workspaceId },
+    mismatchError: "chat_session_workspace_mismatch",
+  });
+  await updateChatSessionKnowledgeBundles(sessionId, bundleIds);
+  revalidatePath(`/chat/${sessionId}`);
+}
+
 function parseMetadataSelection(
   value: string,
 ): MetadataClarificationSelection[] | undefined {
@@ -62,6 +77,22 @@ function parseMetadataSelection(
   }
   if (!Array.isArray(parsed) || !parsed.every(isMetadataSelection)) {
     throw new Error("metadata_clarification_selection_invalid");
+  }
+  return parsed;
+}
+
+function parseBundleIds(value: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("chat_bundle_scope_invalid");
+  }
+  if (
+    !Array.isArray(parsed) ||
+    !parsed.every((item) => typeof item === "string" && item.trim())
+  ) {
+    throw new Error("chat_bundle_scope_invalid");
   }
   return parsed;
 }

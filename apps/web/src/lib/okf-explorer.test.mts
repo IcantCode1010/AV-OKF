@@ -27,6 +27,19 @@ test("physical nested paths build a directory-first tree and reserved files stay
   });
 });
 
+test("reserved reader projection uses the shared readable fallback title", async () => {
+  await withFixture(async (root) => {
+    await writeFile(path.join(root, "index.md"), "# Knowledge Bundle\n", "utf8");
+
+    const snapshot = await buildSnapshot(root, "index.md");
+
+    assert.equal(snapshot.selectedDocument?.title, "Bundle Index");
+    assert.equal(snapshot.selectedDocument?.isReserved, true);
+    assert.equal(snapshot.selectedDocument?.trustStatus, "reserved");
+    assert.equal(snapshot.nodes.length, 0);
+  });
+});
+
 test("concept reader projection removes exported framing without fuzzy description matching", async () => {
   await withFixture(async (root) => {
     await writeTopic(root, "systems/inspection.md", { title: "Vehicle Inspection" });

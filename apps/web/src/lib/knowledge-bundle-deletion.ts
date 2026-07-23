@@ -243,9 +243,14 @@ export async function runKnowledgeBundleDeletionJob(
       const topicCount = await tx.topicRecord.count({
         where: { knowledgeBundleId: manifest.bundleId },
       });
-      const chatCount = await tx.chatSession.count({
+      const affectedChatSelections = await tx.chatSessionKnowledgeBundle.findMany({
+        select: { sessionId: true },
         where: { knowledgeBundleId: manifest.bundleId },
       });
+      const affectedChatSessionIds = [
+        ...new Set(affectedChatSelections.map((selection) => selection.sessionId)),
+      ];
+      const chatCount = affectedChatSessionIds.length;
       const ragCount = manifest.documentIds.length > 0
         ? await tx.ragChunk.count({ where: { documentId: { in: manifest.documentIds } } })
         : 0;
@@ -283,6 +288,20 @@ export async function runKnowledgeBundleDeletionJob(
       await tx.knowledgeBundle.deleteMany({
         where: { id: manifest.bundleId, workspaceId: manifest.workspaceId },
       });
+      for (const sessionId of affectedChatSessionIds) {
+        const nextSelection = await tx.chatSessionKnowledgeBundle.findFirst({
+          orderBy: { position: "asc" },
+          select: { knowledgeBundleId: true },
+          where: { sessionId },
+        });
+        await tx.chatSession.updateMany({
+          data: {
+            primaryKnowledgeBundleId: nextSelection?.knowledgeBundleId ?? null,
+            scopeVersion: { increment: 1 },
+          },
+          where: { id: sessionId, workspaceId: manifest.workspaceId },
+        });
+      }
       return { chats: chatCount, documentsPreserved: manifest.documentIds.length, ragChunks: ragCount, topics: topicCount };
     });
 

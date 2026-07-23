@@ -98,6 +98,30 @@ test("getOkfBundleSummary groups files and prefers index as default", async () =
   }
 });
 
+test("reserved files without frontmatter use readable fallback titles", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-reserved-titles-"));
+
+  try {
+    await writeFile(path.join(root, "index.md"), "# Index\n");
+    await writeFile(path.join(root, "log.md"), "# Log\n");
+    await writeFile(path.join(root, "source_manifest.md"), "# Sources\n");
+
+    const files = await listOkfBundleFiles(root);
+
+    assert.deepEqual(
+      files.map((file) => [file.filename, file.title]),
+      [
+        ["index.md", "Bundle Index"],
+        ["log.md", "Activity Log"],
+        ["source_manifest.md", "Source Manifest"],
+      ],
+    );
+    assert.equal(files.every((file) => file.isReserved), true);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("getOkfBundleSummary falls back to first topic when index is missing", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-summary-topic-"));
 

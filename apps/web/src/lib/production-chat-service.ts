@@ -33,6 +33,7 @@ import {
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
 import { annotateChatCitationLifecycle } from "./chat-citation-lifecycle.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
+import type { AgentExecutionTrace } from "./agent-tools.ts";
 import {
   createPostgresChatRepository,
   type ProductionChatRepository,
@@ -42,6 +43,10 @@ export type ProductionChatService = {
   createSession(knowledgeBundleId: string, title?: string): Promise<ChatSession>;
   getSessionWorkspaceId(sessionId: string): Promise<string | undefined>;
   getSessions(): Promise<ChatSession[]>;
+  updateSessionKnowledgeBundles(
+    sessionId: string,
+    knowledgeBundleIds: string[],
+  ): Promise<ChatSession>;
   getSessionWithMessages(
     sessionId: string,
   ): Promise<{ messages: ChatMessage[]; session: ChatSession } | undefined>;
@@ -106,6 +111,15 @@ export function createProductionChatService(
       return repository.getSessions(context);
     },
 
+    async updateSessionKnowledgeBundles(sessionId, knowledgeBundleIds) {
+      const context = await getContext();
+      return repository.updateKnowledgeBundleScope({
+        context,
+        knowledgeBundleIds,
+        sessionId,
+      });
+    },
+
     async getSessionWithMessages(sessionId: string) {
       const context = await getContext();
 
@@ -113,7 +127,9 @@ export function createProductionChatService(
         const result = await repository.getSessionWithMessages({ context, sessionId });
         const annotatedCitations = await annotateCitations({
           citations: result.messages.flatMap((message) => message.citations),
-          knowledgeBundleId: result.session.knowledgeBundleId,
+          knowledgeBundleId:
+            result.session.primaryKnowledgeBundleId ??
+            result.session.knowledgeBundles[0]?.id,
           workspaceId: context.workspaceId,
         });
         let citationOffset = 0;
@@ -153,6 +169,12 @@ export function createProductionChatService(
         .slice(-CONVERSATION_CONTEXT_TURNS)
         .map((message) => `${message.role}: ${message.content}`);
       const clarification = getClarificationState(history.messages);
+      const bundleScope = history.session.knowledgeBundles;
+      const knowledgeBundleIds = bundleScope.map((bundle) => bundle.id);
+      if (knowledgeBundleIds.length === 0) {
+        throw new Error("chat_bundle_scope_required");
+      }
+      const scopeVersion = history.session.scopeVersion;
       const decision = await routeQuestion({
         clarificationAlreadyAsked: clarification.alreadyAsked,
         conversationContext,
@@ -190,7 +212,7 @@ export function createProductionChatService(
             clarificationAlreadyAsked: clarification.alreadyAsked,
             decision,
             includeSearchSummary: true,
-            knowledgeBundleId: history.session.knowledgeBundleId,
+            knowledgeBundleIds,
             query: retrievalQuery,
             workspaceId: context.workspaceId,
           })
@@ -272,6 +294,17 @@ export function createProductionChatService(
             }
           : {}),
         rerank: retrieval.rerank,
+        ...(retrieval.agentExecution
+          ? { agentExecution: retrieval.agentExecution }
+          : {}),
+        bundleScope: {
+          bundleIds: knowledgeBundleIds,
+          bundleNames: bundleScope.map((bundle) => bundle.name),
+          scopeVersion,
+        },
+        ...(retrieval.crossBundleConflict
+          ? { crossBundleConflict: retrieval.crossBundleConflict }
+          : {}),
         retrievalToolsCalled: retrieval.retrievalToolsCalled,
         ...(retrieval.searchSummary
           ? { searchSummary: retrieval.searchSummary }
@@ -288,6 +321,13 @@ export function createProductionChatService(
             route: decision.route,
             trace: assistantTrace,
           });
+      const agentExecution = isRetrievalRoute(decision.route)
+        ? appendValidationToolTrace(
+            retrieval.agentExecution,
+            knowledgeBundleIds,
+            answerValidation,
+          )
+        : retrieval.agentExecution;
       const safeAnswer =
         answerValidation?.status === "fail" && isRetrievalRoute(decision.route)
           ? {
@@ -327,6 +367,7 @@ export function createProductionChatService(
         assistantContent: disclosedAnswer.content,
         assistantTrace: {
           ...assistantTrace,
+          ...(agentExecution ? { agentExecution } : {}),
           answerMode: disclosedAnswer.mode,
           answerOutcome: disclosedAnswer.outcome,
           answerEvidenceProfile: buildAnswerEvidenceProfile({
@@ -338,7 +379,11 @@ export function createProductionChatService(
         citations: retrieval.citations,
         content,
         context,
+        knowledgeBundleIds,
         ...(knowledgeGap ? { knowledgeGap } : {}),
+        primaryKnowledgeBundleId:
+          history.session.primaryKnowledgeBundleId ?? knowledgeBundleIds[0] ?? null,
+        scopeVersion,
         sessionId,
       });
     },
@@ -351,6 +396,34 @@ function buildUnresolvedVagueFollowUpReply(): string {
     "Name the document, topic, policy, product, or other subject you want searched.",
     'For example: "What does [term] mean in [document or topic]?"',
   ].join(" ");
+}
+
+function appendValidationToolTrace(
+  trace: AgentExecutionTrace | undefined,
+  bundleIds: string[],
+  validation: ReturnType<typeof validateChatAnswerEvidence> | undefined,
+): AgentExecutionTrace {
+  const base = trace ?? {
+    callLimit: 8,
+    calls: [],
+    mode: "deterministic" as const,
+  };
+  if (!validation) return base;
+  return {
+    ...base,
+    calls: [
+      ...base.calls,
+      {
+        bundleIds,
+        input: { safeAnswerMode: validation.safeAnswerMode },
+        resultCount: validation.status === "pass" ? 1 : 0,
+        sequence: base.calls.length + 1,
+        status: "succeeded",
+        tool: "validateAnswerEvidence",
+        warningCodes: validation.violations,
+      },
+    ],
+  };
 }
 
 export function getClarificationState(messages: ChatMessage[]): {

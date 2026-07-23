@@ -477,19 +477,31 @@ function ExplorerReaderPane({
     <article className="h-full min-h-0 overflow-auto bg-background">
       <header className="border-b border-border px-5 py-5">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">{document.type}</Badge>
-          <Badge variant="outline">{document.reviewStatus}</Badge>
+          {document.isReserved ? (
+            <Badge variant="secondary">Reserved file</Badge>
+          ) : (
+            <>
+              <Badge variant="secondary">{document.type}</Badge>
+              <Badge variant="outline">{document.reviewStatus}</Badge>
+            </>
+          )}
           <Badge variant="outline">active</Badge>
-          <Badge variant={document.trustStatus === "agent_ready" ? "secondary" : "outline"}>
-            {formatTrustStatus(document.trustStatus)}
-          </Badge>
+          {!document.isReserved ? (
+            <Badge variant={document.trustStatus === "agent_ready" ? "secondary" : "outline"}>
+              {formatTrustStatus(document.trustStatus)}
+            </Badge>
+          ) : null}
         </div>
         <h2 className="mt-3 text-xl font-semibold">{document.title}</h2>
         {document.description && !document.descriptionRepeatedExactly ? <p className="mt-2 text-sm text-muted-foreground">{document.description}</p> : null}
         <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           <dt className="text-muted-foreground">File</dt><dd className="truncate font-mono">{document.filename}</dd>
-          <dt className="text-muted-foreground">Source</dt><dd>{document.sourceFile ?? "Not specified"}</dd>
-          <dt className="text-muted-foreground">Pages</dt><dd>{formatPages(document.sourcePages)}</dd>
+          {!document.isReserved ? (
+            <>
+              <dt className="text-muted-foreground">Source</dt><dd>{document.sourceFile ?? "Not specified"}</dd>
+              <dt className="text-muted-foreground">Pages</dt><dd>{formatPages(document.sourcePages)}</dd>
+            </>
+          ) : null}
         </dl>
       </header>
 
@@ -525,32 +537,34 @@ function ExplorerReaderPane({
         </div>
       </div>
 
-      <div className="grid gap-0 border-t border-border sm:grid-cols-2">
-        <RelationModule
-          emptyLabel="No outgoing typed relations."
-          icon={ArrowUpRight}
-          label="Outgoing relations"
-          rows={document.outgoing.map((edge) => ({
-            file: edge.target,
-            reason: edge.reason,
-            relation: edge.relation,
-            title: files.find((file) => file.filename === edge.target)?.title ?? "Missing target",
-          }))}
-          onSelect={onSelect}
-        />
-        <RelationModule
-          emptyLabel="No incoming typed relations."
-          icon={ArrowDownLeft}
-          label="Incoming relations"
-          rows={document.incoming.map((backlink) => ({
-            file: backlink.sourceFile,
-            reason: backlink.reason,
-            relation: backlink.relation,
-            title: backlink.sourceTitle,
-          }))}
-          onSelect={onSelect}
-        />
-      </div>
+      {!document.isReserved ? (
+        <div className="grid gap-0 border-t border-border sm:grid-cols-2">
+          <RelationModule
+            emptyLabel="No outgoing typed relations."
+            icon={ArrowUpRight}
+            label="Outgoing relations"
+            rows={document.outgoing.map((edge) => ({
+              file: edge.target,
+              reason: edge.reason,
+              relation: edge.relation,
+              title: files.find((file) => file.filename === edge.target)?.title ?? "Missing target",
+            }))}
+            onSelect={onSelect}
+          />
+          <RelationModule
+            emptyLabel="No incoming typed relations."
+            icon={ArrowDownLeft}
+            label="Incoming relations"
+            rows={document.incoming.map((backlink) => ({
+              file: backlink.sourceFile,
+              reason: backlink.reason,
+              relation: backlink.relation,
+              title: backlink.sourceTitle,
+            }))}
+            onSelect={onSelect}
+          />
+        </div>
+      ) : null}
     </article>
   );
 }

@@ -15,6 +15,7 @@ import {
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import type { TopicRelation } from "./okf-relation-types.ts";
 import { getEmbeddingProvider } from "./embedding-provider.ts";
+import { buildOkfArticleReaderContent } from "./okf-article-content.ts";
 import {
   createOkfConceptEmbeddingRepository,
   queueOkfConceptEmbeddingByHash,
@@ -471,6 +472,14 @@ async function buildEvidenceCandidate(
   const trustedTitle = title!;
   const trustedDescription = description ?? "";
   const trustedSourceFile = sourceFile!;
+  const readerContent = buildOkfArticleReaderContent({
+    body: parsed.body,
+    description,
+    title: trustedTitle,
+  });
+  const evidenceText = readerContent.descriptionRepeatedExactly
+    ? readerContent.body
+    : [trustedDescription, readerContent.body].filter(Boolean).join("\n\n");
   const answerableMetadata = buildAnswerableMetadata(
     parsed.frontmatter,
     clarificationFields,
@@ -508,7 +517,7 @@ async function buildEvidenceCandidate(
       getFrontmatterScalar(parsed.frontmatter, "approved_by"),
     ),
     answerableMetadata,
-    body: parsed.body,
+    body: readerContent.body,
     contentHash: hashOkfSource(markdown),
     coveredRagChunkIds: getFrontmatterStringArray(
       parsed.frontmatter,
@@ -516,7 +525,7 @@ async function buildEvidenceCandidate(
     ),
     coverageType: getFrontmatterScalar(parsed.frontmatter, "coverage_type"),
     description: trustedDescription,
-    excerpt: truncateExcerpt([trustedDescription, parsed.body].join("\n\n")),
+    excerpt: truncateExcerpt(evidenceText),
     filePath,
     lifecycleStatus,
     lifecycleWarnings: await buildRelationWarnings(

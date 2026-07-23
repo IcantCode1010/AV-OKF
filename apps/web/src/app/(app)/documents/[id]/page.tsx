@@ -248,7 +248,7 @@ export default async function DocumentDetailPage({
         <DocumentProcessingPanel
           documentId={currentDocument.id}
           extractionReady={currentDocument.extraction.status === "completed"}
-          firstTopicId={topicRecords[0]?.id ?? null}
+          knowledgeBundleId={currentBundle!.id}
           run={authoringRun}
           state={processingState}
         />

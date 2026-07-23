@@ -99,7 +99,11 @@ export function validateChatAnswerEvidence(input: {
 
   if (
     input.route === "okf_only" &&
-    input.citations.some((citation) => citation.sourceType === "rag") &&
+    input.citations.some(
+      (citation) =>
+        citation.sourceType === "rag" &&
+        (citation.coveredByOkfConceptIds?.length ?? 0) === 0,
+    ) &&
     !input.trace?.ragUsedForDiscoveryOnly
   ) {
     violations.push("raw_rag_used_without_okf_fallback_label");

@@ -25,7 +25,7 @@ type CitationLifecycleDependencies = {
 
 export async function annotateChatCitationLifecycle(input: {
   citations: ChatCitation[];
-  knowledgeBundleId: string;
+  knowledgeBundleId?: string;
   workspaceId: string;
 }, dependencies: CitationLifecycleDependencies = defaultDependencies): Promise<ChatCitation[]> {
   if (input.citations.length === 0) return [];
@@ -41,17 +41,25 @@ export async function annotateChatCitationLifecycle(input: {
       documentIds,
       workspaceId: input.workspaceId,
     });
-    const okfPaths = Array.from(new Set(
-      input.citations
-        .filter((citation) => citation.sourceType === "okf")
-        .map((citation) => citation.okfFilePath)
-        .filter((filePath): filePath is string => Boolean(filePath)),
-    ));
-    const lifecycles = await dependencies.getLifecycles({
-      filePaths: okfPaths,
-      knowledgeBundleId: input.knowledgeBundleId,
-      workspaceId: input.workspaceId,
-    });
+    const lifecycleByBundleAndFile = new Map<string, { status: string }>();
+    const okfByBundle = new Map<string, Set<string>>();
+    for (const citation of input.citations) {
+      const bundleId = citation.knowledgeBundleId ?? input.knowledgeBundleId;
+      if (citation.sourceType !== "okf" || !citation.okfFilePath || !bundleId) continue;
+      const paths = okfByBundle.get(bundleId) ?? new Set<string>();
+      paths.add(citation.okfFilePath);
+      okfByBundle.set(bundleId, paths);
+    }
+    for (const [bundleId, paths] of okfByBundle) {
+      const lifecycles = await dependencies.getLifecycles({
+        filePaths: [...paths],
+        knowledgeBundleId: bundleId,
+        workspaceId: input.workspaceId,
+      });
+      for (const [filePath, lifecycle] of lifecycles) {
+        lifecycleByBundleAndFile.set(`${bundleId}:${filePath}`, lifecycle);
+      }
+    }
 
     return Promise.all(input.citations.map(async (citation) => {
       if (citation.sourceType === "rag") {
@@ -61,12 +69,18 @@ export async function annotateChatCitationLifecycle(input: {
         return citation;
       }
 
+      const bundleId = citation.knowledgeBundleId ?? input.knowledgeBundleId;
       const withBundle = {
         ...citation,
-        knowledgeBundleId: citation.knowledgeBundleId ?? input.knowledgeBundleId,
+        ...(bundleId ? { knowledgeBundleId: bundleId } : {}),
       };
-      if (!citation.okfFilePath) return withBundle;
-      const lifecycle = lifecycles.get(citation.okfFilePath);
+      if (!citation.okfFilePath || !bundleId) {
+        return {
+          ...withBundle,
+          lifecycleNotice: "This source is no longer available.",
+        };
+      }
+      const lifecycle = lifecycleByBundleAndFile.get(`${bundleId}:${citation.okfFilePath}`);
       if (lifecycle?.status === "retracted") {
         return {
           ...withBundle,
@@ -85,7 +99,7 @@ export async function annotateChatCitationLifecycle(input: {
 
       if (!(await dependencies.okfFileExists({
         filePath: citation.okfFilePath,
-        knowledgeBundleId: input.knowledgeBundleId,
+        knowledgeBundleId: bundleId,
         workspaceId: input.workspaceId,
       }))) {
         return { ...withBundle, lifecycleNotice: "This source is no longer available." };

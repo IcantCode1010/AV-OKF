@@ -10,6 +10,8 @@
 - [x] Restrict relation classification to deterministic candidate pairs and the active profile vocabulary.
 - [x] Stop at `ready_for_review` by default; allow bundle admins to opt into high-confidence-only automatic enriched-topic approval/export while keeping relation and lifecycle actions human-only.
 - [x] Add a bundle-scoped review screen for selecting already-enriched topics and publishing them through a durable, sequential approval/export batch.
+- [x] Continue review-ready document processing directly into the bundle's bulk topic approval and export screen.
+- [ ] Pre-filter bulk review to the originating document when opened from Processing, with an explicit option to show every ready topic in the bundle.
 - [x] Add bundle-scoped automatic approval/export with profile snapshots, exact-page enrichment, persisted skip reasons, and distinct chat provenance.
 - [ ] Evaluate automatic approval quality over real bundles before considering medium-confidence eligibility.
 - [ ] Consider a future per-row raw/enriched choice in bulk review; the current bulk workflow intentionally approves enriched content only while raw approval remains individual.
@@ -151,23 +153,30 @@
 
 ## Agent Tool Layer
 
-- [ ] Define bounded Vercel AI SDK tool wrappers for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
-- [ ] Keep the deterministic router, lifecycle gates, hop limits, workspace checks, and validator authoritative while the tool layer is introduced.
-- [ ] Persist tool calls and outcomes in the existing chat trace.
-- [ ] Evaluate bounded model-directed tool selection before considering any autonomous multi-step loop.
+- [x] Define bounded Vercel AI SDK tool wrappers for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
+- [x] Keep the deterministic router, lifecycle gates, hop limits, workspace checks, and validator authoritative while the tool layer is introduced.
+- [x] Persist tool calls and outcomes in the existing chat trace.
+- [x] Add an evaluation-only model-directed runner with discovered-evidence capabilities and a mandatory reserved validation call.
+- [ ] Run the evaluation-only model runner against the configured-provider Docker route-coverage baseline before any production promotion decision.
 
-## Multi-Bundle Chat Requests
+## Dynamic Multi-Bundle Chat Scope
 
-- [ ] Allow a user to select multiple knowledge bundles when creating a chat or submitting a request.
-- [ ] Store the selected bundle IDs on the chat session and enforce workspace ownership for every selection.
-- [ ] Add a bundle-discovery step that ranks selected bundles before concept retrieval instead of blindly crawling every file.
-- [ ] Search approved, active OKF concepts across a bounded number of selected bundles.
-- [ ] Keep graph traversal and typed relations bundle-local in the first version.
-- [ ] Restrict raw RAG fallback to documents belonging to the selected bundles.
-- [ ] Include the originating bundle identity on every citation, evidence row, and agent trace entry.
-- [ ] Preserve trust precedence independently per bundle: current approved OKF first, raw RAG as labeled discovery/support.
-- [ ] Detect conflicting answers or authorities across bundles and disclose the conflict instead of silently merging them.
-- [ ] Add workspace-isolation, lifecycle, retrieval-ranking, conflicting-authority, and mixed-bundle answer tests.
+- [x] Keep one bundle as the focused default when a chat starts.
+- [x] Add a visible `Knowledge sources` selector to the active chat so users can add or remove bundles without starting a new conversation.
+- [x] Persist the active selected bundle IDs on the chat session and enforce workspace ownership and active lifecycle state for every selection.
+- [x] Snapshot the effective bundle scope on each message and assistant trace so historical answers retain their original retrieval scope.
+- [x] Apply bundle changes to future questions only; removing a bundle does not rewrite prior answers or citations.
+- [ ] Allow the agent to suggest another relevant bundle but never add it or widen search scope without user action.
+- [x] Add a bundle-discovery step that ranks only the selected bundles before concept retrieval instead of blindly crawling every file.
+- [x] Search approved, active OKF concepts across at most ten selected bundles with bounded concurrency and global result caps.
+- [x] Keep graph traversal and typed relations bundle-local in the first version.
+- [x] Restrict raw RAG fallback to documents belonging to the selected bundles.
+- [x] Include the originating bundle identity on every citation, evidence row, and agent trace entry.
+- [x] Preserve trust precedence independently per bundle: human-approved OKF, automation-approved OKF, then labeled raw RAG discovery/support.
+- [x] Detect conflicting exact values across selected approved bundles and disclose the conflict instead of silently merging them.
+- [x] Handle unavailable or deleted selected bundles explicitly without silently substituting another bundle.
+- [x] Add unit coverage for ordered scope persistence, limits, workspace isolation, global result caps, bundle-local traversal, conflict detection, and deletion preservation.
+- [ ] Extend the Docker route-coverage profile with mid-chat add/remove, concurrent scope snapshot, conflict, lifecycle, deletion, and cross-workspace scenarios.
 - [ ] Defer cross-bundle typed relations until stable concept identities and dedicated validation rules exist.
 
 ## Platform Follow-Up

@@ -44,25 +44,25 @@ export default async function DashboardPage() {
     {
       label: "Documents",
       value: metrics.total,
-      detail: "Local vault records",
+      detail: "Source files in this workspace",
       icon: Files,
     },
     {
       label: "Processing",
       value: metrics.processing,
-      detail: "Awaiting extraction",
+      detail: "Active or awaiting processing",
       icon: FileClock,
     },
     {
       label: "Ready",
       value: metrics.ready,
-      detail: "Searchable shell state",
+      detail: "Available for review or search",
       icon: ShieldCheck,
     },
     {
       label: "Review",
       value: metrics.review,
-      detail: "Needs human check",
+      detail: "Needs human review",
       icon: UserCheck,
     },
   ];
@@ -71,13 +71,13 @@ export default async function DashboardPage() {
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <Badge variant="secondary">Stage 1 document vault</Badge>
+          <Badge variant="secondary">Knowledge workspace</Badge>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
             {workspace.name}
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            A local document vault for PDFs, metadata, tags, and processing
-            status before extraction and retrieval are added.
+            Upload source documents, turn them into reviewed OKF knowledge,
+            and ask grounded questions with citations.
           </p>
         </div>
         <Button asChild>
@@ -112,7 +112,8 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Recent documents</CardTitle>
             <CardDescription>
-              Uploaded and seeded documents in the Stage 1 local vault.
+              Recently uploaded source documents and their current processing
+              state.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0">
@@ -159,7 +160,7 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Activity</CardTitle>
             <CardDescription>
-              Local upload and metadata activity before the extraction pipeline.
+              Recent document, processing, and knowledge activity.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

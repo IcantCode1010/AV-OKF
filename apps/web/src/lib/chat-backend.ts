@@ -30,6 +30,17 @@ export async function getChatSessions(): Promise<ChatSession[]> {
   return getProductionChatService().getSessions();
 }
 
+export async function updateChatSessionKnowledgeBundles(
+  sessionId: string,
+  knowledgeBundleIds: string[],
+): Promise<ChatSession> {
+  assertChatAvailable();
+  return getProductionChatService().updateSessionKnowledgeBundles(
+    sessionId,
+    knowledgeBundleIds,
+  );
+}
+
 export async function getChatSessionWorkspaceId(
   sessionId: string,
 ): Promise<string | undefined> {

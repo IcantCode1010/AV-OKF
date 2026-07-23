@@ -77,7 +77,15 @@ test("worker removes knowledge products while preserving document and extraction
       async create() { calls.push("create-audit"); },
       async findFirst() { return null; },
     },
-    chatSession: { async count() { return 2; } },
+    chatSession: {
+      async updateMany() { calls.push("promote-chat-scope"); },
+    },
+    chatSessionKnowledgeBundle: {
+      async findFirst() { return null; },
+      async findMany() {
+        return [{ sessionId: "chat_1" }, { sessionId: "chat_2" }];
+      },
+    },
     document: { async updateMany() { calls.push("preserve-unassigned-documents"); } },
     knowledgeBundle: { async deleteMany() { calls.push("delete-bundle-row"); } },
     ragChunk: { async count() { return 3; } },
@@ -110,6 +118,8 @@ test("worker removes knowledge products while preserving document and extraction
     "preserve-unassigned-documents",
     "create-audit",
     "delete-bundle-row",
+    "promote-chat-scope",
+    "promote-chat-scope",
     "delete-okf-directory",
     "write-vault",
     "job-completed",

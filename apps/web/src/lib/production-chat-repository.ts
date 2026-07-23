@@ -2,9 +2,10 @@ import type { Prisma } from "@prisma/client";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation, ChatMessage, ChatSession } from "./chat-types.ts";
-import { getPrisma } from "./prisma.ts";
 import type { Stage6aRouterTrace } from "./chat-router.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
+import { normalizeOkfCitationExcerpt } from "./okf-article-content.ts";
+import { getPrisma } from "./prisma.ts";
 
 export type ProductionChatRepository = ReturnType<typeof createPostgresChatRepository>;
 
@@ -13,7 +14,13 @@ type PrismaLike = ReturnType<typeof getPrisma>;
 type DbChatSessionRecord = {
   createdAt: Date;
   id: string;
+  knowledgeBundles?: Array<{
+    knowledgeBundle: { id: string; name: string };
+    position: number;
+  }>;
   knowledgeBundleId?: string;
+  primaryKnowledgeBundleId?: string | null;
+  scopeVersion?: number;
   title: string;
   updatedAt: Date;
   userId: string;
@@ -25,17 +32,46 @@ type DbChatMessageRecord = {
   content: string;
   createdAt: Date;
   id: string;
+  knowledgeBundleIds?: string[];
   role: string;
+  scopeVersion?: number;
   sessionId: string;
   trace: unknown;
 };
+
+const DEFAULT_CHAT_TITLE = "New chat";
+const MAX_CHAT_TITLE_LENGTH = 72;
+export const MAX_CHAT_KNOWLEDGE_BUNDLES = 10;
+
+const sessionBundleInclude = {
+  knowledgeBundles: {
+    include: { knowledgeBundle: { select: { id: true, name: true } } },
+    orderBy: { position: "asc" as const },
+    where: { knowledgeBundle: { status: "active" } },
+  },
+};
+
+export function deriveChatSessionTitle(content: string) {
+  const normalized = content.normalize("NFKC").replace(/\s+/g, " ").trim();
+
+  if (!normalized) {
+    return DEFAULT_CHAT_TITLE;
+  }
+
+  if (normalized.length <= MAX_CHAT_TITLE_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_CHAT_TITLE_LENGTH - 3).trimEnd()}...`;
+}
 
 export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
   const db = prisma;
 
   async function getSessionForWorkspace(sessionId: string, workspaceId: string) {
     const record = await db.chatSession.findFirst({
-      where: { id: sessionId, knowledgeBundle: { status: "active" }, workspaceId },
+      include: sessionBundleInclude,
+      where: { id: sessionId, workspaceId },
     });
 
     if (!record) {
@@ -66,11 +102,19 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 
       const record = await db.chatSession.create({
         data: {
-          knowledgeBundleId: input.knowledgeBundleId,
-          title: input.title?.trim() || "New chat",
+          knowledgeBundles: {
+            create: {
+              knowledgeBundleId: input.knowledgeBundleId,
+              position: 0,
+              selectedBy: input.context.userId,
+            },
+          },
+          primaryKnowledgeBundleId: input.knowledgeBundleId,
+          title: input.title?.trim() || DEFAULT_CHAT_TITLE,
           userId: input.context.userId,
           workspaceId: input.context.workspaceId,
         },
+        include: sessionBundleInclude,
       });
 
       return mapChatSession(record);
@@ -78,8 +122,9 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 
     async getSessions(context: AuthWorkspaceContext): Promise<ChatSession[]> {
       const records = await db.chatSession.findMany({
+        include: sessionBundleInclude,
         orderBy: { updatedAt: "desc" },
-        where: { knowledgeBundle: { status: "active" }, workspaceId: context.workspaceId },
+        where: { workspaceId: context.workspaceId },
       });
 
       return records.map(mapChatSession);
@@ -107,16 +152,72 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
       };
     },
 
+    async updateKnowledgeBundleScope(input: {
+      context: AuthWorkspaceContext;
+      knowledgeBundleIds: string[];
+      sessionId: string;
+    }): Promise<ChatSession> {
+      const ids = [...new Set(input.knowledgeBundleIds)];
+      if (
+        ids.length !== input.knowledgeBundleIds.length ||
+        ids.length < 1 ||
+        ids.length > MAX_CHAT_KNOWLEDGE_BUNDLES
+      ) {
+        throw new Error("chat_bundle_scope_invalid");
+      }
+
+      await getSessionForWorkspace(input.sessionId, input.context.workspaceId);
+      const bundles = await db.knowledgeBundle.findMany({
+        select: { id: true },
+        where: {
+          id: { in: ids },
+          status: "active",
+          workspaceId: input.context.workspaceId,
+        },
+      });
+      if (bundles.length !== ids.length) {
+        throw new Error("chat_bundle_scope_invalid");
+      }
+
+      await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.chatSessionKnowledgeBundle.deleteMany({
+          where: { sessionId: input.sessionId },
+        });
+        await tx.chatSessionKnowledgeBundle.createMany({
+          data: ids.map((knowledgeBundleId, position) => ({
+            knowledgeBundleId,
+            position,
+            selectedBy: input.context.userId,
+            sessionId: input.sessionId,
+          })),
+        });
+        await tx.chatSession.update({
+          data: {
+            primaryKnowledgeBundleId: ids[0],
+            scopeVersion: { increment: 1 },
+          },
+          where: { id: input.sessionId },
+        });
+      });
+
+      return mapChatSession(
+        await getSessionForWorkspace(input.sessionId, input.context.workspaceId),
+      );
+    },
+
     async appendUserMessageAndAssistantReply(input: {
       assistantContent: string;
       assistantTrace: Stage6aRouterTrace;
       citations: ChatCitation[];
       content: string;
       context: AuthWorkspaceContext;
+      knowledgeBundleIds: string[];
       knowledgeGap?: KnowledgeGapDraft;
+      primaryKnowledgeBundleId: string | null;
+      scopeVersion: number;
       sessionId: string;
     }): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }> {
-      const sessionRecord = await getSessionForWorkspace(
+      await getSessionForWorkspace(
         input.sessionId,
         input.context.workspaceId,
       );
@@ -126,7 +227,9 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
           const userRecord = await tx.chatMessage.create({
             data: {
               content: input.content,
+              knowledgeBundleIds: input.knowledgeBundleIds,
               role: "user",
+              scopeVersion: input.scopeVersion,
               sessionId: input.sessionId,
               workspaceId: input.context.workspaceId,
             },
@@ -135,9 +238,11 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
             data: {
               citations: input.citations,
               content: input.assistantContent,
+              knowledgeBundleIds: input.knowledgeBundleIds,
               role: "assistant",
+              scopeVersion: input.scopeVersion,
               sessionId: input.sessionId,
-              trace: input.assistantTrace,
+              trace: input.assistantTrace as unknown as Prisma.InputJsonValue,
               workspaceId: input.context.workspaceId,
             },
           });
@@ -147,20 +252,35 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
                 assistantMessageId: assistantRecord.id,
                 chatSessionId: input.sessionId,
                 finalEvidenceStatus: input.knowledgeGap.finalEvidenceStatus,
-                knowledgeBundleId: sessionRecord.knowledgeBundleId,
+                primaryKnowledgeBundleId: input.primaryKnowledgeBundleId,
                 question: input.knowledgeGap.question,
                 reason: input.knowledgeGap.reason,
                 retrievalQuery: input.knowledgeGap.retrievalQuery,
                 route: input.knowledgeGap.route,
                 searchedSources: input.knowledgeGap.searchedSources,
+                searchedKnowledgeBundleIds: input.knowledgeBundleIds,
                 workspaceId: input.context.workspaceId,
               },
             });
           }
-          await tx.chatSession.update({
-            data: { updatedAt: new Date() },
-            where: { id: input.sessionId },
+          const updatedAt = new Date();
+          const titleUpdate = await tx.chatSession.updateMany({
+            data: {
+              title: deriveChatSessionTitle(input.content),
+              updatedAt,
+            },
+            where: {
+              id: input.sessionId,
+              title: DEFAULT_CHAT_TITLE,
+              workspaceId: input.context.workspaceId,
+            },
           });
+          if (titleUpdate.count === 0) {
+            await tx.chatSession.update({
+              data: { updatedAt },
+              where: { id: input.sessionId },
+            });
+          }
 
           return [userRecord, assistantRecord];
         },
@@ -175,10 +295,24 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 }
 
 function mapChatSession(record: DbChatSessionRecord): ChatSession {
+  const knowledgeBundles = [...(record.knowledgeBundles ?? [])]
+    .sort((left, right) => left.position - right.position)
+    .map((selection) => ({
+      id: selection.knowledgeBundle.id,
+      name: selection.knowledgeBundle.name,
+      position: selection.position,
+    }));
+
   return {
     createdAt: record.createdAt.toISOString(),
     id: record.id,
-    knowledgeBundleId: record.knowledgeBundleId ?? "kb_general_local",
+    knowledgeBundles,
+    primaryKnowledgeBundleId:
+      record.primaryKnowledgeBundleId ??
+      record.knowledgeBundleId ??
+      knowledgeBundles[0]?.id ??
+      null,
+    scopeVersion: record.scopeVersion ?? 1,
     title: record.title,
     updatedAt: record.updatedAt.toISOString(),
     userId: record.userId,
@@ -192,7 +326,9 @@ function mapChatMessage(record: DbChatMessageRecord): ChatMessage {
     content: record.content,
     createdAt: record.createdAt.toISOString(),
     id: record.id,
+    knowledgeBundleIds: record.knowledgeBundleIds ?? [],
     role: record.role === "assistant" ? "assistant" : "user",
+    scopeVersion: record.scopeVersion ?? 1,
     sessionId: record.sessionId,
     trace: normalizeTrace(record.trace),
   };
@@ -203,7 +339,19 @@ function normalizeCitations(value: unknown): ChatCitation[] {
     return [];
   }
 
-  return value.filter(isChatCitation);
+  return value.filter(isChatCitation).map((citation) =>
+    citation.sourceType === "okf" &&
+    typeof citation.text === "string" &&
+    typeof citation.documentTitle === "string"
+      ? {
+          ...citation,
+          text: normalizeOkfCitationExcerpt({
+            text: citation.text,
+            title: citation.documentTitle,
+          }),
+        }
+      : citation,
+  );
 }
 
 function isChatCitation(value: unknown): value is ChatCitation {

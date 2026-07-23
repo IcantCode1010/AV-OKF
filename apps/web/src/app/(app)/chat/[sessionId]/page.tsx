@@ -8,7 +8,7 @@ import { ChatSidePanelContent } from "@/components/chat/chat-side-panel";
 import { Button } from "@/components/ui/button";
 import { getChatSessionWithMessages, isChatAvailable } from "@/lib/chat-backend";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
-import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
+import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -31,11 +31,11 @@ export default async function ChatSessionPage({
 
   const { session, messages } = result;
   const context = await requireAuthWorkspaceContext();
-  const bundle = await getKnowledgeBundle({
-    bundleId: session.knowledgeBundleId,
-    context,
-  });
-  if (!bundle) notFound();
+  const availableBundles = await listKnowledgeBundles(context);
+  const primaryBundle =
+    session.knowledgeBundles.find(
+      (bundle) => bundle.id === session.primaryKnowledgeBundleId,
+    ) ?? session.knowledgeBundles[0];
   const latestAssistantMessage =
     [...messages].reverse().find((message) => message.role === "assistant") ??
     null;
@@ -51,7 +51,12 @@ export default async function ChatSessionPage({
                 <span className="sr-only">Back to conversations</span>
               </Link>
             </Button>
-            <div className="min-w-0"><h1 className="truncate text-lg font-semibold">{session.title}</h1><Badge className="mt-1" variant="outline">{bundle.name}</Badge></div>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold">{session.title}</h1>
+              <Badge className="mt-1" variant="outline">
+                {primaryBundle?.name ?? "No knowledge source"}
+              </Badge>
+            </div>
           </div>
           <ChatSidePanelSheet>
             <ChatSidePanelContent
@@ -60,7 +65,15 @@ export default async function ChatSessionPage({
           </ChatSidePanelSheet>
         </div>
 
-        <ChatConversationPanel messages={messages} sessionId={session.id} />
+        <ChatConversationPanel
+          availableBundles={availableBundles.map((bundle) => ({
+            id: bundle.id,
+            name: bundle.name,
+          }))}
+          messages={messages}
+          selectedBundleIds={session.knowledgeBundles.map((bundle) => bundle.id)}
+          sessionId={session.id}
+        />
       </div>
 
       <aside className="hidden min-h-0 lg:block">

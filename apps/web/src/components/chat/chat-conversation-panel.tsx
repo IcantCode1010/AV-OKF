@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { sendChatMessageAction } from "@/app/(app)/chat/actions";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { ChatKnowledgeSourceSelector } from "@/components/chat/chat-knowledge-source-selector";
 import {
   ChatThread,
   type PendingChatMessage,
@@ -19,10 +20,14 @@ const STUCK_REPLY_RELOAD_MS = 10_000;
 const MINIMUM_PENDING_ANIMATION_MS = 900;
 
 export function ChatConversationPanel({
+  availableBundles,
   messages,
+  selectedBundleIds,
   sessionId,
 }: {
+  availableBundles: Array<{ id: string; name: string }>;
   messages: ChatMessage[];
+  selectedBundleIds: string[];
   sessionId: string;
 }) {
   const router = useRouter();
@@ -72,6 +77,12 @@ export function ChatConversationPanel({
 
   return (
     <>
+      <ChatKnowledgeSourceSelector
+        availableBundles={availableBundles}
+        disabled={isPending}
+        selectedBundleIds={selectedBundleIds}
+        sessionId={sessionId}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
         <div className="mx-auto min-h-full w-full max-w-5xl">
           <ChatThread
@@ -86,10 +97,15 @@ export function ChatConversationPanel({
       <div className="shrink-0 border-t border-border bg-background/95 p-3">
         <div className="mx-auto w-full max-w-5xl">
           <ChatComposer
-            isPending={isPending}
+            isPending={isPending || selectedBundleIds.length === 0}
             onSend={handleSend}
             sessionId={sessionId}
           />
+          {selectedBundleIds.length === 0 ? (
+            <p className="mt-2 text-xs text-amber-300">
+              Select a knowledge source to continue.
+            </p>
+          ) : null}
         </div>
       </div>
     </>

@@ -34,13 +34,13 @@ export default async function SettingsPage() {
   return (
     <>
       <div>
-        <Badge variant="secondary">Settings shell</Badge>
+        <Badge variant="secondary">Workspace settings</Badge>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight">
           Settings
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Mock workspace and profile settings. Real auth, roles, and tenant
-          controls are intentionally deferred.
+          Review workspace identity and configure the AI provider used across
+          assisted workflows.
         </p>
       </div>
 
@@ -56,7 +56,7 @@ export default async function SettingsPage() {
             <CardHeader>
               <CardTitle>Workspace</CardTitle>
               <CardDescription>
-                Modeled settings for the Stage 0 shell.
+                Current authenticated workspace.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -68,8 +68,6 @@ export default async function SettingsPage() {
                 <Label htmlFor="workspace-plan">Plan</Label>
                 <Input id="workspace-plan" value={workspace.plan} readOnly />
               </div>
-              <Separator />
-              <Button disabled>Save settings in later stage</Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -78,7 +76,7 @@ export default async function SettingsPage() {
             <CardHeader>
               <CardTitle>Profile</CardTitle>
               <CardDescription>
-                Mock identity used to exercise authenticated layouts.
+                Current signed-in workspace member.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
@@ -104,7 +102,9 @@ export default async function SettingsPage() {
                 <div>
                   <CardTitle>AI Enrichment</CardTitle>
                   <CardDescription>
-                    Store the workspace API key used by future topic enrichment.
+                    Store the workspace API key used for AI-assisted authoring,
+                    enrichment, relation verification, reranking, and chat
+                    answers.
                   </CardDescription>
                 </div>
                 <Badge variant={llmSetting.hasKey ? "secondary" : "outline"}>
@@ -205,7 +205,7 @@ export default async function SettingsPage() {
             <CardHeader>
               <CardTitle>Source policy</CardTitle>
               <CardDescription>
-                Placeholder controls for future document governance.
+                Source and review fields used across document workflows.
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-3">
@@ -217,7 +217,7 @@ export default async function SettingsPage() {
                 <div key={item} className="rounded-md border border-border p-4">
                   <p className="text-sm font-medium">{item}</p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    Configurable when ingestion and review workflows are added.
+                    Managed through document metadata and active bundle profiles.
                   </p>
                 </div>
               ))}

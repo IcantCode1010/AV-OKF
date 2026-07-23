@@ -22,8 +22,13 @@ import {
   getKnowledgeBundleByIdentity,
   resolveKnowledgeBundleRoot,
 } from "./knowledge-bundles.ts";
+import { readOkfBundleFile } from "./okf-bundle.ts";
 import { rerankRawRagCandidates, type RagRerankTrace } from "./rag-reranker.ts";
 import { getPrisma } from "./prisma.ts";
+import {
+  createAgentToolExecutor,
+  type AgentExecutionTrace,
+} from "./agent-tools.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
@@ -36,6 +41,8 @@ const EVIDENCE_EXCERPT_MAX_CHARS = 1500;
 // only to prompt the answer builder; never persisted or rendered.
 export type ChatRetrievalEvidence = {
   approvalProvenance?: "automated" | "human" | "legacy";
+  knowledgeBundleId?: string;
+  knowledgeBundleName?: string;
   documentTitle: string;
   index: number;
   okfEvidenceMode?: "direct" | "graph";
@@ -48,6 +55,7 @@ export type ChatRetrievalEvidence = {
 };
 
 export type ChatRetrievalResult = {
+  agentExecution?: AgentExecutionTrace;
   // True when approved OKF evidence was retrieved for this answer
   // (query-router.md trace field whether_approved_okf_was_available).
   approvedOkfAvailable: boolean;
@@ -65,6 +73,11 @@ export type ChatRetrievalResult = {
   retrievalToolsCalled: string[];
   searchSummary?: ChatSearchSummary;
   sourcesRead: string[];
+  crossBundleConflict?: {
+    detected: boolean;
+    bundleIds: string[];
+    conflictingValues: string[];
+  };
 };
 
 export type ChatSearchSummary = {
@@ -78,6 +91,7 @@ export type ChatRetrievalFn = (input: {
   clarificationAlreadyAsked?: boolean;
   includeSearchSummary?: boolean;
   knowledgeBundleId?: string;
+  knowledgeBundleIds?: string[];
   query: string;
   workspaceId: string;
 }) => Promise<ChatRetrievalResult>;
@@ -102,6 +116,18 @@ export type CoveredRagRetrievalFn = (input: {
   topK: number;
   workspaceId: string;
 }) => Promise<RetrievalResult[]>;
+
+export type ChatScopeBundle = {
+  description: string;
+  id: string;
+  indexContent: string;
+  name: string;
+};
+
+export type ChatScopeBundleResolver = (input: {
+  bundleIds: string[];
+  workspaceId: string;
+}) => Promise<ChatScopeBundle[]>;
 
 async function retrieveOkfBundleDiagnosticsWithLifecycle(input: {
   knowledgeBundleId?: string;
@@ -156,6 +182,7 @@ export async function runChatRetrieval(
     decision: ChatRouterDecision;
     includeSearchSummary?: boolean;
     knowledgeBundleId?: string;
+    knowledgeBundleIds?: string[];
     query: string;
     workspaceId: string;
   },
@@ -164,6 +191,177 @@ export async function runChatRetrieval(
   traverseGraph: OkfGraphTraversalFn = traverseOkfRelationsWithLifecycle,
   retrieveCoveredRag: CoveredRagRetrievalFn = retrieveDocumentsByChunkIds,
   rerank: typeof rerankRawRagCandidates = rerankRawRagCandidates,
+  resolveScopeBundles: ChatScopeBundleResolver = resolveActiveScopeBundles,
+): Promise<ChatRetrievalResult> {
+  // Preserve the direct single-bundle facade for existing callers and
+  // injected tests. Production multi-bundle chat supplies knowledgeBundleIds
+  // and takes the ranked live-registry path below.
+  if (
+    input.knowledgeBundleId &&
+    (!input.knowledgeBundleIds || input.knowledgeBundleIds.length === 0)
+  ) {
+    return runSingleBundleChatRetrieval(
+      { ...input, knowledgeBundleIds: undefined },
+      retrieve,
+      retrieveOkf,
+      traverseGraph,
+      retrieveCoveredRag,
+      rerank,
+    );
+  }
+
+  const bundleIds = normalizeBundleScope(input);
+  const activeBundles = await resolveScopeBundles({
+    bundleIds,
+    workspaceId: input.workspaceId,
+  });
+  const positions = new Map(bundleIds.map((bundleId, position) => [bundleId, position]));
+  const rankedBundles = activeBundles
+    .filter((bundle) => positions.has(bundle.id))
+    .map((bundle) => ({
+      bundle,
+      bundleId: bundle.id,
+      position: positions.get(bundle.id)!,
+      score: scoreBundleForQuery(
+        input.query,
+        `${bundle.name} ${bundle.description} ${bundle.indexContent}`,
+      ),
+    }))
+    .sort((left, right) => right.score - left.score || left.position - right.position);
+  const results: Array<{ bundleId: string; bundleName: string; result: ChatRetrievalResult }> =
+    [];
+
+  for (let index = 0; index < rankedBundles.length; index += 2) {
+    const batch = rankedBundles.slice(index, index + 2);
+    const batchResults = await Promise.all(
+      batch.map(async ({ bundle, bundleId }) => ({
+        bundleId,
+        bundleName: bundle.name,
+        result: await runSingleBundleChatRetrieval(
+          { ...input, knowledgeBundleId: bundleId, knowledgeBundleIds: undefined },
+          retrieve,
+          retrieveOkf,
+          traverseGraph,
+          retrieveCoveredRag,
+          rerank,
+        ),
+      })),
+    );
+    results.push(...batchResults);
+  }
+
+  if (results.length === 0) {
+    return emptyRetrievalResult(isRetrievalRoute(input.decision.route));
+  }
+  if (results.length === 1) {
+    return annotateBundleIdentity(results[0]!);
+  }
+  return mergeBundleRetrievalResults(results, input);
+}
+
+function scoreBundleForQuery(query: string, searchable: string): number {
+  const terms = query
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .split(/\s+/)
+    .filter((term) => term.length > 2);
+  const haystack = searchable.normalize("NFKC").toLowerCase();
+  return [...new Set(terms)].reduce(
+    (score, term) => score + (haystack.includes(term) ? 1 : 0),
+    0,
+  );
+}
+
+async function runSingleBundleChatRetrieval(
+  input: {
+    clarificationAlreadyAsked?: boolean;
+    decision: ChatRouterDecision;
+    includeSearchSummary?: boolean;
+    knowledgeBundleId?: string;
+    knowledgeBundleIds?: undefined;
+    query: string;
+    workspaceId: string;
+  },
+  retrieve: typeof retrieveDocuments,
+  retrieveOkf: OkfBundleRetrievalFn,
+  traverseGraph: OkfGraphTraversalFn,
+  retrieveCoveredRag: CoveredRagRetrievalFn,
+  rerank: typeof rerankRawRagCandidates,
+): Promise<ChatRetrievalResult> {
+  const bundleId = input.knowledgeBundleId ?? "kb_general_local";
+  const executor = createAgentToolExecutor({
+    bundleIds: [bundleId],
+    mode: "deterministic",
+    route: input.decision.route,
+    workspaceId: input.workspaceId,
+  });
+  const result = await runSingleBundleChatRetrievalCore(
+    input,
+    (toolInput) =>
+      executor.run({
+        bundleIds: [bundleId],
+        execute: async () => {
+          const data = await retrieve(toolInput);
+          return { data, resultCount: data.length };
+        },
+        input: {
+          query: toolInput.query,
+          sourceTypes: toolInput.filters?.sourceTypes ?? [],
+        },
+        tool: "searchRawRag",
+        allowRawRagFallback: input.decision.route === "okf_only",
+      }),
+    (toolInput) =>
+      executor.run({
+        bundleIds: [bundleId],
+        execute: async () => {
+          const data = await retrieveOkf(toolInput);
+          const normalized = normalizeOkfDiagnostics(data);
+          return { data, resultCount: normalized.qualifiedEvidence.length };
+        },
+        input: { query: toolInput.query },
+        tool: "searchOkf",
+      }),
+    (toolInput) =>
+      executor.run({
+        bundleIds: [bundleId],
+        execute: async () => {
+          const data = await traverseGraph(toolInput);
+          return { data, resultCount: data.concepts.length, warningCodes: data.warnings };
+        },
+        input: { maxHops: toolInput.maxHops, seedFiles: toolInput.seedFiles },
+        tool: "followOkfRelation",
+      }),
+    (toolInput) =>
+      executor.run({
+        bundleIds: [bundleId],
+        execute: async () => {
+          const data = await retrieveCoveredRag(toolInput);
+          return { data, resultCount: data.length };
+        },
+        input: { chunkIds: toolInput.chunkIds },
+        tool: "searchCoveredRag",
+      }),
+    rerank,
+  );
+  return { ...result, agentExecution: executor.trace() };
+}
+
+async function runSingleBundleChatRetrievalCore(
+  input: {
+    clarificationAlreadyAsked?: boolean;
+    decision: ChatRouterDecision;
+    includeSearchSummary?: boolean;
+    knowledgeBundleId?: string;
+    query: string;
+    workspaceId: string;
+  },
+  retrieve: typeof retrieveDocuments,
+  retrieveOkf: OkfBundleRetrievalFn,
+  traverseGraph: OkfGraphTraversalFn,
+  retrieveCoveredRag: CoveredRagRetrievalFn,
+  rerank: typeof rerankRawRagCandidates,
 ): Promise<ChatRetrievalResult> {
   const {
     clarificationAlreadyAsked = false,
@@ -270,6 +468,31 @@ export async function runChatRetrieval(
             discovery.trace,
             effectiveKnowledgeBundleId,
           );
+        }
+
+        const coveredChunkIds = uniqueChunkIds(okfResults);
+        if (coveredChunkIds.length > 0) {
+          const coveredRag = await retrieveCoveredRag({
+            chunkIds: coveredChunkIds,
+            knowledgeBundleId: effectiveKnowledgeBundleId,
+            topK: RAG_TOP_K,
+            workspaceId,
+          });
+
+          if (coveredRag.length > 0) {
+            return buildCombinedRetrievalResult(
+              okfResults,
+              coveredRag,
+              [...toolsForRoute, "okf_coverage_rag"],
+              {
+                approvedOkfAvailable: true,
+                ragUsedForDiscoveryOnly: false,
+              },
+              "direct",
+              undefined,
+              effectiveKnowledgeBundleId,
+            );
+          }
         }
 
         return buildOkfBundleRetrievalResult(
@@ -388,6 +611,312 @@ export async function runChatRetrieval(
       sourcesRead: [],
     };
   }
+}
+
+function normalizeBundleScope(input: {
+  knowledgeBundleId?: string;
+  knowledgeBundleIds?: string[];
+}): string[] {
+  const requested = input.knowledgeBundleIds?.length
+    ? input.knowledgeBundleIds
+    : [input.knowledgeBundleId ?? "kb_general_local"];
+  return [...new Set(requested.filter(Boolean))].slice(0, 10);
+}
+
+function emptyRetrievalResult(retrievalRoute: boolean): ChatRetrievalResult {
+  return {
+    approvedOkfAvailable: false,
+    citations: [],
+    evidence: [],
+    ragUsedForDiscoveryOnly: false,
+    retrievalError: retrievalRoute,
+    retrievalToolsCalled: [],
+    rerank: {
+      applied: false,
+      dropped: 0,
+      status: retrievalRoute ? "provider_failed" : "not_applicable",
+    },
+    sourcesRead: [],
+  };
+}
+
+function annotateBundleIdentity(input: {
+  bundleId: string;
+  bundleName: string;
+  result: ChatRetrievalResult;
+}): ChatRetrievalResult {
+  return {
+    ...input.result,
+    citations: input.result.citations.map((citation) => ({
+      ...citation,
+      knowledgeBundleId: citation.knowledgeBundleId ?? input.bundleId,
+      knowledgeBundleName: citation.knowledgeBundleName ?? input.bundleName,
+    })),
+    evidence: input.result.evidence.map((evidence) => ({
+      ...evidence,
+      knowledgeBundleId: evidence.knowledgeBundleId ?? input.bundleId,
+      knowledgeBundleName: evidence.knowledgeBundleName ?? input.bundleName,
+    })),
+  };
+}
+
+export function mergeBundleRetrievalResults(
+  inputs: Array<{ bundleId: string; bundleName: string; result: ChatRetrievalResult }>,
+  request: { decision: ChatRouterDecision },
+): ChatRetrievalResult {
+  const annotated = inputs.map(annotateBundleIdentity);
+  const pairs = annotated.flatMap((result, bundleIndex) =>
+    result.citations.map((citation) => ({
+      bundleIndex,
+      citation,
+      evidence:
+        result.evidence.find((candidate) => candidate.index === citation.index) ??
+        citationToEvidence(citation),
+    })),
+  );
+  const anyApproved = annotated.some((result) => result.approvedOkfAvailable);
+  const eligiblePairs =
+    request.decision.route === "okf_only" && anyApproved
+      ? pairs.filter(
+          (pair) =>
+            pair.citation.sourceType === "okf" ||
+            (pair.citation.coveredByOkfConceptIds?.length ?? 0) > 0,
+        )
+      : pairs;
+  eligiblePairs.sort(compareBundleEvidence);
+  const okfPairs = eligiblePairs
+    .filter((pair) => pair.citation.sourceType === "okf")
+    .slice(0, OKF_TOP_K);
+  const ragPairs = eligiblePairs
+    .filter((pair) => pair.citation.sourceType === "rag")
+    .slice(0, RAG_TOP_K);
+  const selectedPairs =
+    request.decision.route === "rag_only" ? ragPairs : [...okfPairs, ...ragPairs];
+  const citations = selectedPairs.map((pair, index) => ({
+    ...pair.citation,
+    index: index + 1,
+  }));
+  const evidence = selectedPairs.map((pair, index) => ({
+    ...pair.evidence,
+    index: index + 1,
+  }));
+  const crossBundleConflict = detectCrossBundleConflict(citations);
+  const executions = aggregateAgentCalls(
+    annotated.flatMap((result) => result.agentExecution?.calls ?? []),
+  );
+
+  return {
+    agentExecution: {
+      callLimit: 8,
+      calls: executions.map((call, index) => ({ ...call, sequence: index + 1 })),
+      mode: "deterministic",
+    },
+    approvedOkfAvailable: citations.some((citation) => citation.sourceType === "okf"),
+    citations,
+    crossBundleConflict,
+    evidence,
+    metadataClarification:
+      citations.length === 0
+        ? annotated.find((result) => result.metadataClarification)?.metadataClarification
+        : undefined,
+    okfEvidenceMode: annotated.some((result) => result.okfEvidenceMode === "graph")
+      ? "graph"
+      : annotated.some((result) => result.okfEvidenceMode)
+        ? "direct"
+        : undefined,
+    okfMatchMode: annotated.some((result) => result.okfMatchMode === "lexical")
+      ? "lexical"
+      : annotated.some((result) => result.okfMatchMode === "vector")
+        ? "vector"
+        : undefined,
+    ragUsedForDiscoveryOnly:
+      !anyApproved && citations.some((citation) => citation.sourceType === "rag"),
+    rerank:
+      annotated.find((result) => result.rerank.applied)?.rerank ??
+      annotated.find((result) => result.rerank.status !== "not_applicable")?.rerank ?? {
+        applied: false,
+        dropped: 0,
+        status: "not_applicable",
+      },
+    retrievalError: annotated.every((result) => result.retrievalError),
+    retrievalToolsCalled: [...new Set(annotated.flatMap((result) => result.retrievalToolsCalled))],
+    searchSummary: {
+      approvedKnowledgeMatches: annotated.reduce(
+        (sum, result) =>
+          sum + (result.searchSummary?.approvedKnowledgeMatches ?? result.evidence.filter(
+            (evidenceItem) => evidenceItem.sourceType === "okf",
+          ).length),
+        0,
+      ),
+      bundlesSearched: annotated.length,
+      indexedDocumentsSearched: annotated.reduce(
+        (sum, result) => sum + (result.searchSummary?.indexedDocumentsSearched ?? 0),
+        0,
+      ),
+    },
+    sourcesRead: [
+      ...new Set(
+        annotated.flatMap((result, index) =>
+          result.sourcesRead.map((source) => `${inputs[index]!.bundleName}: ${source}`),
+        ),
+      ),
+    ],
+  };
+}
+
+async function resolveActiveScopeBundles(input: {
+  bundleIds: string[];
+  workspaceId: string;
+}): Promise<ChatScopeBundle[]> {
+  const bundles = await Promise.all(
+    input.bundleIds.map(async (bundleId) => {
+      const bundle = await getKnowledgeBundleByIdentity({
+        bundleId,
+        workspaceId: input.workspaceId,
+      });
+      if (!bundle) return null;
+      let indexContent = "";
+      try {
+        indexContent = (
+          await readOkfBundleFile(
+            resolveKnowledgeBundleRoot({
+              bundleId,
+              workspaceId: input.workspaceId,
+            }),
+            "index.md",
+          )
+        ).content;
+      } catch {
+        // A missing index must not make an otherwise active selected bundle
+        // disappear from the user's explicit search scope.
+      }
+      return {
+        description: bundle.description,
+        id: bundle.id,
+        indexContent,
+        name: bundle.name,
+      };
+    }),
+  );
+  return bundles.filter((bundle): bundle is ChatScopeBundle => Boolean(bundle));
+}
+
+function aggregateAgentCalls(
+  calls: NonNullable<ChatRetrievalResult["agentExecution"]>["calls"],
+): NonNullable<ChatRetrievalResult["agentExecution"]>["calls"] {
+  const grouped = new Map<string, (typeof calls)[number]>();
+  for (const call of calls) {
+    const key = `${call.tool}:${call.status}`;
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, { ...call, bundleIds: [...call.bundleIds] });
+      continue;
+    }
+    current.bundleIds = [...new Set([...current.bundleIds, ...call.bundleIds])];
+    current.resultCount += call.resultCount;
+    current.warningCodes = [
+      ...new Set([...current.warningCodes, ...call.warningCodes]),
+    ];
+  }
+  return [...grouped.values()];
+}
+
+function compareBundleEvidence(
+  left: { bundleIndex: number; citation: ChatCitation },
+  right: { bundleIndex: number; citation: ChatCitation },
+): number {
+  const trust = (citation: ChatCitation) =>
+    citation.sourceType === "rag"
+      ? 3
+      : citation.approvalProvenance === "human"
+        ? 0
+        : citation.approvalProvenance === "automated"
+          ? 1
+          : 2;
+  return (
+    trust(left.citation) - trust(right.citation) ||
+    left.bundleIndex - right.bundleIndex ||
+    left.citation.index - right.citation.index
+  );
+}
+
+function citationToEvidence(citation: ChatCitation): ChatRetrievalEvidence {
+  return {
+    approvalProvenance: citation.approvalProvenance,
+    documentTitle: citation.documentTitle,
+    index: citation.index,
+    knowledgeBundleId: citation.knowledgeBundleId,
+    knowledgeBundleName: citation.knowledgeBundleName,
+    okfEvidenceMode: citation.okfEvidenceMode,
+    okfFilePath: citation.okfFilePath,
+    pageEnd: citation.pageEnd,
+    pageStart: citation.pageStart,
+    sourceFile: citation.sourceFile,
+    sourceType: citation.sourceType,
+    text: citation.text,
+  };
+}
+
+function detectCrossBundleConflict(citations: ChatCitation[]): {
+  detected: boolean;
+  bundleIds: string[];
+  conflictingValues: string[];
+} {
+  const okf = citations.filter(
+    (citation) => citation.sourceType === "okf" && citation.knowledgeBundleId,
+  );
+  const conflicts = new Set<string>();
+  const bundles = new Set<string>();
+  for (let leftIndex = 0; leftIndex < okf.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < okf.length; rightIndex += 1) {
+      const left = okf[leftIndex]!;
+      const right = okf[rightIndex]!;
+      if (left.knowledgeBundleId === right.knowledgeBundleId) continue;
+      if (sharedMeaningfulTerms(left.documentTitle, right.documentTitle) < 2) continue;
+      const leftValues = extractExactValues(left.text);
+      const rightValues = extractExactValues(right.text);
+      if (
+        leftValues.size > 0 &&
+        rightValues.size > 0 &&
+        !setsEqual(leftValues, rightValues)
+      ) {
+        leftValues.forEach((value) => conflicts.add(value));
+        rightValues.forEach((value) => conflicts.add(value));
+        bundles.add(left.knowledgeBundleId!);
+        bundles.add(right.knowledgeBundleId!);
+      }
+    }
+  }
+  return {
+    bundleIds: [...bundles].sort(),
+    conflictingValues: [...conflicts].sort(),
+    detected: conflicts.size > 0,
+  };
+}
+
+function sharedMeaningfulTerms(left: string, right: string): number {
+  const stopwords = new Set(["a", "an", "and", "for", "of", "or", "the", "to"]);
+  const tokenize = (value: string) =>
+    new Set(
+      value
+        .normalize("NFKC")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .split(/\s+/)
+        .filter((term) => term.length > 1 && !stopwords.has(term)),
+    );
+  const rightTerms = tokenize(right);
+  return [...tokenize(left)].filter((term) => rightTerms.has(term)).length;
+}
+
+function extractExactValues(value: string): Set<string> {
+  return new Set(
+    value.match(/\b\d{4}-\d{2}-\d{2}\b|\b\d+(?:\.\d+)?(?:%|[A-Za-z]+)?\b/g) ?? [],
+  );
+}
+
+function setsEqual(left: Set<string>, right: Set<string>): boolean {
+  return left.size === right.size && [...left].every((value) => right.has(value));
 }
 
 async function attachSearchSummary(
@@ -721,6 +1250,7 @@ export type RetrievalAnswerInput = Pick<
   ChatRetrievalResult,
   "citations" | "retrievalError"
 > & Partial<Pick<ChatRetrievalResult, "retrievalToolsCalled" | "searchSummary" | "sourcesRead">> & {
+  crossBundleConflict?: ChatRetrievalResult["crossBundleConflict"];
   ragUsedForDiscoveryOnly?: boolean;
 };
 

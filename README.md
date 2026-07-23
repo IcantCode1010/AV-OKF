@@ -83,7 +83,7 @@ Vercel AI SDK answer synthesis
 citations, evidence cards, traces, and deterministic evidence validation
 ```
 
-The next milestone is the bounded Stage 7 agent-tool layer. Insufficient-evidence completion, reviewer-visible knowledge gaps, authenticated source-PDF page links, OKF concept links, and historical citation lifecycle notices are implemented. Unrestricted model-driven tool loops remain deliberately deferred.
+Stages 7C and 7D now provide bounded read-only agent tools and user-controlled multi-bundle chat scope. Production chat still follows deterministic routing and mandatory evidence validation; model-directed tool choice is evaluation-only. Unrestricted or mutating agent loops remain deliberately deferred.
 
 ## Web App
 
@@ -105,7 +105,7 @@ Stage 3 adds manual topic generation from extracted page records. It does not ru
 
 ### OKF And Chat
 
-Approved topics export into the document's selected bundle under `knowledge/workspaces/{workspaceId}/bundles/{bundleId}`. Uploads and chats require one bundle, and retrieval, relations, lifecycle state, RAG search, and exports stay inside it. The live chat path reads current bundle files on every OKF query; raw RAG remains the unreviewed discovery layer.
+Approved topics export into the document's selected bundle under `knowledge/workspaces/{workspaceId}/bundles/{bundleId}`. Uploads start in one bundle; an active chat may search an ordered user-selected scope of one to ten active workspace bundles. OKF, graph, and raw-RAG retrieval cannot leave that per-turn snapshot, graph traversal remains bundle-local, and the live chat path reads current bundle files on every OKF query. Raw RAG remains the labeled unreviewed discovery layer.
 
 Generic OKF requires only `type`; `title`, `description`, `tags`, and `updated` are optional interoperable fields. Agent trust is a separate gate requiring active lifecycle, approval, usable content, and source-file/page provenance. Aviation and custom profiles extend the generic contract without changing its base semantics.
 

@@ -104,6 +104,70 @@ test("okf_only route reads approved OKF bundle evidence and calls okf_retrieval"
   assert.deepEqual(result.sourcesRead, ["GEN OFF BUS (737NG QRH p. 12)"]);
 });
 
+test("direct OKF matches include only coverage-linked raw RAG as supporting evidence", async () => {
+  const decision = routeChatQuestion("What is the official GEN OFF BUS procedure?");
+  assert.equal(decision.route, "okf_only");
+  let openRagCalled = false;
+
+  const result = await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleId: "kb_general",
+      query: "GEN OFF BUS",
+      workspaceId: "wrk_1",
+    },
+    async () => {
+      openRagCalled = true;
+      return [];
+    },
+    async () => [
+      makeOkfEvidence({
+        coveredRagChunkIds: ["chunk_covered"],
+      }),
+    ],
+    undefined,
+    async (request) => {
+      assert.deepEqual(request, {
+        chunkIds: ["chunk_covered"],
+        knowledgeBundleId: "kb_general",
+        topK: 6,
+        workspaceId: "wrk_1",
+      });
+      return [
+        makeResult({
+          chunkId: "chunk_covered",
+          coveredByOkfConceptIds: ["topic_gen_off_bus"],
+          text: "The source manual gives the GEN OFF BUS procedure.",
+        }),
+      ];
+    },
+  );
+
+  assert.equal(openRagCalled, false);
+  assert.equal(result.approvedOkfAvailable, true);
+  assert.equal(result.ragUsedForDiscoveryOnly, false);
+  assert.deepEqual(result.retrievalToolsCalled, [
+    "okf_retrieval",
+    "okf_coverage_rag",
+  ]);
+  assert.deepEqual(
+    result.citations.map((citation) => citation.sourceType),
+    ["okf", "rag"],
+  );
+  assert.deepEqual(result.citations[1]?.coveredByOkfConceptIds, [
+    "topic_gen_off_bus",
+  ]);
+
+  const profile = buildAnswerEvidenceProfile({
+    citations: result.citations,
+    trace: {
+      ragUsedForDiscoveryOnly: result.ragUsedForDiscoveryOnly,
+      route: decision.route,
+    },
+  });
+  assert.equal(profile.evidenceKind, "mixed");
+});
+
 test("graph questions traverse approved OKF relations and label graph evidence", async () => {
   const decision = routeChatQuestion(
     "How does the brake control unit affect alternate braking?",
@@ -489,6 +553,11 @@ test("missing_context and unsupported routes never call retrieve", async () => {
   );
 
   assert.deepEqual(missingContextResult, {
+    agentExecution: {
+      callLimit: 8,
+      calls: [],
+      mode: "deterministic",
+    },
     approvedOkfAvailable: false,
     citations: [],
     evidence: [],
@@ -499,6 +568,11 @@ test("missing_context and unsupported routes never call retrieve", async () => {
     sourcesRead: [],
   });
   assert.deepEqual(unsupportedResult, {
+    agentExecution: {
+      callLimit: 8,
+      calls: [],
+      mode: "deterministic",
+    },
     approvedOkfAvailable: false,
     citations: [],
     evidence: [],
@@ -523,6 +597,20 @@ test("a retrieval failure degrades to an error result instead of throwing", asyn
   );
 
   assert.deepEqual(result, {
+    agentExecution: {
+      callLimit: 8,
+      calls: [{
+        bundleIds: ["kb_general_local"],
+        errorCode: "malformed_okf_bundle",
+        input: { query: "GEN OFF BUS" },
+        resultCount: 0,
+        sequence: 1,
+        status: "failed",
+        tool: "searchOkf",
+        warningCodes: [],
+      }],
+      mode: "deterministic",
+    },
     approvedOkfAvailable: false,
     citations: [],
     evidence: [],
@@ -630,6 +718,20 @@ test("a hybrid-route OKF failure degrades to an error result with no partial cit
   );
 
   assert.deepEqual(result, {
+    agentExecution: {
+      callLimit: 8,
+      calls: [{
+        bundleIds: ["kb_general_local"],
+        errorCode: "malformed_okf_bundle",
+        input: { query: "policy examples" },
+        resultCount: 0,
+        sequence: 1,
+        status: "failed",
+        tool: "searchOkf",
+        warningCodes: [],
+      }],
+      mode: "deterministic",
+    },
     approvedOkfAvailable: false,
     citations: [],
     evidence: [],
@@ -696,4 +798,212 @@ test("hybrid discovery-only answers read as unreviewed, not official", () => {
 
   assert.match(discoveryAnswer, /no reviewed answer exists for this yet/i);
   assert.doesNotMatch(discoveryAnswer, /approved knowledge/i);
+});
+
+test("multi-bundle retrieval searches only the selected active scope and applies global limits", async () => {
+  const decision = routeChatQuestion("What is the official procedure?");
+  assert.equal(decision.route, "okf_only");
+  const resolvedScopes: string[][] = [];
+  const searchedBundles: string[] = [];
+
+  const result = await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleIds: ["bundle-a", "bundle-b"],
+      query: "official procedure",
+      workspaceId: "wrk_1",
+    },
+    async () => [],
+    async ({ knowledgeBundleId }) => {
+      searchedBundles.push(knowledgeBundleId!);
+      return Array.from({ length: 3 }, (_, index) =>
+        makeOkfEvidence({
+          approvalProvenance: "human",
+          filePath: `${knowledgeBundleId}/procedure-${index}.md`,
+          title: `${knowledgeBundleId} Procedure ${index}`,
+        }),
+      );
+    },
+    async () => ({ concepts: [], edges: [], warnings: [] }),
+    async () => [],
+    async ({ candidates }) => ({
+      results: candidates,
+      trace: { applied: false, dropped: 0, status: "not_applicable" },
+    }),
+    async ({ bundleIds }) => {
+      resolvedScopes.push(bundleIds);
+      return [
+        {
+          description: "Primary procedures",
+          id: "bundle-a",
+          indexContent: "",
+          name: "Alpha",
+        },
+        {
+          description: "Supporting regulations",
+          id: "bundle-b",
+          indexContent: "",
+          name: "Bravo",
+        },
+      ];
+    },
+  );
+
+  assert.deepEqual(resolvedScopes, [["bundle-a", "bundle-b"]]);
+  assert.deepEqual(new Set(searchedBundles), new Set(["bundle-a", "bundle-b"]));
+  assert.equal(result.citations.length, 4);
+  assert.ok(
+    result.citations.every((citation) =>
+      ["bundle-a", "bundle-b"].includes(citation.knowledgeBundleId ?? ""),
+    ),
+  );
+  assert.equal(result.searchSummary?.bundlesSearched, 2);
+});
+
+test("multi-bundle graph traversal never crosses the originating bundle", async () => {
+  const decision = routeChatQuestion(
+    "How does the brake control unit affect alternate braking?",
+  );
+  assert.equal(decision.requiresGraphTraversal, true);
+  const traversals: Array<{ bundleId?: string; seedFiles: string[] }> = [];
+
+  await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleIds: ["bundle-a", "bundle-b"],
+      query: "brake control alternate braking",
+      workspaceId: "wrk_1",
+    },
+    async () => [],
+    async ({ knowledgeBundleId }) => [
+      makeOkfEvidence({
+        filePath: `${knowledgeBundleId}-seed.md`,
+        title: `${knowledgeBundleId} Brake Control`,
+      }),
+    ],
+    async ({ knowledgeBundleId, seedFiles }) => {
+      traversals.push({ bundleId: knowledgeBundleId, seedFiles });
+      return { concepts: [], edges: [], warnings: [] };
+    },
+    async () => [],
+    async ({ candidates }) => ({
+      results: candidates,
+      trace: { applied: false, dropped: 0, status: "not_applicable" },
+    }),
+    async ({ bundleIds }) =>
+      bundleIds.map((id) => ({
+        description: "",
+        id,
+        indexContent: "",
+        name: id,
+      })),
+  );
+
+  assert.deepEqual(traversals, [
+    { bundleId: "bundle-a", seedFiles: ["bundle-a-seed.md"] },
+    { bundleId: "bundle-b", seedFiles: ["bundle-b-seed.md"] },
+  ]);
+});
+
+test("multi-bundle OKF retrieval keeps linked RAG support and drops unrelated fallback RAG", async () => {
+  const decision = routeChatQuestion("What is the official procedure?");
+  const result = await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleIds: ["bundle-a", "bundle-b"],
+      query: "official procedure",
+      workspaceId: "wrk_1",
+    },
+    async ({ knowledgeBundleId }) => [
+      makeResult({
+        chunkId: `${knowledgeBundleId}-unlinked`,
+        coveredByOkfConceptIds: [],
+      }),
+    ],
+    async ({ knowledgeBundleId }) =>
+      knowledgeBundleId === "bundle-a"
+        ? [
+            makeOkfEvidence({
+              coveredRagChunkIds: ["bundle-a-linked"],
+              filePath: "bundle-a-procedure.md",
+            }),
+          ]
+        : [],
+    async () => ({ concepts: [], edges: [], warnings: [] }),
+    async ({ chunkIds, knowledgeBundleId }) =>
+      chunkIds.map((chunkId) =>
+        makeResult({
+          chunkId,
+          coveredByOkfConceptIds: [`${knowledgeBundleId}-topic`],
+        }),
+      ),
+    async ({ candidates }) => ({
+      results: candidates,
+      trace: { applied: false, dropped: 0, status: "not_applicable" },
+    }),
+    async ({ bundleIds }) =>
+      bundleIds.map((id) => ({
+        description: "",
+        id,
+        indexContent: "",
+        name: id,
+      })),
+  );
+
+  assert.deepEqual(
+    result.citations.map((citation) => citation.sourceType),
+    ["okf", "rag"],
+  );
+  assert.equal(result.citations[1]?.coveredByOkfConceptIds?.length, 1);
+  assert.equal(
+    result.citations.some((citation) =>
+      citation.coveredByOkfConceptIds?.includes("bundle-b-topic"),
+    ),
+    false,
+  );
+  assert.equal(result.ragUsedForDiscoveryOnly, false);
+});
+
+test("conflicting exact values from selected approved bundles are surfaced", async () => {
+  const decision = routeChatQuestion("What is the official pressure limit?");
+  const result = await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleIds: ["bundle-a", "bundle-b"],
+      query: "official pressure limit",
+      workspaceId: "wrk_1",
+    },
+    async () => [],
+    async ({ knowledgeBundleId }) => [
+      makeOkfEvidence({
+        approvalProvenance: "human",
+        excerpt:
+          knowledgeBundleId === "bundle-a"
+            ? "Hydraulic pressure limit is 3000 PSI."
+            : "Hydraulic pressure limit is 3200 PSI.",
+        filePath: `${knowledgeBundleId}-pressure.md`,
+        title: "Hydraulic Pressure Limit",
+      }),
+    ],
+    async () => ({ concepts: [], edges: [], warnings: [] }),
+    async () => [],
+    async ({ candidates }) => ({
+      results: candidates,
+      trace: { applied: false, dropped: 0, status: "not_applicable" },
+    }),
+    async ({ bundleIds }) =>
+      bundleIds.map((id) => ({
+        description: "",
+        id,
+        indexContent: "",
+        name: id,
+      })),
+  );
+
+  assert.equal(result.crossBundleConflict?.detected, true);
+  assert.deepEqual(result.crossBundleConflict?.bundleIds, ["bundle-a", "bundle-b"]);
+  assert.deepEqual(result.crossBundleConflict?.conflictingValues, [
+    "3000",
+    "3200",
+  ]);
 });

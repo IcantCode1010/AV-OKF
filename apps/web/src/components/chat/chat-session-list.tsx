@@ -25,7 +25,10 @@ export function ChatSessionList({ sessions }: { sessions: ChatSession[] }) {
         >
           <p className="font-medium">{session.title}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Updated {formatTimestamp(session.updatedAt)}
+            {session.knowledgeBundles.length > 0
+              ? session.knowledgeBundles.map((bundle) => bundle.name).join(", ")
+              : "No knowledge source"}{" "}
+            | Updated {formatTimestamp(session.updatedAt)}
           </p>
         </Link>
       ))}

@@ -87,6 +87,27 @@ export function buildOkfArticleReaderContent(input: {
   };
 }
 
+export function normalizeOkfCitationExcerpt(input: {
+  text: string;
+  title: string;
+}) {
+  const escapedTitle = escapeRegExp(input.title.normalize("NFKC").trim());
+  let text = input.text.normalize("NFKC").replace(/\r\n?/g, "\n");
+
+  text = text.replace(/\s+#{2,6}\s+Source(?:\s|$).*$/iu, "");
+  if (escapedTitle) {
+    text = text.replace(
+      new RegExp(`(?:^|\\s)#{1,6}\\s+${escapedTitle}(?=\\s|$)`, "giu"),
+      " ",
+    );
+  }
+
+  return text
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getFirstProseParagraph(body: string) {
   const blocks = body.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
   for (const block of blocks) {
@@ -102,4 +123,8 @@ function getFirstProseParagraph(body: string) {
     return block;
   }
   return "";
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

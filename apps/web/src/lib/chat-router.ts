@@ -100,6 +100,17 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerModel?: string;
   answerProvider?: string;
   answerOutcome?: "answered" | "insufficient_evidence" | "retrieval_unavailable";
+  agentExecution?: import("./agent-tools.ts").AgentExecutionTrace;
+  bundleScope?: {
+    bundleIds: string[];
+    bundleNames: string[];
+    scopeVersion: number;
+  };
+  crossBundleConflict?: {
+    detected: boolean;
+    bundleIds: string[];
+    conflictingValues: string[];
+  };
   queryUnderstanding?: ChatQueryUnderstandingTrace;
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";

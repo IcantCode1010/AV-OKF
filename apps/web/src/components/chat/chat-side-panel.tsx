@@ -41,6 +41,11 @@ export function ChatSidePanelContent({
                 <Badge variant="secondary" className="mt-1.5">
                   {citation.sourceType === "okf" ? "OKF topic" : "raw extraction"}
                 </Badge>
+                {citation.knowledgeBundleName ? (
+                  <div className="mt-1 text-muted-foreground">
+                    {citation.knowledgeBundleName}
+                  </div>
+                ) : null}
                 {citation.lifecycleNotice ? (
                   <div className="mt-2 text-amber-300">{citation.lifecycleNotice}</div>
                 ) : null}
@@ -130,6 +135,43 @@ export function ChatSidePanelContent({
                     : "None for this route"
                 }
               />
+              {trace.bundleScope ? (
+                <TraceRow
+                  label="Knowledge scope"
+                  value={`${trace.bundleScope.bundleNames.join(", ")} (scope v${trace.bundleScope.scopeVersion})`}
+                />
+              ) : null}
+              {trace.crossBundleConflict?.detected ? (
+                <div className="border-l-2 border-amber-400 pl-2 text-xs text-amber-200">
+                  Conflicting exact values were found across{" "}
+                  {trace.crossBundleConflict.bundleIds.length} selected bundles.
+                  The answer must present them separately.
+                </div>
+              ) : null}
+              {trace.agentExecution?.calls.length ? (
+                <div className="space-y-2">
+                  <div className="text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
+                    Agent tool execution
+                  </div>
+                  {trace.agentExecution.calls.map((call) => (
+                    <div
+                      className="border-l-2 border-border pl-2 text-xs"
+                      key={`${call.sequence}-${call.tool}`}
+                    >
+                      <div className="font-medium">
+                        {call.sequence}. {call.tool}
+                      </div>
+                      <div className="text-muted-foreground">
+                        {formatLabel(call.status)} | {call.resultCount} result
+                        {call.resultCount === 1 ? "" : "s"}
+                      </div>
+                      {call.errorCode ? (
+                        <div className="text-destructive">{call.errorCode}</div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {trace.sourcesRead.length > 0 ? (
                 <TraceRow label="Sources read" value={trace.sourcesRead.join(", ")} />
               ) : null}

@@ -106,6 +106,7 @@ export async function generateChatAnswer(
   const provider = getLlmProvider(key.provider);
   const callProvider = options.callProvider ?? callChatAnswerProvider;
   const prompt = buildChatAnswerPrompt({
+    crossBundleConflict: input.retrieval.crossBundleConflict,
     evidence: input.evidence,
     query: input.query,
     ragDiscovery: input.retrieval.ragUsedForDiscoveryOnly === true,
@@ -157,6 +158,11 @@ export async function generateChatAnswer(
 }
 
 export function buildChatAnswerPrompt(input: {
+  crossBundleConflict?: {
+    detected: boolean;
+    bundleIds: string[];
+    conflictingValues: string[];
+  };
   evidence: ChatRetrievalEvidence[];
   query: string;
   ragDiscovery?: boolean;
@@ -170,7 +176,10 @@ export function buildChatAnswerPrompt(input: {
     const sourceLabel =
       item.sourceType === "okf" ? "approved knowledge" : "raw document text";
 
-    return `[${item.index}] ${item.documentTitle} (${pages}, ${sourceLabel})\n${item.text}`;
+    const bundle = item.knowledgeBundleName
+      ? `, bundle: ${item.knowledgeBundleName}`
+      : "";
+    return `[${item.index}] ${item.documentTitle} (${pages}, ${sourceLabel}${bundle})\n${item.text}`;
   });
 
   return [
@@ -182,6 +191,11 @@ export function buildChatAnswerPrompt(input: {
     "- Never cite a number that is not in the evidence list.",
     "- Preserve exact names, dates, versions, citations, identifiers, values, limits, and source wording from the evidence.",
     "- Be concise: a short direct answer first, then supporting detail only if needed.",
+    ...(input.crossBundleConflict?.detected
+      ? [
+          "- Approved sources from different bundles contain conflicting exact values. Present each bundle's position separately and do not choose or merge a value.",
+        ]
+      : []),
     '- If the evidence does not directly answer the question, return {"answer": "", "supported": false}.',
     'Return strict JSON: {"answer": string, "supported": boolean}',
     'Example: {"answer": "The refund window is 14 days [1]. Requests are handled by support [2].", "supported": true}',

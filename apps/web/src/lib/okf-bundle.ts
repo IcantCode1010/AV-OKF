@@ -50,7 +50,7 @@ export async function listOkfBundleFiles(
         readFile(filePath, "utf8"),
         stat(filePath),
       ]);
-      const frontmatter = parseOkfFrontmatter(content);
+      const frontmatter = parseOkfFrontmatter(content, filename);
       return {
         filename,
         group: getBundleFileGroup(filename, frontmatter.type),
@@ -105,7 +105,7 @@ export async function readOkfBundleFile(
 
   const content = await readFile(target, "utf8");
   const filenameInBundle = path.relative(root, target).replaceAll(path.sep, "/");
-  const frontmatter = parseOkfFrontmatter(content);
+  const frontmatter = parseOkfFrontmatter(content, filenameInBundle);
 
   return {
     content,
@@ -224,12 +224,25 @@ function isReservedBundleFile(filename: string) {
   return ["index.md", "log.md", "source_manifest.md"].includes(filename);
 }
 
-function parseOkfFrontmatter(content: string) {
+function parseOkfFrontmatter(content: string, filename: string) {
   const { frontmatter } = parseOkfMarkdown(content);
 
   return {
     reviewStatus: getFrontmatterScalar(frontmatter, "review_status") ?? "unknown",
-    title: getFrontmatterScalar(frontmatter, "title") ?? "Untitled",
+    title:
+      getFrontmatterScalar(frontmatter, "title") ??
+      getReservedFileTitle(filename) ??
+      "Untitled",
     type: getFrontmatterScalar(frontmatter, "type") ?? "unknown",
   };
+}
+
+function getReservedFileTitle(filename: string) {
+  const titles: Record<string, string> = {
+    "index.md": "Bundle Index",
+    "log.md": "Activity Log",
+    "source_manifest.md": "Source Manifest",
+  };
+
+  return titles[filename];
 }

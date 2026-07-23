@@ -180,7 +180,8 @@ model KnowledgeBundle {
   topics                 TopicRecord[]
   lifecycles             OkfConceptLifecycle[]
   coverageLinks          OkfConceptChunkLink[]
-  chatSessions           ChatSession[]
+  primaryChatSessions    ChatSession[]                    @relation("PrimaryChatBundle")
+  chatSessionSelections  ChatSessionKnowledgeBundle[]
   relationCandidates     OkfRelationCandidate[]
   relationDiscoveryRuns  OkfRelationDiscoveryRun[]
   authoringRuns          KnowledgeAuthoringRun[]
@@ -810,56 +811,75 @@ model ActivityEvent {
 }
 
 model ChatSession {
-  id                String          @id @default(cuid())
-  workspaceId       String
-  knowledgeBundleId String
-  userId            String
-  title             String          @default("New chat")
-  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  messages          ChatMessage[]
-  knowledgeGaps     KnowledgeGap[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id                       String                       @id @default(cuid())
+  workspaceId              String
+  primaryKnowledgeBundleId String?                      @map("knowledgeBundleId")
+  userId                   String
+  title                    String                       @default("New chat")
+  scopeVersion             Int                          @default(1)
+  workspace                Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  primaryKnowledgeBundle   KnowledgeBundle?             @relation("PrimaryChatBundle", fields: [primaryKnowledgeBundleId], references: [id], onDelete: SetNull)
+  knowledgeBundles         ChatSessionKnowledgeBundle[]
+  messages                 ChatMessage[]
+  knowledgeGaps            KnowledgeGap[]
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
 
   @@index([workspaceId, updatedAt])
-  @@index([knowledgeBundleId, updatedAt])
+  @@index([primaryKnowledgeBundleId, updatedAt])
+}
+
+model ChatSessionKnowledgeBundle {
+  sessionId         String
+  knowledgeBundleId String
+  position          Int
+  selectedBy        String
+  selectedAt        DateTime        @default(now())
+  session           ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, knowledgeBundleId])
+  @@unique([sessionId, position])
+  @@index([knowledgeBundleId, sessionId])
 }
 
 model ChatMessage {
-  id           String        @id @default(cuid())
-  workspaceId  String
-  sessionId    String
-  role         String
-  content      String        @db.Text
-  citations    Json          @default("[]")
-  trace        Json?
-  session      ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  knowledgeGap KnowledgeGap?
-  createdAt    DateTime      @default(now())
+  id                 String        @id @default(cuid())
+  workspaceId        String
+  sessionId          String
+  role               String
+  content            String        @db.Text
+  citations          Json          @default("[]")
+  trace              Json?
+  knowledgeBundleIds String[]      @default([])
+  scopeVersion       Int           @default(1)
+  session            ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  knowledgeGap       KnowledgeGap?
+  createdAt          DateTime      @default(now())
 
   @@index([workspaceId, sessionId, createdAt])
 }
 
 model KnowledgeGap {
-  id                  String          @id @default(cuid())
-  workspaceId         String
-  knowledgeBundleId   String
-  chatSessionId       String
-  assistantMessageId  String          @unique
-  question            String          @db.Text
-  retrievalQuery      String          @db.Text
-  route               String
-  finalEvidenceStatus String          @default("no_evidence")
-  reason              String          @db.Text
-  searchedSources     String[]
-  status              String          @default("open")
-  workspace           Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle     KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  chatSession         ChatSession     @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
-  assistantMessage    ChatMessage     @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  id                         String           @id @default(cuid())
+  workspaceId                String
+  primaryKnowledgeBundleId   String?          @map("knowledgeBundleId")
+  searchedKnowledgeBundleIds String[]         @default([])
+  chatSessionId              String
+  assistantMessageId         String           @unique
+  question                   String           @db.Text
+  retrievalQuery             String           @db.Text
+  route                      String
+  finalEvidenceStatus        String           @default("no_evidence")
+  reason                     String           @db.Text
+  searchedSources            String[]
+  status                     String           @default("open")
+  workspace                  Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  primaryKnowledgeBundle     KnowledgeBundle? @relation(fields: [primaryKnowledgeBundleId], references: [id], onDelete: SetNull)
+  chatSession                ChatSession      @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  assistantMessage           ChatMessage      @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
 
-  @@index([workspaceId, knowledgeBundleId, status, createdAt])
+  @@index([workspaceId, primaryKnowledgeBundleId, status, createdAt])
 }

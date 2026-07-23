@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Database, Layers3, Trash2 } from "lucide-react";
+import { ArrowLeft, Database, Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { KnowledgeExplorer } from "@/components/knowledge-explorer/knowledge-explorer";
@@ -80,7 +80,7 @@ export default async function KnowledgeBundlePage({
               <h1 className="mt-3 text-2xl font-semibold">{bundle.name}</h1>
               <p className="mt-1 text-sm text-muted-foreground">{bundle.description}</p>
             </div>
-            <div className="flex flex-wrap gap-2"><Button asChild size="sm"><Link href={`/knowledge/${bundle.id}/review`}><Layers3 className="size-4" />Review and export topics</Link></Button><Badge variant="outline">{snapshot.files.length} files</Badge><Badge variant="outline">{snapshot.nodes.length} concepts</Badge><Badge variant="outline">{snapshot.edges.length} relations</Badge></div>
+            <div className="flex flex-wrap gap-2"><Badge variant="outline">{snapshot.files.length} files</Badge><Badge variant="outline">{snapshot.nodes.length} concepts</Badge><Badge variant="outline">{snapshot.edges.length} relations</Badge></div>
           </div>
         </header>
 

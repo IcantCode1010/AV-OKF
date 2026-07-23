@@ -7,8 +7,6 @@ import {
   BarChart3,
   Bell,
   BookOpenCheck,
-  Database,
-  FileSearch,
   Files,
   MessageSquare,
   Menu,
@@ -44,11 +42,6 @@ const navigation = [
   { href: "/search", label: "Search", icon: Search },
   { href: "/knowledge", label: "Knowledge", icon: BookOpenCheck },
   { href: "/settings", label: "Settings", icon: Settings },
-];
-
-const futureNavigation = [
-  { label: "Extraction", icon: FileSearch },
-  { label: "Retrieval", icon: Database },
 ];
 
 export function AppShell({
@@ -122,24 +115,12 @@ function SidebarContent({ workspace }: { workspace: Workspace }) {
             </Link>
           );
         })}
-        <div className="mt-6 px-3 text-xs font-medium uppercase text-muted-foreground">
-          Later stages
-        </div>
-        {futureNavigation.map((item) => (
-          <div
-            key={item.label}
-            className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground/70"
-          >
-            <item.icon className="h-4 w-4" />
-            {item.label}
-          </div>
-        ))}
       </nav>
       <div className="border-t border-border/70 p-4">
         <div className="rounded-md border border-border bg-background/60 p-3">
           <p className="text-sm font-medium">{workspace.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {workspace.memberCount} members - Mock workspace
+            {workspace.memberCount} {workspace.memberCount === 1 ? "member" : "members"}
           </p>
         </div>
       </div>
@@ -173,7 +154,7 @@ function TopBar({ user, workspace }: { user: User; workspace: Workspace }) {
             disabled
             suppressHydrationWarning
             className="h-9 bg-card/50 pl-9"
-            placeholder="Search documents, tags, or future topics"
+            placeholder="Search documents, topics, and tags"
           />
         </div>
         <Button suppressHydrationWarning variant="ghost" size="icon">
@@ -197,7 +178,7 @@ function TopBar({ user, workspace }: { user: User; workspace: Workspace }) {
               </span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Mock profile</DropdownMenuItem>
+            <DropdownMenuItem>Profile</DropdownMenuItem>
             <DropdownMenuItem>Workspace access</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

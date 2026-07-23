@@ -284,7 +284,14 @@ try {
 
   const session = await db.chatSession.create({
     data: {
-      knowledgeBundleId: bundle.id,
+      knowledgeBundles: {
+        create: {
+          knowledgeBundleId: bundle.id,
+          position: 0,
+          selectedBy: userId,
+        },
+      },
+      primaryKnowledgeBundleId: bundle.id,
       title: "Deletion citation fixture",
       userId,
       workspaceId,
@@ -311,7 +318,8 @@ try {
       assistantMessageId: assistantMessage.id,
       chatSessionId: session.id,
       finalEvidenceStatus: "related_evidence_only",
-      knowledgeBundleId: bundle.id,
+      primaryKnowledgeBundleId: bundle.id,
+      searchedKnowledgeBundleIds: [bundle.id],
       question: "Disposable question",
       reason: "Fixture gap",
       retrievalQuery: "disposable",

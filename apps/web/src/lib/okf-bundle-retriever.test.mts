@@ -45,6 +45,44 @@ test("approved system_topic returns normalized OKF evidence", async () => {
   }
 });
 
+test("approved evidence removes repeated article framing and exact description duplication", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-clean-reader-"));
+
+  try {
+    const description = "Cargo door procedures cover safe operation and inspection.";
+    await writeTopic(root, "cargo-doors.md", {
+      body: [
+        "# Cargo Door Procedures",
+        "",
+        description,
+        "",
+        "## Inspection",
+        "",
+        "Inspect the hinges before operation.",
+        "",
+        "## Source",
+        "",
+        "Manual.pdf, page 12",
+      ].join("\n"),
+      description,
+      title: "Cargo Door Procedures",
+    });
+
+    const [result] = await retrieveOkfBundleEvidence({
+      knowledgeRoot: root,
+      query: "cargo door procedures",
+      workspaceId: "wrk_1",
+    });
+
+    assert.equal(result?.body.startsWith("# Cargo Door Procedures"), false);
+    assert.doesNotMatch(result?.body ?? "", /## Source/);
+    assert.equal((result?.excerpt.match(/Cargo door procedures cover/gi) ?? []).length, 1);
+    assert.match(result?.excerpt ?? "", /Inspect the hinges before operation/);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("retriever exposes automated and human approval provenance from live frontmatter", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-provenance-"));
   try {

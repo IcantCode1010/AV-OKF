@@ -53,6 +53,25 @@ test("OKF-only raw fallback must be explicitly labeled in the trace", () => {
   assert.ok(result.violations.includes("raw_rag_used_without_okf_fallback_label"));
 });
 
+test("OKF-only answers may use raw chunks that are coverage-linked to approved concepts", () => {
+  const coveredRag = {
+    ...citation("rag", 2),
+    coveredByOkfConceptIds: ["topic_1"],
+  };
+  const result = validateChatAnswerEvidence({
+    answerContent:
+      "The approved topic states the limit [1], and its source page provides the supporting detail [2].",
+    citations: [citation("okf"), coveredRag],
+    retrievalError: false,
+    route: "okf_only",
+    trace: { ragUsedForDiscoveryOnly: false },
+  });
+
+  assert.equal(result.status, "pass");
+  assert.equal(result.safeAnswerMode, "release_as_written");
+  assert.equal(result.profile.evidenceKind, "mixed");
+});
+
 test("no evidence produces a blocked answer mode without inventing a citation", () => {
   const result = validateChatAnswerEvidence({
     answerContent: "No approved knowledge matched this question.",

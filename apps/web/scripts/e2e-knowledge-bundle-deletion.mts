@@ -223,7 +223,14 @@ try {
   });
   const session = await db.chatSession.create({
     data: {
-      knowledgeBundleId: deletedBundle.id,
+      knowledgeBundles: {
+        create: {
+          knowledgeBundleId: deletedBundle.id,
+          position: 0,
+          selectedBy: memberId,
+        },
+      },
+      primaryKnowledgeBundleId: deletedBundle.id,
       title: "Disposable bundle chat",
       userId: memberId,
       workspaceId,
@@ -233,7 +240,9 @@ try {
     data: {
       citations: [{ documentId: document.id, documentTitle: document.title, sourcePages: [1], sourceType: "raw_rag" }],
       content: "Disposable answer",
+      knowledgeBundleIds: [deletedBundle.id],
       role: "assistant",
+      scopeVersion: 1,
       sessionId: session.id,
       trace: { route: "rag_only" },
       workspaceId,
@@ -287,7 +296,13 @@ try {
   assert.equal(await db.okfConceptChunkLink.count({ where: { knowledgeBundleId: deletedBundle.id } }), 0);
   assert.equal(await db.okfConceptLifecycle.count({ where: { knowledgeBundleId: deletedBundle.id } }), 0);
   assert.equal(await db.okfRelationCandidate.count({ where: { knowledgeBundleId: deletedBundle.id } }), 0);
-  assert.equal(await db.chatSession.count({ where: { id: session.id } }), 0);
+  const preservedChat = await db.chatSession.findUniqueOrThrow({
+    include: { knowledgeBundles: true },
+    where: { id: session.id },
+  });
+  assert.equal(preservedChat.primaryKnowledgeBundleId, null);
+  assert.equal(preservedChat.knowledgeBundles.length, 0);
+  assert.equal(await db.chatMessage.count({ where: { sessionId: session.id } }), 1);
   await assert.rejects(() => readFile(conceptPath, "utf8"), /ENOENT/);
 
   await db.document.update({
@@ -306,6 +321,7 @@ try {
     auditCreated: Boolean(audit.id),
     bundleRemoved: true,
     concurrentRequestIdempotencyVerified: true,
+    chatHistoryPreservedReadOnly: true,
     documentReassigned: true,
     documentsPreserved: 1,
     extractionHistoryPreserved: true,

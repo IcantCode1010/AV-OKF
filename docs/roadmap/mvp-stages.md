@@ -8,7 +8,7 @@ The first usable product should be a clean document vault. Chat comes later, aft
 
 ## Current Implementation Status
 
-As of 2026-07-18:
+As of 2026-07-23:
 
 | Stage | Status |
 | --- | --- |
@@ -26,7 +26,8 @@ As of 2026-07-18:
 | 7A | Complete: deterministic post-answer evidence validation |
 | 7B | Core implemented: bounded OKF graph traversal and coverage-linked RAG support |
 | 7B.5 | Complete: deterministic bundle-local candidates, reviewer approval/rejection, and re-exported graph edges |
-| 7C | Next: chat-quality closeout and bounded Vercel AI SDK tool contracts |
+| 7C | Complete: chat-quality closeout and bounded Vercel AI SDK tool contracts |
+| 7D | Complete: user-controlled dynamic multi-bundle chat scope |
 | 8 | Deferred optional domain pack; the core platform remains generic |
 
 ## Stage 0: Product Shell
@@ -556,19 +557,19 @@ Deferred Stage 7 work:
 
 Purpose: close the remaining user-facing evidence gaps and expose the proven retrieval operations as bounded agent tools without replacing deterministic trust controls.
 
-Status: insufficient-evidence completion, bundle-scoped knowledge-gap capture, authenticated PDF page links, OKF explorer links, and historical citation lifecycle notices are implemented. Bounded agent tool contracts remain the next Stage 7C slice.
+Status: complete for the deterministic production slice. Insufficient-evidence completion, bundle-scoped knowledge gaps, authenticated citations, historical lifecycle notices, bounded read-only tool wrappers, mandatory validation, persisted tool traces, and an evaluation-only model runner are implemented. Production model-directed tool selection remains gated on a separate baseline review.
 
 Deliverables:
 
 - [x] Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
 - [x] Capture bundle-scoped knowledge gaps and expose them in the bundle reviewer page.
 - [x] Clickable citation-to-source navigation and browser-native `Open PDF page` links.
-- Clear separation between router intent and evidence actually used in the trace UI.
+- [x] Clear separation between router intent, evidence actually used, selected bundle scope, and bounded tool execution in the trace UI.
 - [x] Historical citation lifecycle notices with stale links disabled.
 - Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
-- Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
-- Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.
-- Persist bounded tool calls and outcomes in the existing chat trace.
+- [x] Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
+- [x] Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.
+- [x] Persist bounded tool calls and outcomes in the existing chat trace.
 
 Exit criteria:
 
@@ -581,6 +582,49 @@ Architecture note:
 
 - [Validation Agent](../architecture/validation-agent.md)
 - [Ingestion To Knowledge Flow](../architecture/ingestion-to-knowledge-flow.md)
+- [Bounded Agent Tools And Dynamic Chat Scope](../architecture/bounded-agent-tools-and-chat-scope.md)
+
+## Stage 7D: Dynamic Multi-Bundle Chat Scope
+
+Purpose: let a user expand or narrow the knowledge searched by an existing conversation without allowing the agent to crawl unrelated workspace bundles automatically.
+
+Status: implemented. Chat sessions persist an ordered 1-10 bundle scope, every turn snapshots that scope, the header selector controls future turns, and retrieval aggregates only selected active bundles under global evidence caps. Graph traversal remains bundle-local. Bundle deletion preserves conversation history and creates the intended zero-source read-only state when necessary.
+
+Product behavior:
+
+- A chat starts with one focused knowledge bundle, preserving the current default behavior.
+- A `Knowledge sources` selector in the chat header or composer lets the user add or remove active workspace bundles at any time.
+- The selected scope is visible as removable bundle chips and persists on the chat session across refreshes and later turns.
+- Scope changes apply to future questions only. Existing answers, citations, and traces retain the exact bundle scope used when they were generated.
+- The agent may suggest that another bundle could be useful, but it cannot add that bundle or widen its own retrieval scope without user action.
+
+Retrieval and trust rules:
+
+- Search approved, active OKF concepts only within the bundles selected for that turn.
+- Restrict raw RAG discovery/support to documents belonging to those same bundles.
+- Rank relevant selected bundles before concept retrieval instead of blindly scanning every file.
+- Keep graph traversal and typed relations bundle-local in the first version.
+- Include the originating bundle identity on every citation, evidence row, and trace entry.
+- Preserve trust precedence independently per bundle: human-approved OKF, automation-approved OKF, and then labeled raw RAG discovery/support.
+- Detect conflicting approved information across selected bundles and disclose the conflict instead of silently merging it.
+- Removing a bundle excludes it from future retrieval but does not alter historical chat messages.
+
+Deliverables:
+
+- Persist an ordered set of selected bundle IDs on the chat session and snapshot the effective set on each user turn or assistant trace.
+- Add an authenticated bundle multi-select to the active chat without requiring all bundles to be chosen at chat creation.
+- Enforce workspace ownership, active lifecycle state, and a bounded maximum selection count for every bundle.
+- Update OKF, graph, raw RAG, query-understanding, citation, and trace paths to accept the explicit selected-bundle scope.
+- Add clear empty, unavailable, and deleted-bundle handling without silently substituting another bundle.
+- Add evaluation coverage for one-bundle focus, adding a second bundle mid-chat, removing a bundle, conflicting authorities, lifecycle changes, and cross-workspace requests.
+
+Exit criteria:
+
+- A conversation can begin in one bundle and add a relevant second bundle without starting a new chat.
+- Unselected bundles are never searched or cited.
+- Historical answers retain their original source scope after the active selection changes.
+- Retrieval remains bounded, traceable, lifecycle-aware, and workspace-isolated.
+- Cross-bundle relations remain deferred until stable concept identities and dedicated validation rules exist.
 
 ## Stage 8: Aviation Domain Pack
 

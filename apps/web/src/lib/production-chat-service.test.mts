@@ -40,6 +40,9 @@ type AppendCall = {
     route: string;
     searchedSources: string[];
   };
+  knowledgeBundleIds: string[];
+  primaryKnowledgeBundleId: string | null;
+  scopeVersion: number;
   sessionId: string;
 };
 
@@ -59,7 +62,9 @@ function createRepositoryStub(initialMessages: ChatMessage[] = []) {
             content: input.assistantContent,
             createdAt: "2026-07-04T00:00:00.000Z",
             id: "msg_assistant",
+            knowledgeBundleIds: input.knowledgeBundleIds,
             role: "assistant",
+            scopeVersion: input.scopeVersion,
             sessionId: "session_1",
             trace: input.assistantTrace,
           },
@@ -68,7 +73,9 @@ function createRepositoryStub(initialMessages: ChatMessage[] = []) {
             content: input.content,
             createdAt: "2026-07-04T00:00:00.000Z",
             id: "msg_user",
+            knowledgeBundleIds: input.knowledgeBundleIds,
             role: "user",
+            scopeVersion: input.scopeVersion,
             sessionId: "session_1",
             trace: null,
           },
@@ -82,6 +89,11 @@ function createRepositoryStub(initialMessages: ChatMessage[] = []) {
         session: {
           createdAt: "2026-07-04T00:00:00.000Z",
           id: "session_1",
+          knowledgeBundles: [
+            { id: "kb_general", name: "General Knowledge", position: 0 },
+          ],
+          primaryKnowledgeBundleId: "kb_general",
+          scopeVersion: 1,
           title: "New chat",
           updatedAt: "2026-07-04T00:00:00.000Z",
           userId: "usr_1",
@@ -122,7 +134,9 @@ function historyMessage(input: {
     content: input.content,
     createdAt: "2026-07-04T00:00:00.000Z",
     id: input.id,
+    knowledgeBundleIds: ["kb_general"],
     role: input.role,
+    scopeVersion: 1,
     sessionId: "session_1",
     trace:
       input.role === "assistant" && input.route
@@ -174,6 +188,18 @@ test("sendMessage reports no evidence when retrieval finds nothing", async () =>
   assert.equal(appendCalls[0]?.assistantTrace.approvedOkfAvailable, false);
   assert.equal(appendCalls[0]?.assistantTrace.finalEvidenceStatus, "no_evidence");
   assert.equal(appendCalls[0]?.assistantTrace.answerOutcome, "insufficient_evidence");
+  assert.deepEqual(appendCalls[0]?.knowledgeBundleIds, ["kb_general"]);
+  assert.equal(appendCalls[0]?.primaryKnowledgeBundleId, "kb_general");
+  assert.equal(appendCalls[0]?.scopeVersion, 1);
+  assert.deepEqual(appendCalls[0]?.assistantTrace.bundleScope, {
+    bundleIds: ["kb_general"],
+    bundleNames: ["General Knowledge"],
+    scopeVersion: 1,
+  });
+  assert.equal(
+    appendCalls[0]?.assistantTrace.agentExecution?.calls.at(-1)?.tool,
+    "validateAnswerEvidence",
+  );
   assert.deepEqual(appendCalls[0]?.knowledgeGap, {
     finalEvidenceStatus: "no_evidence",
     question: "What is the official manual path for GEN OFF BUS?",

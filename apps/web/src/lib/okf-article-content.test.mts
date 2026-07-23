@@ -5,6 +5,7 @@ import {
   buildOkfArticleReaderContent,
   normalizeOkfArticleBody,
   normalizeOkfArticleComparison,
+  normalizeOkfCitationExcerpt,
 } from "./okf-article-content.ts";
 
 test("article comparison uses exact normalized equality", () => {
@@ -73,4 +74,21 @@ test("reader preserves tables, nested headings, and non-aviation content", () =>
     title: "Vehicle Inspection",
   });
   assert.equal(result.body, "## Checklist\n\n| Item | State |\n| --- | --- |\n| Tires | Ready |");
+});
+
+test("persisted OKF citation excerpts remove repeated Markdown headings at read time", () => {
+  assert.equal(
+    normalizeOkfCitationExcerpt({
+      text: "Cargo procedures. # Cargo Door Procedures # Cargo Door Procedures ## Overview Inspect the hinges.",
+      title: "Cargo Door Procedures",
+    }),
+    "Cargo procedures. Overview Inspect the hinges.",
+  );
+  assert.equal(
+    normalizeOkfCitationExcerpt({
+      text: "Raw evidence # Different Heading remains useful.",
+      title: "Cargo Door Procedures",
+    }),
+    "Raw evidence Different Heading remains useful.",
+  );
 });
