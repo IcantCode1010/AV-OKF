@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildOkfTopicViewHref,
+  normalizeOkfTopicFilePath,
   normalizeOkfTopicReturnTo,
 } from "./okf-topic-routing.ts";
 
@@ -22,6 +23,30 @@ test("topic return paths accept only one anchored chat-session segment", () => {
     "",
   ]) {
     assert.equal(normalizeOkfTopicReturnTo(malicious), "/chat", malicious);
+  }
+});
+
+test("topic file paths normalize safely for reads and exported path lookup", () => {
+  assert.equal(
+    normalizeOkfTopicFilePath("concepts//system\\brakes.md"),
+    "concepts/system/brakes.md",
+  );
+  assert.equal(
+    normalizeOkfTopicFilePath("concepts/system/%62rakes.md"),
+    "concepts/system/brakes.md",
+  );
+
+  for (const unsafe of [
+    "../outside.md",
+    "concepts/../../outside.md",
+    "%2e%2e%2foutside.md",
+    "%252e%252e%252foutside.md",
+    "/absolute/outside.md",
+    "C:/outside.md",
+    "//evil.example/topic.md",
+    "concepts/system/not-markdown.txt",
+  ]) {
+    assert.equal(normalizeOkfTopicFilePath(unsafe), null, unsafe);
   }
 });
 

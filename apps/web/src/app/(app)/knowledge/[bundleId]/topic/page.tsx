@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, BookOpenCheck, ExternalLink, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BookOpenCheck, ExternalLink, FileText, ShieldCheck } from "lucide-react";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -69,8 +69,6 @@ export default async function ApprovedOkfTopicPage({
             <p className="mt-3 text-base leading-7 text-muted-foreground">{topic.description}</p>
           ) : null}
           <dl className="mt-6 grid gap-4 border-t border-border pt-5 text-sm sm:grid-cols-2">
-            <Metadata label="Source document" value={topic.sourceFile} />
-            <Metadata label="Source pages" value={formatPages(topic.sourcePages)} />
             <Metadata label="Approval" value={provenance.description} />
             <Metadata label="Approved" value={topic.approvedAt ?? "Date not recorded"} />
             {topic.updated ? <Metadata label="Updated" value={topic.updated} /> : null}
@@ -78,6 +76,37 @@ export default async function ApprovedOkfTopicPage({
         </header>
 
         <div className="px-6 py-7 sm:px-8 sm:py-9">
+          <section className="mb-8 rounded-lg border border-border bg-background/45 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="text-xs uppercase text-muted-foreground">Source document</div>
+                <div className="mt-1 font-medium">{topic.sourceDocument?.title ?? topic.sourceFile}</div>
+                <div className="mt-1 text-sm text-muted-foreground">{formatPages(topic.sourcePages)}</div>
+                {topic.sourceDocument ? null : (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Source document access is unavailable for this approved topic.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {topic.sourceDocument?.pdfHref ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={topic.sourceDocument.pdfHref} rel="noreferrer" target="_blank">
+                      <FileText className="size-4" />
+                      {topic.sourceDocument.pdfHref.includes("#page=") ? "Open PDF at source page" : "Open PDF"}
+                    </a>
+                  </Button>
+                ) : null}
+                {topic.sourceDocument ? (
+                  <Button asChild size="sm" variant="ghost">
+                    <Link href={topic.sourceDocument.documentHref}>
+                      Open document record
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </section>
           <div className="okf-reader prose prose-invert max-w-none text-sm leading-7 text-foreground/90 [&_a]:text-primary [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-2xl [&_h2]:mt-8 [&_h2]:text-xl [&_h3]:text-lg [&_table]:text-xs">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}

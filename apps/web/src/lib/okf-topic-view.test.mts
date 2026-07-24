@@ -8,6 +8,7 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { KnowledgeBundleRecord } from "./knowledge-bundles.ts";
 import {
   loadApprovedOkfTopicView,
+  resolveApprovedOkfTopicSourceDocument,
   resolveApprovedOkfTopicLink,
 } from "./okf-topic-view.ts";
 
@@ -47,6 +48,35 @@ test("approved active topic view returns article and provenance fields", async (
     assert.match(result?.body ?? "", /Inspect the vehicle before operation/);
     assert.equal(result?.descriptionRepeatedExactly, false);
     assert.deepEqual(result?.approvedFilePaths, [fixture.filePath]);
+    assert.equal(result?.sourceDocument, null);
+  } finally {
+    await rm(fixture.root, { force: true, recursive: true });
+  }
+});
+
+test("approved topic view normalizes file path before reading and source lookup", async () => {
+  const fixture = await createBundleFixture();
+  try {
+    const result = await loadApprovedOkfTopicView({
+      bundleId: bundle.id,
+      context,
+      filePath: "concepts//system\\inspection.md",
+      knowledgeRoot: fixture.root,
+    }, {
+      ...dependencies(new Map([[fixture.filePath, { status: "active" }]])),
+      async resolveSourceDocument(input) {
+        assert.equal(input.filePath, fixture.filePath);
+        assert.equal(input.pageStart, 12);
+        return {
+          documentHref: "/documents/doc-1",
+          id: "doc-1",
+          pdfHref: "/api/documents/doc-1/file#page=12",
+          title: "Vehicle Manual",
+        };
+      },
+    });
+
+    assert.equal(result?.sourceDocument?.pdfHref, "/api/documents/doc-1/file#page=12");
   } finally {
     await rm(fixture.root, { force: true, recursive: true });
   }
@@ -95,6 +125,130 @@ test("unsafe and encoded traversal paths never resolve to a topic", async () => 
   } finally {
     await rm(fixture.root, { force: true, recursive: true });
   }
+});
+
+test("source document resolver scopes exported path lookup to workspace, bundle, approval, and active document", async () => {
+  const captured: unknown[] = [];
+  const source = await resolveApprovedOkfTopicSourceDocument({
+    bundleId: "bundle-1",
+    filePath: "concepts/system/inspection.md",
+    pageStart: 12,
+    workspaceId: "workspace-1",
+  }, {
+    backend: "production",
+    prisma: {
+      topicRecord: {
+        async findFirst(query: unknown) {
+          captured.push(query);
+          return {
+            document: {
+              id: "doc-1",
+              knowledgeBundleId: "bundle-1",
+              objects: [{ kind: "original_pdf" }],
+              title: "Vehicle Manual",
+            },
+          };
+        },
+      },
+    } as never,
+  });
+
+  assert.equal(source?.documentHref, "/documents/doc-1");
+  assert.equal(source?.pdfHref, "/api/documents/doc-1/file#page=12");
+  assert.deepEqual(captured[0], {
+    select: {
+      document: {
+        select: {
+          id: true,
+          knowledgeBundleId: true,
+          objects: {
+            orderBy: { createdAt: "asc" },
+            select: { kind: true },
+            where: { kind: "original_pdf" },
+          },
+          title: true,
+        },
+      },
+    },
+    where: {
+      exportedFilePath: "concepts/system/inspection.md",
+      knowledgeBundleId: "bundle-1",
+      reviewStatus: "approved",
+      workspaceId: "workspace-1",
+      document: {
+        deletedAt: null,
+        knowledgeBundleId: "bundle-1",
+        workspaceId: "workspace-1",
+      },
+    },
+  });
+});
+
+test("source document resolver handles no pdf and unavailable documents without leaking detail", async () => {
+  const withoutPdf = await resolveApprovedOkfTopicSourceDocument({
+    bundleId: "bundle-1",
+    filePath: "concepts/system/inspection.md",
+    pageStart: null,
+    workspaceId: "workspace-1",
+  }, {
+    backend: "production",
+    prisma: {
+      topicRecord: {
+        async findFirst() {
+          return {
+            document: {
+              id: "doc-1",
+              knowledgeBundleId: "bundle-1",
+              objects: [],
+              title: "Vehicle Manual",
+            },
+          };
+        },
+      },
+    } as never,
+  });
+  assert.equal(withoutPdf?.documentHref, "/documents/doc-1");
+  assert.equal(withoutPdf?.pdfHref, null);
+
+  const unavailable = await resolveApprovedOkfTopicSourceDocument({
+    bundleId: "bundle-1",
+    filePath: "concepts/system/inspection.md",
+    pageStart: 12,
+    workspaceId: "workspace-1",
+  }, {
+    backend: "production",
+    prisma: {
+      topicRecord: {
+        async findFirst() {
+          return null;
+        },
+      },
+    } as never,
+  });
+  assert.equal(unavailable, null);
+});
+
+test("source document resolver rejects unnormalized paths before querying", async () => {
+  let queried = false;
+  const result = await resolveApprovedOkfTopicSourceDocument({
+    bundleId: "bundle-1",
+    filePath: "concepts//system/inspection.md",
+    pageStart: 12,
+    workspaceId: "workspace-1",
+  }, {
+    backend: "production",
+    prisma: {
+      topicRecord: {
+        async findFirst() {
+          queried = true;
+          return null;
+        },
+      },
+    } as never,
+  });
+
+  assert.equal(result, null);
+  assert.equal(queried, false);
 });
 
 test("non-active lifecycle states and unapproved frontmatter fail closed", async () => {

@@ -15,6 +15,8 @@ import {
 import { listOkfBundleFiles, readOkfBundleFile } from "./okf-bundle.ts";
 import { getOkfConceptLifecycleByFile } from "./okf-lifecycle.ts";
 import { buildOkfArticleReaderContent } from "./okf-article-content.ts";
+import { normalizeOkfTopicFilePath } from "./okf-topic-routing.ts";
+import { getPrisma } from "./prisma.ts";
 
 export type ApprovedOkfTopicView = {
   approvalProvenance: "automated" | "human" | "legacy";
@@ -28,9 +30,17 @@ export type ApprovedOkfTopicView = {
   filePath: string;
   sourceFile: string;
   sourcePages: number[];
+  sourceDocument: ApprovedOkfTopicSourceDocument | null;
   title: string;
   type: string;
   updated: string | null;
+};
+
+export type ApprovedOkfTopicSourceDocument = {
+  documentHref: string;
+  id: string;
+  pdfHref: string | null;
+  title: string;
 };
 
 type TopicViewDependencies = {
@@ -38,6 +48,7 @@ type TopicViewDependencies = {
   getLifecycles?: typeof getOkfConceptLifecycleByFile;
   listFiles?: typeof listOkfBundleFiles;
   readFile?: typeof readOkfBundleFile;
+  resolveSourceDocument?: typeof resolveApprovedOkfTopicSourceDocument;
 };
 
 export async function loadApprovedOkfTopicView(input: {
@@ -53,6 +64,9 @@ export async function loadApprovedOkfTopicView(input: {
 
   if (!bundle) return null;
 
+  const normalizedFilePath = normalizeOkfTopicFilePath(input.filePath);
+  if (!normalizedFilePath) return null;
+
   const knowledgeRoot = input.knowledgeRoot ?? resolveKnowledgeBundleRoot({
     bundleId: bundle.id,
     workspaceId: input.context.workspaceId,
@@ -60,7 +74,7 @@ export async function loadApprovedOkfTopicView(input: {
 
   try {
     const files = await listFiles(knowledgeRoot);
-    const selected = files.find((file) => file.filename === input.filePath);
+    const selected = files.find((file) => file.filename === normalizedFilePath);
     if (!selected || selected.isReserved) return null;
 
     const lifecycleByFile = await loadLifecycleMap({
@@ -105,6 +119,12 @@ export async function loadApprovedOkfTopicView(input: {
       filePath: selected.filename,
       parsed,
       approvedFilePaths,
+      sourceDocument: await (dependencies.resolveSourceDocument ?? resolveApprovedOkfTopicSourceDocument)({
+        bundleId: bundle.id,
+        filePath: selected.filename,
+        pageStart: getFrontmatterNumberArray(parsed.frontmatter, "source_pages")[0] ?? null,
+        workspaceId: input.context.workspaceId,
+      }),
     });
   } catch {
     return null;
@@ -156,6 +176,7 @@ function buildApprovedTopicView(input: {
   bundle: KnowledgeBundleRecord;
   filePath: string;
   parsed: ReturnType<typeof parseOkfMarkdown>;
+  sourceDocument: ApprovedOkfTopicSourceDocument | null;
 }): ApprovedOkfTopicView {
   const approvedBy = getFrontmatterScalar(input.parsed.frontmatter, "approved_by");
   const title = getFrontmatterScalar(input.parsed.frontmatter, "title")!;
@@ -181,9 +202,70 @@ function buildApprovedTopicView(input: {
     filePath: input.filePath,
     sourceFile: getFrontmatterScalar(input.parsed.frontmatter, "source_file")!,
     sourcePages: getFrontmatterNumberArray(input.parsed.frontmatter, "source_pages"),
+    sourceDocument: input.sourceDocument,
     title,
     type: getFrontmatterScalar(input.parsed.frontmatter, "type")!,
     updated: getFrontmatterScalar(input.parsed.frontmatter, "updated"),
+  };
+}
+
+export async function resolveApprovedOkfTopicSourceDocument(input: {
+  bundleId: string;
+  filePath: string;
+  pageStart: number | null;
+  workspaceId: string;
+}, dependencies: {
+  backend?: string;
+  prisma?: Pick<ReturnType<typeof getPrisma>, "topicRecord">;
+} = {}): Promise<ApprovedOkfTopicSourceDocument | null> {
+  const normalizedFilePath = normalizeOkfTopicFilePath(input.filePath);
+  if (!normalizedFilePath || normalizedFilePath !== input.filePath) return null;
+  if ((dependencies.backend ?? process.env.AV_OKF_BACKEND) !== "production") return null;
+
+  const prisma = dependencies.prisma ?? getPrisma();
+  const topic = await prisma.topicRecord.findFirst({
+    select: {
+      document: {
+        select: {
+          id: true,
+          knowledgeBundleId: true,
+          objects: {
+            orderBy: { createdAt: "asc" },
+            select: { kind: true },
+            where: { kind: "original_pdf" },
+          },
+          title: true,
+        },
+      },
+    },
+    where: {
+      exportedFilePath: normalizedFilePath,
+      knowledgeBundleId: input.bundleId,
+      reviewStatus: "approved",
+      workspaceId: input.workspaceId,
+      document: {
+        deletedAt: null,
+        knowledgeBundleId: input.bundleId,
+        workspaceId: input.workspaceId,
+      },
+    },
+  });
+
+  const document = topic?.document;
+  if (!document || document.knowledgeBundleId !== input.bundleId) return null;
+
+  const encodedDocumentId = encodeURIComponent(document.id);
+  const pageFragment = input.pageStart && input.pageStart > 0
+    ? `#page=${input.pageStart}`
+    : "";
+
+  return {
+    documentHref: `/documents/${encodedDocumentId}`,
+    id: document.id,
+    pdfHref: document.objects.length > 0
+      ? `/api/documents/${encodedDocumentId}/file${pageFragment}`
+      : null,
+    title: document.title,
   };
 }
 

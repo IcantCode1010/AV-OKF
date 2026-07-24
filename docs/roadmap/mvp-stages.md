@@ -563,7 +563,7 @@ Deliverables:
 
 - [x] Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
 - [x] Capture bundle-scoped knowledge gaps and expose them in the bundle reviewer page.
-- [x] Clickable citation-to-source navigation and browser-native `Open PDF page` links.
+- [x] Clickable citation-to-source navigation. Raw RAG citations continue linking directly to authenticated PDFs, while approved OKF citations drill down through `Chat citation -> approved OKF topic page -> Source document block -> PDF route` with server-side source resolution and browser-native `#page=N` PDF fragments.
 - [x] Clear separation between router intent, evidence actually used, selected bundle scope, and bounded tool execution in the trace UI.
 - [x] Historical citation lifecycle notices with stale links disabled.
 - Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
@@ -573,7 +573,7 @@ Deliverables:
 
 Exit criteria:
 
-- Users can verify an answer against the cited source page.
+- Users can verify an answer against the cited source page: approved OKF evidence opens the reviewed topic article first, then links to the original document at the first cited page when the source PDF is still readable.
 - Insufficient evidence produces a concise limitation and useful next step, not a citation dump or unsupported answer.
 - Tool execution is bounded, traceable, workspace-scoped, and covered by evaluation tests.
 - Any later model-directed tool selection can be compared against the deterministic baseline before rollout.
