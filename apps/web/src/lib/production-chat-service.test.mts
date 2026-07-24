@@ -46,7 +46,10 @@ type AppendCall = {
   sessionId: string;
 };
 
-function createRepositoryStub(initialMessages: ChatMessage[] = []) {
+function createRepositoryStub(
+  initialMessages: ChatMessage[] = [],
+  adaptiveRetryEnabled = false,
+) {
   const appendCalls: AppendCall[] = [];
 
   return {
@@ -90,7 +93,12 @@ function createRepositoryStub(initialMessages: ChatMessage[] = []) {
           createdAt: "2026-07-04T00:00:00.000Z",
           id: "session_1",
           knowledgeBundles: [
-            { id: "kb_general", name: "General Knowledge", position: 0 },
+            {
+              boundedAdaptiveRetryEnabled: adaptiveRetryEnabled,
+              id: "kb_general",
+              name: "General Knowledge",
+              position: 0,
+            },
           ],
           primaryKnowledgeBundleId: "kb_general",
           scopeVersion: 1,
@@ -264,6 +272,177 @@ test("sendMessage builds a cited answer from retrieval results", async () => {
   assert.deepEqual(appendCalls[0]?.assistantTrace.sourcesRead, ["737NG QRH (p. 12)"]);
   assert.equal(appendCalls[0]?.assistantTrace.okfEvidenceMode, "direct");
   assert.equal(appendCalls[0]?.assistantTrace.rerank?.status, "not_applicable");
+});
+
+test("bounded adaptive retry runs once for an enabled bundle and keeps the route fixed", async () => {
+  const { appendCalls, repository } = createRepositoryStub([], true);
+  const retrievalQueries: string[] = [];
+  const service = createProductionChatService(repository, {
+    createAdaptiveRetryQuery: async (input) => ({
+      query: `${input.originalQuery} operational guidance`,
+      trace: {
+        eligible: true,
+        enabledBundleIds: input.enabledBundleIds,
+        evidenceDelta: { approvedOkf: 0, citations: 0, rawRag: 0 },
+        fallbackUsed: false,
+        originalSufficiency: input.sufficiency,
+        outcome: "applied",
+        retryQuery: `${input.originalQuery} operational guidance`,
+        retryReason: "Broaden the terminology.",
+      },
+    }),
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async (input) => {
+      retrievalQueries.push(input.query);
+      return retrievalQueries.length === 1
+        ? {
+            approvedOkfAvailable: false,
+            citations: [],
+            evidence: [],
+            ragUsedForDiscoveryOnly: false,
+            rerank: { applied: false, dropped: 0, status: "not_applicable" },
+            retrievalError: false,
+            retrievalToolsCalled: ["okf_retrieval"],
+            sourcesRead: [],
+          }
+        : citedRetrievalResult();
+    },
+  });
+
+  const question = "What is the official GEN OFF BUS guidance?";
+  const result = await service.sendMessage("session_1", question);
+
+  assert.deepEqual(retrievalQueries, [question, `${question} operational guidance`]);
+  assert.equal(result.assistantMessage.citations.length, 1);
+  assert.equal(appendCalls[0]?.assistantTrace.route, "okf_only");
+  assert.equal(appendCalls[0]?.assistantTrace.adaptiveRetry?.outcome, "applied");
+  assert.deepEqual(appendCalls[0]?.assistantTrace.adaptiveRetry?.evidenceDelta, {
+    approvedOkf: 1,
+    citations: 1,
+    rawRag: 0,
+  });
+});
+
+test("failed retry answer validation restores the original deterministic evidence", async () => {
+  const { appendCalls, repository } = createRepositoryStub([], true);
+  let retrievalCount = 0;
+  const rawCitation: ChatCitation = {
+    documentId: "doc_raw",
+    documentTitle: "Raw manual",
+    index: 1,
+    pageEnd: 8,
+    pageStart: 8,
+    sourceType: "rag",
+    text: "Unreviewed source text.",
+  };
+  const service = createProductionChatService(repository, {
+    createAdaptiveRetryQuery: async (input) => ({
+      query: `${input.originalQuery} approved detail`,
+      trace: {
+        eligible: true,
+        enabledBundleIds: input.enabledBundleIds,
+        evidenceDelta: { approvedOkf: 0, citations: 0, rawRag: 0 },
+        fallbackUsed: false,
+        originalSufficiency: input.sufficiency,
+        outcome: "applied",
+      },
+    }),
+    generateAnswer: async () => ({
+      content: "Unsupported citation [99].",
+      mode: "llm",
+      outcome: "answered",
+      provider: "openai",
+    }),
+    getContext: async () => context,
+    retrieve: async () => {
+      retrievalCount += 1;
+      if (retrievalCount === 1) {
+        return {
+          approvedOkfAvailable: false,
+          citations: [rawCitation],
+          evidence: [{ ...rawCitation, text: rawCitation.text }],
+          ragUsedForDiscoveryOnly: true,
+          rerank: { applied: false, dropped: 0, status: "not_applicable" },
+          retrievalError: false,
+          retrievalToolsCalled: ["rag_retrieval"],
+          sourcesRead: ["Raw manual (p. 8)"],
+        };
+      }
+      return citedRetrievalResult();
+    },
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the official GEN OFF BUS guidance?",
+  );
+
+  assert.deepEqual(result.assistantMessage.citations, [rawCitation]);
+  assert.equal(
+    appendCalls[0]?.assistantTrace.adaptiveRetry?.outcome,
+    "validation_failed",
+  );
+  assert.equal(
+    appendCalls[0]?.assistantTrace.adaptiveRetry?.fallbackUsed,
+    true,
+  );
+  assert.equal(
+    appendCalls[0]?.assistantTrace.approvedOkfAvailable,
+    false,
+  );
+});
+
+test("an in-flight turn retains its captured bundle scope while the session scope changes", async () => {
+  const base = createRepositoryStub();
+  let currentScope = [
+    { id: "kb_a", name: "Bundle A", position: 0 },
+  ];
+  const originalGet = base.repository.getSessionWithMessages;
+  base.repository.getSessionWithMessages = async () => {
+    const result = await originalGet();
+    return {
+      ...result,
+      session: {
+        ...result.session,
+        knowledgeBundles: currentScope,
+        primaryKnowledgeBundleId: currentScope[0]?.id ?? null,
+        scopeVersion: currentScope[0]?.id === "kb_a" ? 1 : 2,
+      },
+    };
+  };
+  let releaseRetrieval!: () => void;
+  let retrievalStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    retrievalStarted = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseRetrieval = resolve;
+  });
+  const capturedScopes: string[][] = [];
+  const service = createProductionChatService(base.repository, {
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async (input) => {
+      capturedScopes.push([...(input.knowledgeBundleIds ?? [])]);
+      retrievalStarted();
+      await release;
+      return citedRetrievalResult();
+    },
+  });
+
+  const pending = service.sendMessage(
+    "session_1",
+    "What is the official GEN OFF BUS guidance?",
+  );
+  await started;
+  currentScope = [{ id: "kb_b", name: "Bundle B", position: 0 }];
+  releaseRetrieval();
+  await pending;
+
+  assert.deepEqual(capturedScopes, [["kb_a"]]);
+  assert.deepEqual(base.appendCalls[0]?.knowledgeBundleIds, ["kb_a"]);
+  assert.equal(base.appendCalls[0]?.scopeVersion, 1);
 });
 
 test("supported-false completion is preserved and captured as a related-evidence knowledge gap", async () => {
@@ -506,7 +685,11 @@ test("sendMessage does not run retrieval for missing-context routes", async () =
   assert.equal(appendCalls.length, 1);
   assert.equal(appendCalls[0]?.assistantTrace.route, "missing_context");
   assert.equal(appendCalls[0]?.assistantTrace.answerMode, "deterministic");
-  assert.equal(appendCalls[0]?.assistantTrace.finalEvidenceStatus, undefined);
+  assert.equal(appendCalls[0]?.assistantTrace.finalEvidenceStatus, "no_evidence");
+  assert.deepEqual(appendCalls[0]?.assistantTrace.evidenceSufficiency, {
+    reason: "no_supported_evidence_found",
+    status: "none",
+  });
   assert.equal(result.assistantMessage.citations.length, 0);
   assert.match(result.assistantMessage.content, /need a little more context/i);
 });

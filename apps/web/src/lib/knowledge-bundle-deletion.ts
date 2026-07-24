@@ -4,6 +4,10 @@ import { Prisma } from "@prisma/client";
 import { Queue } from "bullmq";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import {
+  chatMessageReferencesKnowledgeBundle,
+  DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER,
+} from "./chat-evidence-tombstone.ts";
 import { getPrisma } from "./prisma.ts";
 import { resolveKnowledgeBundleRoot, writeWorkspaceVault } from "./knowledge-bundles.ts";
 
@@ -251,9 +255,42 @@ export async function runKnowledgeBundleDeletionJob(
         ...new Set(affectedChatSelections.map((selection) => selection.sessionId)),
       ];
       const chatCount = affectedChatSessionIds.length;
+      const assistantMessages = await tx.chatMessage.findMany({
+        select: {
+          citations: true,
+          id: true,
+          knowledgeBundleIds: true,
+        },
+        where: {
+          role: "assistant",
+          workspaceId: manifest.workspaceId,
+        },
+      });
+      const affectedMessageIds = assistantMessages
+        .filter((message) =>
+          chatMessageReferencesKnowledgeBundle({
+            bundleId: manifest.bundleId,
+            citations: message.citations,
+            knowledgeBundleIds: message.knowledgeBundleIds,
+          }),
+        )
+        .map((message) => message.id);
       const ragCount = manifest.documentIds.length > 0
         ? await tx.ragChunk.count({ where: { documentId: { in: manifest.documentIds } } })
         : 0;
+      if (affectedMessageIds.length > 0) {
+        await tx.knowledgeGap.deleteMany({
+          where: { assistantMessageId: { in: affectedMessageIds } },
+        });
+        await tx.chatMessage.updateMany({
+          data: {
+            citations: [] as unknown as Prisma.InputJsonValue,
+            content: DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER,
+            trace: Prisma.JsonNull,
+          },
+          where: { id: { in: affectedMessageIds } },
+        });
+      }
       if (manifest.documentIds.length > 0) {
         await tx.topicDiscoveryJob.deleteMany({
           where: { documentId: { in: manifest.documentIds }, workspaceId: manifest.workspaceId },
@@ -276,6 +313,7 @@ export async function runKnowledgeBundleDeletionJob(
             bundleName: manifest.bundleName,
             deletedBy: job.requestedBy,
             deletionCounts: {
+              chatAnswersTombstoned: affectedMessageIds.length,
               chats: chatCount,
               documentsPreserved: manifest.documentIds.length,
               ragChunks: ragCount,
@@ -302,7 +340,13 @@ export async function runKnowledgeBundleDeletionJob(
           where: { id: sessionId, workspaceId: manifest.workspaceId },
         });
       }
-      return { chats: chatCount, documentsPreserved: manifest.documentIds.length, ragChunks: ragCount, topics: topicCount };
+      return {
+        chatAnswersTombstoned: affectedMessageIds.length,
+        chats: chatCount,
+        documentsPreserved: manifest.documentIds.length,
+        ragChunks: ragCount,
+        topics: topicCount,
+      };
     });
 
     // Remove files after the bundle row is gone so concurrent exporters can no

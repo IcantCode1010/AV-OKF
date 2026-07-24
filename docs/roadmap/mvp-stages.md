@@ -514,6 +514,8 @@ Purpose: populate the typed OKF graph with useful relationships without allowing
 
 Implementation status: Relation Discovery V3 is implemented around the unchanged V2 deterministic candidate generator. New candidates are verified asynchronously one pair per configured-provider call, require an exact canonical source quote and an allowed typed relation, and are bound to source/target content hashes. Only confirmed results reach human review or count as pending graph edges; filtered, failed, queued, and running candidates cannot influence frontmatter, the explorer graph, or agent traversal. Human approval and re-export remain mandatory, and changing direction requires re-verification against the new source. The next checkpoint is a configured-provider Docker sample at 80% precision; approximately 90% is required before considering any reduction in review or expansion of LLM authority.
 
+Policy checkpoint: stay with deterministic candidate generation plus one-pair LLM verification. Do not add semantic expansion, embedding-neighbor relation discovery, free-form relation generation, or broader LLM graph construction until the Phase 3 evaluation proves recall is the limiting problem. If precision remains the limiting problem, improve filtering, verifier prompts, quote requirements, profile stopwords, and review UX instead.
+
 Workflow:
 
 - Scan approved, active-lifecycle OKF concepts within the current workspace bundle.
@@ -557,7 +559,7 @@ Deferred Stage 7 work:
 
 Purpose: close the remaining user-facing evidence gaps and expose the proven retrieval operations as bounded agent tools without replacing deterministic trust controls.
 
-Status: complete for the deterministic production slice. Insufficient-evidence completion, bundle-scoped knowledge gaps, authenticated citations, historical lifecycle notices, bounded read-only tool wrappers, mandatory validation, persisted tool traces, and an evaluation-only model runner are implemented. Production model-directed tool selection remains gated on a separate baseline review.
+Status: implementation complete for deterministic production controls and the disabled-by-default adaptive candidate. Insufficient-evidence completion, bundle-scoped knowledge gaps, authenticated citations, bundle-deletion tombstoning, bounded read-only tool wrappers, mandatory validation, persisted tool traces, deterministic evidence sufficiency, and one per-bundle bounded adaptive retry are implemented. Free model-directed tool choice remains evaluation-only.
 
 Deliverables:
 
@@ -570,6 +572,10 @@ Deliverables:
 - [x] Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
 - [x] Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.
 - [x] Persist bounded tool calls and outcomes in the existing chat trace.
+- [x] Add the bounded adaptive retrieval retry: after deterministic retrieval returns weak or explicitly partial evidence, allow the model to broaden or rephrase the query once inside the same route, selected bundle scope, and trust policy, then validate through the existing deterministic evidence validator.
+- [x] Add deterministic `strong | partial | weak | none` evidence sufficiency and trace why raw RAG was or was not invoked.
+- [ ] Complete the 30-question baseline/candidate comparison before enabling the retry on any production bundle.
+- [ ] Complete the seven-day, 50-eligible-turn internal pilot and five-reviewer trust-UX gate before broader opt-in.
 
 Exit criteria:
 
@@ -577,6 +583,7 @@ Exit criteria:
 - Insufficient evidence produces a concise limitation and useful next step, not a citation dump or unsupported answer.
 - Tool execution is bounded, traceable, workspace-scoped, and covered by evaluation tests.
 - Any later model-directed tool selection can be compared against the deterministic baseline before rollout.
+- Adaptive retry promotion requires measured citation-correctness improvement, no route drift, no unselected-bundle evidence, no trust-policy violation, and a deterministic fallback when validation fails.
 
 Architecture note:
 
@@ -590,6 +597,11 @@ Purpose: let a user expand or narrow the knowledge searched by an existing conve
 
 Status: implemented. Chat sessions persist an ordered 1-10 bundle scope, every turn snapshots that scope, the header selector controls future turns, and retrieval aggregates only selected active bundles under global evidence caps. Graph traversal remains bundle-local. Bundle deletion preserves conversation history and creates the intended zero-source read-only state when necessary.
 
+Bundle-deletion safety blocker: resolved. Historical assistant answers supported
+by the deleted bundle are tombstoned as a whole, including mixed-source
+answers; their citations and retrieval trace are cleared without deleting the
+remaining conversation.
+
 Product behavior:
 
 - A chat starts with one focused knowledge bundle, preserving the current default behavior.
@@ -602,6 +614,8 @@ Retrieval and trust rules:
 
 - Search approved, active OKF concepts only within the bundles selected for that turn.
 - Restrict raw RAG discovery/support to documents belonging to those same bundles.
+- Keep raw RAG trust constant: raw chunks are always unreviewed regardless of score. Improve when RAG is invoked, not how much authority it gets.
+- Do not call RAG for strong OKF answers; call it narrowly for named gaps in partial OKF answers; use it as labeled discovery after weak/no OKF plus clarification handling.
 - Rank relevant selected bundles before concept retrieval instead of blindly scanning every file.
 - Keep graph traversal and typed relations bundle-local in the first version.
 - Include the originating bundle identity on every citation, evidence row, and trace entry.
@@ -625,6 +639,24 @@ Exit criteria:
 - Historical answers retain their original source scope after the active selection changes.
 - Retrieval remains bounded, traceable, lifecycle-aware, and workspace-isolated.
 - Cross-bundle relations remain deferred until stable concept identities and dedicated validation rules exist.
+
+Production-ready agent gate:
+
+- [x] P0: bundle-deletion citation tombstoning is implemented in the durable
+  worker and covered by unit and Docker E2E assertions.
+- P1: provider outage, budget exhaustion, malformed provider output, and partial retrieval failure are tested against the running stack.
+- P1: concurrent scope changes during an in-flight message preserve the captured scope snapshot.
+- P1: conflicting approved values across selected bundles produce a visible conflict, never a silent choice.
+- P2: at least three to five non-technical user sessions confirm the trust UX is understandable without reading trace internals; any trust criterion failed by more than one reviewer requires a UI/product fix.
+
+Agent decision framework:
+
+- Production authority stays deterministic.
+- The bounded one-retry adaptive capability is approved to proceed as scoped work: broaden or rephrase once within the selected bundle scope, preserve route/trust policy, and validate through the existing deterministic evidence validator before any answer is accepted.
+- Free model-directed tool choice remains evaluation-only indefinitely until it proves measured citation-correctness improvement across the full route-coverage suite with zero policy violations.
+- RAG trust stays constant; improve evidence-sufficiency classification so RAG is invoked at the right time.
+- Relation discovery stays deterministic plus one-pair LLM verification until Phase 3 evaluation proves recall is the limiting problem.
+- Do not expand agent autonomy, semantic relation discovery, or RAG behavior until route coverage, relation evaluation, failure injection, bundle-deletion tombstoning, and real user trust review are actually run.
 
 ## Stage 8: Aviation Domain Pack
 

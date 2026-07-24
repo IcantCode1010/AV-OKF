@@ -68,6 +68,8 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
   const profile = structuredClone(bundle.profile);
   profile.id = `custom-${bundle.id}`;
   profile.name = getFormString(formData, "profileName").trim() || `${bundle.name} profile`;
+  profile.agent.boundedAdaptiveRetryEnabled =
+    getFormString(formData, "boundedAdaptiveRetryEnabled") === "true";
   profile.automation.autoApproveEnrichedTopics =
     getFormString(formData, "autoApproveEnrichedTopics") === "true";
   profile.clarificationFields = getFormString(formData, "clarificationFields")

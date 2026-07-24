@@ -14,6 +14,9 @@ export type KnowledgeFieldType =
   | "string_array";
 
 export type KnowledgeProfileSchema = {
+  agent: {
+    boundedAdaptiveRetryEnabled: boolean;
+  };
   automation: {
     autoApproveEnrichedTopics: boolean;
   };
@@ -110,6 +113,7 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
 };
 
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
+  agent: { boundedAdaptiveRetryEnabled: false },
   automation: { autoApproveEnrichedTopics: false },
   clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: BASE_FIELDS,
@@ -168,6 +172,10 @@ export function normalizeKnowledgeProfile(
   profile: KnowledgeProfileSchema,
 ): KnowledgeProfileSchema {
   const normalized = structuredClone(profile);
+  normalized.agent = {
+    boundedAdaptiveRetryEnabled:
+      normalized.agent?.boundedAdaptiveRetryEnabled === true,
+  };
   normalized.automation = {
     autoApproveEnrichedTopics:
       normalized.automation?.autoApproveEnrichedTopics === true,
@@ -200,6 +208,9 @@ export function getTypeDirectory(profile: KnowledgeProfileSchema, type: string):
 
 export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): string[] {
   const errors: string[] = [];
+  if (typeof profile.agent?.boundedAdaptiveRetryEnabled !== "boolean") {
+    errors.push("knowledge_profile_agent_invalid");
+  }
   if (typeof profile.automation?.autoApproveEnrichedTopics !== "boolean") {
     errors.push("knowledge_profile_automation_invalid");
   }

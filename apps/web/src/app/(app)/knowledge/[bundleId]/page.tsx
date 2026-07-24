@@ -167,6 +167,19 @@ export default async function KnowledgeBundlePage({
                   <span className="mt-1 block text-xs text-muted-foreground">High-confidence topics only. Automated approvals remain visibly distinct from human-reviewed knowledge.</span>
                 </span>
               </label>
+              <label className="flex items-start gap-3 border border-border bg-background/40 p-3 text-sm">
+                <input
+                  className="mt-0.5 size-4"
+                  defaultChecked={bundle.profile.agent.boundedAdaptiveRetryEnabled}
+                  name="boundedAdaptiveRetryEnabled"
+                  type="checkbox"
+                  value="true"
+                />
+                <span>
+                  <span className="block font-medium">Allow one bounded retrieval retry</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">When evidence is weak, the model may rephrase the search once without changing route, scope, or trust policy.</span>
+                </span>
+              </label>
               <div className="grid gap-2 sm:grid-cols-3"><input className="h-9 border border-input bg-background px-3 text-sm" name="typeId" placeholder="New type id" /><input className="h-9 border border-input bg-background px-3 text-sm" name="typeLabel" placeholder="Type label" /><select className="h-9 border border-input bg-background px-3 text-sm" name="typeCategory"><option value="concepts">Concepts</option><option value="procedures">Procedures</option><option value="references">References</option><option value="routing">Routing</option><option value="indexes">Indexes</option></select></div>
               <div className="grid gap-2 sm:grid-cols-3"><input className="h-9 border border-input bg-background px-3 text-sm" name="fieldId" placeholder="New field id" /><select className="h-9 border border-input bg-background px-3 text-sm" name="fieldType"><option value="string">String</option><option value="string_array">String list</option><option value="date">Date</option><option value="number">Number</option><option value="number_array">Number list</option></select><select className="h-9 border border-input bg-background px-3 text-sm" name="fieldRequired"><option value="false">Optional</option><option value="true">Required</option></select></div>
               <label className="grid gap-1 text-xs">Clarification fields<input className="h-9 border border-input bg-background px-3 text-sm" defaultValue={bundle.profile.clarificationFields.join(", ")} name="clarificationFields" placeholder="subject_family, document_type, tags" /></label>

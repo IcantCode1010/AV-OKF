@@ -141,6 +141,39 @@ export function ChatSidePanelContent({
                   value={`${trace.bundleScope.bundleNames.join(", ")} (scope v${trace.bundleScope.scopeVersion})`}
                 />
               ) : null}
+              {trace.evidenceSufficiency ? (
+                <TraceRow
+                  label="Evidence sufficiency"
+                  value={
+                    trace.evidenceSufficiency.status === "partial"
+                      ? `Partial - ${trace.evidenceSufficiency.namedGap}`
+                      : trace.evidenceSufficiency.status === "weak" ||
+                          trace.evidenceSufficiency.status === "none"
+                        ? `${formatLabel(trace.evidenceSufficiency.status)} - ${formatLabel(trace.evidenceSufficiency.reason)}`
+                        : "Strong"
+                  }
+                />
+              ) : null}
+              {trace.ragInvocationReason ? (
+                <TraceRow
+                  label="Raw RAG decision"
+                  value={formatLabel(trace.ragInvocationReason)}
+                />
+              ) : null}
+              {trace.adaptiveRetry ? (
+                <div className="space-y-1 border-l-2 border-border pl-2 text-xs">
+                  <div className="font-medium">Bounded adaptive retry</div>
+                  <div className="text-muted-foreground">
+                    {formatLabel(trace.adaptiveRetry.outcome)}
+                    {trace.adaptiveRetry.evidenceDelta.citations > 0
+                      ? ` | ${trace.adaptiveRetry.evidenceDelta.citations} new citation${trace.adaptiveRetry.evidenceDelta.citations === 1 ? "" : "s"}`
+                      : ""}
+                  </div>
+                  {trace.adaptiveRetry.retryReason ? (
+                    <div>{trace.adaptiveRetry.retryReason}</div>
+                  ) : null}
+                </div>
+              ) : null}
               {trace.crossBundleConflict?.detected ? (
                 <div className="border-l-2 border-amber-400 pl-2 text-xs text-amber-200">
                   Conflicting exact values were found across{" "}

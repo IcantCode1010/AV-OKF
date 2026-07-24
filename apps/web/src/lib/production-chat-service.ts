@@ -7,6 +7,14 @@ import {
   type ChatAnswer,
 } from "./chat-answer.ts";
 import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
+import {
+  createBoundedAdaptiveRetryQuery,
+  type AdaptiveRetryTrace,
+} from "./chat-adaptive-retry.ts";
+import {
+  classifyEvidenceSufficiency,
+  resolveRagInvocationReason,
+} from "./chat-evidence-sufficiency.ts";
 import { validateChatAnswerEvidence } from "./chat-validation.ts";
 import {
   buildSkippedQueryUnderstanding,
@@ -26,6 +34,7 @@ import type { ChatRouterDecision, ChatRouterInput } from "./chat-router.ts";
 import type { MetadataClarificationSelection } from "./chat-router.ts";
 import {
   buildRetrievalAnswer,
+  mergeAdaptiveRetrievalResults,
   resolveEvidenceStatus,
   runChatRetrieval,
   type ChatRetrievalFn,
@@ -71,6 +80,7 @@ type ProductionChatServiceOptions = {
   understandQuery?: ChatQueryUnderstandingFn;
   validateAnswer?: typeof validateChatAnswerEvidence;
   annotateCitations?: typeof annotateChatCitationLifecycle;
+  createAdaptiveRetryQuery?: typeof createBoundedAdaptiveRetryQuery;
 };
 
 export function getProductionChatService(): ProductionChatService {
@@ -95,6 +105,8 @@ export function createProductionChatService(
   const understandQuery = options.understandQuery ?? understandChatQuery;
   const validateAnswer = options.validateAnswer ?? validateChatAnswerEvidence;
   const annotateCitations = options.annotateCitations ?? annotateChatCitationLifecycle;
+  const createAdaptiveRetryQuery =
+    options.createAdaptiveRetryQuery ?? createBoundedAdaptiveRetryQuery;
 
   return {
     async createSession(knowledgeBundleId: string, title?: string) {
@@ -207,7 +219,7 @@ export function createProductionChatService(
           })
         : buildSkippedQueryUnderstanding(content);
       const retrievalQuery = queryUnderstanding.retrievalQuery;
-      const retrieval = isRetrievalRoute(decision.route) && !unresolvedVagueFollowUp
+      let retrieval = isRetrievalRoute(decision.route) && !unresolvedVagueFollowUp
           ? await retrieve({
             clarificationAlreadyAsked: clarification.alreadyAsked,
             decision,
@@ -226,6 +238,65 @@ export function createProductionChatService(
             rerank: { applied: false, dropped: 0, status: "not_applicable" as const },
             sourcesRead: [],
           };
+      let evidenceSufficiency = classifyEvidenceSufficiency(
+        retrieval,
+        decision,
+      );
+      const deterministicRetrieval = retrieval;
+      let adaptiveRetry: AdaptiveRetryTrace | undefined;
+      const enabledRetryBundleIds = bundleScope
+        .filter((bundle) => bundle.boundedAdaptiveRetryEnabled === true)
+        .map((bundle) => bundle.id);
+      if (
+        isRetrievalRoute(decision.route) &&
+        !unresolvedVagueFollowUp &&
+        !retrieval.metadataClarification
+      ) {
+        const retryPlan = await createAdaptiveRetryQuery({
+          decision,
+          enabledBundleIds: enabledRetryBundleIds,
+          originalQuery: retrievalQuery,
+          sufficiency: evidenceSufficiency,
+          workspaceId: context.workspaceId,
+        });
+        adaptiveRetry = retryPlan.trace;
+        if (retryPlan.query) {
+          const retryResult = await retrieve({
+            clarificationAlreadyAsked: true,
+            decision,
+            includeSearchSummary: true,
+            knowledgeBundleIds: enabledRetryBundleIds,
+            query: retryPlan.query,
+            workspaceId: context.workspaceId,
+          });
+          const merged = mergeAdaptiveRetrievalResults(
+            retrieval,
+            retryResult,
+            decision,
+          );
+          if (merged.evidenceDelta.citations > 0) {
+            retrieval = merged.result;
+            adaptiveRetry = {
+              ...adaptiveRetry,
+              evidenceDelta: merged.evidenceDelta,
+            };
+            evidenceSufficiency = classifyEvidenceSufficiency(
+              retrieval,
+              decision,
+            );
+          } else {
+            adaptiveRetry = {
+              ...adaptiveRetry,
+              fallbackUsed: true,
+              outcome: "no_improvement",
+            };
+          }
+        }
+      }
+      const ragInvocationReason = resolveRagInvocationReason(
+        retrieval,
+        decision,
+      );
       const effectiveQueryUnderstanding = retrieval.metadataClarification
         ? {
             ...queryUnderstanding,
@@ -283,7 +354,9 @@ export function createProductionChatService(
         ...(isRetrievalRoute(decision.route)
           ? {
               approvedOkfAvailable: retrieval.approvedOkfAvailable,
+              evidenceSufficiency,
               finalEvidenceStatus: resolveEvidenceStatus(retrieval),
+              ragInvocationReason,
               ragUsedForDiscoveryOnly: retrieval.ragUsedForDiscoveryOnly,
               ...(retrieval.okfEvidenceMode
                 ? { okfEvidenceMode: retrieval.okfEvidenceMode }
@@ -305,6 +378,7 @@ export function createProductionChatService(
         ...(retrieval.crossBundleConflict
           ? { crossBundleConflict: retrieval.crossBundleConflict }
           : {}),
+        ...(adaptiveRetry ? { adaptiveRetry } : {}),
         retrievalToolsCalled: retrieval.retrievalToolsCalled,
         ...(retrieval.searchSummary
           ? { searchSummary: retrieval.searchSummary }
@@ -328,16 +402,63 @@ export function createProductionChatService(
             answerValidation,
           )
         : retrieval.agentExecution;
+      const persistedRetrieval =
+        answerValidation?.status === "fail" &&
+        adaptiveRetry?.outcome === "applied"
+          ? deterministicRetrieval
+          : retrieval;
       const safeAnswer =
         answerValidation?.status === "fail" && isRetrievalRoute(decision.route)
           ? {
               ...answer,
               content: answer.outcome === "insufficient_evidence"
                 ? buildNotDirectlyAnsweredReply(decision.route)
-                : buildRetrievalAnswer(decision.route, retrieval),
+                : buildRetrievalAnswer(decision.route, persistedRetrieval),
               mode: "deterministic" as const,
             }
           : answer;
+      const finalAdaptiveRetry = adaptiveRetry
+        ? {
+            ...adaptiveRetry,
+            ...(answerValidation
+              ? { validationStatus: answerValidation.status }
+              : {}),
+            ...(answerValidation?.status === "fail" &&
+            adaptiveRetry.outcome === "applied"
+              ? {
+                  fallbackUsed: true,
+                  outcome: "validation_failed" as const,
+                }
+              : {}),
+          }
+        : undefined;
+      const persistedEvidenceSufficiency = classifyEvidenceSufficiency(
+        persistedRetrieval,
+        decision,
+      );
+      const {
+        crossBundleConflict: _discardedCrossBundleConflict,
+        ...traceWithoutCrossBundleConflict
+      } = assistantTrace;
+      void _discardedCrossBundleConflict;
+      const persistedAssistantTrace = {
+        ...traceWithoutCrossBundleConflict,
+        approvedOkfAvailable: persistedRetrieval.approvedOkfAvailable,
+        evidenceSufficiency: persistedEvidenceSufficiency,
+        finalEvidenceStatus: resolveEvidenceStatus(persistedRetrieval),
+        ragInvocationReason: resolveRagInvocationReason(
+          persistedRetrieval,
+          decision,
+        ),
+        ragUsedForDiscoveryOnly:
+          persistedRetrieval.ragUsedForDiscoveryOnly,
+        rerank: persistedRetrieval.rerank,
+        retrievalToolsCalled: persistedRetrieval.retrievalToolsCalled,
+        sourcesRead: persistedRetrieval.sourcesRead,
+        ...(persistedRetrieval.crossBundleConflict
+          ? { crossBundleConflict: persistedRetrieval.crossBundleConflict }
+          : {}),
+      };
       const disclosedAnswer = {
         ...safeAnswer,
         content: discloseChatAssumptions(
@@ -349,16 +470,16 @@ export function createProductionChatService(
         disclosedAnswer.outcome === "insufficient_evidence" &&
         isRetrievalRoute(decision.route)
           ? {
-              finalEvidenceStatus: resolveEvidenceStatus(retrieval),
+              finalEvidenceStatus: resolveEvidenceStatus(persistedRetrieval),
               question: content,
-              reason: retrieval.citations.length === 0
+              reason: persistedRetrieval.citations.length === 0
                 ? "no_matching_evidence"
                 : "related_evidence_not_answering",
               retrievalQuery,
               route: decision.route,
               searchedSources: Array.from(new Set([
-                ...retrieval.retrievalToolsCalled,
-                ...retrieval.sourcesRead,
+                ...persistedRetrieval.retrievalToolsCalled,
+                ...persistedRetrieval.sourcesRead,
               ])),
             }
           : undefined;
@@ -366,17 +487,18 @@ export function createProductionChatService(
       return repository.appendUserMessageAndAssistantReply({
         assistantContent: disclosedAnswer.content,
         assistantTrace: {
-          ...assistantTrace,
+          ...persistedAssistantTrace,
+          ...(finalAdaptiveRetry ? { adaptiveRetry: finalAdaptiveRetry } : {}),
           ...(agentExecution ? { agentExecution } : {}),
           answerMode: disclosedAnswer.mode,
           answerOutcome: disclosedAnswer.outcome,
           answerEvidenceProfile: buildAnswerEvidenceProfile({
-            citations: retrieval.citations,
-            trace: assistantTrace,
+            citations: persistedRetrieval.citations,
+            trace: persistedAssistantTrace,
           }),
           ...(answerValidation ? { answerValidation } : {}),
         },
-        citations: retrieval.citations,
+        citations: persistedRetrieval.citations,
         content,
         context,
         knowledgeBundleIds,

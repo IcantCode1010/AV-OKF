@@ -7,6 +7,7 @@ import {
   requestKnowledgeBundleDeletion,
   runKnowledgeBundleDeletionJob,
 } from "../src/lib/knowledge-bundle-deletion.ts";
+import { DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER } from "../src/lib/chat-evidence-tombstone.ts";
 import {
   createKnowledgeBundle,
   resolveKnowledgeBundleRoot,
@@ -303,6 +304,12 @@ try {
   assert.equal(preservedChat.primaryKnowledgeBundleId, null);
   assert.equal(preservedChat.knowledgeBundles.length, 0);
   assert.equal(await db.chatMessage.count({ where: { sessionId: session.id } }), 1);
+  const tombstonedAnswer = await db.chatMessage.findFirstOrThrow({
+    where: { role: "assistant", sessionId: session.id },
+  });
+  assert.equal(tombstonedAnswer.content, DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER);
+  assert.deepEqual(tombstonedAnswer.citations, []);
+  assert.equal(tombstonedAnswer.trace, null);
   await assert.rejects(() => readFile(conceptPath, "utf8"), /ENOENT/);
 
   await db.document.update({
@@ -316,12 +323,18 @@ try {
   const audit = await db.bundleDeletionAudit.findFirstOrThrow({
     where: { bundleId: deletedBundle.id, workspaceId },
   });
+  assert.equal(
+    (audit.deletionCounts as { chatAnswersTombstoned?: number })
+      .chatAnswersTombstoned,
+    1,
+  );
 
   console.log(JSON.stringify({
     auditCreated: Boolean(audit.id),
     bundleRemoved: true,
     concurrentRequestIdempotencyVerified: true,
     chatHistoryPreservedReadOnly: true,
+    deletedBundleAnswerTombstoned: true,
     documentReassigned: true,
     documentsPreserved: 1,
     extractionHistoryPreserved: true,

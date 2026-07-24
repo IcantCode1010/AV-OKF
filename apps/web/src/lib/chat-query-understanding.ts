@@ -393,7 +393,7 @@ async function callQueryUnderstandingProvider(input: {
   return result.output;
 }
 
-function extractProtectedEntities(question: string): string[] {
+export function extractProtectedEntities(question: string): string[] {
   const quotedPhrases = [
     ...(question.match(/"[^"]+"/g) ?? []).map((value) => value.slice(1, -1)),
     ...(question.match(/\u201c[^\u201d]+\u201d/g) ?? []).map((value) =>
@@ -429,7 +429,7 @@ function deduplicateEntities(entities: string[]): string[] {
   });
 }
 
-function includesEntity(value: string, entity: string): boolean {
+export function includesEntity(value: string, entity: string): boolean {
   const escaped = entity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(value);
 }

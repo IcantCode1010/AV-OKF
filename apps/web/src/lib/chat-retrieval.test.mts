@@ -7,6 +7,7 @@ import test from "node:test";
 import { buildAnswerEvidenceProfile } from "./chat-evidence-profile.ts";
 import {
   buildRetrievalAnswer,
+  mergeAdaptiveRetrievalResults,
   resolveEvidenceStatus,
   runChatRetrieval,
 } from "./chat-retrieval.ts";
@@ -104,7 +105,7 @@ test("okf_only route reads approved OKF bundle evidence and calls okf_retrieval"
   assert.deepEqual(result.sourcesRead, ["GEN OFF BUS (737NG QRH p. 12)"]);
 });
 
-test("direct OKF matches include only coverage-linked raw RAG as supporting evidence", async () => {
+test("strong direct OKF matches do not invoke raw or coverage-linked RAG", async () => {
   const decision = routeChatQuestion("What is the official GEN OFF BUS procedure?");
   assert.equal(decision.route, "okf_only");
   let openRagCalled = false;
@@ -126,37 +127,19 @@ test("direct OKF matches include only coverage-linked raw RAG as supporting evid
       }),
     ],
     undefined,
-    async (request) => {
-      assert.deepEqual(request, {
-        chunkIds: ["chunk_covered"],
-        knowledgeBundleId: "kb_general",
-        topK: 6,
-        workspaceId: "wrk_1",
-      });
-      return [
-        makeResult({
-          chunkId: "chunk_covered",
-          coveredByOkfConceptIds: ["topic_gen_off_bus"],
-          text: "The source manual gives the GEN OFF BUS procedure.",
-        }),
-      ];
+    async () => {
+      throw new Error("covered_rag_should_not_be_called");
     },
   );
 
   assert.equal(openRagCalled, false);
   assert.equal(result.approvedOkfAvailable, true);
   assert.equal(result.ragUsedForDiscoveryOnly, false);
-  assert.deepEqual(result.retrievalToolsCalled, [
-    "okf_retrieval",
-    "okf_coverage_rag",
-  ]);
+  assert.deepEqual(result.retrievalToolsCalled, ["okf_retrieval"]);
   assert.deepEqual(
     result.citations.map((citation) => citation.sourceType),
-    ["okf", "rag"],
+    ["okf"],
   );
-  assert.deepEqual(result.citations[1]?.coveredByOkfConceptIds, [
-    "topic_gen_off_bus",
-  ]);
 
   const profile = buildAnswerEvidenceProfile({
     citations: result.citations,
@@ -165,7 +148,7 @@ test("direct OKF matches include only coverage-linked raw RAG as supporting evid
       route: decision.route,
     },
   });
-  assert.equal(profile.evidenceKind, "mixed");
+  assert.equal(profile.evidenceKind, "approved_okf");
 });
 
 test("graph questions traverse approved OKF relations and label graph evidence", async () => {
@@ -201,14 +184,8 @@ test("graph questions traverse approved OKF relations and label graph evidence",
       assert.deepEqual(request.seedFiles, ["32-brakes.md"]);
       return graphResult;
     },
-    async (request) => {
-      assert.deepEqual(request.chunkIds, ["chunk_covered"]);
-      return [
-        makeResult({
-          chunkId: "chunk_covered",
-          text: "The source manual describes alternate braking on page 12.",
-        }),
-      ];
+    async () => {
+      throw new Error("covered_rag_should_not_be_called");
     },
   );
 
@@ -216,13 +193,11 @@ test("graph questions traverse approved OKF relations and label graph evidence",
   assert.deepEqual(result.retrievalToolsCalled, [
     "okf_retrieval",
     "okf_relation_traversal",
-    "okf_coverage_rag",
   ]);
   assert.deepEqual(
     result.citations.map((citation) => citation.okfEvidenceMode),
-    ["graph", "graph", undefined],
+    ["graph", "graph"],
   );
-  assert.equal(result.citations[2]?.sourceType, "rag");
 });
 
 test("okf_only downgrades to labeled RAG discovery when no approved OKF evidence exists", async () => {
@@ -759,7 +734,12 @@ test("okf_retrieval is always called with topK 4 regardless of route", async () 
   );
   assert.equal(hybridDecision.route, "hybrid");
   await runChatRetrieval(
-    { decision: hybridDecision, query: "policy examples", workspaceId: "wrk_1" },
+    {
+      decision: hybridDecision,
+      knowledgeBundleId: "kb_general",
+      query: "policy examples",
+      workspaceId: "wrk_1",
+    },
     async () => [makeResult({ chunkId: "c_raw", sourceType: "raw_extraction" })],
     captureOkf,
   );
@@ -769,7 +749,12 @@ test("okf_retrieval is always called with topK 4 regardless of route", async () 
   );
   assert.equal(okfOnlyDecision.route, "okf_only");
   await runChatRetrieval(
-    { decision: okfOnlyDecision, query: "GEN OFF BUS", workspaceId: "wrk_1" },
+    {
+      decision: okfOnlyDecision,
+      knowledgeBundleId: "kb_general",
+      query: "GEN OFF BUS",
+      workspaceId: "wrk_1",
+    },
     async () => [],
     captureOkf,
   );
@@ -905,7 +890,7 @@ test("multi-bundle graph traversal never crosses the originating bundle", async 
   ]);
 });
 
-test("multi-bundle OKF retrieval keeps linked RAG support and drops unrelated fallback RAG", async () => {
+test("multi-bundle strong OKF retrieval does not call raw or coverage-linked RAG", async () => {
   const decision = routeChatQuestion("What is the official procedure?");
   const result = await runChatRetrieval(
     {
@@ -914,12 +899,9 @@ test("multi-bundle OKF retrieval keeps linked RAG support and drops unrelated fa
       query: "official procedure",
       workspaceId: "wrk_1",
     },
-    async ({ knowledgeBundleId }) => [
-      makeResult({
-        chunkId: `${knowledgeBundleId}-unlinked`,
-        coveredByOkfConceptIds: [],
-      }),
-    ],
+    async () => {
+      throw new Error("raw_rag_should_not_be_called");
+    },
     async ({ knowledgeBundleId }) =>
       knowledgeBundleId === "bundle-a"
         ? [
@@ -930,13 +912,9 @@ test("multi-bundle OKF retrieval keeps linked RAG support and drops unrelated fa
           ]
         : [],
     async () => ({ concepts: [], edges: [], warnings: [] }),
-    async ({ chunkIds, knowledgeBundleId }) =>
-      chunkIds.map((chunkId) =>
-        makeResult({
-          chunkId,
-          coveredByOkfConceptIds: [`${knowledgeBundleId}-topic`],
-        }),
-      ),
+    async () => {
+      throw new Error("covered_rag_should_not_be_called");
+    },
     async ({ candidates }) => ({
       results: candidates,
       trace: { applied: false, dropped: 0, status: "not_applicable" },
@@ -952,14 +930,7 @@ test("multi-bundle OKF retrieval keeps linked RAG support and drops unrelated fa
 
   assert.deepEqual(
     result.citations.map((citation) => citation.sourceType),
-    ["okf", "rag"],
-  );
-  assert.equal(result.citations[1]?.coveredByOkfConceptIds?.length, 1);
-  assert.equal(
-    result.citations.some((citation) =>
-      citation.coveredByOkfConceptIds?.includes("bundle-b-topic"),
-    ),
-    false,
+    ["okf"],
   );
   assert.equal(result.ragUsedForDiscoveryOnly, false);
 });
@@ -1006,4 +977,60 @@ test("conflicting exact values from selected approved bundles are surfaced", asy
     "3000",
     "3200",
   ]);
+});
+
+test("adaptive retrieval merge preserves original evidence, deduplicates, and enforces global caps", async () => {
+  const decision = routeChatQuestion("What is the official brake procedure?");
+  const original = await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleId: "bundle-a",
+      query: "official brake procedure",
+      workspaceId: "wrk_1",
+    },
+    async () =>
+      Array.from({ length: 6 }, (_, index) =>
+        makeResult({
+          chunkId: `original-rag-${index}`,
+          documentId: `original-doc-${index}`,
+          documentTitle: `Original document ${index}`,
+          text: `Original raw evidence ${index}`,
+        }),
+      ),
+    async () => [],
+  );
+  const retry = await runChatRetrieval(
+    {
+      decision,
+      knowledgeBundleId: "bundle-a",
+      query: "braking system stopping instructions",
+      workspaceId: "wrk_1",
+    },
+    async () => {
+      throw new Error("strong_retry_okf_should_not_call_rag");
+    },
+    async () => [
+      makeOkfEvidence({ filePath: "retry-1.md", title: "Brake Procedure" }),
+      makeOkfEvidence({ filePath: "retry-2.md", title: "Brake Limits" }),
+      makeOkfEvidence({ filePath: "retry-3.md", title: "Brake Inspection" }),
+      makeOkfEvidence({ filePath: "retry-4.md", title: "Brake Faults" }),
+      makeOkfEvidence({ filePath: "retry-5.md", title: "Brake History" }),
+    ],
+  );
+
+  const merged = mergeAdaptiveRetrievalResults(original, retry, decision);
+
+  assert.equal(merged.result.citations.filter((item) => item.sourceType === "okf").length, 4);
+  assert.equal(merged.result.citations.filter((item) => item.sourceType === "rag").length, 6);
+  assert.equal(merged.result.citations.length, 10);
+  assert.equal(new Set(merged.result.citations.map((item) => item.index)).size, 10);
+  assert.equal(
+    merged.result.citations.some((item) => item.documentTitle === "Original document 0"),
+    true,
+  );
+  assert.deepEqual(merged.evidenceDelta, {
+    approvedOkf: 4,
+    citations: 4,
+    rawRag: 0,
+  });
 });

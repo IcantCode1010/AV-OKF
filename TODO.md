@@ -1,5 +1,21 @@
 # AV-OKF TODO
 
+## Agent Rollout
+
+- [x] Tombstone entire historical assistant answers when any supporting citation belongs to a deleted bundle, including mixed-source answers.
+- [x] Add deterministic `strong`, `partial`, `weak`, and `none` evidence-sufficiency classification with an explicit raw-RAG invocation reason in trace.
+- [x] Check every selected bundle for qualified OKF before allowing raw-RAG fallback.
+- [x] Add a versioned, per-bundle `agent.boundedAdaptiveRetryEnabled` flag that defaults off.
+- [x] Allow one structured retrieval-query retry while preserving route, graph decision, protected identifiers, selected scope, lifecycle rules, trust order, global evidence caps, and mandatory validation.
+- [x] Fail open to the original deterministic result for missing keys, provider errors, malformed output, rejected rewrites, no improvement, and validation failure.
+- [x] Extend the Docker route evaluator with mid-chat bundle add/remove, exact-value conflict, later-turn scope exclusion, and cross-workspace scope rejection.
+- [ ] Add running-stack fault injection for provider outage, malformed output, budget exhaustion, partial retrieval failure, and a concurrent in-flight scope mutation; unit/integration coverage exists but does not satisfy the Docker promotion gate.
+- [ ] Run and commit the 30-question mixed-domain baseline/candidate comparison; require a 10-point correctly-cited-answer gain and zero baseline regressions.
+- [ ] Run Relation Discovery V3 against the configured provider and meet the 80% internal precision checkpoint before considering semantic expansion.
+- [ ] Pilot adaptive retry on one internal non-safety-critical bundle for at least seven days and 50 eligible turns.
+- [ ] Run the trust-UX protocol with five non-technical reviewers; any criterion missed by more than one reviewer requires a UI correction.
+- [ ] Keep free model-directed tool choice evaluation-only until it beats the complete deterministic route baseline with zero policy violations.
+
 ## LLM-Assisted Authoring
 
 - [x] Add a unified post-upload Processing panel, persistent attention strip, automatic-approval polling, and domain-neutral workflow status derived from existing job records.

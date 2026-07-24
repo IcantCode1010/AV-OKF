@@ -36,6 +36,10 @@ import {
 const EVAL_USER_ID = "e2e-route-coverage";
 const BUNDLE_NAME = "Route Coverage Evaluation";
 const BUNDLE_SLUG = "route-coverage-evaluation";
+const SECONDARY_BUNDLE_NAME = "Route Coverage Regulations";
+const SECONDARY_BUNDLE_SLUG = "route-coverage-regulations";
+const SECONDARY_CONCEPT_FILE =
+  "concepts/policy/regulatory-audit-retention-standard.md";
 const DOCUMENT_ID = "route_coverage_eval_document_v1";
 const FOREIGN_DOCUMENT_ID = "route_coverage_eval_foreign_document_v1";
 const FOREIGN_WORKSPACE_ID = "route_coverage_eval_foreign_workspace_v1";
@@ -91,8 +95,13 @@ export async function runRouteCoverageEval(input: {
   const workspaceId = await resolveEvalWorkspace();
   const context = { role: "admin", userId: EVAL_USER_ID, workspaceId } as const;
   const bundle = await seedBundle(context);
+  const secondaryBundle = await seedSecondaryBundle(context);
   await seedRagDocument({ bundleId: bundle.id, workspaceId });
   await seedConcepts({ bundleId: bundle.id, workspaceId });
+  await seedSecondaryConcept({
+    bundleId: secondaryBundle.id,
+    workspaceId,
+  });
 
   await db.chatSession.deleteMany({ where: { userId: EVAL_USER_ID, workspaceId } });
   const repository = createPostgresChatRepository(db);
@@ -203,6 +212,12 @@ export async function runRouteCoverageEval(input: {
     service,
     workspaceId,
   });
+  const stage7dScenarios = await runStage7dScenarios({
+    primaryBundleId: bundle.id,
+    secondaryBundleId: secondaryBundle.id,
+    service,
+    workspaceId,
+  });
 
   const baseline = input.baselinePath
     ? JSON.parse(await readFile(input.baselinePath, "utf8")) as RouteCoverageReport
@@ -221,13 +236,16 @@ export async function runRouteCoverageEval(input: {
     evaluatedAt: new Date().toISOString(),
     failedCount:
       results.filter((result) => !result.passed).length +
-      stage7cScenarios.filter((result) => !result.passed).length,
+      stage7cScenarios.filter((result) => !result.passed).length +
+      stage7dScenarios.filter((result) => !result.passed).length,
     passedCount:
       results.filter((result) => result.passed).length +
-      stage7cScenarios.filter((result) => result.passed).length,
+      stage7cScenarios.filter((result) => result.passed).length +
+      stage7dScenarios.filter((result) => result.passed).length,
     phase: input.phase,
     questions: results,
     stage7cScenarios,
+    stage7dScenarios,
     workspaceId,
   } satisfies RouteCoverageReport;
   const serialized = `${JSON.stringify(report, null, 2)}\n`;
@@ -252,6 +270,7 @@ type RouteCoverageReport = {
     passed: boolean;
   }>;
   stage7cScenarios: Stage7cScenarioResult[];
+  stage7dScenarios: Stage7cScenarioResult[];
   workspaceId: string;
 };
 
@@ -338,6 +357,65 @@ async function seedBundle(context: { role: "admin"; userId: string; workspaceId:
   }
   await writeWorkspaceVault(context.workspaceId);
   return { id: bundleId };
+}
+
+async function seedSecondaryBundle(
+  context: { role: "admin"; userId: string; workspaceId: string },
+) {
+  const db = getPrisma();
+  const existing = await db.knowledgeBundle.findUnique({
+    where: {
+      workspaceId_slug: {
+        slug: SECONDARY_BUNDLE_SLUG,
+        workspaceId: context.workspaceId,
+      },
+    },
+  });
+  let bundleId = existing?.id;
+  if (!bundleId) {
+    const created = await createKnowledgeBundle({
+      context,
+      description: "Secondary approved authority for multi-bundle route evaluation.",
+      name: SECONDARY_BUNDLE_NAME,
+      templateId: "generic",
+    });
+    bundleId = created.id;
+  } else {
+    await scaffoldKnowledgeBundle({
+      bundleId,
+      profile: GENERIC_PROFILE_TEMPLATE,
+      workspaceId: context.workspaceId,
+    });
+  }
+  await writeWorkspaceVault(context.workspaceId);
+  return { id: bundleId };
+}
+
+async function seedSecondaryConcept(input: {
+  bundleId: string;
+  workspaceId: string;
+}) {
+  const root = resolveKnowledgeBundleRoot(input);
+  const fullPath = path.join(root, ...SECONDARY_CONCEPT_FILE.split("/"));
+  await mkdir(path.dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, buildRegulatoryAuditConcept(), "utf8");
+  await writeFile(
+    path.join(root, "index.md"),
+    [
+      "# Route Coverage Regulations",
+      "",
+      `- [Regulatory Audit Retention Standard](${SECONDARY_CONCEPT_FILE})`,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await getPrisma().okfConceptLifecycle.deleteMany({
+    where: {
+      filePath: SECONDARY_CONCEPT_FILE,
+      knowledgeBundleId: input.bundleId,
+      workspaceId: input.workspaceId,
+    },
+  });
 }
 
 async function seedConcepts(input: { bundleId: string; workspaceId: string }) {
@@ -748,6 +826,115 @@ async function runStage7cScenarios(input: {
   return results;
 }
 
+async function runStage7dScenarios(input: {
+  primaryBundleId: string;
+  secondaryBundleId: string;
+  service: ReturnType<typeof createProductionChatService>;
+  workspaceId: string;
+}): Promise<Stage7cScenarioResult[]> {
+  const results: Stage7cScenarioResult[] = [];
+  const record = async (id: string, verify: () => Promise<string[]>) => {
+    try {
+      const assertionErrors = await verify();
+      results.push({ assertionErrors, id, passed: assertionErrors.length === 0 });
+    } catch (error) {
+      results.push({
+        assertionErrors: [`exception:${formatError(error)}`],
+        id,
+        passed: false,
+      });
+    }
+  };
+  const db = getPrisma();
+  const session = await input.service.createSession(
+    input.primaryBundleId,
+    "Stage 7D dynamic scope",
+  );
+
+  await record("stage7d-add-bundle-and-conflict", async () => {
+    const updated = await input.service.updateSessionKnowledgeBundles(
+      session.id,
+      [input.primaryBundleId, input.secondaryBundleId],
+    );
+    const sent = await input.service.sendMessage(
+      session.id,
+      "What is the approved Audit Retention Standard?",
+    );
+    const persisted = await db.chatMessage.findUnique({
+      select: { citations: true, trace: true },
+      where: { id: sent.assistantMessage.id },
+    });
+    const trace = persisted?.trace as Stage6aRouterTrace | null;
+    const citations = (persisted?.citations ?? []) as unknown as ChatCitation[];
+    return [
+      ...expectEqual(updated.scopeVersion, 2, "scopeVersion"),
+      ...expectEqual(
+        JSON.stringify(trace?.bundleScope?.bundleIds),
+        JSON.stringify([input.primaryBundleId, input.secondaryBundleId]),
+        "capturedBundleIds",
+      ),
+      ...(citations.some(
+        (citation) =>
+          citation.knowledgeBundleId === input.secondaryBundleId &&
+          citation.okfFilePath === SECONDARY_CONCEPT_FILE,
+      )
+        ? []
+        : ["secondary_bundle_citation_missing"]),
+      ...expectEqual(
+        trace?.crossBundleConflict?.detected,
+        true,
+        "crossBundleConflict.detected",
+      ),
+    ];
+  });
+
+  await record("stage7d-remove-bundle-affects-later-turn-only", async () => {
+    const updated = await input.service.updateSessionKnowledgeBundles(
+      session.id,
+      [input.primaryBundleId],
+    );
+    const sent = await input.service.sendMessage(
+      session.id,
+      "What is the approved Audit Retention Standard?",
+    );
+    const persisted = await db.chatMessage.findUnique({
+      select: { citations: true, trace: true },
+      where: { id: sent.assistantMessage.id },
+    });
+    const trace = persisted?.trace as Stage6aRouterTrace | null;
+    const citations = (persisted?.citations ?? []) as unknown as ChatCitation[];
+    return [
+      ...expectEqual(updated.scopeVersion, 3, "scopeVersion"),
+      ...expectEqual(
+        JSON.stringify(trace?.bundleScope?.bundleIds),
+        JSON.stringify([input.primaryBundleId]),
+        "capturedBundleIds",
+      ),
+      ...(citations.some(
+        (citation) => citation.knowledgeBundleId === input.secondaryBundleId,
+      )
+        ? ["removed_bundle_citation_leaked"]
+        : []),
+    ];
+  });
+
+  await record("stage7d-cross-workspace-scope-rejected", async () => {
+    try {
+      await input.service.updateSessionKnowledgeBundles(session.id, [
+        input.primaryBundleId,
+        "route_coverage_eval_foreign_bundle_v1",
+      ]);
+      return ["cross_workspace_bundle_accepted"];
+    } catch (error) {
+      return /chat_bundle_scope_invalid/.test(formatError(error))
+        ? []
+        : [`unexpected_error:${formatError(error)}`];
+    }
+  });
+
+  return results;
+}
+
 async function runCitationLifecycleScenarios(input: {
   auth: TestAuthClient;
   bundleId: string;
@@ -1066,6 +1253,8 @@ function buildRouteCases(): RouteCase[] {
       query: "What is the approved Thermal Regulation Protocol?",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "okf_only", "route"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "strong", "evidenceSufficiency.status"),
+        ...expectEqual(turn.trace.ragInvocationReason, "not_invoked", "ragInvocationReason"),
         ...expectEqual(turn.trace.okfMatchMode, "lexical", "okfMatchMode"),
         ...expectEqual(turn.trace.rerank?.status, "not_applicable", "rerank.status"),
         ...expectEqual(turn.trace.queryUnderstanding?.rewriteMode, "not_needed", "queryUnderstanding.rewriteMode"),
@@ -1095,6 +1284,7 @@ function buildRouteCases(): RouteCase[] {
         ...(turn.trace.route === "missing_context" ? ["follow_up_requested_second_clarification"] : []),
         ...(turn.trace.metadataClarification ? ["follow_up_metadata_clarification_repeated"] : []),
         ...expectEqual(turn.trace.ragUsedForDiscoveryOnly, true, "follow_up.ragUsedForDiscoveryOnly"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "weak", "follow_up.evidenceSufficiency.status"),
         ...(!turn.trace.metadataClarificationSelection
           ? ["follow_up.metadataClarificationSelection:missing"]
           : []),
@@ -1109,6 +1299,8 @@ function buildRouteCases(): RouteCase[] {
       query: "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "okf_only", "route"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "strong", "evidenceSufficiency.status"),
+        ...expectEqual(turn.trace.ragInvocationReason, "not_invoked", "ragInvocationReason"),
         ...expectEqual(turn.trace.okfMatchMode, "vector", "okfMatchMode"),
         ...expectEqual(turn.trace.rerank?.status, "not_applicable", "rerank.status"),
       ],
@@ -1119,6 +1311,8 @@ function buildRouteCases(): RouteCase[] {
       query: "How does the approved Thermal Regulation Protocol affect the downstream subsystem?",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "okf_only", "route"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "strong", "evidenceSufficiency.status"),
+        ...expectEqual(turn.trace.ragInvocationReason, "not_invoked", "ragInvocationReason"),
         ...expectEqual(turn.trace.requiresGraphTraversal, true, "requiresGraphTraversal"),
         ...expectEqual(turn.trace.okfEvidenceMode, "graph", "okfEvidenceMode"),
         ...expectEqual(turn.trace.rerank?.status, "not_applicable", "rerank.status"),
@@ -1130,6 +1324,8 @@ function buildRouteCases(): RouteCase[] {
       query: "Search every document for calibration drift examples.",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "rag_only", "route"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "weak", "evidenceSufficiency.status"),
+        ...expectEqual(turn.trace.ragInvocationReason, "raw_discovery_route", "ragInvocationReason"),
         ...expectEqual(turn.trace.ragUsedForDiscoveryOnly, true, "ragUsedForDiscoveryOnly"),
         ...expectEqual(turn.trace.rerank?.applied, true, "rerank.applied"),
         ...expectEqual(turn.trace.queryUnderstanding?.rewriteMode, "not_needed", "queryUnderstanding.rewriteMode"),
@@ -1143,6 +1339,8 @@ function buildRouteCases(): RouteCase[] {
       query: "Give the approved Thermal Regulation Protocol with supporting raw documents about calibration drift.",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "hybrid", "route"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "partial", "evidenceSufficiency.status"),
+        ...expectEqual(turn.trace.ragInvocationReason, "hybrid_supporting_context", "ragInvocationReason"),
         ...expectEqual(turn.trace.rerank?.applied, true, "rerank.applied"),
         ...(turn.citations[0]?.sourceType !== "okf" ? ["okf_evidence_not_first"] : []),
         ...(!turn.citations.some((citation) => citation.sourceType === "rag") ? ["rag_support_missing"] : []),
@@ -1178,6 +1376,8 @@ function buildRouteCases(): RouteCase[] {
       query: "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
       verify: (turn) => [
         ...expectEqual(turn.trace.route, "okf_only", "route"),
+        ...expectEqual(turn.trace.evidenceSufficiency?.status, "weak", "evidenceSufficiency.status"),
+        ...expectEqual(turn.trace.ragInvocationReason, "approved_knowledge_miss", "ragInvocationReason"),
         ...expectEqual(turn.trace.ragUsedForDiscoveryOnly, true, "ragUsedForDiscoveryOnly"),
         ...(turn.trace.okfMatchMode ? [`unexpected_okf_match_mode:${turn.trace.okfMatchMode}`] : []),
         ...(turn.citations.some((citation) => citation.sourceType === "okf") ? ["unexpected_okf_citation"] : []),
@@ -1188,7 +1388,9 @@ function buildRouteCases(): RouteCase[] {
 
 function summarizeTrace(trace: Stage6aRouterTrace) {
   return {
+    adaptiveRetry: trace.adaptiveRetry ?? null,
     answerOutcome: trace.answerOutcome ?? null,
+    evidenceSufficiency: trace.evidenceSufficiency ?? null,
     finalEvidenceStatus: trace.finalEvidenceStatus ?? null,
     okfEvidenceMode: trace.okfEvidenceMode ?? null,
     okfMatchMode: trace.okfMatchMode ?? null,
@@ -1196,6 +1398,7 @@ function summarizeTrace(trace: Stage6aRouterTrace) {
       ? { rewriteMode: trace.queryUnderstanding.rewriteMode, warnings: trace.queryUnderstanding.warnings }
       : null,
     ragUsedForDiscoveryOnly: trace.ragUsedForDiscoveryOnly ?? false,
+    ragInvocationReason: trace.ragInvocationReason ?? null,
     rerank: trace.rerank ?? null,
     requiresGraphTraversal: trace.requiresGraphTraversal ?? false,
     retrievalToolsCalled: trace.retrievalToolsCalled,
@@ -1276,7 +1479,7 @@ function buildAuditConcept() {
   return `---
 type: policy
 title: Audit Retention Standard
-description: Defines retention of approved operational audit records.
+description: Defines a 7-year retention period for approved operational audit records.
 tags:
   - audit
   - records
@@ -1291,6 +1494,28 @@ source_authority: Records Office
 # Audit Retention Standard
 
 Retain approved operational audit records for seven years unless a longer legal hold applies.
+`;
+}
+
+function buildRegulatoryAuditConcept() {
+  return `---
+type: policy
+title: Audit Retention Standard
+description: Defines a 10-year regulatory retention period for approved operational audit records.
+tags:
+  - audit
+  - records
+updated: 2026-07-24
+review_status: approved
+source_file: Regulatory Records Standard.pdf
+source_pages:
+  - 18
+source_authority: Regulatory Records Office
+---
+
+# Audit Retention Standard
+
+Retain approved operational audit records for ten years under the regulatory records schedule.
 `;
 }
 

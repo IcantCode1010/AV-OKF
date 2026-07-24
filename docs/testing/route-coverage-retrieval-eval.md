@@ -19,6 +19,9 @@ The evaluator asserts persisted assistant trace fields for:
   raw-RAG discovery when the selected follow-up still has no qualified OKF;
 - unsupported live-data refusal;
 - clean RAG discovery fallback when the OKF semantic index is absent.
+- deterministic evidence sufficiency and the reason raw RAG was or was not
+  invoked;
+- bounded adaptive-retry policy status when a bundle opts into the candidate.
 
 The metadata scenario also proves that diagnostic near misses create no
 citations and never enter answer validation. It checks every result for
@@ -76,6 +79,17 @@ The first complete Stage 7C run is recorded in
 It is a post-change report; the existing route baseline remains the citation
 regression authority and was not rewritten simply to make this slice pass.
 
+The first rollout-safety run after adding deterministic evidence sufficiency,
+bundle-deletion tombstoning, and the default-off adaptive retry is recorded in
+[`docs/debug/agent-rollout-route-coverage-2026-07-24.json`](../debug/agent-rollout-route-coverage-2026-07-24.json).
+It passed all 9 golden questions, 12 Stage 7C release probes, and 3 Stage 7D
+multi-bundle probes. The Stage 7D probes add a second bundle during a
+conversation, prove a cross-bundle exact-value conflict is surfaced, remove
+that bundle and prove it cannot appear in the later turn, and reject a
+cross-workspace scope update. Because the seed bundles keep adaptive retry
+disabled, this report proves deterministic non-regression and trace behavior;
+it is not the required 30-question adaptive-retry promotion comparison.
+
 ## Add A Golden Question
 
 When a router path or evidence mode is introduced:
@@ -91,3 +105,24 @@ When a router path or evidence mode is introduced:
 
 The question matrix must grow whenever the router gains a new route, retrieval
 tool, or evidence mode. Otherwise a plausible answer can hide a path shift.
+
+## Adaptive Retry Promotion Matrix
+
+The disabled-by-default retry is not promoted by unit tests alone. Extend this
+same evaluator with at least 30 mixed-domain weak or partial questions and save
+both deterministic and candidate reports under `docs/debug/`.
+
+Promotion requires:
+
+- at least a 10-percentage-point improvement in correctly cited answers;
+- no regression on any question the deterministic baseline answered correctly;
+- no route changes, invented citations, unselected-bundle evidence, trust
+  upgrades, or validation bypasses;
+- recorded hit rate, citation precision, answer correctness, fallback rate,
+  provider calls, token cost, and p50/p95 latency.
+
+Running-stack release probes must also cover provider outage, malformed output,
+budget exhaustion in existing query-understanding/rerank paths, partial
+retrieval failure, mid-turn scope mutation, cross-bundle conflicts, deletion,
+and cross-workspace isolation. Synthetic unit failures remain useful, but do
+not satisfy this rollout gate.

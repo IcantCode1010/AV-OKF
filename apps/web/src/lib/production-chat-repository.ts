@@ -4,6 +4,10 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation, ChatMessage, ChatSession } from "./chat-types.ts";
 import type { Stage6aRouterTrace } from "./chat-router.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
+import {
+  normalizeKnowledgeProfile,
+  type KnowledgeProfileSchema,
+} from "./knowledge-profile.ts";
 import { normalizeOkfCitationExcerpt } from "./okf-article-content.ts";
 import { getPrisma } from "./prisma.ts";
 
@@ -15,7 +19,11 @@ type DbChatSessionRecord = {
   createdAt: Date;
   id: string;
   knowledgeBundles?: Array<{
-    knowledgeBundle: { id: string; name: string };
+    knowledgeBundle: {
+      activeProfileVersion?: { schema: unknown } | null;
+      id: string;
+      name: string;
+    };
     position: number;
   }>;
   knowledgeBundleId?: string;
@@ -45,7 +53,15 @@ export const MAX_CHAT_KNOWLEDGE_BUNDLES = 10;
 
 const sessionBundleInclude = {
   knowledgeBundles: {
-    include: { knowledgeBundle: { select: { id: true, name: true } } },
+    include: {
+      knowledgeBundle: {
+        select: {
+          activeProfileVersion: { select: { schema: true } },
+          id: true,
+          name: true,
+        },
+      },
+    },
     orderBy: { position: "asc" as const },
     where: { knowledgeBundle: { status: "active" } },
   },
@@ -298,6 +314,9 @@ function mapChatSession(record: DbChatSessionRecord): ChatSession {
   const knowledgeBundles = [...(record.knowledgeBundles ?? [])]
     .sort((left, right) => left.position - right.position)
     .map((selection) => ({
+      boundedAdaptiveRetryEnabled: readBoundedAdaptiveRetrySetting(
+        selection.knowledgeBundle.activeProfileVersion?.schema,
+      ),
       id: selection.knowledgeBundle.id,
       name: selection.knowledgeBundle.name,
       position: selection.position,
@@ -318,6 +337,13 @@ function mapChatSession(record: DbChatSessionRecord): ChatSession {
     userId: record.userId,
     workspaceId: record.workspaceId,
   };
+}
+
+function readBoundedAdaptiveRetrySetting(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return normalizeKnowledgeProfile(
+    value as KnowledgeProfileSchema,
+  ).agent.boundedAdaptiveRetryEnabled;
 }
 
 function mapChatMessage(record: DbChatMessageRecord): ChatMessage {

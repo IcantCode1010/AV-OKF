@@ -1,0 +1,640 @@
+{
+  "bundleId": "cmrzde0ln00003co4ktpcpl97",
+  "evaluatedAt": "2026-07-24T20:14:52.819Z",
+  "failedCount": 0,
+  "passedCount": 24,
+  "phase": "rollout-2026-07-24",
+  "questions": [
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "direct",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "okf-lexical",
+      "passed": true,
+      "query": "What is the approved Thermal Regulation Protocol?",
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "status": "strong"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "status": "strong"
+        },
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": "direct",
+        "okfMatchMode": "lexical",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "not_invoked",
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval"
+        ],
+        "route": "okf_only",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 3,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "metadata-weak-two-turn",
+      "passed": true,
+      "query": "What does ground leveling mean?",
+      "initialTrace": {
+        "adaptiveRetry": null,
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "reason": "metadata_clarification_required",
+          "status": "weak"
+        },
+        "finalEvidenceStatus": "weak_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": [
+            "metadata_driven_clarification"
+          ]
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "not_invoked",
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval"
+        ],
+        "route": "okf_only",
+        "searchSummary": null
+      },
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "reason": "approved_knowledge_did_not_cover_the_question",
+            "status": "weak"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        },
+        "finalEvidenceStatus": "discovery_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "fallback_original",
+          "warnings": [
+            "optimized_query_route_conflict"
+          ]
+        },
+        "ragUsedForDiscoveryOnly": true,
+        "ragInvocationReason": "approved_knowledge_miss",
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "rag_retrieval"
+        ],
+        "route": "okf_only",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "direct",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "okf-vector-fallback",
+      "passed": true,
+      "query": "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "status": "strong"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "status": "strong"
+        },
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": "direct",
+        "okfMatchMode": "vector",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "not_invoked",
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval"
+        ],
+        "route": "okf_only",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "graph",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        },
+        {
+          "documentTitle": "Power Balance Guard",
+          "okfEvidenceMode": "graph",
+          "okfFilePath": "concepts/procedure/power-balance-guard.md",
+          "pageEnd": 44,
+          "pageStart": 44,
+          "sourceType": "okf"
+        }
+      ],
+      "correctCitationCount": 2,
+      "expectedCitationCount": 2,
+      "id": "okf-graph-traversal",
+      "passed": true,
+      "query": "How does the approved Thermal Regulation Protocol affect the downstream subsystem?",
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "status": "strong"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "status": "strong"
+        },
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": "graph",
+        "okfMatchMode": "lexical",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "not_invoked",
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": true,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "okf_relation_traversal"
+        ],
+        "route": "okf_only",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 3,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "rag-only",
+      "passed": true,
+      "query": "Search every document for calibration drift examples.",
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "reason": "approved_knowledge_did_not_cover_the_question",
+            "status": "weak"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        },
+        "finalEvidenceStatus": "discovery_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": true,
+        "ragInvocationReason": "raw_discovery_route",
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "rag_retrieval"
+        ],
+        "route": "rag_only",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Thermal Regulation Protocol",
+          "okfEvidenceMode": "direct",
+          "okfFilePath": "concepts/procedure/thermal-regulation-protocol.md",
+          "pageEnd": 13,
+          "pageStart": 12,
+          "sourceType": "okf"
+        },
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 3,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 2,
+      "expectedCitationCount": 2,
+      "id": "hybrid",
+      "passed": true,
+      "query": "Give the approved Thermal Regulation Protocol with supporting raw documents about calibration drift.",
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "status": "partial",
+            "namedGap": "supporting detail requested by the hybrid route"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        },
+        "finalEvidenceStatus": "approved_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": "lexical",
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "hybrid_supporting_context",
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "rag_retrieval"
+        ],
+        "route": "hybrid",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [],
+      "correctCitationCount": 0,
+      "expectedCitationCount": 0,
+      "id": "missing-context",
+      "passed": true,
+      "query": "Should I delete production data?",
+      "trace": {
+        "adaptiveRetry": null,
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "reason": "no_supported_evidence_found",
+          "status": "none"
+        },
+        "finalEvidenceStatus": "no_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "llm",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "not_invoked",
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [],
+        "route": "missing_context",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [],
+      "correctCitationCount": 0,
+      "expectedCitationCount": 0,
+      "id": "unsupported-live-data",
+      "passed": true,
+      "query": "What is the live weather right now?",
+      "trace": {
+        "adaptiveRetry": null,
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "reason": "no_supported_evidence_found",
+          "status": "none"
+        },
+        "finalEvidenceStatus": "no_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "not_needed",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": false,
+        "ragInvocationReason": "not_invoked",
+        "rerank": {
+          "status": "not_applicable",
+          "applied": false,
+          "dropped": 0
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [],
+        "route": "unsupported",
+        "searchSummary": null
+      }
+    },
+    {
+      "assertionErrors": [],
+      "citations": [
+        {
+          "documentTitle": "Route Coverage Raw Operations Log",
+          "okfEvidenceMode": null,
+          "okfFilePath": null,
+          "pageEnd": 3,
+          "pageStart": 1,
+          "sourceType": "rag"
+        }
+      ],
+      "correctCitationCount": 1,
+      "expectedCitationCount": 1,
+      "id": "okf-vector-missing-fallback",
+      "passed": true,
+      "query": "What is the authoritative way to remove excess heat from orbital test equipment by increasing coolant flow through the primary radiator loop and verifying bypass position before changing the pump setting?",
+      "trace": {
+        "adaptiveRetry": {
+          "outcome": "disabled",
+          "eligible": false,
+          "fallbackUsed": false,
+          "evidenceDelta": {
+            "rawRag": 0,
+            "citations": 0,
+            "approvedOkf": 0
+          },
+          "enabledBundleIds": [],
+          "validationStatus": "pass",
+          "originalSufficiency": {
+            "reason": "approved_knowledge_did_not_cover_the_question",
+            "status": "weak"
+          }
+        },
+        "answerOutcome": "answered",
+        "evidenceSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        },
+        "finalEvidenceStatus": "discovery_evidence",
+        "okfEvidenceMode": null,
+        "okfMatchMode": null,
+        "queryUnderstanding": {
+          "rewriteMode": "llm",
+          "warnings": []
+        },
+        "ragUsedForDiscoveryOnly": true,
+        "ragInvocationReason": "approved_knowledge_miss",
+        "rerank": {
+          "model": "gpt-4o-mini",
+          "status": "applied",
+          "applied": true,
+          "dropped": 0,
+          "provider": "openai"
+        },
+        "requiresGraphTraversal": false,
+        "retrievalToolsCalled": [
+          "okf_retrieval",
+          "rag_retrieval"
+        ],
+        "route": "okf_only",
+        "searchSummary": null
+      }
+    }
+  ],
+  "stage7cScenarios": [
+    {
+      "assertionErrors": [],
+      "id": "stage7c-pdf-cross-workspace",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-pdf-nonexistent",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-pdf-own-document",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-pdf-unauthenticated",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-gap-zero-evidence",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-honest-miss-content",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-gap-clarification-resolved",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-gap-rag-found",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-gap-rag-fallback-miss",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-citation-retracted",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-citation-archived",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7c-citation-deleted-document",
+      "passed": true
+    }
+  ],
+  "stage7dScenarios": [
+    {
+      "assertionErrors": [],
+      "id": "stage7d-add-bundle-and-conflict",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7d-remove-bundle-affects-later-turn-only",
+      "passed": true
+    },
+    {
+      "assertionErrors": [],
+      "id": "stage7d-cross-workspace-scope-rejected",
+      "passed": true
+    }
+  ],
+  "workspaceId": "cmr2lf3s0000101suuz8cz5mn"
+}

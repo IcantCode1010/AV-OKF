@@ -42,6 +42,7 @@ export type ChatMessage = {
 };
 
 export type ChatKnowledgeBundleScope = {
+  boundedAdaptiveRetryEnabled?: boolean;
   id: string;
   name: string;
   position: number;

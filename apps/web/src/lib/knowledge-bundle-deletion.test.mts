@@ -5,6 +5,7 @@ import {
   requestKnowledgeBundleDeletion,
   runKnowledgeBundleDeletionJob,
 } from "./knowledge-bundle-deletion.ts";
+import { DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER } from "./chat-evidence-tombstone.ts";
 
 test("request immediately unassigns documents and deactivates RAG without touching source objects", async () => {
   const previousBackend = process.env.AV_OKF_BACKEND;
@@ -77,6 +78,26 @@ test("worker removes knowledge products while preserving document and extraction
       async create() { calls.push("create-audit"); },
       async findFirst() { return null; },
     },
+    chatMessage: {
+      async findMany() {
+        return [
+          {
+            citations: [{ knowledgeBundleId: "kb_1", sourceType: "okf" }],
+            id: "message_1",
+            knowledgeBundleIds: ["kb_1", "kb_surviving"],
+          },
+          {
+            citations: [{ knowledgeBundleId: "kb_surviving", sourceType: "okf" }],
+            id: "message_2",
+            knowledgeBundleIds: ["kb_1", "kb_surviving"],
+          },
+        ];
+      },
+      async updateMany(args: { data: { content: string } }) {
+        assert.equal(args.data.content, DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER);
+        calls.push("tombstone-chat-answer");
+      },
+    },
     chatSession: {
       async updateMany() { calls.push("promote-chat-scope"); },
     },
@@ -87,6 +108,9 @@ test("worker removes knowledge products while preserving document and extraction
       },
     },
     document: { async updateMany() { calls.push("preserve-unassigned-documents"); } },
+    knowledgeGap: {
+      async deleteMany() { calls.push("delete-tombstoned-answer-gaps"); },
+    },
     knowledgeBundle: { async deleteMany() { calls.push("delete-bundle-row"); } },
     ragChunk: { async count() { return 3; } },
     ragIndexJob: { async deleteMany() { calls.push("delete-rag-indexes"); } },
@@ -113,6 +137,8 @@ test("worker removes knowledge products while preserving document and extraction
 
   assert.deepEqual(calls, [
     "job-running",
+    "delete-tombstoned-answer-gaps",
+    "tombstone-chat-answer",
     "delete-discovery",
     "delete-rag-indexes",
     "preserve-unassigned-documents",
