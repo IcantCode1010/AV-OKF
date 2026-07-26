@@ -274,7 +274,11 @@ export function createProductionChatService(
             retryResult,
             decision,
           );
-          if (merged.evidenceDelta.citations > 0) {
+          const hasQualifiedImprovement =
+            merged.evidenceDelta.citations > 0 &&
+            (decision.route !== "okf_only" ||
+              merged.evidenceDelta.approvedOkf > 0);
+          if (hasQualifiedImprovement) {
             retrieval = merged.result;
             adaptiveRetry = {
               ...adaptiveRetry,
@@ -385,7 +389,7 @@ export function createProductionChatService(
           : {}),
         sourcesRead: retrieval.sourcesRead,
       };
-      const answerValidation = retrieval.metadataClarification || unresolvedVagueFollowUp
+      let answerValidation = retrieval.metadataClarification || unresolvedVagueFollowUp
         ? undefined
         : validateAnswer({
             answerOutcome: answer.outcome,
@@ -395,6 +399,53 @@ export function createProductionChatService(
             route: decision.route,
             trace: assistantTrace,
           });
+      let persistedRetrieval = retrieval;
+      let safeAnswer = answer;
+      if (
+        answerValidation?.status === "fail" &&
+        adaptiveRetry?.outcome === "applied" &&
+        isRetrievalRoute(decision.route)
+      ) {
+        const repairedAnswer = {
+          ...answer,
+          content: answer.outcome === "insufficient_evidence"
+            ? buildNotDirectlyAnsweredReply(decision.route)
+            : buildRetrievalAnswer(decision.route, retrieval),
+          mode: "deterministic" as const,
+        };
+        const repairedValidation = validateAnswer({
+          answerOutcome: repairedAnswer.outcome,
+          answerContent: repairedAnswer.content,
+          citations: retrieval.citations,
+          retrievalError: retrieval.retrievalError,
+          route: decision.route,
+          trace: assistantTrace,
+        });
+        if (repairedValidation.status === "pass") {
+          answerValidation = repairedValidation;
+          safeAnswer = repairedAnswer;
+        } else {
+          persistedRetrieval = deterministicRetrieval;
+          safeAnswer = {
+            ...answer,
+            content: answer.outcome === "insufficient_evidence"
+              ? buildNotDirectlyAnsweredReply(decision.route)
+              : buildRetrievalAnswer(decision.route, deterministicRetrieval),
+            mode: "deterministic" as const,
+          };
+        }
+      } else if (
+        answerValidation?.status === "fail" &&
+        isRetrievalRoute(decision.route)
+      ) {
+        safeAnswer = {
+          ...answer,
+          content: answer.outcome === "insufficient_evidence"
+            ? buildNotDirectlyAnsweredReply(decision.route)
+            : buildRetrievalAnswer(decision.route, retrieval),
+          mode: "deterministic" as const,
+        };
+      }
       const agentExecution = isRetrievalRoute(decision.route)
         ? appendValidationToolTrace(
             retrieval.agentExecution,
@@ -402,21 +453,6 @@ export function createProductionChatService(
             answerValidation,
           )
         : retrieval.agentExecution;
-      const persistedRetrieval =
-        answerValidation?.status === "fail" &&
-        adaptiveRetry?.outcome === "applied"
-          ? deterministicRetrieval
-          : retrieval;
-      const safeAnswer =
-        answerValidation?.status === "fail" && isRetrievalRoute(decision.route)
-          ? {
-              ...answer,
-              content: answer.outcome === "insufficient_evidence"
-                ? buildNotDirectlyAnsweredReply(decision.route)
-                : buildRetrievalAnswer(decision.route, persistedRetrieval),
-              mode: "deterministic" as const,
-            }
-          : answer;
       const finalAdaptiveRetry = adaptiveRetry
         ? {
             ...adaptiveRetry,

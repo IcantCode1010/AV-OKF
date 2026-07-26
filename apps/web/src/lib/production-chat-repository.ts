@@ -49,6 +49,7 @@ type DbChatMessageRecord = {
 
 const DEFAULT_CHAT_TITLE = "New chat";
 const MAX_CHAT_TITLE_LENGTH = 72;
+export const MAX_CHAT_SESSION_LIST_RESULTS = 50;
 export const MAX_CHAT_KNOWLEDGE_BUNDLES = 10;
 
 const sessionBundleInclude = {
@@ -140,6 +141,7 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
       const records = await db.chatSession.findMany({
         include: sessionBundleInclude,
         orderBy: { updatedAt: "desc" },
+        take: MAX_CHAT_SESSION_LIST_RESULTS,
         where: { workspaceId: context.workspaceId },
       });
 

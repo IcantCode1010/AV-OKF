@@ -1,8 +1,48 @@
 import { retrieveDocuments } from "../src/lib/rag-backend.ts";
 import { rerankRawRagCandidates } from "../src/lib/rag-reranker.ts";
 import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 
-if (process.argv[2] === "routes") {
+if (process.argv[2] === "adaptive") {
+  const { runRouteCoverageEval } = await import("./route-coverage-eval.mts");
+  const { runAdaptiveRetrievalEval } = await import("./adaptive-retrieval-eval.mts");
+  const stamp = new Date().toISOString().slice(0, 10);
+  const outputDirectory =
+    process.env.EVAL_OUTPUT_DIR ??
+    path.resolve(process.cwd(), "../../docs/debug");
+  const routeReport = await runRouteCoverageEval({
+    outputPath: path.join(
+      outputDirectory,
+      `adaptive-retrieval-route-prerequisite-${stamp}.json`,
+    ),
+    phase: `adaptive-prerequisite-${stamp}`,
+  });
+  await runAdaptiveRetrievalEval({
+    baselinePath: path.join(
+      outputDirectory,
+      `adaptive-retrieval-baseline-${stamp}.json`,
+    ),
+    candidatePath: path.join(
+      outputDirectory,
+      `adaptive-retrieval-candidate-${stamp}.json`,
+    ),
+    comparisonPath: path.join(
+      outputDirectory,
+      `adaptive-retrieval-comparison-${stamp}.json`,
+    ),
+    reviewPath: path.join(
+      outputDirectory,
+      `adaptive-retrieval-review-${stamp}.md`,
+    ),
+    routeSuitePassed: routeReport.failedCount === 0,
+    workspaceId: routeReport.workspaceId,
+    worksheetPath: path.join(
+      outputDirectory,
+      `adaptive-retrieval-blinded-review-${stamp}.md`,
+    ),
+  });
+  process.exit(process.exitCode ?? 0);
+} else if (process.argv[2] === "routes") {
   const { runRouteCoverageEval } = await import("./route-coverage-eval.mts");
   await runRouteCoverageEval({
     baselinePath: process.env.EVAL_BASELINE_PATH,

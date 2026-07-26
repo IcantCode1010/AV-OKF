@@ -1,0 +1,4936 @@
+{
+  "evaluatedAt": "2026-07-25T20:48:03.666Z",
+  "mode": "baseline",
+  "summary": {
+    "answerValidationPassRate": 1,
+    "citationPrecision": 1,
+    "citationRecall": 0.674074074074074,
+    "correctQuestionCount": 15,
+    "correctTrialCount": 45,
+    "fallbackRate": 0,
+    "inputTokens": 0,
+    "latencyMs": {
+      "p50": 2129,
+      "p95": 2888
+    },
+    "mode": "baseline",
+    "outputTokens": 0,
+    "policyViolationCount": 0,
+    "qualityFailureCount": 5,
+    "providerCallCount": 0,
+    "questionResults": [
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-load-stability"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-energy-isolation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-overhead-clearance"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-hose-seepage"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-tire-damage"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-emergency-stop"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-credential-rotation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-privileged-review"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-endpoint-containment"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-ownerless-secrets"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-break-glass"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-restricted-segment"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-leave-carryover"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-accommodation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-record-retention"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-carryover-exception"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-request-timing"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-departed-files"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-expense-exception"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-invoice-reconciliation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-audit-evidence"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-missing-receipt"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-three-way-match"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-control-package"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-vendor-onboarding"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-facility-shutdown"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-cycle-count"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-banking-change"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-closure-handover"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-count-variance"
+      }
+    ],
+    "totalTokens": 0,
+    "totalTrials": 90
+  },
+  "trials": [
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "no_supported_evidence_found",
+          "status": "none"
+        }
+      },
+      "answerContent": "I could not find enough supported evidence to answer this reliably. I searched 1 active knowledge bundle (0 approved knowledge matches) and 1 indexed document. Next, rephrase the question with a specific document, subject, version, or scope, or add and review a source because the current knowledge does not cover this yet.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/load-stability-envelope.md"
+      ],
+      "id": "equipment-load-stability",
+      "latencyMs": 1397,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [
+        "initial_sufficiency_changed:weak->none"
+      ],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "no_supported_evidence_found",
+          "status": "none"
+        }
+      },
+      "answerContent": "I could not find enough supported evidence to answer this reliably. I searched 1 active knowledge bundle (0 approved knowledge matches) and 1 indexed document. Next, rephrase the question with a specific document, subject, version, or scope, or add and review a source because the current knowledge does not cover this yet.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/load-stability-envelope.md"
+      ],
+      "id": "equipment-load-stability",
+      "latencyMs": 1446,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [
+        "initial_sufficiency_changed:weak->none"
+      ],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "no_supported_evidence_found",
+          "status": "none"
+        }
+      },
+      "answerContent": "I could not find enough supported evidence to answer this reliably. I searched 1 active knowledge bundle (0 approved knowledge matches) and 1 indexed document. Next, rephrase the question with a specific document, subject, version, or scope, or add and review a source because the current knowledge does not cover this yet.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/load-stability-envelope.md"
+      ],
+      "id": "equipment-load-stability",
+      "latencyMs": 1477,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [
+        "initial_sufficiency_changed:weak->none"
+      ],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "no_supported_evidence_found",
+          "status": "none"
+        }
+      },
+      "answerContent": "I could not find enough supported evidence to answer this reliably. I searched 1 active knowledge bundle (0 approved knowledge matches) and 1 indexed document. Next, rephrase the question with a specific document, subject, version, or scope, or add and review a source because the current knowledge does not cover this yet.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/stored-energy-isolation.md"
+      ],
+      "id": "equipment-energy-isolation",
+      "latencyMs": 1444,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [
+        "initial_sufficiency_changed:weak->none"
+      ],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/stored-energy-isolation.md"
+      ],
+      "id": "equipment-energy-isolation",
+      "latencyMs": 2114,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/stored-energy-isolation.md"
+      ],
+      "id": "equipment-energy-isolation",
+      "latencyMs": 2024,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/overhead-clearance-assessment.md"
+      ],
+      "id": "equipment-overhead-clearance",
+      "latencyMs": 2130,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/overhead-clearance-assessment.md"
+      ],
+      "id": "equipment-overhead-clearance",
+      "latencyMs": 2281,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/overhead-clearance-assessment.md"
+      ],
+      "id": "equipment-overhead-clearance",
+      "latencyMs": 2533,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-hose-seepage",
+      "latencyMs": 2074,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-hose-seepage",
+      "latencyMs": 2129,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-hose-seepage",
+      "latencyMs": 2018,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-tire-damage",
+      "latencyMs": 1883,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-tire-damage",
+      "latencyMs": 1981,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-tire-damage",
+      "latencyMs": 1970,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-emergency-stop",
+      "latencyMs": 2034,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-emergency-stop",
+      "latencyMs": 1990,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved equipment readiness policy requires a documented readiness inspection before use, and any unresolved safety defect places the equipment out of service pending qualified review [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/policy/equipment-readiness-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/stored-energy-isolation.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/load-stability-envelope.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "okf",
+          "target": "concepts/procedure/overhead-clearance-assessment.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rjeuo003ds3p978sse7dv",
+          "sourceType": "rag",
+          "target": "Equipment Readiness Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/equipment-readiness-policy.md",
+        "Equipment Readiness Field Notes"
+      ],
+      "id": "equipment-emergency-stop",
+      "latencyMs": 1950,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rjeuo003ds3p978sse7dv"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/credential-rotation-standard.md"
+      ],
+      "id": "security-credential-rotation",
+      "latencyMs": 2216,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/credential-rotation-standard.md"
+      ],
+      "id": "security-credential-rotation",
+      "latencyMs": 1930,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/credential-rotation-standard.md"
+      ],
+      "id": "security-credential-rotation",
+      "latencyMs": 2076,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "Each emergency account use should be reconciled with the incident ticket, sign-in timestamp, and approving manager [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/privileged-session-review.md"
+      ],
+      "id": "security-privileged-review",
+      "latencyMs": 2281,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "Each emergency account use should be reconciled with the incident ticket, sign-in timestamp, and approving manager [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/privileged-session-review.md"
+      ],
+      "id": "security-privileged-review",
+      "latencyMs": 2149,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "Each emergency account use should be reconciled with the incident ticket, sign-in timestamp, and approving manager [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/privileged-session-review.md"
+      ],
+      "id": "security-privileged-review",
+      "latencyMs": 2282,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "A suspected workstation should be moved into a restricted network segment while retaining access to the evidence collector [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/incident-containment-procedure.md"
+      ],
+      "id": "security-endpoint-containment",
+      "latencyMs": 2444,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "A suspected workstation should be moved into a restricted network segment while retaining access to the evidence collector [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/incident-containment-procedure.md"
+      ],
+      "id": "security-endpoint-containment",
+      "latencyMs": 2318,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "A suspected workstation should be moved into a restricted network segment while retaining access to the evidence collector [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/incident-containment-procedure.md"
+      ],
+      "id": "security-endpoint-containment",
+      "latencyMs": 2525,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires controlled access and documented incident handling [1]. However, the raw document notes that there are service-account tokens with no recorded owner [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-ownerless-secrets",
+      "latencyMs": 2785,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires controlled access and documented incident handling [1]. However, the raw document notes that there are service-account tokens with no recorded owner [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-ownerless-secrets",
+      "latencyMs": 2542,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires controlled access and documented incident handling [1]. However, the raw document notes that there are service-account tokens with no recorded owner [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-ownerless-secrets",
+      "latencyMs": 2888,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires controlled access and documented incident handling [1]. For emergency login use, each session must be reconciled with the incident ticket, sign-in timestamp, and approving manager [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-break-glass",
+      "latencyMs": 1963,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires controlled access and documented incident handling [1]. For emergency login use, each session must be reconciled with the incident ticket, sign-in timestamp, and approving manager [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-break-glass",
+      "latencyMs": 2817,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires controlled access and documented incident handling [1]. For emergency login use, each session must be reconciled with the incident ticket, sign-in timestamp, and approving manager [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-break-glass",
+      "latencyMs": 2226,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires isolating a suspected compromised endpoint by removing it from production network access while preserving approved forensic collection paths [3].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-restricted-segment",
+      "latencyMs": 1980,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires isolating a suspected compromised endpoint by removing it from production network access while preserving approved forensic collection paths [3].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-restricted-segment",
+      "latencyMs": 1768,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved security operations policy requires isolating a suspected compromised endpoint by removing it from production network access while preserving approved forensic collection paths [3].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/security-operations-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/policy/credential-rotation-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/incident-containment-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "okf",
+          "target": "concepts/procedure/privileged-session-review.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmms8003juwp9d71kh60j",
+          "sourceType": "rag",
+          "target": "Security Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/security-operations-policy.md",
+        "Security Operations Field Notes"
+      ],
+      "id": "security-restricted-segment",
+      "latencyMs": 1840,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmms8003juwp9d71kh60j"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/leave-carryover-policy.md"
+      ],
+      "id": "workplace-leave-carryover",
+      "latencyMs": 2007,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/leave-carryover-policy.md"
+      ],
+      "id": "workplace-leave-carryover",
+      "latencyMs": 3620,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/leave-carryover-policy.md"
+      ],
+      "id": "workplace-leave-carryover",
+      "latencyMs": 2136,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/workplace-accommodation-process.md"
+      ],
+      "id": "workplace-accommodation",
+      "latencyMs": 1953,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/workplace-accommodation-process.md"
+      ],
+      "id": "workplace-accommodation",
+      "latencyMs": 2144,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/workplace-accommodation-process.md"
+      ],
+      "id": "workplace-accommodation",
+      "latencyMs": 2869,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/personnel-record-retention.md"
+      ],
+      "id": "workplace-record-retention",
+      "latencyMs": 2136,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/personnel-record-retention.md"
+      ],
+      "id": "workplace-record-retention",
+      "latencyMs": 2509,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/personnel-record-retention.md"
+      ],
+      "id": "workplace-record-retention",
+      "latencyMs": 2606,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "Eligible employees may carry unused leave up to the published annual limit, and amounts above that limit expire unless a documented statutory or approved exception applies [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-carryover-exception",
+      "latencyMs": 2009,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "Eligible employees may carry unused leave up to the published annual limit, and amounts above that limit expire unless a documented statutory or approved exception applies [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-carryover-exception",
+      "latencyMs": 1989,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "Eligible employees may carry unused leave up to the published annual limit, and amounts above that limit expire unless a documented statutory or approved exception applies [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-carryover-exception",
+      "latencyMs": 2233,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved workplace governance policy requires that a complete adjustment request be acknowledged within five business days [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-request-timing",
+      "latencyMs": 2663,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved workplace governance policy includes a requirement for acknowledging a complete adjustment request within five business days [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-request-timing",
+      "latencyMs": 2017,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved workplace governance policy includes a requirement for acknowledging a complete adjustment request within five business days [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-request-timing",
+      "latencyMs": 2002,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved workplace governance policy requires consistent and confidential personnel decisions, following published policy and retaining necessary records for demonstrating consistent treatment [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-departed-files",
+      "latencyMs": 1723,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved workplace governance policy requires consistent and confidential personnel decisions, following published policy and retaining necessary records for demonstrating consistent treatment [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-departed-files",
+      "latencyMs": 1852,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved workplace governance policy requires consistent and confidential personnel decisions, following published policy and retaining necessary records for demonstrating consistent treatment [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/workplace-governance-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/procedure/workplace-accommodation-process.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/leave-carryover-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "okf",
+          "target": "concepts/policy/personnel-record-retention.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmn49003ruwp9ymabv16n",
+          "sourceType": "rag",
+          "target": "Workplace Administration Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/workplace-governance-policy.md",
+        "Workplace Administration Notes"
+      ],
+      "id": "workplace-departed-files",
+      "latencyMs": 1951,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmn49003ruwp9ymabv16n"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/expense-exception-policy.md"
+      ],
+      "id": "finance-expense-exception",
+      "latencyMs": 1915,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/expense-exception-policy.md"
+      ],
+      "id": "finance-expense-exception",
+      "latencyMs": 1974,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/expense-exception-policy.md"
+      ],
+      "id": "finance-expense-exception",
+      "latencyMs": 1935,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "A supplier bill is checked against what was ordered and delivered by comparing the invoice quantity and price with both the purchase order and receiving record before release [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/invoice-reconciliation-procedure.md"
+      ],
+      "id": "finance-invoice-reconciliation",
+      "latencyMs": 2183,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "A supplier bill is checked against what was ordered and delivered by comparing the invoice quantity and price with both the purchase order and receiving record before release [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/invoice-reconciliation-procedure.md"
+      ],
+      "id": "finance-invoice-reconciliation",
+      "latencyMs": 4174,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "A supplier bill is checked against what was ordered and delivered by comparing the invoice quantity and price with both the purchase order and receiving record before release [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/invoice-reconciliation-procedure.md"
+      ],
+      "id": "finance-invoice-reconciliation",
+      "latencyMs": 2472,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "The raw audit checklist asks for the population extract, reviewer sign-off, exception list, and proof that corrective actions were closed [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/audit-evidence-standard.md"
+      ],
+      "id": "finance-audit-evidence",
+      "latencyMs": 2964,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "The audit checklist asks for proof that corrective actions were closed [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/audit-evidence-standard.md"
+      ],
+      "id": "finance-audit-evidence",
+      "latencyMs": 2815,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "The audit checklist asks for proof that corrective actions were closed [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/policy/audit-evidence-standard.md"
+      ],
+      "id": "finance-audit-evidence",
+      "latencyMs": 2560,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved financial controls policy requires attributable review and retained support for financial transactions, with material transactions needing documented authorization, reconciliation, exception resolution, and evidence retained for audit [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-missing-receipt",
+      "latencyMs": 2115,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved financial controls policy requires attributable review and retained support for financial transactions, with material transactions needing documented authorization, reconciliation, exception resolution, and evidence retained for audit [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-missing-receipt",
+      "latencyMs": 2108,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved financial controls policy requires attributable review and retained support for financial transactions, with material transactions needing documented authorization, reconciliation, exception resolution, and evidence retained for audit [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-missing-receipt",
+      "latencyMs": 2086,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved financial controls policy requires attributable review and retained support for financial transactions, including documented authorization and reconciliation for material transactions [1]. The invoice reconciliation procedure mandates matching the invoice to the purchase order, receiving evidence, and approved amendments [4].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-three-way-match",
+      "latencyMs": 2121,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved financial controls policy requires attributable review and retained support for financial transactions, including documented authorization and reconciliation for material transactions [1]. The invoice reconciliation procedure mandates matching the invoice to the purchase order, receiving evidence, and approved amendments [4].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-three-way-match",
+      "latencyMs": 2110,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved financial controls policy requires attributable review and retained support for financial transactions, including documented authorization and reconciliation for material transactions [1]. The invoice reconciliation procedure mandates matching the invoice to the purchase order, receiving evidence, and approved amendments [4].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-three-way-match",
+      "latencyMs": 2379,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved Financial Controls Policy mandates a documented review and retention of support for financial transactions, requiring authorization, reconciliation, and exception resolution for material transactions [1]. The policy emphasizes the need for evidence retention in a controlled repository, detailing the control, period, preparer, reviewer, source population, exceptions, and final disposition [3]. The raw document notes that the audit checklist includes requirements for the population extract, reviewer sign-off, exception list, and proof of closed corrective actions, but does not provide specific controlling limits or required steps [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-control-package",
+      "latencyMs": 2760,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved Financial Controls Policy requires attributable review and retained support for financial transactions, with material transactions needing documented authorization, reconciliation, exception resolution, and audit evidence retention [1]. The raw document notes that the audit checklist requests the population extract, reviewer sign-off, exception list, and proof of closed corrective actions, but does not provide specific controlling limits or required steps [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-control-package",
+      "latencyMs": 2221,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved Financial Controls Policy requires attributable review and retained support for financial transactions, with material transactions needing documented authorization, reconciliation, exception resolution, and audit evidence retention [1]. The raw document notes that the audit checklist requests the population extract, reviewer sign-off, exception list, and proof of closed corrective actions, but does not provide controlling limits or required steps [5].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/financial-controls-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/expense-exception-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/policy/audit-evidence-standard.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "okf",
+          "target": "concepts/procedure/invoice-reconciliation-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmndc003zuwp9571ze6j5",
+          "sourceType": "rag",
+          "target": "Financial Control Review Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/financial-controls-policy.md",
+        "Financial Control Review Notes"
+      ],
+      "id": "finance-control-package",
+      "latencyMs": 2280,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmndc003zuwp9571ze6j5"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/vendor-onboarding-procedure.md"
+      ],
+      "id": "operations-vendor-onboarding",
+      "latencyMs": 3309,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/vendor-onboarding-procedure.md"
+      ],
+      "id": "operations-vendor-onboarding",
+      "latencyMs": 2622,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/vendor-onboarding-procedure.md"
+      ],
+      "id": "operations-vendor-onboarding",
+      "latencyMs": 2633,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "The raw checklist records utility isolation status, alarm monitoring ownership, remaining occupants, and the person accepting the closed facility [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/facility-shutdown-procedure.md"
+      ],
+      "id": "operations-facility-shutdown",
+      "latencyMs": 2237,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "The raw checklist records utility isolation status, alarm monitoring ownership, remaining occupants, and the person accepting the closed facility [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/facility-shutdown-procedure.md"
+      ],
+      "id": "operations-facility-shutdown",
+      "latencyMs": 2368,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "The raw checklist records utility isolation status, alarm monitoring ownership, remaining occupants, and the person accepting the closed facility [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/facility-shutdown-procedure.md"
+      ],
+      "id": "operations-facility-shutdown",
+      "latencyMs": 2226,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/inventory-cycle-count.md"
+      ],
+      "id": "operations-cycle-count",
+      "latencyMs": 2376,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "strong"
+        }
+      },
+      "answerContent": "Selected stock items are checked by freezing affected movements, counting independently, comparing with the system quantity, investigating differences, and posting only an authorized adjustment [1].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/procedure/inventory-cycle-count.md"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/procedure/inventory-cycle-count.md"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/inventory-cycle-count.md"
+      ],
+      "id": "operations-cycle-count",
+      "latencyMs": 2100,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [
+        "initial_sufficiency_changed:weak->strong"
+      ],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "reason": "approved_knowledge_did_not_cover_the_question",
+          "status": "weak"
+        }
+      },
+      "answerContent": "I found related material, but not enough supported evidence to answer this question reliably. I searched the approved knowledge bundle and its raw document fallback. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": false,
+      "expectedCitationTargets": [
+        "concepts/procedure/inventory-cycle-count.md"
+      ],
+      "id": "operations-cycle-count",
+      "latencyMs": 1941,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "okf_only",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs, verification, and exception records for operational changes [1]. It mandates an independent callback using a previously verified contact before changing supplier payment instructions [3].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/procedure/vendor-onboarding-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-banking-change",
+      "latencyMs": 2397,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs, verification, and exception records for operational changes [1]. It mandates an independent callback using a previously verified contact before changing supplier payment instructions [3].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/procedure/vendor-onboarding-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-banking-change",
+      "latencyMs": 1945,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs, verification, and exception records for operational changes [1]. It mandates an independent callback using a previously verified contact before changing supplier payment instructions [3].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/procedure/vendor-onboarding-procedure.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-banking-change",
+      "latencyMs": 2210,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs and verification [1]. The raw document notes that the person accepting the closed facility is recorded in the checklist [2].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-closure-handover",
+      "latencyMs": 2342,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs and verification [1]. The raw document notes that the person accepting the closed facility is recorded in the checklist [2].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-closure-handover",
+      "latencyMs": 2118,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs and verification [1]. The raw document notes that the person accepting the closed facility is recorded in the checklist [2].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-closure-handover",
+      "latencyMs": 2029,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 3
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs, verification, and exception records [1]. Recount differences can be caused by open movements, unit-of-measure errors, damaged stock, and incorrect storage locations [2].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-count-variance",
+      "latencyMs": 2055,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 1
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs, verification, and exception records [1]. Recount differences can be caused by open movements, unit-of-measure errors, damaged stock, and incorrect storage locations [2].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-count-variance",
+      "latencyMs": 1978,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 2
+    },
+    {
+      "adaptiveRetry": {
+        "outcome": "disabled",
+        "eligible": false,
+        "fallbackUsed": false,
+        "evidenceDelta": {
+          "rawRag": 0,
+          "citations": 0,
+          "approvedOkf": 0
+        },
+        "enabledBundleIds": [],
+        "validationStatus": "pass",
+        "originalSufficiency": {
+          "status": "partial",
+          "namedGap": "supporting detail requested by the hybrid route"
+        }
+      },
+      "answerContent": "The approved operational control policy requires controlled handoffs, verification, and exception records [1]. Recount differences can be caused by open movements, unit-of-measure errors, damaged stock, and incorrect storage locations [2].",
+      "answerValidationStatus": "pass",
+      "citationTargetsFound": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "citations": [
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "okf",
+          "target": "concepts/policy/operational-control-policy.md"
+        },
+        {
+          "knowledgeBundleId": "cms0rmnm50047uwp9w9svriwm",
+          "sourceType": "rag",
+          "target": "General Operations Field Notes"
+        }
+      ],
+      "correct": true,
+      "expectedCitationTargets": [
+        "concepts/policy/operational-control-policy.md",
+        "General Operations Field Notes"
+      ],
+      "id": "operations-count-variance",
+      "latencyMs": 2586,
+      "mode": "baseline",
+      "policyViolations": [],
+      "qualityFailures": [],
+      "route": "hybrid",
+      "selectedBundleIds": [
+        "cms0rmnm50047uwp9w9svriwm"
+      ],
+      "trial": 3
+    }
+  ],
+  "workspaceId": "adaptive_retrieval_eval_workspace_v1"
+}

@@ -198,16 +198,20 @@ Rollout status:
 
 - Phase 1 safety blocker: implemented and verified in the rebuilt Docker
   bundle-deletion profile.
-- Phase 2 deterministic route baseline: current 21-scenario Docker profile
+- Phase 2 deterministic route baseline: current 24-check Docker profile
   passes with zero failures; additional running-stack failure-injection and
   multi-bundle mutation probes remain promotion gates.
 - Phase 3 evidence sufficiency: implemented and persisted in assistant traces.
 - Phase 4 bounded adaptive retry: implemented behind the default-off bundle
   profile flag.
-- Phase 5 evaluation and pilot: not complete. The 30-question comparison,
-  seven-day/50-turn pilot, Relation Discovery V3 precision run, and
-  five-reviewer trust study are operational gates and cannot be inferred from
-  unit coverage.
+- Phase 5 evaluation and pilot: the tuned real-provider 30-question comparison
+  is complete and classified `promote_to_internal_pilot`. The candidate
+  improved correctly cited questions from 15/30 to 23/30, preserved every
+  baseline-correct question and 100% citation precision, and had zero policy
+  violations. The blinded technical review also passed with no new incorrect
+  candidate response. The feature remains disabled by default; the
+  seven-day/50-turn pilot, running-stack failure injection, Relation Discovery
+  V3 precision run, and five-reviewer trust study remain operational gates.
 
 ## Production-Ready Agent Gate
 

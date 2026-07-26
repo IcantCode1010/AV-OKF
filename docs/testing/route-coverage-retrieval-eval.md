@@ -126,3 +126,46 @@ budget exhaustion in existing query-understanding/rerank paths, partial
 retrieval failure, mid-turn scope mutation, cross-bundle conflicts, deletion,
 and cross-workspace isolation. Synthetic unit failures remain useful, but do
 not satisfy this rollout gate.
+
+Run the committed comparison against the real Docker stack and configured
+workspace provider with:
+
+```powershell
+pnpm --dir apps/web test:e2e:adaptive-retry
+```
+
+The command runs the unchanged route suite first, seeds five isolated
+mixed-domain evaluation bundles idempotently, then executes 30 questions in
+baseline and adaptive modes with three trials each. It restores every
+evaluation bundle's adaptive-retry flag to `false` in `finally`.
+
+The tuned complete run is recorded in:
+
+- [`adaptive-retrieval-route-prerequisite-2026-07-25.json`](../debug/adaptive-retrieval-route-prerequisite-2026-07-25.json)
+- [`adaptive-retrieval-baseline-2026-07-25.json`](../debug/adaptive-retrieval-baseline-2026-07-25.json)
+- [`adaptive-retrieval-candidate-2026-07-25.json`](../debug/adaptive-retrieval-candidate-2026-07-25.json)
+- [`adaptive-retrieval-comparison-2026-07-25.json`](../debug/adaptive-retrieval-comparison-2026-07-25.json)
+- [`adaptive-retrieval-blinded-review-2026-07-25.md`](../debug/adaptive-retrieval-blinded-review-2026-07-25.md)
+- [`adaptive-retrieval-review-2026-07-25.md`](../debug/adaptive-retrieval-review-2026-07-25.md)
+
+The decision is `promote_to_internal_pilot`: 15/30 baseline questions and
+23/30 candidate questions were correctly cited. The candidate preserved 100%
+citation precision, all baseline-correct questions, and zero policy
+violations. The completed blinded technical review scored 15 baseline and 23
+candidate fixed-trial responses complete, with no new incorrect candidate
+response. This authorizes only the scoped, default-off internal pilot; it does
+not authorize global enablement or free model-directed tool choice.
+
+### Add An Adaptive Question
+
+1. Add the minimal concept or raw excerpt to
+   `adaptive-retrieval-evaluation-corpus.ts`; never commit a source PDF or
+   workspace export.
+2. Declare selected bundle, route, initial sufficiency, required/allowed and
+   forbidden targets, protected identifiers, origin, and retry eligibility.
+3. Keep the fixed matrix balanced, or update the matrix contract and promotion
+   rationale in the same reviewed change.
+4. Assert structure and citations, never exact generated prose.
+5. Re-run all three trials in both modes and retain the prior comparison as the
+   regression authority. Do not rewrite a baseline merely to make a candidate
+   pass.

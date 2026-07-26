@@ -5,6 +5,7 @@ import { buildStage6aRouterTrace, routeChatQuestion } from "./chat-router.ts";
 import {
   createPostgresChatRepository,
   deriveChatSessionTitle,
+  MAX_CHAT_SESSION_LIST_RESULTS,
 } from "./production-chat-repository.ts";
 
 const context = { role: "admin" as const, userId: "usr_1", workspaceId: "wrk_1" };
@@ -96,6 +97,40 @@ test("createSession fails closed when no knowledge bundle is supplied", async ()
     () => repository.createSession({ context }),
     /chat_bundle_required/,
   );
+});
+
+test("getSessions scopes and bounds the conversation list", async () => {
+  const calls: unknown[] = [];
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findMany: async (input: unknown) => {
+        calls.push(input);
+        return [];
+      },
+    },
+  });
+
+  assert.deepEqual(await repository.getSessions(context), []);
+  assert.deepEqual(calls, [{
+    include: {
+      knowledgeBundles: {
+        include: {
+          knowledgeBundle: {
+            select: {
+              activeProfileVersion: { select: { schema: true } },
+              id: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { position: "asc" },
+        where: { knowledgeBundle: { status: "active" } },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: MAX_CHAT_SESSION_LIST_RESULTS,
+    where: { workspaceId: "wrk_1" },
+  }]);
 });
 
 test("getSessionWorkspaceId returns undefined for a missing session", async () => {

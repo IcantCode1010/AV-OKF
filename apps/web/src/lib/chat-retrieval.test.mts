@@ -1028,6 +1028,7 @@ test("adaptive retrieval merge preserves original evidence, deduplicates, and en
     merged.result.citations.some((item) => item.documentTitle === "Original document 0"),
     true,
   );
+  assert.equal(merged.result.ragUsedForDiscoveryOnly, true);
   assert.deepEqual(merged.evidenceDelta, {
     approvedOkf: 4,
     citations: 4,

@@ -574,7 +574,8 @@ Deliverables:
 - [x] Persist bounded tool calls and outcomes in the existing chat trace.
 - [x] Add the bounded adaptive retrieval retry: after deterministic retrieval returns weak or explicitly partial evidence, allow the model to broaden or rephrase the query once inside the same route, selected bundle scope, and trust policy, then validate through the existing deterministic evidence validator.
 - [x] Add deterministic `strong | partial | weak | none` evidence sufficiency and trace why raw RAG was or was not invoked.
-- [ ] Complete the 30-question baseline/candidate comparison before enabling the retry on any production bundle.
+- [x] Complete the 30-question baseline/candidate comparison before enabling the retry on any production bundle. After tuning, the 2026-07-25 configured-provider run gained 8 questions (15/30 to 23/30), preserved 100% citation precision with zero baseline regressions or policy violations, and passed the completed blinded technical review.
+- [x] Tighten retry query generation against the committed corpus, rerun the comparison, and complete the blinded review. The candidate is eligible for the scoped internal pilot but remains disabled by default.
 - [ ] Complete the seven-day, 50-eligible-turn internal pilot and five-reviewer trust-UX gate before broader opt-in.
 
 Exit criteria:
@@ -657,6 +658,15 @@ Agent decision framework:
 - RAG trust stays constant; improve evidence-sufficiency classification so RAG is invoked at the right time.
 - Relation discovery stays deterministic plus one-pair LLM verification until Phase 3 evaluation proves recall is the limiting problem.
 - Do not expand agent autonomy, semantic relation discovery, or RAG behavior until route coverage, relation evaluation, failure injection, bundle-deletion tombstoning, and real user trust review are actually run.
+
+Deferred OKF v0.2 compatibility:
+
+- Adopt the published OKF v0.2 trust and provenance families through a separately reviewed hard-cutover migration, not an immediate exporter change.
+- After migration, read and write only OKF v0.2; do not retain a permanent legacy or dual-read format.
+- Preserve AV-OKF typed relations, page provenance, approval modes, and richer lifecycle behavior as extensions.
+- Replace generated `updated` fields with `generated.at`.
+- Resolve `source_manifest.md` conformance because v0.2 recognizes only `index.md` and `log.md` as reserved Markdown files.
+- Require backups, a dry-run report, a resumable migration, and successful validation of every bundle before switching production reads and writes.
 
 ## Stage 8: Aviation Domain Pack
 

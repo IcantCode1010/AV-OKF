@@ -51,8 +51,8 @@ test("one structured retry preserves route and protected identifiers", async () 
     {
       async callProvider() {
         return {
+          expansionTerms: ["operational guidance"],
           reason: "Use the full operational phrase.",
-          retryQuery: "official GEN OFF BUS procedure operational guidance",
         };
       },
       async getApiKey() {
@@ -65,20 +65,65 @@ test("one structured retry preserves route and protected identifiers", async () 
   assert.deepEqual(result.trace.enabledBundleIds, ["kb_1"]);
 });
 
-test("route changes and protected identifier loss fail closed", async () => {
-  const routeChange = await createBoundedAdaptiveRetryQuery(
+test("provider usage is persisted without changing structured output parsing", async () => {
+  const result = await createBoundedAdaptiveRetryQuery(
     {
       decision,
       enabledBundleIds: ["kb_1"],
-      originalQuery: "official GEN OFF BUS procedure",
+      originalQuery: "official brake procedure",
       sufficiency: weak,
       workspaceId: "wrk_1",
     },
     {
       async callProvider() {
         return {
-          reason: "Broaden externally.",
-          retryQuery: "latest live weather status",
+          output: {
+            expansionTerms: ["approved operational guidance"],
+            reason: "Use the approved terminology.",
+          },
+          usage: {
+            inputTokens: 120,
+            outputTokens: 24,
+            totalTokens: 144,
+          },
+        };
+      },
+      async getApiKey() {
+        return { apiKey: "test", provider: "openai" };
+      },
+    },
+  );
+
+  assert.equal(result.trace.outcome, "applied");
+  assert.deepEqual(result.trace.usage, {
+    inputTokens: 120,
+    outputTokens: 24,
+    totalTokens: 144,
+  });
+});
+
+test("route-changing expansions fail closed and protected identifiers remain structural", async () => {
+  const ragDecision: ChatRouterDecision = {
+    confidence: "high",
+    constraints: { approvedOnly: false, includeUnreviewed: true },
+    queryCategory: "open_ended_discovery",
+    rationale: "test",
+    requiredContext: [],
+    route: "rag_only",
+  };
+  const routeChange = await createBoundedAdaptiveRetryQuery(
+    {
+      decision: ragDecision,
+      enabledBundleIds: ["kb_1"],
+      originalQuery: "search forklift documents",
+      sufficiency: weak,
+      workspaceId: "wrk_1",
+    },
+    {
+      async callProvider() {
+        return {
+          expansionTerms: ["official policy"],
+          reason: "Change discovery into approved plus document retrieval.",
         };
       },
       async getApiKey() {
@@ -89,7 +134,7 @@ test("route changes and protected identifier loss fail closed", async () => {
   assert.equal(routeChange.query, undefined);
   assert.equal(routeChange.trace.outcome, "rejected_route_change");
 
-  const identifierLoss = await createBoundedAdaptiveRetryQuery(
+  const identifierPreserved = await createBoundedAdaptiveRetryQuery(
     {
       decision,
       enabledBundleIds: ["kb_1"],
@@ -100,8 +145,8 @@ test("route changes and protected identifier loss fail closed", async () => {
     {
       async callProvider() {
         return {
+          expansionTerms: ["electrical isolation guidance"],
           reason: "Remove the identifier.",
-          retryQuery: "official electrical procedure guidance",
         };
       },
       async getApiKey() {
@@ -109,8 +154,71 @@ test("route changes and protected identifier loss fail closed", async () => {
       },
     },
   );
-  assert.equal(identifierLoss.query, undefined);
-  assert.equal(identifierLoss.trace.outcome, "rejected_identifier_loss");
+  assert.equal(
+    identifierPreserved.query,
+    "official GEN OFF BUS procedure electrical isolation guidance",
+  );
+  assert.equal(identifierPreserved.trace.outcome, "applied");
+  assert.match(identifierPreserved.query ?? "", /GEN OFF BUS/);
+});
+
+test("prompt requests canonical expansion terms instead of a rewritten question", async () => {
+  let prompt = "";
+  const result = await createBoundedAdaptiveRetryQuery(
+    {
+      decision,
+      enabledBundleIds: ["kb_1"],
+      originalQuery: "According to authoritative knowledge, how is a supplier bill checked?",
+      sufficiency: weak,
+      workspaceId: "wrk_1",
+    },
+    {
+      async callProvider(input) {
+        prompt = input.prompt;
+        return {
+          expansionTerms: ["invoice reconciliation", "purchase order receipt"],
+          reason: "Use canonical accounting terminology.",
+        };
+      },
+      async getApiKey() {
+        return { apiKey: "test", provider: "openai" };
+      },
+    },
+  );
+
+  assert.match(prompt, /appends your expansionTerms/);
+  assert.match(prompt, /not a rewritten question/);
+  assert.equal(
+    result.query,
+    "According to authoritative knowledge, how is a supplier bill checked? invoice reconciliation purchase order receipt",
+  );
+  assert.equal(result.trace.outcome, "applied");
+});
+
+test("duplicate-only expansions are rejected as equivalent", async () => {
+  const result = await createBoundedAdaptiveRetryQuery(
+    {
+      decision,
+      enabledBundleIds: ["kb_1"],
+      originalQuery: "official brake procedure",
+      sufficiency: weak,
+      workspaceId: "wrk_1",
+    },
+    {
+      async callProvider() {
+        return {
+          expansionTerms: ["brake procedure", "official"],
+          reason: "Repeat the same terms.",
+        };
+      },
+      async getApiKey() {
+        return { apiKey: "test", provider: "openai" };
+      },
+    },
+  );
+
+  assert.equal(result.query, undefined);
+  assert.equal(result.trace.outcome, "rejected_equivalent_query");
 });
 
 test("provider and key failures preserve deterministic fallback", async () => {
@@ -159,7 +267,7 @@ test("malformed provider output is traced separately and fails open", async () =
     },
     {
       async callProvider() {
-        return { retryQuery: "", reason: "" };
+        return { expansionTerms: [], reason: "" };
       },
       async getApiKey() {
         return { apiKey: "test", provider: "openai" };

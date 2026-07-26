@@ -829,8 +829,10 @@ export function mergeAdaptiveRetrievalResults(
           ? "lexical"
           : retry.okfMatchMode ?? original.okfMatchMode,
       ragUsedForDiscoveryOnly:
-        !approvedOkfAvailable &&
-        citations.some((citation) => citation.sourceType === "rag"),
+        original.ragUsedForDiscoveryOnly ||
+        retry.ragUsedForDiscoveryOnly ||
+        (decision.route === "okf_only" &&
+          citations.some((citation) => citation.sourceType === "rag")),
       rerank: retry.rerank.applied ? retry.rerank : original.rerank,
       retrievalError: original.retrievalError && retry.retrievalError,
       retrievalToolsCalled: [

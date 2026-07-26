@@ -10,7 +10,9 @@
 - [x] Fail open to the original deterministic result for missing keys, provider errors, malformed output, rejected rewrites, no improvement, and validation failure.
 - [x] Extend the Docker route evaluator with mid-chat bundle add/remove, exact-value conflict, later-turn scope exclusion, and cross-workspace scope rejection.
 - [ ] Add running-stack fault injection for provider outage, malformed output, budget exhaustion, partial retrieval failure, and a concurrent in-flight scope mutation; unit/integration coverage exists but does not satisfy the Docker promotion gate.
-- [ ] Run and commit the 30-question mixed-domain baseline/candidate comparison; require a 10-point correctly-cited-answer gain and zero baseline regressions.
+- [x] Run and commit the 30-question mixed-domain baseline/candidate comparison. The tuned 2026-07-25 real-provider run improved from 15/30 to 23/30 with 100% citation precision, no baseline regression, and zero policy violations.
+- [x] Tighten bounded retry without relaxing policy: append canonical expansion terms to the unchanged query, retain raw discovery labeling through merges, and deterministically repair malformed citation formatting before falling back.
+- [x] Complete the blinded 30-question technical review worksheet. The candidate produced 23 complete fixed-trial responses versus 15 for baseline, with no new incorrect candidate response.
 - [ ] Run Relation Discovery V3 against the configured provider and meet the 80% internal precision checkpoint before considering semantic expansion.
 - [ ] Pilot adaptive retry on one internal non-safety-critical bundle for at least seven days and 50 eligible turns.
 - [ ] Run the trust-UX protocol with five non-technical reviewers; any criterion missed by more than one reviewer requires a UI correction.
@@ -200,6 +202,13 @@
 - [x] Add a workspace-scoped multi-bundle registry with required upload/chat bundle selection.
 - [x] Add Generic and Aviation profile templates plus versioned custom profile drafts and validated activation.
 - [x] Add durable, typed-confirmation bundle deletion through the BullMQ worker.
+- [ ] Reconcile the exporter and consumer with the published OKF v0.2 specification:
+  - make OKF v0.2 the only supported bundle format after migration;
+  - map authoring provenance to `generated`, approval provenance to `verified`, source provenance to `sources`, and lifecycle to `status`/`stale_after`;
+  - replace generated `updated` metadata with `generated.at`;
+  - preserve typed relations, source pages, approval modes, and richer lifecycle states as AV-OKF extensions;
+  - resolve `source_manifest.md` conformance because OKF v0.2 reserves only `index.md` and `log.md`;
+  - provide a backed-up, dry-run, resumable migration that validates every bundle before the application switches to v0.2-only reads and writes.
 - [ ] Add richer relation-candidate editing before approval.
 - [ ] Add column-aware PDF extraction before trusting high-confidence topics from multi-column documents.
 - [x] Replace production heading-only topic generation with automatic document-wide LLM topic discovery.

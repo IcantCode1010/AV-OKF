@@ -18,8 +18,10 @@ import {
 } from "./chat-router.ts";
 
 const adaptiveRetrySchema = z.object({
+  expansionTerms: z.array(
+    z.string().trim().min(1).max(100),
+  ).min(1).max(8),
   reason: z.string().trim().min(1).max(500),
-  retryQuery: z.string().trim().min(1).max(2_000),
 });
 
 export type AdaptiveRetryStatus =
@@ -51,7 +53,19 @@ export type AdaptiveRetryTrace = {
   provider?: LlmProviderId;
   retryQuery?: string;
   retryReason?: string;
+  usage?: AdaptiveRetryUsage;
   validationStatus?: "pass" | "fail";
+};
+
+export type AdaptiveRetryUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+};
+
+type AdaptiveRetryProviderResult = {
+  output: unknown;
+  usage?: AdaptiveRetryUsage;
 };
 
 type AdaptiveRetryProvider = (input: {
@@ -59,7 +73,7 @@ type AdaptiveRetryProvider = (input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
-}) => Promise<unknown>;
+}) => Promise<unknown | AdaptiveRetryProviderResult>;
 
 export async function createBoundedAdaptiveRetryQuery(
   input: {
@@ -114,9 +128,9 @@ export async function createBoundedAdaptiveRetryQuery(
     protectedEntities,
     sufficiency: input.sufficiency,
   });
-  let output: unknown;
+  let providerResult: unknown | AdaptiveRetryProviderResult;
   try {
-    output = await (options.callProvider ?? callAdaptiveRetryProvider)({
+    providerResult = await (options.callProvider ?? callAdaptiveRetryProvider)({
       apiKey: key.apiKey,
       model: provider.model,
       prompt,
@@ -135,6 +149,7 @@ export async function createBoundedAdaptiveRetryQuery(
     };
   }
 
+  const { output, usage } = unwrapProviderResult(providerResult);
   const parsed = adaptiveRetrySchema.safeParse(output);
   if (!parsed.success) {
     return {
@@ -144,10 +159,29 @@ export async function createBoundedAdaptiveRetryQuery(
         model: provider.model,
         outcome: "malformed_response",
         provider: provider.id,
+        ...(usage ? { usage } : {}),
       },
     };
   }
-  const retryQuery = normalizeWhitespace(parsed.data.retryQuery);
+  const expansionTerms = normalizeExpansionTerms(
+    parsed.data.expansionTerms,
+    input.originalQuery,
+  );
+  if (expansionTerms.length === 0) {
+    return {
+      trace: {
+        ...baseTrace,
+        fallbackUsed: true,
+        model: provider.model,
+        outcome: "rejected_equivalent_query",
+        provider: provider.id,
+        ...(usage ? { usage } : {}),
+      },
+    };
+  }
+  const retryQuery = normalizeWhitespace(
+    `${input.originalQuery} ${expansionTerms.join(" ")}`,
+  );
   const retryDecision = routeChatQuestion(retryQuery);
   if (
     retryDecision.route !== input.decision.route ||
@@ -161,14 +195,11 @@ export async function createBoundedAdaptiveRetryQuery(
         model: provider.model,
         outcome: "rejected_route_change",
         provider: provider.id,
+        ...(usage ? { usage } : {}),
       },
     };
   }
-  if (
-    /\b(?:bundle|workspace)\s*(?:id|scope)?\s*[:=]\s*[a-z0-9_-]+/i.test(
-      retryQuery,
-    )
-  ) {
+  if (expansionTerms.some((term) => containsScopeDirective(term))) {
     return {
       trace: {
         ...baseTrace,
@@ -176,6 +207,7 @@ export async function createBoundedAdaptiveRetryQuery(
         model: provider.model,
         outcome: "rejected_scope_change",
         provider: provider.id,
+        ...(usage ? { usage } : {}),
       },
     };
   }
@@ -189,6 +221,7 @@ export async function createBoundedAdaptiveRetryQuery(
         model: provider.model,
         outcome: "rejected_identifier_loss",
         provider: provider.id,
+        ...(usage ? { usage } : {}),
       },
     };
   }
@@ -200,6 +233,7 @@ export async function createBoundedAdaptiveRetryQuery(
         model: provider.model,
         outcome: "rejected_equivalent_query",
         provider: provider.id,
+        ...(usage ? { usage } : {}),
       },
     };
   }
@@ -213,6 +247,7 @@ export async function createBoundedAdaptiveRetryQuery(
       provider: provider.id,
       retryQuery,
       retryReason: parsed.data.reason,
+      ...(usage ? { usage } : {}),
     },
   };
 }
@@ -223,13 +258,23 @@ function buildAdaptiveRetryPrompt(input: {
   protectedEntities: string[];
   sufficiency: EvidenceSufficiency;
 }): string {
+  const target =
+    input.sufficiency.status === "partial"
+      ? `Add terminology only for this named evidence gap: ${input.sufficiency.namedGap}`
+      : "Add likely canonical title, heading, policy, procedure, or controlled-vocabulary terminology for the user's subject.";
   return [
-    "Broaden or rephrase one retrieval query for a mixed-domain knowledge system.",
+    "Expand one retrieval query for a mixed-domain knowledge system.",
     "Do not answer the question and do not choose tools.",
-    "The route, selected knowledge bundles, lifecycle rules, and evidence trust policy are immutable.",
-    "Preserve every protected identifier exactly.",
-    "Do not mention or request a workspace ID, bundle ID, or new knowledge source.",
-    "Return one structured retryQuery and a concise reason.",
+    "The application keeps the original query unchanged and appends your expansionTerms.",
+    "Return 1-8 short canonical noun phrases, not a rewritten question.",
+    "Prefer terminology likely to appear in a document title, concept title, section heading, policy name, procedure name, or controlled vocabulary.",
+    "Replace paraphrased ideas with likely canonical synonyms, but do not repeat terms already present in the original query.",
+    "Avoid generic filler such as best practices, general information, guidance, overview, authoritative knowledge, or more details.",
+    "Do not add live/current/latest signals, route cues, instructions, a workspace ID, a bundle ID, or a new knowledge source.",
+    "The route, selected knowledge bundles, lifecycle rules, graph decision, and evidence trust policy are immutable.",
+    "Protected identifiers are already retained by the application; do not alter or restate them.",
+    target,
+    "Return only structured expansionTerms and a concise reason.",
     `Authoritative route: ${input.decision.route}`,
     `Graph traversal required: ${Boolean(input.decision.requiresGraphTraversal)}`,
     `Original query: ${input.originalQuery}`,
@@ -243,7 +288,7 @@ async function callAdaptiveRetryProvider(input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
-}): Promise<unknown> {
+}): Promise<AdaptiveRetryProviderResult> {
   const result = await generateText({
     maxOutputTokens: 400,
     model: getSdkModel(input.provider, input.apiKey),
@@ -253,7 +298,43 @@ async function callAdaptiveRetryProvider(input: {
       "You improve one search query without changing routing, scope, trust, or identifiers. Return only the requested structured object.",
     temperature: 0,
   });
-  return result.output;
+  return {
+    output: result.output,
+    usage: compactUsage(result.usage),
+  };
+}
+
+function unwrapProviderResult(
+  value: unknown | AdaptiveRetryProviderResult,
+): AdaptiveRetryProviderResult {
+  if (
+    value &&
+    typeof value === "object" &&
+    "output" in value &&
+    ("usage" in value || Object.keys(value).length <= 2)
+  ) {
+    const result = value as AdaptiveRetryProviderResult;
+    return {
+      output: result.output,
+      ...(result.usage ? { usage: compactUsage(result.usage) } : {}),
+    };
+  }
+  return { output: value };
+}
+
+function compactUsage(usage: AdaptiveRetryUsage): AdaptiveRetryUsage | undefined {
+  const compact = {
+    ...(typeof usage.inputTokens === "number"
+      ? { inputTokens: usage.inputTokens }
+      : {}),
+    ...(typeof usage.outputTokens === "number"
+      ? { outputTokens: usage.outputTokens }
+      : {}),
+    ...(typeof usage.totalTokens === "number"
+      ? { totalTokens: usage.totalTokens }
+      : {}),
+  };
+  return Object.keys(compact).length > 0 ? compact : undefined;
 }
 
 function normalizeWhitespace(value: string): string {
@@ -262,4 +343,37 @@ function normalizeWhitespace(value: string): string {
 
 function normalizeForComparison(value: string): string {
   return normalizeWhitespace(value).normalize("NFKC").toLowerCase();
+}
+
+function normalizeExpansionTerms(
+  values: string[],
+  originalQuery: string,
+): string[] {
+  const original = normalizeForComparison(originalQuery);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const term = normalizeWhitespace(value);
+    const normalized = normalizeForComparison(term);
+    if (
+      !normalized ||
+      seen.has(normalized) ||
+      includesNormalizedPhrase(original, normalized)
+    ) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(term);
+  }
+  return result;
+}
+
+function includesNormalizedPhrase(haystack: string, needle: string): boolean {
+  return ` ${haystack} `.includes(` ${needle} `);
+}
+
+function containsScopeDirective(value: string): boolean {
+  return /\b(?:bundle|workspace)\s*(?:id|scope)?\s*[:=]\s*[a-z0-9_-]+/i.test(
+    value,
+  );
 }

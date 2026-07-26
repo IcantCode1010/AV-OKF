@@ -1,0 +1,418 @@
+{
+  "baseline": {
+    "answerValidationPassRate": 1,
+    "citationPrecision": 1,
+    "citationRecall": 0.674074074074074,
+    "correctQuestionCount": 15,
+    "correctTrialCount": 45,
+    "fallbackRate": 0,
+    "inputTokens": 0,
+    "latencyMs": {
+      "p50": 2129,
+      "p95": 2888
+    },
+    "mode": "baseline",
+    "outputTokens": 0,
+    "policyViolationCount": 0,
+    "qualityFailureCount": 5,
+    "providerCallCount": 0,
+    "questionResults": [
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-load-stability"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-energy-isolation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-overhead-clearance"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-hose-seepage"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-tire-damage"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-emergency-stop"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-credential-rotation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-privileged-review"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-endpoint-containment"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-ownerless-secrets"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-break-glass"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-restricted-segment"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-leave-carryover"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-accommodation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-record-retention"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-carryover-exception"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-request-timing"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-departed-files"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-expense-exception"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-invoice-reconciliation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-audit-evidence"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-missing-receipt"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-three-way-match"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-control-package"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-vendor-onboarding"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-facility-shutdown"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-cycle-count"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-banking-change"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-closure-handover"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-count-variance"
+      }
+    ],
+    "totalTokens": 0,
+    "totalTrials": 90
+  },
+  "candidate": {
+    "answerValidationPassRate": 1,
+    "citationPrecision": 1,
+    "citationRecall": 0.837037037037037,
+    "correctQuestionCount": 23,
+    "correctTrialCount": 68,
+    "fallbackRate": 0.6162790697674418,
+    "inputTokens": 29905,
+    "latencyMs": {
+      "p50": 3501,
+      "p95": 5078
+    },
+    "mode": "candidate",
+    "outputTokens": 5317,
+    "policyViolationCount": 0,
+    "qualityFailureCount": 8,
+    "providerCallCount": 86,
+    "questionResults": [
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "equipment_operations",
+        "id": "equipment-load-stability"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 2,
+        "domain": "equipment_operations",
+        "id": "equipment-energy-isolation"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-overhead-clearance"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-hose-seepage"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-tire-damage"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "equipment_operations",
+        "id": "equipment-emergency-stop"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-credential-rotation"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-privileged-review"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "software_security",
+        "id": "security-endpoint-containment"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-ownerless-secrets"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-break-glass"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "software_security",
+        "id": "security-restricted-segment"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-leave-carryover"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "workplace_policy",
+        "id": "workplace-accommodation"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-record-retention"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-carryover-exception"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-request-timing"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "workplace_policy",
+        "id": "workplace-departed-files"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "finance_compliance",
+        "id": "finance-expense-exception"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-invoice-reconciliation"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-audit-evidence"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-missing-receipt"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-three-way-match"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "finance_compliance",
+        "id": "finance-control-package"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-vendor-onboarding"
+      },
+      {
+        "correct": false,
+        "correctTrialCount": 0,
+        "domain": "general_operations",
+        "id": "operations-facility-shutdown"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-cycle-count"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-banking-change"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-closure-handover"
+      },
+      {
+        "correct": true,
+        "correctTrialCount": 3,
+        "domain": "general_operations",
+        "id": "operations-count-variance"
+      }
+    ],
+    "totalTokens": 35222,
+    "totalTrials": 90
+  },
+  "decision": "promote_to_internal_pilot",
+  "gates": {
+    "citationPrecisionHeld": true,
+    "humanReviewPassed": true,
+    "minimumGainMet": true,
+    "noBaselineRegressions": true,
+    "noPolicyViolations": true,
+    "routeSuitePassed": true
+  },
+  "questionGain": 8,
+  "regressionIds": [],
+  "reasons": []
+}

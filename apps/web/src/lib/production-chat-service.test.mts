@@ -324,7 +324,7 @@ test("bounded adaptive retry runs once for an enabled bundle and keeps the route
   });
 });
 
-test("failed retry answer validation restores the original deterministic evidence", async () => {
+test("failed retry synthesis is repaired with deterministic cited retry evidence", async () => {
   const { appendCalls, repository } = createRepositoryStub([], true);
   let retrievalCount = 0;
   const rawCitation: ChatCitation = {
@@ -378,18 +378,94 @@ test("failed retry answer validation restores the original deterministic evidenc
     "What is the official GEN OFF BUS guidance?",
   );
 
-  assert.deepEqual(result.assistantMessage.citations, [rawCitation]);
+  assert.equal(result.assistantMessage.citations[0]?.sourceType, "okf");
   assert.equal(
     appendCalls[0]?.assistantTrace.adaptiveRetry?.outcome,
-    "validation_failed",
+    "applied",
+  );
+  assert.equal(
+    appendCalls[0]?.assistantTrace.adaptiveRetry?.fallbackUsed,
+    false,
+  );
+  assert.equal(
+    appendCalls[0]?.assistantTrace.approvedOkfAvailable,
+    true,
+  );
+  assert.equal(
+    appendCalls[0]?.assistantTrace.adaptiveRetry?.validationStatus,
+    "pass",
+  );
+  assert.match(result.assistantMessage.content, /\[1\]/);
+});
+
+test("OKF-only retry does not treat additional raw citations as qualified improvement", async () => {
+  const { appendCalls, repository } = createRepositoryStub([], true);
+  let retrievalCount = 0;
+  const initialRaw: ChatCitation = {
+    documentId: "doc_raw_1",
+    documentTitle: "Raw manual one",
+    index: 1,
+    pageEnd: 8,
+    pageStart: 8,
+    sourceType: "rag",
+    text: "Initial unreviewed source text.",
+  };
+  const retryRaw: ChatCitation = {
+    documentId: "doc_raw_2",
+    documentTitle: "Raw manual two",
+    index: 1,
+    pageEnd: 12,
+    pageStart: 12,
+    sourceType: "rag",
+    text: "Additional unreviewed source text.",
+  };
+  const service = createProductionChatService(repository, {
+    createAdaptiveRetryQuery: async (input) => ({
+      query: `${input.originalQuery} canonical procedure`,
+      trace: {
+        eligible: true,
+        enabledBundleIds: input.enabledBundleIds,
+        evidenceDelta: { approvedOkf: 0, citations: 0, rawRag: 0 },
+        fallbackUsed: false,
+        originalSufficiency: input.sufficiency,
+        outcome: "applied",
+      },
+    }),
+    generateAnswer: generateAnswerWithoutKey,
+    getContext: async () => context,
+    retrieve: async () => {
+      retrievalCount += 1;
+      const citation = retrievalCount === 1 ? initialRaw : retryRaw;
+      return {
+        approvedOkfAvailable: false,
+        citations: [citation],
+        evidence: [{ ...citation, text: citation.text }],
+        ragUsedForDiscoveryOnly: true,
+        rerank: { applied: false, dropped: 0, status: "not_applicable" },
+        retrievalError: false,
+        retrievalToolsCalled: ["rag_retrieval"],
+        sourcesRead: [`${citation.documentTitle} (p. ${citation.pageStart})`],
+      };
+    },
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the official GEN OFF BUS guidance?",
+  );
+
+  assert.deepEqual(result.assistantMessage.citations, [initialRaw]);
+  assert.equal(
+    appendCalls[0]?.assistantTrace.adaptiveRetry?.outcome,
+    "no_improvement",
   );
   assert.equal(
     appendCalls[0]?.assistantTrace.adaptiveRetry?.fallbackUsed,
     true,
   );
   assert.equal(
-    appendCalls[0]?.assistantTrace.approvedOkfAvailable,
-    false,
+    appendCalls[0]?.assistantTrace.adaptiveRetry?.validationStatus,
+    "pass",
   );
 });
 
