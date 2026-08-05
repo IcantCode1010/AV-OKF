@@ -8,7 +8,7 @@ The first usable product should be a clean document vault. Chat comes later, aft
 
 ## Current Implementation Status
 
-As of 2026-07-23:
+As of 2026-07-26:
 
 | Stage | Status |
 | --- | --- |
@@ -22,13 +22,43 @@ As of 2026-07-23:
 | 5.8 | Complete: opt-in bundle-scoped automatic high-confidence approval/export with provenance-aware trust presentation |
 | 6 | Complete: persistent chat, rules-first router with LLM fallback, OKF/RAG/Hybrid retrieval, synthesis, citations, and trace |
 | 6.5 | Complete: live uncached OKF bundle retrieval with precision gating and lifecycle filtering |
-| 6.6 | Core implemented; restore, historical citation notices, and coverage reconciliation remain |
+| 6.6 | Complete for permanent document and bundle deletion; restore is intentionally unsupported |
 | 7A | Complete: deterministic post-answer evidence validation |
 | 7B | Core implemented: bounded OKF graph traversal and coverage-linked RAG support |
 | 7B.5 | Complete: deterministic bundle-local candidates, reviewer approval/rejection, and re-exported graph edges |
 | 7C | Complete: chat-quality closeout and bounded Vercel AI SDK tool contracts |
 | 7D | Complete: user-controlled dynamic multi-bundle chat scope |
 | 8 | Deferred optional domain pack; the core platform remains generic |
+
+## Current Priorities
+
+The late-stage MVP is feature-complete enough for controlled internal use. The
+remaining work is evaluation, hardening, standards migration, and portable
+import rather than another application rewrite.
+
+Work in this order:
+
+1. Complete the bounded adaptive-retry internal pilot: at least seven days and
+   50 eligible turns on one non-safety-critical bundle.
+2. Run the trust-UX protocol with five non-technical reviewers. Any trust
+   criterion misunderstood by more than one reviewer requires a UI correction.
+3. Run production-stack failure injection for provider outage, malformed
+   output, budget exhaustion, partial retrieval failure, and an in-flight chat
+   scope change.
+4. Run Relation Discovery V3 with the configured provider and meet the 80%
+   internal precision checkpoint before considering semantic expansion.
+5. Reconcile every live bundle with its active profile and add the explicit
+   coverage-link reconciliation action.
+6. Design and execute the OKF v0.2-only hard cutover across the parser,
+   exporter, validator, retriever, vault, and existing bundle content.
+7. Build portable bundle import only after the v0.2 cutover, including
+   structure-only and source-linked reviewed import modes.
+8. Add column-aware PDF extraction and permanent mixed-domain document-quality
+   evaluations before treating multi-column technical manuals as reliably
+   high-confidence input.
+
+Free model-directed tool choice, semantic relation expansion, cross-bundle
+typed relations, and mutating agent tools remain deferred.
 
 ## Stage 0: Product Shell
 
@@ -468,7 +498,7 @@ Purpose: make the agent useful for questions that require more than one approved
 
 Status: core implementation complete. Bounded relation traversal, lifecycle/path/type guards, cycle prevention, coverage-linked RAG retrieval, graph-aware citations, and trace metadata are implemented. The broader response-state vocabulary and permanent graph-retrieval evaluation set remain Stage 7C closeout work.
 
-Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, metadata-driven weak-evidence clarification, unsupported live data, and missing-vector discovery fallback. The metadata case is two-turn: diagnostic near misses cannot become citations or validation input, and a still-unresolved follow-up falls through to labeled raw RAG without asking again. The profile also blocks retracted evidence and per-question citation regressions. Failure injection, multi-bundle isolation, and the broader mixed-domain question corpus remain separate follow-up slices.
+Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, metadata-driven weak-evidence clarification, unsupported live data, and missing-vector discovery fallback. The metadata case is two-turn: diagnostic near misses cannot become citations or validation input, and a still-unresolved follow-up falls through to labeled raw RAG without asking again. The profile also blocks retracted evidence and per-question citation regressions. Multi-bundle isolation and the 30-question mixed-domain comparison are implemented. Running-stack failure injection and concurrent in-flight scope mutation remain production-readiness gates.
 
 Stage 7C release coverage now runs in that same Docker profile. It enforces the PDF-serving workspace boundary (including indistinguishable foreign and nonexistent responses), exercises persisted citation behavior after retraction/archive/source deletion, verifies exact positive and negative KnowledgeGap writes with final evidence status, and confirms honest misses report real searched-corpus counts without invented citation markers.
 
@@ -561,6 +591,13 @@ Purpose: close the remaining user-facing evidence gaps and expose the proven ret
 
 Status: implementation complete for deterministic production controls and the disabled-by-default adaptive candidate. Insufficient-evidence completion, bundle-scoped knowledge gaps, authenticated citations, bundle-deletion tombstoning, bounded read-only tool wrappers, mandatory validation, persisted tool traces, deterministic evidence sufficiency, and one per-bundle bounded adaptive retry are implemented. Free model-directed tool choice remains evaluation-only.
 
+Chat entity discovery now provides an additional review-first knowledge-growth
+path. Supported answers may surface exact-source-quoted entity candidates.
+Selecting one creates a `needs_review` entity topic tied to the cited document
+and pages; the normal enrichment, approval, export, lifecycle, and relation
+controls remain mandatory. Multi-source entity consolidation remains future
+work.
+
 Deliverables:
 
 - [x] Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
@@ -568,7 +605,7 @@ Deliverables:
 - [x] Clickable citation-to-source navigation. Raw RAG citations continue linking directly to authenticated PDFs, while approved OKF citations drill down through `Chat citation -> approved OKF topic page -> Source document block -> PDF route` with server-side source resolution and browser-native `#page=N` PDF fragments.
 - [x] Clear separation between router intent, evidence actually used, selected bundle scope, and bounded tool execution in the trace UI.
 - [x] Historical citation lifecycle notices with stale links disabled.
-- Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
+- [x] Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
 - [x] Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
 - [x] Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.
 - [x] Persist bounded tool calls and outcomes in the existing chat trace.
@@ -645,10 +682,21 @@ Production-ready agent gate:
 
 - [x] P0: bundle-deletion citation tombstoning is implemented in the durable
   worker and covered by unit and Docker E2E assertions.
-- P1: provider outage, budget exhaustion, malformed provider output, and partial retrieval failure are tested against the running stack.
-- P1: concurrent scope changes during an in-flight message preserve the captured scope snapshot.
-- P1: conflicting approved values across selected bundles produce a visible conflict, never a silent choice.
-- P2: at least three to five non-technical user sessions confirm the trust UX is understandable without reading trace internals; any trust criterion failed by more than one reviewer requires a UI/product fix.
+- [x] P0: the configured-provider 30-question comparison improved correctly
+  cited questions from 15/30 to 23/30 with 100% citation precision, no baseline
+  regression, and zero route, scope, trust, or lifecycle violations.
+- [ ] P1: complete a seven-day, 50-eligible-turn internal adaptive-retry pilot
+  on one non-safety-critical bundle.
+- [ ] P1: test provider outage, budget exhaustion, malformed provider output,
+  and partial retrieval failure against the running stack.
+- [ ] P1: prove against the running stack that concurrent scope changes during
+  an in-flight message preserve the captured scope snapshot.
+- [ ] P1: rerun the visible cross-bundle conflict scenario end to end and
+  confirm conflicting approved values are presented separately, never silently
+  selected.
+- [ ] P2: five non-technical reviewers complete the trust-UX protocol without
+  reading trace internals; any trust criterion failed by more than one reviewer
+  requires a UI/product correction.
 
 Agent decision framework:
 
@@ -659,14 +707,74 @@ Agent decision framework:
 - Relation discovery stays deterministic plus one-pair LLM verification until Phase 3 evaluation proves recall is the limiting problem.
 - Do not expand agent autonomy, semantic relation discovery, or RAG behavior until route coverage, relation evaluation, failure injection, bundle-deletion tombstoning, and real user trust review are actually run.
 
-Deferred OKF v0.2 compatibility:
+## Next Platform Milestone: OKF v0.2 And Portable Import
 
-- Adopt the published OKF v0.2 trust and provenance families through a separately reviewed hard-cutover migration, not an immediate exporter change.
-- After migration, read and write only OKF v0.2; do not retain a permanent legacy or dual-read format.
-- Preserve AV-OKF typed relations, page provenance, approval modes, and richer lifecycle behavior as extensions.
-- Replace generated `updated` fields with `generated.at`.
-- Resolve `source_manifest.md` conformance because v0.2 recognizes only `index.md` and `log.md` as reserved Markdown files.
-- Require backups, a dry-run report, a resumable migration, and successful validation of every bundle before switching production reads and writes.
+Status: planned. The current application still emits `okf_version: '0.1'` and
+has no finished UI or API for importing an arbitrary bundle archive. The
+product decision is a v0.2-only hard cutover, not permanent dual-read support.
+
+Purpose: make a knowledge bundle portable between systems without weakening
+workspace isolation, source provenance, lifecycle state, or agent trust.
+
+Required sequencing:
+
+1. Map current AV-OKF metadata to the published OKF v0.2 trust and provenance
+   families.
+2. Update the shared parser, exporter, profile manifest, validators, live
+   retriever, explorer, relation tooling, vault registry, and tests together.
+3. Back up every live bundle and run a dry-run, resumable migration.
+4. Validate every migrated bundle before atomically switching production reads
+   and writes to v0.2.
+5. Remove v0.1 production reads after successful cutover; do not maintain a
+   permanent compatibility parser.
+6. Implement archive import against the stable v0.2 contract.
+
+Migration and format rules:
+
+- Map authoring provenance to `generated`, approval provenance to `verified`,
+  source provenance to `sources`, and lifecycle to `status`/`stale_after`.
+- Replace generated `updated` metadata with `generated.at`.
+- Preserve AV-OKF typed relations, source pages, approval modes, and richer
+  lifecycle behavior as documented extensions.
+- Resolve `source_manifest.md` conformance because v0.2 recognizes only
+  `index.md` and `log.md` as reserved Markdown files.
+- Generate new workspace and bundle IDs in the receiving system; portable
+  Markdown must not contain tenant database IDs.
+
+Portable import modes:
+
+- **Structure-only:** validate and import Markdown for human exploration, but
+  do not honor external approval claims as target-workspace trust.
+- **Source-linked reviewed:** import or map source documents, verify
+  `source_file` identities and source pages, rebuild projections and lookup
+  indexes, and require target-workspace authorization before concepts become
+  trusted agent evidence.
+
+Import safety requirements:
+
+- Stage archives outside the live vault and reject traversal, unsafe links,
+  escaping symlinks, duplicate normalized paths, and cross-bundle relations.
+- Treat the OKF files as the portable source of truth and rebuild database
+  projections rather than importing foreign database identifiers.
+- Build raw RAG only from source documents that were actually imported and
+  extracted.
+- Commit the new bundle atomically only after profile, frontmatter, link,
+  relation, lifecycle, and source-mapping validation succeeds.
+- Record one import event in the bundle log and update `okf-vault.json`.
+
+Reference:
+
+- [Document-to-OKF Bundle Walkthrough](../user-guides/file-processing-walkthrough.md)
+
+Exit criteria:
+
+- Production reads and writes only OKF v0.2.
+- Every migrated live bundle validates before activation.
+- A portable package can create a structurally valid isolated bundle without
+  becoming trusted automatically.
+- A source-linked package can rebuild source drilldown, lifecycle projections,
+  relations, embeddings, and agent retrieval after explicit review.
+- A failed import leaves the live vault and database unchanged.
 
 ## Stage 8: Aviation Domain Pack
 

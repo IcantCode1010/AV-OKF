@@ -502,6 +502,12 @@ export function createProductionChatService(
           effectiveQueryUnderstanding.assumptions,
         ),
       };
+      const entityCandidates =
+        answerValidation?.status === "pass" &&
+        disclosedAnswer.mode === "llm" &&
+        disclosedAnswer.outcome === "answered"
+          ? disclosedAnswer.entityCandidates
+          : undefined;
       const knowledgeGap: KnowledgeGapDraft | undefined =
         disclosedAnswer.outcome === "insufficient_evidence" &&
         isRetrievalRoute(decision.route)
@@ -532,6 +538,7 @@ export function createProductionChatService(
             citations: persistedRetrieval.citations,
             trace: persistedAssistantTrace,
           }),
+          ...(entityCandidates?.length ? { entityCandidates } : {}),
           ...(answerValidation ? { answerValidation } : {}),
         },
         citations: persistedRetrieval.citations,

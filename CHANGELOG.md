@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added review-first chat entity discovery. Validated LLM answers may surface up
+  to three named entities backed by exact quotes from persisted evidence.
+  `Review and enrich` creates a deterministic, workspace-and-bundle-scoped
+  `needs_review` entity topic from the cited document pages and opens the
+  existing topic workflow. Built-in Generic and Aviation profiles now include
+  the `entity` concept type and optional `entity_type` metadata.
+- Entity suggestions cannot become answer evidence or approved knowledge.
+  Promotion re-resolves the persisted assistant trace and citation server-side,
+  verifies workspace and bundle ownership, requires an active source document,
+  and uses only real extracted pages from the cited range.
 - Tightened bounded adaptive retrieval after the first 30-question evaluation. The provider now returns canonical expansion terms that are appended to the unchanged user query, structurally preserving route cues and protected identifiers. OKF-only merges retain raw evidence's discovery-only label, raw-only retry additions cannot count as qualified OKF improvement, and malformed LLM citation formatting is repaired with a deterministic cited answer that must pass the same validator before use. The unchanged real-provider corpus improved from 15/30 baseline to 23/30 candidate questions with 100% citation precision, zero baseline regressions, zero policy violations, and a completed blinded technical review with no new incorrect candidate response; the result is `promote_to_internal_pilot`, not global enablement.
 - Fixed the Chat navigation appearing blank or stalled after evaluation runs. The workspace conversation index now loads only the 50 most recent sessions instead of rendering an unbounded history, and the adaptive-retrieval evaluator clears only its own sessions inside its isolated evaluation workspace before each repeat run.
 - Added the real-provider 30-question adaptive-retrieval evaluation to the existing Docker route harness. Five isolated mixed-domain bundles provide 15 weak and 15 partial cases, each run three times with retry disabled and enabled after the full route prerequisite. Reports now separate answer-quality failures from true policy violations, record per-turn SDK token usage and latency, enforce majority scoring and baseline-regression gates, and generate JSON comparison artifacts plus a blinded review worksheet. The first 180-turn run improved correctly cited questions from 15/30 to 17/30 with 100% citation precision, no baseline regressions, and zero route/scope/trust violations; it remains `hold_for_tuning` because the required three-question gain and human review were not met.

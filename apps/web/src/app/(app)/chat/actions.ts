@@ -13,6 +13,7 @@ import {
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
 import type { MetadataClarificationSelection } from "@/lib/chat-router";
+import { promoteChatEntityCandidate } from "@/lib/chat-entity-candidates";
 
 export async function createChatSessionAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
@@ -63,6 +64,23 @@ export async function updateChatKnowledgeSourcesAction(formData: FormData) {
   });
   await updateChatSessionKnowledgeBundles(sessionId, bundleIds);
   revalidatePath(`/chat/${sessionId}`);
+}
+
+export async function promoteChatEntityCandidateAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const result = await promoteChatEntityCandidate({
+    candidateId: getFormString(formData, "candidateId"),
+    context,
+    messageId: getFormString(formData, "messageId"),
+  });
+
+  revalidatePath(`/chat/${getFormString(formData, "sessionId")}`);
+  revalidatePath(`/documents/${result.documentId}`);
+  redirect(
+    `/documents/${result.documentId}?panel=topics&topic=${result.topicId}&entityCandidate=${
+      result.created ? "created" : "existing"
+    }`,
+  );
 }
 
 function parseMetadataSelection(

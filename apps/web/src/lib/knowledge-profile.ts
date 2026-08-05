@@ -107,6 +107,7 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   coverage_type: { type: "string" },
   covered_rag_chunk_ids: { type: "string_array" },
   document_type: { type: "string" },
+  entity_type: { type: "string" },
   effectivity: { type: "string" },
   revision: { type: "string" },
   subject_family: { type: "string" },
@@ -125,6 +126,7 @@ export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   relations: [...DEFAULT_RELATIONS],
   types: {
     concept: { category: "concepts", label: "Concept" },
+    entity: { category: "concepts", label: "Entity" },
     metric: { category: "references", label: "Metric" },
     policy: { category: "concepts", label: "Policy" },
     procedure: { category: "procedures", label: "Procedure" },
@@ -172,6 +174,18 @@ export function normalizeKnowledgeProfile(
   profile: KnowledgeProfileSchema,
 ): KnowledgeProfileSchema {
   const normalized = structuredClone(profile);
+  if (
+    ["generic", "aviation"].includes(normalized.id) &&
+    !normalized.types.entity
+  ) {
+    normalized.types.entity = { category: "concepts", label: "Entity" };
+  }
+  if (
+    ["generic", "aviation"].includes(normalized.id) &&
+    !normalized.fields.entity_type
+  ) {
+    normalized.fields.entity_type = { type: "string" };
+  }
   normalized.agent = {
     boundedAdaptiveRetryEnabled:
       normalized.agent?.boundedAdaptiveRetryEnabled === true,

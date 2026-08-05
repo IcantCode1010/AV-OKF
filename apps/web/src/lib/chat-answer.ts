@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { parseCitationMarkers } from "./chat-citation-markers.ts";
@@ -8,6 +9,7 @@ import {
   type RetrievalAnswerInput,
 } from "./chat-retrieval.ts";
 import type {
+  ChatEntityCandidate,
   ChatContextAssumption,
   RetrievalChatRoute,
 } from "./chat-router.ts";
@@ -22,6 +24,7 @@ const ANSWER_MAX_TOKENS = 1024;
 
 export type ChatAnswer = {
   content: string;
+  entityCandidates?: ChatEntityCandidate[];
   mode: "llm" | "deterministic";
   model?: string;
   outcome: "answered" | "insufficient_evidence" | "retrieval_unavailable";
@@ -146,6 +149,10 @@ export async function generateChatAnswer(
 
     return {
       content: answer,
+      entityCandidates: validateEntityCandidates(
+        payload.entityCandidates,
+        input.evidence,
+      ),
       mode: "llm",
       model: provider.model,
       outcome: "answered",
@@ -191,14 +198,18 @@ export function buildChatAnswerPrompt(input: {
     "- Never cite a number that is not in the evidence list.",
     "- Preserve exact names, dates, versions, citations, identifiers, values, limits, and source wording from the evidence.",
     "- Be concise: a short direct answer first, then supporting detail only if needed.",
+    "- Identify at most 3 named entities that are directly stated in the evidence and could merit their own reusable knowledge page.",
+    "- Entity types are limited to person, organization, product, standard, regulation, location, system, or other.",
+    "- For each entity, copy one exact supporting quote from one numbered evidence excerpt. Do not infer entities or use outside knowledge.",
+    "- Do not suggest the primary approved knowledge topic itself as a new entity.",
     ...(input.crossBundleConflict?.detected
       ? [
           "- Approved sources from different bundles contain conflicting exact values. Present each bundle's position separately and do not choose or merge a value.",
         ]
       : []),
-    '- If the evidence does not directly answer the question, return {"answer": "", "supported": false}.',
-    'Return strict JSON: {"answer": string, "supported": boolean}',
-    'Example: {"answer": "The refund window is 14 days [1]. Requests are handled by support [2].", "supported": true}',
+    '- If the evidence does not directly answer the question, return {"answer": "", "supported": false, "entityCandidates": []}.',
+    'Return strict JSON: {"answer": string, "supported": boolean, "entityCandidates": [{"name": string, "entityType": string, "summary": string, "citationIndex": number, "evidenceQuote": string}]}',
+    'Example: {"answer": "The refund window is 14 days [1].", "supported": true, "entityCandidates": [{"name": "Acme Returns Policy", "entityType": "standard", "summary": "The policy governing return eligibility and timing.", "citationIndex": 1, "evidenceQuote": "Acme Returns Policy"}]}',
     "",
     `Question: ${input.query}`,
     input.ragDiscovery
@@ -252,11 +263,28 @@ function evidenceContextForRoute(route: RetrievalChatRoute): string {
 
 const chatAnswerSchema = z.object({
   answer: z.string(),
+  entityCandidates: z.array(z.object({
+    citationIndex: z.number().int().positive(),
+    entityType: z.enum([
+      "location",
+      "organization",
+      "other",
+      "person",
+      "product",
+      "regulation",
+      "standard",
+      "system",
+    ]),
+    evidenceQuote: z.string(),
+    name: z.string(),
+    summary: z.string(),
+  })).max(3).optional().default([]),
   supported: z.boolean(),
 });
 
 function parseAnswerPayload(rawOutput: unknown): {
   answer: string;
+  entityCandidates: z.infer<typeof chatAnswerSchema>["entityCandidates"];
   supported: boolean;
 } {
   const parsed = chatAnswerSchema.safeParse(rawOutput);
@@ -266,6 +294,53 @@ function parseAnswerPayload(rawOutput: unknown): {
   }
 
   return parsed.data;
+}
+
+export function validateEntityCandidates(
+  values: z.infer<typeof chatAnswerSchema>["entityCandidates"],
+  evidence: ChatRetrievalEvidence[],
+): ChatEntityCandidate[] {
+  const accepted: ChatEntityCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of values) {
+    const name = candidate.name.normalize("NFKC").trim();
+    const summary = candidate.summary.normalize("NFKC").replace(/\s+/g, " ").trim();
+    const evidenceQuote = candidate.evidenceQuote.normalize("NFKC").trim();
+    const source = evidence.find((item) => item.index === candidate.citationIndex);
+    const identity = name.toLocaleLowerCase();
+
+    if (
+      !source ||
+      name.length < 2 ||
+      name.length > 160 ||
+      summary.length < 10 ||
+      summary.length > 500 ||
+      evidenceQuote.length < 2 ||
+      evidenceQuote.length > 500 ||
+      !source.text.normalize("NFKC").includes(evidenceQuote) ||
+      !evidenceQuote.includes(name) ||
+      source.documentTitle.normalize("NFKC").trim().toLocaleLowerCase() === identity ||
+      seen.has(identity)
+    ) {
+      continue;
+    }
+
+    seen.add(identity);
+    accepted.push({
+      citationIndex: candidate.citationIndex,
+      entityType: candidate.entityType,
+      evidenceQuote,
+      id: createHash("sha256")
+        .update(`${candidate.citationIndex}\0${candidate.entityType}\0${name}\0${evidenceQuote}`)
+        .digest("hex")
+        .slice(0, 20),
+      name,
+      summary,
+    });
+  }
+
+  return accepted;
 }
 
 async function callChatAnswerProvider(input: {

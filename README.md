@@ -59,7 +59,13 @@ docs/
     AV-OKF_Agentic_Maintenance_Triage_PRD.md
   roadmap/
     mvp-stages.md
+  user-guides/
+    file-processing-walkthrough.md
 ```
+
+The [Document-to-OKF Bundle Walkthrough](docs/user-guides/file-processing-walkthrough.md)
+describes the complete processing pipeline, portable bundle structure, trust
+boundary, validation steps, and proposed source-linked import contract.
 
 ## Current Status
 

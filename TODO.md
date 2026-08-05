@@ -219,3 +219,11 @@
 - [x] Generate a separate enriched Markdown article and require reviewer acceptance for proposed additional source pages.
 - [ ] Add permanent real-provider topic-quality evaluations for Air/Ground, forklift, multi-column, and generic documents.
 - [ ] Capture provider-reported input/output token usage and estimated monetary cost in discovery audit records.
+## Entity Modeling
+
+- [x] Surface exact-source-quoted entity candidates from validated chat answers.
+- [x] Promote a selected candidate into the existing review and enrichment workflow without auto-approval.
+- [ ] Add bundle-level entity aliases and deterministic duplicate detection across alternate names.
+- [ ] Add reviewed multi-document provenance and entity consolidation.
+- [ ] Suppress already-known entity suggestions before rendering the chat response.
+- [ ] Add entity-focused explorer filtering and graph presentation.

@@ -91,6 +91,23 @@ export type ChatAnswerEvidenceProfile = {
   trustLevel: ChatAnswerTrustLevel;
 };
 
+export type ChatEntityCandidate = {
+  citationIndex: number;
+  entityType:
+    | "location"
+    | "organization"
+    | "other"
+    | "person"
+    | "product"
+    | "regulation"
+    | "standard"
+    | "system";
+  evidenceQuote: string;
+  id: string;
+  name: string;
+  summary: string;
+};
+
 export type Stage6aRouterTrace = ChatRouterDecision & {
   // Optional because traces persisted before each field existed don't carry
   // them; absent means the reply predates that tracking.
@@ -113,6 +130,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
     conflictingValues: string[];
   };
   evidenceSufficiency?: import("./chat-evidence-sufficiency.ts").EvidenceSufficiency;
+  entityCandidates?: ChatEntityCandidate[];
   ragInvocationReason?: import("./chat-evidence-sufficiency.ts").RagInvocationReason;
   queryUnderstanding?: ChatQueryUnderstandingTrace;
   okfEvidenceMode?: "direct" | "graph";

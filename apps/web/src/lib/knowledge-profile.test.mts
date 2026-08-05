@@ -22,6 +22,8 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.equal(generic.fields.aircraft_family, undefined);
   assert.equal(generic.fields.covered_rag_chunk_ids?.type, "string_array");
   assert.equal(generic.fields.classification_code?.type, "string");
+  assert.equal(generic.fields.entity_type?.type, "string");
+  assert.equal(generic.types.entity?.category, "concepts");
   assert.equal(aviation.fields.aircraft_family?.required, undefined);
   assert.deepEqual(aviation.clarificationFields, [
     "subject_family",

@@ -1,6 +1,7 @@
 import { parseCitationMarkers } from "@/lib/chat-citation-markers";
 import type { ChatMessage } from "@/lib/chat-types";
 import { ChatEvidenceCard } from "@/components/chat/chat-evidence-card";
+import { ChatEntityCandidates } from "@/components/chat/chat-entity-candidates";
 import { ChatMetadataClarification } from "@/components/chat/chat-metadata-clarification";
 import type { MetadataClarificationSelection } from "@/lib/chat-router";
 import { getChatMessageCitationHref } from "@/lib/chat-citation-links";
@@ -73,6 +74,13 @@ export function ChatMessageBubble({
         />
       ) : null}
       <ChatEvidenceCard message={message} />
+      {message.trace?.entityCandidates?.length ? (
+        <ChatEntityCandidates
+          candidates={message.trace.entityCandidates}
+          messageId={message.id}
+          sessionId={message.sessionId}
+        />
+      ) : null}
     </div>
   );
 }
