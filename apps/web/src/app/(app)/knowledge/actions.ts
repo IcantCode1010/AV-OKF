@@ -355,7 +355,7 @@ function normalizeFolderCategory(value: string): KnowledgeFolderCategory {
 }
 
 function normalizeFieldType(value: string): KnowledgeFieldType {
-  return ["date", "number", "number_array", "relations", "string", "string_array"].includes(value)
+  return ["date", "number", "number_array", "object", "object_array", "relations", "string", "string_array"].includes(value)
     ? value as KnowledgeFieldType
     : "string";
 }

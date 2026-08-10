@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -178,6 +178,7 @@ export type Document = {
   description: string;
   storageKey: string | null;
   originalFilename: string | null;
+  contentSha256?: string | null;
   mimeType: string;
   customProperties: CustomProperty[];
   subjectFamily: string | null;
@@ -284,6 +285,7 @@ const seedDocuments: Document[] = [
       "Maintenance manual section staged for future extraction and topic review.",
     storageKey: null,
     originalFilename: "737ng-amm-electrical-power-ata-24.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [
       { key: "Manual family", value: "AMM" },
@@ -315,6 +317,7 @@ const seedDocuments: Document[] = [
       "Training material that can explain system behavior but cannot authorize dispatch or procedure claims.",
     storageKey: null,
     originalFilename: "elt-system-training-notes.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Training reference" }],
     subjectFamily: "Boeing 737NG",
@@ -343,6 +346,7 @@ const seedDocuments: Document[] = [
       "Internal policy example for validating the platform beyond aviation manuals.",
     storageKey: null,
     originalFilename: "technical-publications-control-policy.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Quality" }],
     subjectFamily: null,
@@ -371,6 +375,7 @@ const seedDocuments: Document[] = [
       "Seeded route reference used to represent future OKF candidate generation.",
     storageKey: null,
     originalFilename: "apu-fault-route-reference.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Route type", value: "Fault isolation" }],
     subjectFamily: "Boeing 737NG",
@@ -399,6 +404,7 @@ const seedDocuments: Document[] = [
       "General business document used to keep the platform domain-neutral.",
     storageKey: null,
     originalFilename: "vendor-onboarding-handbook.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Operations" }],
     subjectFamily: null,
@@ -427,6 +433,7 @@ const seedDocuments: Document[] = [
       "Blocked seed item showing how unsupported or incomplete source metadata will surface.",
     storageKey: null,
     originalFilename: "mel-dispatch-gate-examples.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Example only" }],
     subjectFamily: "Boeing 737NG",
@@ -647,6 +654,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         description: input.description.trim(),
         storageKey,
         originalFilename: input.originalFilename,
+        contentSha256: createHash("sha256").update(input.bytes).digest("hex"),
         mimeType: "application/pdf",
         customProperties: [],
         subjectFamily: null,

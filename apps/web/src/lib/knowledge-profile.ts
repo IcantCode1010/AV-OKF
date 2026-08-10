@@ -9,11 +9,14 @@ export type KnowledgeFieldType =
   | "date"
   | "number"
   | "number_array"
+  | "object"
+  | "object_array"
   | "relations"
   | "string"
   | "string_array";
 
 export type KnowledgeProfileSchema = {
+  okfVersion: "0.1" | "0.2";
   agent: {
     boundedAdaptiveRetryEnabled: boolean;
   };
@@ -50,6 +53,11 @@ export const PROHIBITED_CLARIFICATION_FIELDS = new Set([
   "revision",
   "source_authority",
   "source_pages",
+  "generated",
+  "sources",
+  "stale_after",
+  "status",
+  "verified",
 ]);
 
 const CLARIFICATION_FIELD_TYPES = new Set<KnowledgeFieldType>([
@@ -93,15 +101,18 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   type: { required: true, type: "string" },
   title: { type: "string" },
   description: { type: "string" },
+  resource: { type: "string" },
   tags: { type: "string_array" },
-  updated: { type: "date" },
-  approved_at: { type: "date" },
-  approved_by: { type: "string" },
-  review_status: { type: "string" },
-  source_file: { type: "string" },
+  sources: { type: "object_array" },
+  generated: { type: "object" },
+  verified: { type: "object_array" },
+  status: { type: "string" },
+  stale_after: { type: "date" },
   source_pages: { type: "number_array" },
-  source_authority: { type: "string" },
   knowledge_version: { type: "string" },
+  av_okf_approval_mode: { type: "string" },
+  av_okf_lifecycle: { type: "string" },
+  av_okf_role: { type: "string" },
   relations: { type: "relations" },
   classification_code: { type: "string" },
   coverage_type: { type: "string" },
@@ -114,6 +125,7 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
 };
 
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
+  okfVersion: "0.2",
   agent: { boundedAdaptiveRetryEnabled: false },
   automation: { autoApproveEnrichedTopics: false },
   clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
@@ -131,7 +143,6 @@ export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
     policy: { category: "concepts", label: "Policy" },
     procedure: { category: "procedures", label: "Procedure" },
     reference: { category: "references", label: "Reference" },
-    source_manifest: { category: "indexes", label: "Source manifest" },
     system: { category: "concepts", label: "System" },
     system_topic: { category: "concepts", label: "System topic" },
   },
@@ -174,6 +185,7 @@ export function normalizeKnowledgeProfile(
   profile: KnowledgeProfileSchema,
 ): KnowledgeProfileSchema {
   const normalized = structuredClone(profile);
+  normalized.okfVersion = normalized.okfVersion === "0.2" ? "0.2" : "0.1";
   if (
     ["generic", "aviation"].includes(normalized.id) &&
     !normalized.types.entity
@@ -222,6 +234,9 @@ export function getTypeDirectory(profile: KnowledgeProfileSchema, type: string):
 
 export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): string[] {
   const errors: string[] = [];
+  if (profile.okfVersion !== "0.2") {
+    errors.push("knowledge_profile_okf_v02_required");
+  }
   if (typeof profile.agent?.boundedAdaptiveRetryEnabled !== "boolean") {
     errors.push("knowledge_profile_agent_invalid");
   }
@@ -231,7 +246,17 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
   if (profile.fields.type?.required !== true || profile.fields.type.type !== "string") {
     errors.push("knowledge_profile_type_field_required");
   }
-  for (const field of ["title", "description", "tags", "updated"]) {
+  for (const field of [
+    "title",
+    "description",
+    "resource",
+    "tags",
+    "sources",
+    "generated",
+    "verified",
+    "status",
+    "stale_after",
+  ]) {
     if (!profile.fields[field]) errors.push(`knowledge_profile_base_field_missing:${field}`);
   }
   if (Object.keys(profile.types).length === 0) errors.push("knowledge_profile_types_required");
@@ -246,10 +271,10 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
     }
     seenClarificationFields.add(field);
     const definition = profile.fields[field];
-    if (!definition) {
-      errors.push(`knowledge_profile_clarification_field_unknown:${field}`);
-    } else if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) {
+    if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) {
       errors.push(`knowledge_profile_clarification_field_prohibited:${field}`);
+    } else if (!definition) {
+      errors.push(`knowledge_profile_clarification_field_unknown:${field}`);
     } else if (!CLARIFICATION_FIELD_TYPES.has(definition.type)) {
       errors.push(`knowledge_profile_clarification_field_type_unsupported:${field}`);
     }

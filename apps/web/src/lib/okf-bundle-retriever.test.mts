@@ -87,12 +87,14 @@ test("retriever exposes automated and human approval provenance from live frontm
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-provenance-"));
   try {
     await writeTopic(root, "automated.md", {
-      extraFrontmatter: ['approved_by: "automation:user-1"'],
+      approvalMode: "automated",
       title: "Automated Brake Procedure",
+      verifiedBy: "process:av-okf-auto-approval",
     });
     await writeTopic(root, "human.md", {
-      extraFrontmatter: ['approved_by: "user-2"'],
+      approvalMode: "human_individual",
       title: "Human Brake Procedure",
+      verifiedBy: "human:user-2",
     });
     const results = await retrieveOkfBundleEvidence({
       knowledgeRoot: root,
@@ -275,9 +277,14 @@ test("retriever accepts approved agent-ready content without optional descriptio
     await writeFile(path.join(root, "no-description.md"), [
       "---",
       'type: "system_topic"',
-      'review_status: "approved"',
+      'status: "stable"',
       'title: "Brake System Missing Description"',
-      'source_file: "737NG AMM 32 Landing Gear"',
+      "verified:",
+      '  - by: "human:test-reviewer"',
+      '    at: "2026-07-20T12:00:00.000Z"',
+      "sources:",
+      '  - resource: "/references/sources/test-source.md"',
+      '    title: "737NG AMM 32 Landing Gear"',
       "source_pages:",
       "  - 41",
       "---",
@@ -779,11 +786,13 @@ async function writeTopic(
   root: string,
   filename: string,
   options: {
+    approvalMode?: string;
     body?: string;
     description?: string;
     extraFrontmatter?: string[];
     reviewStatus?: string;
     title?: string;
+    verifiedBy?: string;
   } = {},
 ) {
   await mkdir(path.dirname(path.join(root, filename)), { recursive: true });
@@ -792,13 +801,26 @@ async function writeTopic(
     [
       "---",
       'type: "system_topic"',
-      `review_status: "${options.reviewStatus ?? "approved"}"`,
+      `status: "${(options.reviewStatus ?? "approved") === "approved" ? "stable" : "draft"}"`,
       `title: "${options.title ?? "Main Gear Brake System"}"`,
       `description: "${
         options.description ??
         "The main gear brake system provides normal and alternate braking."
       }"`,
-      'source_file: "737NG AMM 32 Landing Gear"',
+      ...((options.reviewStatus ?? "approved") === "approved"
+        ? [
+            "verified:",
+            `  - by: "${options.verifiedBy ?? "human:test-reviewer"}"`,
+            '    at: "2026-07-20T12:00:00.000Z"',
+            ...(options.approvalMode
+              ? [`av_okf_approval_mode: "${options.approvalMode}"`]
+              : []),
+            "sources:",
+            '  - id: "source-test"',
+            '    resource: "/references/sources/test-source.md"',
+            '    title: "737NG AMM 32 Landing Gear"',
+          ]
+        : []),
       "source_pages:",
       "  - 41",
       "  - 42",

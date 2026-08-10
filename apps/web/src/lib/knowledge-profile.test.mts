@@ -140,7 +140,7 @@ test("bundle manifest makes only profile-required fields required", () => {
   const manifest = buildBundleManifest(profile);
   assert.match(manifest, /required:\n      - type\n      - department/);
   assert.match(manifest, /optional:[\s\S]*- title/);
-  assert.match(manifest, /date_fields:\n  - updated/);
+  assert.match(manifest, /date_fields:\n  - stale_after/);
 });
 
 test("workspace bundle roots are isolated and server-generated segments are path-safe", () => {

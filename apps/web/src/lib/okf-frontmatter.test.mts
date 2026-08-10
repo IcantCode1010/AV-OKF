@@ -7,6 +7,7 @@ import {
   getFrontmatterScalar,
   getFrontmatterStringArray,
   parseOkfMarkdown,
+  serializeOkfMarkdown,
 } from "./okf-frontmatter.ts";
 
 test("parseOkfMarkdown parses scalar fields written by the OKF exporter", () => {
@@ -185,4 +186,44 @@ test("an empty list key parses as an empty array, not a parse error", () => {
 
   assert.deepEqual(getFrontmatterStringArray(parsed.frontmatter, "tags"), []);
   assert.equal(getFrontmatterScalar(parsed.frontmatter, "title"), "Topic");
+});
+
+test("v0.2 nested provenance and unknown extensions survive a round trip", () => {
+  const parsed = parseOkfMarkdown([
+    "---",
+    "type: procedure",
+    "status: stable",
+    "generated:",
+    "  by: av-okf/enrichment",
+    "  at: 2026-08-06T12:00:00.000Z",
+    "verified:",
+    "  by: human:reviewer-1",
+    "  at: 2026-08-06T12:01:00.000Z",
+    "sources:",
+    "  - id: source-abc",
+    "    resource: /references/sources/manual-abc.md",
+    "x_custom:",
+    "  nested: true",
+    "---",
+    "",
+    "Body",
+  ].join("\n"));
+  const roundTrip = parseOkfMarkdown(serializeOkfMarkdown(parsed));
+  assert.deepEqual(roundTrip.frontmatter.x_custom, { nested: true });
+  assert.deepEqual(roundTrip.frontmatter.verified, {
+    at: "2026-08-06T12:01:00.000Z",
+    by: "human:reviewer-1",
+  });
+  assert.equal(roundTrip.body.trim(), "Body");
+});
+
+test("parser rejects duplicate keys and YAML aliases", () => {
+  assert.throws(
+    () => parseOkfMarkdown("---\ntype: policy\ntype: procedure\n---\n"),
+    /okf_frontmatter_invalid/,
+  );
+  assert.throws(
+    () => parseOkfMarkdown("---\ntype: &kind procedure\ntitle: *kind\n---\n"),
+    /okf_frontmatter_alias_not_allowed/,
+  );
 });

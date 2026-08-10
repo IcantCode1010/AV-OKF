@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   MAX_UPLOAD_BYTES,
   assertPdfMagicBytes,
@@ -180,6 +182,7 @@ export function createProductionDocumentService(
       });
 
       return repository.createUploadedDocumentRecord({
+        contentSha256: createHash("sha256").update(input.bytes).digest("hex"),
         context,
         description: input.description,
         documentId,

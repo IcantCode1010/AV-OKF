@@ -28,6 +28,7 @@ import {
 } from "./okf-relation-types.ts";
 
 type UploadRecordInput = {
+  contentSha256: string;
   context: AuthWorkspaceContext;
   description: string;
   documentId: string;
@@ -105,6 +106,7 @@ type DbTopicDiscoveryJob = {
 };
 
 type DbDocumentRecord = {
+  contentSha256: string | null;
   subjectFamily: string | null;
   classificationCode: string | null;
   customProperties?: DbCustomProperty[];
@@ -349,6 +351,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const document = await db.$transaction(async (tx: Prisma.TransactionClient) => {
         const created = await tx.document.create({
           data: {
+            contentSha256: input.contentSha256,
             description: input.description.trim(),
             fileType: "PDF",
             id: input.documentId,
@@ -1163,7 +1166,10 @@ function mapDocument(record: DbDocumentRecord): Document {
       logs,
       pageRecords,
       startedAt: latestJob?.startedAt ? formatTimestamp(latestJob.startedAt) : null,
-      status: normalizeExtractionStatus(latestJob?.status),
+      status: resolveProductionExtractionStatus({
+        pageCount: pageRecords.length,
+        status: latestJob?.status,
+      }),
     },
     fileType: record.fileType,
     id: record.id,
@@ -1172,6 +1178,7 @@ function mapDocument(record: DbDocumentRecord): Document {
     documentType: record.documentType,
     mimeType: record.mimeType,
     originalFilename: record.originalFilename,
+    contentSha256: record.contentSha256,
     owner: record.owner,
     pages: record.pages,
     revision: record.revision,
@@ -1336,7 +1343,11 @@ function normalizeDocumentStatus(value: string): DocumentStatus {
   return "needs_review";
 }
 
-function normalizeExtractionStatus(value: string | undefined): ExtractionStatus {
+export function resolveProductionExtractionStatus(input: {
+  pageCount: number;
+  status: string | undefined;
+}): ExtractionStatus {
+  const value = input.status;
   if (
     value === "queued" ||
     value === "running" ||
@@ -1345,6 +1356,8 @@ function normalizeExtractionStatus(value: string | undefined): ExtractionStatus 
   ) {
     return value;
   }
+
+  if (value === undefined && input.pageCount > 0) return "completed";
 
   return "queued";
 }

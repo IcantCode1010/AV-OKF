@@ -40,7 +40,7 @@ The physical file tree mirrors bundle-relative folders. `index.md` is readable b
 The explorer and the chat retriever have intentionally different inclusion rules.
 
 - Human explorer: active lifecycle content with parseable concept metadata.
-- Trusted agent retrieval: active lifecycle, `review_status: approved`, required OKF fields, and a qualified query match.
+- Trusted agent retrieval: active lifecycle, current `status: stable`, recognized `verified` provenance, portable source metadata, required AV-OKF fields, and a qualified query match.
 
 An active draft may therefore be visible to a reviewer without becoming evidence for an approved OKF answer. The explorer must never be used as a shortcut around the stricter agent retrieval gates.
 

@@ -4,8 +4,12 @@ import {
   getFrontmatterNumberArray,
   getFrontmatterRelations,
   getFrontmatterScalar,
+  deriveOkfTrustTier,
+  getOkfPrimarySource,
   parseOkfMarkdown,
 } from "./okf-frontmatter.ts";
+import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
 import { getAllowedRelations } from "./okf-relation-vocabulary.ts";
 import { resolveKnowledgePath } from "./knowledge-root.ts";
 import {
@@ -110,6 +114,15 @@ export async function loadOkfExplorerSnapshot(input: {
   requestedFile?: string;
   workspaceId: string;
 }): Promise<OkfExplorerSnapshot> {
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: input.knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  await assertOkfV02Bundle({
+    knowledgeRoot: input.knowledgeRoot,
+    okfVersion: bundle.okfVersion,
+  });
   let bundleFiles: OkfBundleFile[];
 
   try {
@@ -170,7 +183,7 @@ export async function buildOkfExplorerSnapshot(
           });
       const isParseable = file.isReserved || Boolean(title && type);
       const genericValidation = validateGenericOkfMetadata(parsed.frontmatter);
-      const hasAnyTrustMetadata = ["review_status", "source_file", "source_pages"].some(
+      const hasAnyTrustMetadata = ["verified", "sources", "source_pages"].some(
         (field) => parsed.frontmatter[field] !== undefined,
       );
       const trustStatus = file.isReserved
@@ -199,9 +212,8 @@ export async function buildOkfExplorerSnapshot(
         isParseable,
         isReserved: file.isReserved,
         lifecycleStatus: "active" as const,
-        reviewStatus:
-          getFrontmatterScalar(parsed.frontmatter, "review_status") ?? "unknown",
-        sourceFile: getFrontmatterScalar(parsed.frontmatter, "source_file"),
+        reviewStatus: deriveOkfTrustTier(parsed.frontmatter),
+        sourceFile: getOkfPrimarySource(parsed.frontmatter)?.title ?? null,
         sourcePages: getFrontmatterNumberArray(parsed.frontmatter, "source_pages"),
         title: title ?? file.title,
         trustStatus,

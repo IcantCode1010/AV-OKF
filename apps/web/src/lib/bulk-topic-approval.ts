@@ -587,7 +587,22 @@ export function topicEligibilityErrors(topic: TopicLike, profile: KnowledgeProfi
   const metadata = topic.okfMetadata && typeof topic.okfMetadata === "object"
     ? topic.okfMetadata as Record<string, unknown>
     : {};
-  const generatedFields = new Set(["description", "knowledge_version", "review_status", "source_file", "source_pages", "title", "type", "updated"]);
+  const generatedFields = new Set([
+    "av_okf_approval_mode",
+    "description",
+    "generated",
+    "knowledge_version",
+    "relations",
+    "resource",
+    "source_pages",
+    "sources",
+    "stale_after",
+    "status",
+    "tags",
+    "title",
+    "type",
+    "verified",
+  ]);
   const documentFields: Record<string, unknown> = {
     classification_code: document?.classificationCode,
     document_type: document?.documentType,

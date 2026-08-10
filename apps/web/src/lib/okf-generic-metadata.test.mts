@@ -20,7 +20,7 @@ test("generic OKF normalizes optional fields", () => {
       tags: ["vehicle", "vehicle", "inspection"],
       title: " Pre-start inspection ",
       type: "procedure",
-      updated: "2026-07-15",
+      resource: "urn:example:inspection",
     }),
     {
       metadata: {
@@ -28,25 +28,25 @@ test("generic OKF normalizes optional fields", () => {
         tags: ["vehicle", "inspection"],
         title: "Pre-start inspection",
         type: "procedure",
-        updated: "2026-07-15",
+        resource: "urn:example:inspection",
       },
       valid: true,
     },
   );
 });
 
-test("generic OKF rejects invalid type, tags, and updated date", () => {
+test("generic OKF rejects invalid type, tags, and stale date", () => {
   const result = validateGenericOkfMetadata({
     tags: ["valid", " "],
     type: "../policy",
-    updated: "2026-02-31",
+    stale_after: "2026-02-31",
   });
   assert.equal(result.valid, false);
   if (!result.valid) {
     assert.deepEqual(result.errors, [
       "generic_okf_type_invalid",
-      "generic_okf_updated_invalid",
       "generic_okf_tags_invalid",
+      "okf_v02_stale_after_invalid",
     ].sort((a, b) => result.errors.indexOf(a) - result.errors.indexOf(b)));
   }
 });
@@ -56,9 +56,9 @@ test("generic validity does not imply trusted agent evidence", () => {
   assert.equal(
     isAgentReadyOkfMetadata(
       {
-        review_status: "approved",
-        source_authority: "Manufacturer",
-        source_file: "manual.pdf",
+        status: "stable",
+        verified: [{ by: "human:reviewer", at: "2026-07-20T12:00:00.000Z" }],
+        sources: [{ resource: "/references/sources/manual.md" }],
         source_pages: [2, 3],
         title: "Inspection",
         type: "procedure",

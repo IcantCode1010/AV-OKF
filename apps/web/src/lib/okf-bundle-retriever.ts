@@ -7,6 +7,8 @@ import {
 } from "./knowledge-root.ts";
 import {
   getFrontmatterNumberArray,
+  getOkfApprovalProvenance,
+  getOkfPrimarySource,
   getFrontmatterRelations,
   getFrontmatterScalar,
   getFrontmatterStringArray,
@@ -127,7 +129,6 @@ export type OkfBundleFileReadInput = {
 const RESERVED_BUNDLE_FILES = new Set([
   "index.md",
   "log.md",
-  "source_manifest.md",
 ]);
 const DEFAULT_TOP_K = 4;
 const EXCERPT_MAX_CHARS = 1500;
@@ -462,7 +463,8 @@ async function buildEvidenceCandidate(
   const type = getFrontmatterScalar(parsed.frontmatter, "type");
   const title = getFrontmatterScalar(parsed.frontmatter, "title");
   const description = getFrontmatterScalar(parsed.frontmatter, "description");
-  const sourceFile = getFrontmatterScalar(parsed.frontmatter, "source_file");
+  const primarySource = getOkfPrimarySource(parsed.frontmatter);
+  const sourceFile = primarySource?.title ?? primarySource?.resource ?? null;
   const sourcePages = getFrontmatterNumberArray(parsed.frontmatter, "source_pages");
 
   if (!isAgentReadyOkfMetadata(parsed.frontmatter, parsed.body)) {
@@ -492,10 +494,11 @@ async function buildEvidenceCandidate(
     getFrontmatterScalar(parsed.frontmatter, "document_type"),
     getFrontmatterScalar(parsed.frontmatter, "classification_code"),
     getFrontmatterScalar(parsed.frontmatter, "effectivity"),
-    getFrontmatterScalar(parsed.frontmatter, "source_authority"),
+    primarySource?.resource,
+    primarySource?.author,
     getFrontmatterScalar(parsed.frontmatter, "revision"),
     getFrontmatterScalar(parsed.frontmatter, "knowledge_version"),
-    getFrontmatterScalar(parsed.frontmatter, "updated"),
+    getFrontmatterScalar(parsed.frontmatter, "stale_after"),
   ]
     .filter((value): value is string => Boolean(value))
     .join(" ");
@@ -513,9 +516,7 @@ async function buildEvidenceCandidate(
   }
 
   return {
-    approvalProvenance: getApprovalProvenance(
-      getFrontmatterScalar(parsed.frontmatter, "approved_by"),
-    ),
+    approvalProvenance: getOkfApprovalProvenance(parsed.frontmatter),
     answerableMetadata,
     body: readerContent.body,
     contentHash: hashOkfSource(markdown),
@@ -548,11 +549,6 @@ async function buildEvidenceCandidate(
     title: trustedTitle,
     type: type!,
   };
-}
-
-function getApprovalProvenance(approvedBy: string | null): "automated" | "human" | "legacy" {
-  if (!approvedBy) return "legacy";
-  return approvedBy.startsWith("automation:") ? "automated" : "human";
 }
 
 function approvalRank(provenance: OkfBundleEvidence["approvalProvenance"]): number {

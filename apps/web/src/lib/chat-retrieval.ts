@@ -22,6 +22,7 @@ import {
   getKnowledgeBundleByIdentity,
   resolveKnowledgeBundleRoot,
 } from "./knowledge-bundles.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
 import { readOkfBundleFile } from "./okf-bundle.ts";
 import { rerankRawRagCandidates, type RagRerankTrace } from "./rag-reranker.ts";
 import { getPrisma } from "./prisma.ts";
@@ -144,15 +145,18 @@ async function retrieveOkfBundleDiagnosticsWithLifecycle(input: {
     return { nearMissCandidates: [], qualifiedEvidence: [] };
   }
 
+  const knowledgeRoot = resolveKnowledgeBundleRoot({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  await assertOkfV02Bundle({ knowledgeRoot, okfVersion: bundle.okfVersion });
+
   return retrieveOkfBundleEvidenceWithDiagnostics({
     ...input,
     bundleName: bundle.name,
     clarificationFields: bundle.profile.clarificationFields,
     knowledgeBundleId,
-    knowledgeRoot: resolveKnowledgeBundleRoot({
-      bundleId: knowledgeBundleId,
-      workspaceId: input.workspaceId,
-    }),
+    knowledgeRoot,
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
   });
 }
@@ -164,14 +168,23 @@ async function traverseOkfRelationsWithLifecycle(input: {
   maxHops?: number;
 }): Promise<OkfGraphTraversalResult> {
   const knowledgeBundleId = input.knowledgeBundleId ?? "kb_general_local";
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle) {
+    return { concepts: [], paths: [], warnings: ["knowledge_bundle_not_found"] };
+  }
+  const knowledgeRoot = resolveKnowledgeBundleRoot({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  await assertOkfV02Bundle({ knowledgeRoot, okfVersion: bundle.okfVersion });
 
   return traverseOkfRelations({
     ...input,
     knowledgeBundleId,
-    knowledgeRoot: resolveKnowledgeBundleRoot({
-      bundleId: knowledgeBundleId,
-      workspaceId: input.workspaceId,
-    }),
+    knowledgeRoot,
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
   });
 }

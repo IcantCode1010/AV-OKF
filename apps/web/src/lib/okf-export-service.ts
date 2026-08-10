@@ -12,6 +12,7 @@ import {
   resolveKnowledgeBundleRoot,
 } from "./knowledge-bundles.ts";
 import { getKnowledgeProfileTemplate, getTypeDirectory } from "./knowledge-profile.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
 
 type ExportApprovedTopicInput = {
   coverageRepository?: OkfCoverageRepository;
@@ -47,6 +48,13 @@ export async function exportApprovedTopicForDocument(
         workspaceId,
       });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const knowledgeRoot =
+    input.knowledgeRoot ??
+    resolveKnowledgeBundleRoot({ bundleId: knowledgeBundleId, workspaceId });
+  await assertOkfV02Bundle({
+    knowledgeRoot,
+    okfVersion: "okfVersion" in bundle ? bundle.okfVersion : "0.2",
+  });
   const conceptType =
     typeof topic.okfMetadata?.type === "string"
       ? topic.okfMetadata.type
@@ -67,14 +75,12 @@ export async function exportApprovedTopicForDocument(
 
   const exported = await exportTopicToKnowledge({
     directory,
-    document: input.document,
+    document: {
+      ...input.document,
+      contentSha256: input.document.contentSha256 ?? null,
+    },
     exportedAt: input.exportedAt,
-    knowledgeRoot:
-      input.knowledgeRoot ??
-      resolveKnowledgeBundleRoot({
-        bundleId: knowledgeBundleId,
-        workspaceId,
-      }),
+    knowledgeRoot,
     knowledgeVersion: input.knowledgeVersion ?? getKnowledgeVersion(),
     topic: coverage
       ? {
@@ -128,5 +134,5 @@ export async function exportApprovedTopicForDocument(
 }
 
 function getKnowledgeVersion() {
-  return process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0";
+  return process.env.AV_OKF_KNOWLEDGE_VERSION || "0.2.0";
 }

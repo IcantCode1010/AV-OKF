@@ -351,8 +351,7 @@ async function getRelationTargets(knowledgeRoot: string) {
     return (await listOkfBundleFiles(knowledgeRoot)).filter(
       (file) =>
         file.filename !== "index.md" &&
-        file.filename !== "log.md" &&
-        file.filename !== "source_manifest.md",
+        file.filename !== "log.md",
     );
   } catch (error) {
     if (

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Prisma } from "@prisma/client";
@@ -9,7 +9,12 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import { resolveKnowledgePath } from "./knowledge-root.ts";
 import type { TopicRelation } from "./okf-relations.ts";
-import { getFrontmatterRelations, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import {
+  getFrontmatterRelations,
+  getFrontmatterSources,
+  parseOkfMarkdown,
+  serializeOkfMarkdown,
+} from "./okf-frontmatter.ts";
 import { queueOkfConceptEmbedding } from "./okf-concept-embedding.ts";
 import { getPrisma } from "./prisma.ts";
 import { getObjectStorage, type ObjectStorage } from "./production-storage.ts";
@@ -441,36 +446,30 @@ async function cleanDocumentFromKnowledgeBundle(manifest: DocumentDeletionManife
     workspaceId: manifest.workspaceId,
   });
   const deleted = new Set(manifest.exportedFilePaths.map(normalizeBundlePath));
+  const sourceReferences = new Set<string>();
   let deletedFiles = 0;
   for (const filePath of deleted) {
     const target = await resolveKnowledgePath({ knowledgeRoot, relativePath: filePath });
     if (!target) throw new Error("document_deletion_unsafe_knowledge_path");
-    const existed = await readFile(target, "utf8").then(() => true).catch((error) => {
-      if (isMissingPathError(error)) return false;
+    const existing = await readFile(target, "utf8").catch((error) => {
+      if (isMissingPathError(error)) return null;
       throw error;
     });
+    if (existing) {
+      const parsed = parseOkfMarkdown(existing);
+      for (const source of getFrontmatterSources(parsed.frontmatter)) {
+        const sourcePath = normalizeBundleResourcePath(source.resource);
+        if (sourcePath.startsWith("references/sources/") && sourcePath.endsWith(".md")) {
+          sourceReferences.add(sourcePath);
+        }
+      }
+    }
     await rm(target, { force: true });
-    if (existed) deletedFiles += 1;
+    if (existing !== null) deletedFiles += 1;
   }
 
   await removeLinesReferencingFiles(path.join(knowledgeRoot, "index.md"), deleted);
   await removeLinesReferencingFiles(path.join(knowledgeRoot, "log.md"), deleted);
-  const sameTitleSurvives = await db.document.count({
-    where: {
-      deletedAt: null,
-      id: { not: manifest.documentId },
-      knowledgeBundleId: manifest.knowledgeBundleId,
-      title: manifest.documentTitle,
-      topicRecords: { some: { exportedFilePath: { not: null } } },
-    },
-  });
-  if (sameTitleSurvives === 0) {
-    await removeSourceManifestEntry(
-      path.join(knowledgeRoot, "source_manifest.md"),
-      manifest.documentTitle,
-    );
-  }
-
   const changedSurvivors: Array<{ filePath: string; markdown: string }> = [];
   const topicUpdates: Array<{ relations: TopicRelation[]; topicId: string }> = [];
   const files = await listMarkdownFiles(knowledgeRoot);
@@ -496,6 +495,13 @@ async function cleanDocumentFromKnowledgeBundle(manifest: DocumentDeletionManife
       },
     });
     if (topic) topicUpdates.push({ relations: kept, topicId: topic.id });
+  }
+  for (const sourcePath of sourceReferences) {
+    const stillReferenced = await sourceReferenceIsUsed(knowledgeRoot, sourcePath, deleted);
+    if (stillReferenced) continue;
+    const target = await resolveKnowledgePath({ knowledgeRoot, relativePath: sourcePath });
+    if (!target) throw new Error("document_deletion_unsafe_knowledge_path");
+    await rm(target, { force: true });
   }
   for (const update of topicUpdates) {
     await db.topicRecord.updateMany({
@@ -534,40 +540,19 @@ export function replaceRelationsBlock(
   relations: TopicRelation[],
   changedAt: string,
 ) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown);
-  if (!match) throw new Error("document_deletion_invalid_okf_frontmatter");
-  const lines = (match[1] ?? "").split(/\r?\n/);
-  const filtered: string[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    if (lines[index]!.trim() !== "relations:") {
-      filtered.push(lines[index]!);
-      continue;
-    }
-    while (index + 1 < lines.length && /^\s{2,}-/.test(lines[index + 1]!)) {
-      index += 1;
-      while (index + 1 < lines.length && /^\s{4,}\w/.test(lines[index + 1]!)) index += 1;
-    }
-  }
-  const updatedDate = changedAt.slice(0, 10);
-  const updatedLines = filtered.map((line) =>
-    /^updated:/.test(line) ? `updated: ${updatedDate}` : line,
-  );
-  if (relations.length > 0) updatedLines.push(...formatRelations(relations));
-  return markdown.replace(match[0], `---\n${updatedLines.join("\n")}\n---`);
-}
-
-function formatRelations(relations: TopicRelation[]) {
-  return [
-    "relations:",
-    ...relations.flatMap((relation) => [
-      `  - relation: ${JSON.stringify(relation.relation)}`,
-      `    target: ${JSON.stringify(relation.target)}`,
-      ...(relation.targetType
-        ? [`    target_type: ${JSON.stringify(relation.targetType)}`]
-        : []),
-      `    reason: ${JSON.stringify(relation.reason)}`,
-    ]),
-  ];
+  const parsed = parseOkfMarkdown(markdown);
+  if (!parsed.frontmatter.type) throw new Error("document_deletion_invalid_okf_frontmatter");
+  const frontmatter = { ...parsed.frontmatter };
+  if (relations.length > 0) frontmatter.relations = relations.map((relation) => ({
+    relation: relation.relation,
+    target: relation.target,
+    ...(relation.targetType ? { target_type: relation.targetType } : {}),
+    reason: relation.reason,
+  }));
+  else delete frontmatter.relations;
+  frontmatter.av_okf_relation_updated_at = changedAt;
+  const body = replaceRelationsMarkdownSection(parsed.body, relations);
+  return serializeOkfMarkdown({ body, frontmatter });
 }
 
 async function appendDeletionLog(input: {
@@ -587,6 +572,7 @@ async function appendDeletionLog(input: {
     throw error;
   });
   if (existing.split(/\r?\n/).includes(entry)) return;
+  await mkdir(input.knowledgeRoot, { recursive: true });
   await writeFile(logPath, `${existing.trimEnd()}\n\n${entry}\n`, "utf8");
 }
 
@@ -599,24 +585,6 @@ async function removeLinesReferencingFiles(filePath: string, deleted: Set<string
   const filtered = existing
     .split(/\r?\n/)
     .filter((line) => !Array.from(deleted).some((target) => line.includes(target)));
-  await writeFile(filePath, `${filtered.join("\n").trimEnd()}\n`, "utf8");
-}
-
-async function removeSourceManifestEntry(filePath: string, documentTitle: string) {
-  const existing = await readFile(filePath, "utf8").catch((error) => {
-    if (isMissingPathError(error)) return null;
-    throw error;
-  });
-  if (existing === null) return;
-  const lines = existing.split(/\r?\n/);
-  const filtered: string[] = [];
-  for (let index = 0; index < lines.length; index += 1) {
-    if (lines[index]!.trim() !== `- ${documentTitle}`) {
-      filtered.push(lines[index]!);
-      continue;
-    }
-    while (index + 1 < lines.length && lines[index + 1]!.startsWith("  - ")) index += 1;
-  }
   await writeFile(filePath, `${filtered.join("\n").trimEnd()}\n`, "utf8");
 }
 
@@ -659,7 +627,40 @@ function resolveRelationPath(sourceFile: string, target: string) {
 }
 
 function isReservedFile(filePath: string) {
-  return ["index.md", "log.md", "source_manifest.md"].includes(filePath);
+  return ["index.md", "log.md"].includes(filePath);
+}
+
+function normalizeBundleResourcePath(value: string) {
+  return normalizeBundlePath(value).replace(/^\/+/, "");
+}
+
+async function sourceReferenceIsUsed(
+  knowledgeRoot: string,
+  sourcePath: string,
+  deleted: Set<string>,
+) {
+  for (const filePath of await listMarkdownFiles(knowledgeRoot)) {
+    if (isReservedFile(filePath) || deleted.has(filePath) || filePath === sourcePath) continue;
+    const target = await resolveKnowledgePath({ knowledgeRoot, relativePath: filePath });
+    if (!target) throw new Error("document_deletion_unsafe_knowledge_path");
+    const parsed = parseOkfMarkdown(await readFile(target, "utf8"));
+    if (getFrontmatterSources(parsed.frontmatter).some(
+      (source) => normalizeBundleResourcePath(source.resource) === sourcePath,
+    )) return true;
+  }
+  return false;
+}
+
+function replaceRelationsMarkdownSection(body: string, relations: TopicRelation[]) {
+  const withoutExisting = body.replace(
+    /(?:\r?\n){0,2}## Relations\r?\n[\s\S]*?(?=(?:\r?\n){2}## |$)/,
+    "",
+  ).trimEnd();
+  if (relations.length === 0) return withoutExisting;
+  const lines = relations.map((relation) =>
+    `- [${relation.relation}](${relation.target}): ${relation.reason}`,
+  );
+  return `${withoutExisting}\n\n## Relations\n\n${lines.join("\n")}`;
 }
 
 function normalizeBundlePath(value: string) {

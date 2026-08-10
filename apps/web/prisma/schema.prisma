@@ -140,6 +140,7 @@ model Document {
   ragStatus              String                   @default("not_indexed")
   ragIndexVersion        Int                      @default(0)
   originalFilename       String?
+  contentSha256          String?
   mimeType               String
   workspace              Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   knowledgeBundle        KnowledgeBundle?         @relation(fields: [knowledgeBundleId], references: [id], onDelete: SetNull)
@@ -160,6 +161,7 @@ model Document {
 
   @@index([workspaceId, updatedAt])
   @@index([knowledgeBundleId, updatedAt])
+  @@index([contentSha256])
 }
 
 model KnowledgeBundle {
@@ -169,6 +171,7 @@ model KnowledgeBundle {
   slug                   String
   description            String                          @default("") @db.Text
   status                 String                          @default("active")
+  okfVersion             String                          @default("0.1")
   activeProfileVersionId String?                         @unique
   createdBy              String
   createdAt              DateTime                        @default(now())

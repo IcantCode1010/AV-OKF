@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Fixed synthetic and legacy documents with extracted page records but no
+  `ExtractionJob` appearing permanently queued in the Processing panel. The
+  production mapper now derives completed extraction from existing pages only
+  when the job is absent, and the route-coverage fixture now persists an
+  explicit completed extraction job.
+- Completed the backed-up production OKF v0.2 hard cutover on 2026-08-06.
+  Every active bundle now declares v0.2 in Postgres and `index.md`, immutable
+  v0.2 profiles and bundle-local manifests are active, source PDFs have
+  portable SHA-256 references, stale lookup vectors were rebuilt, and the
+  live explorer/source drilldown passed browser verification. The final Docker
+  route suite passed 24/24 scenarios and bundle deletion passed all source,
+  tombstone, idempotency, and reassignment assertions.
+- Hardened cutover operations after dry-run and rollback testing: Prisma 7
+  scripts now use the configured adapter, source objects use the real
+  `original_pdf` discriminator, directory-less bundles activate safely,
+  bundle manifests are staged, document deletion can log into a missing bundle
+  root, and the PowerShell wrapper checks every native process exit code before
+  restart. Local maintenance backups are now excluded from Git.
+- Fixed live OpenAI chat synthesis discovered by the cutover route gate. The
+  provider-facing structured schema now requires `entityCandidates` (an empty
+  array is valid), satisfying OpenAI strict JSON Schema while the internal
+  compatibility parser still accepts older provider payloads.
+- Implemented the OKF v0.2 hard-cutover runtime and migration tooling. The
+  shared parser now uses pinned `yaml@2.9.0`, preserves nested and unknown
+  metadata, and rejects duplicate keys and aliases. New exports use `generated`,
+  `verified`, `sources`, `status`, source-reference concepts, portable relation
+  links, and date-grouped logs without emitting legacy trust fields.
+- Added bundle/document format persistence, upload SHA-256 hashing, v0.2 profile
+  manifests, live runtime version guards, lifecycle-safe structured rewrites,
+  source-reference deletion cleanup, a dedicated conformance validator, and
+  the dry-run/staged `migrate:okf-v0.2` cutover with backup enforcement and
+  rollback. Production migration and release checks are complete; portable
+  archive import is now the next isolated platform slice.
 - Added review-first chat entity discovery. Validated LLM answers may surface up
   to three named entities backed by exact quotes from persisted evidence.
   `Review and enrich` creates a deterministic, workspace-and-bundle-scoped

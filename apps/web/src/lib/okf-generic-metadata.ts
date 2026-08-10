@@ -1,25 +1,29 @@
+import {
+  deriveOkfTrustTier,
+  getFrontmatterSources,
+  isOkfV02Current,
+  validateOkfV02Frontmatter,
+} from "./okf-frontmatter.ts";
+
 export const GENERIC_OKF_FIELD_NAMES = [
   "type",
   "title",
   "description",
+  "resource",
   "tags",
-  "updated",
 ] as const;
 
 export type GenericOkfMetadata = {
   description?: string;
+  resource?: string;
   tags?: string[];
   title?: string;
   type: string;
-  updated?: string;
 };
 
 export type GenericOkfMetadataValidation =
   | { metadata: GenericOkfMetadata; valid: true }
   | { errors: string[]; valid: false };
-
-const TYPE_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/;
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function validateGenericOkfMetadata(
   value: Record<string, unknown>,
@@ -28,12 +32,12 @@ export function validateGenericOkfMetadata(
   const type = normalizeOptionalString(value.type);
   const title = normalizeOptionalString(value.title);
   const description = normalizeOptionalString(value.description);
-  const updated = normalizeOptionalString(value.updated);
+  const resource = normalizeOptionalString(value.resource);
   const tags = normalizeTags(value.tags, errors);
 
   if (!type) {
     errors.push("generic_okf_type_required");
-  } else if (!TYPE_PATTERN.test(type)) {
+  } else if (type.length > 128 || !/^[A-Za-z][A-Za-z0-9_-]*$/.test(type)) {
     errors.push("generic_okf_type_invalid");
   }
 
@@ -45,9 +49,9 @@ export function validateGenericOkfMetadata(
     errors.push("generic_okf_description_invalid");
   }
 
-  if (updated && (!ISO_DATE_PATTERN.test(updated) || !isRealIsoDate(updated))) {
-    errors.push("generic_okf_updated_invalid");
-  }
+  errors.push(...validateOkfV02Frontmatter(value).filter(
+    (error) => !["okf_v02_type_required", "okf_v02_tags_invalid"].includes(error),
+  ));
 
   if (errors.length > 0 || !type) {
     return { errors, valid: false };
@@ -56,10 +60,10 @@ export function validateGenericOkfMetadata(
   return {
     metadata: {
       ...(description ? { description } : {}),
+      ...(resource ? { resource } : {}),
       ...(tags ? { tags } : {}),
       ...(title ? { title } : {}),
       type,
-      ...(updated ? { updated } : {}),
     },
     valid: true,
   };
@@ -71,15 +75,17 @@ export function isAgentReadyOkfMetadata(
 ): boolean {
   const generic = validateGenericOkfMetadata(value);
   const title = normalizeOptionalString(value.title);
-  const sourceFile = normalizeOptionalString(value.source_file);
   const sourcePages = value.source_pages;
+  const sources = getFrontmatterSources(value);
 
   return (
     generic.valid &&
-    value.review_status === "approved" &&
+    isOkfV02Current(value) &&
+    deriveOkfTrustTier(value) !== "unverified" &&
+    value.av_okf_role !== "source_document" &&
     Boolean(title) &&
     body.trim().length > 0 &&
-    Boolean(sourceFile) &&
+    sources.length > 0 &&
     Array.isArray(sourcePages) &&
     sourcePages.length > 0 &&
     sourcePages.every((page) => {
@@ -109,9 +115,4 @@ function normalizeTags(value: unknown, errors: string[]): string[] | undefined {
   }
 
   return [...new Set(tags as string[])];
-}
-
-function isRealIsoDate(value: string): boolean {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }

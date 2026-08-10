@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPostgresDocumentRepository } from "./production-repository.ts";
+import {
+  createPostgresDocumentRepository,
+  resolveProductionExtractionStatus,
+} from "./production-repository.ts";
+
+test("existing extracted pages complete a legacy record without an extraction job", () => {
+  assert.equal(resolveProductionExtractionStatus({ pageCount: 3, status: undefined }), "completed");
+  assert.equal(resolveProductionExtractionStatus({ pageCount: 0, status: undefined }), "queued");
+  assert.equal(resolveProductionExtractionStatus({ pageCount: 3, status: "running" }), "running");
+});
 
 test("production topic content edit rejects cross-workspace topics", async () => {
   const repository = createPostgresDocumentRepository({

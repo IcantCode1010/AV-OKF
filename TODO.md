@@ -128,15 +128,15 @@
 - [x] Parse bundle files from Markdown/YAML instead of requiring approved OKF topics to be embedded into the RAG database.
 - [x] Read reserved bundle files:
   - `index.md`
-  - `source_manifest.md`
   - `log.md`
+- [x] Read portable source-reference concepts under `references/sources/` without treating them as answer-eligible evidence.
 - [x] Read concept files and normalize:
   - filename/path
   - frontmatter `type`
   - `title`
   - `description`
-  - `review_status`
-  - `source_file`
+  - `status`, `generated`, and `verified`
+  - `sources`
   - `source_pages`
   - `relations`
   - `covered_rag_chunk_ids`
@@ -202,13 +202,19 @@
 - [x] Add a workspace-scoped multi-bundle registry with required upload/chat bundle selection.
 - [x] Add Generic and Aviation profile templates plus versioned custom profile drafts and validated activation.
 - [x] Add durable, typed-confirmation bundle deletion through the BullMQ worker.
-- [ ] Reconcile the exporter and consumer with the published OKF v0.2 specification:
+- [x] Reconcile the exporter and consumer with the published OKF v0.2 specification:
+  - use the pinned [OKF v0.2 adoption decision](docs/architecture/okf-v0.2-adoption.md) as the migration contract;
   - make OKF v0.2 the only supported bundle format after migration;
   - map authoring provenance to `generated`, approval provenance to `verified`, source provenance to `sources`, and lifecycle to `status`/`stale_after`;
   - replace generated `updated` metadata with `generated.at`;
-  - preserve typed relations, source pages, approval modes, and richer lifecycle states as AV-OKF extensions;
+  - preserve typed relations, source pages, approval modes, and richer lifecycle states as AV-OKF extensions while exposing standard Markdown links for portable graph traversal;
+  - preserve unknown v0.2 and producer-defined fields during parse/export round trips;
   - resolve `source_manifest.md` conformance because OKF v0.2 reserves only `index.md` and `log.md`;
   - provide a backed-up, dry-run, resumable migration that validates every bundle before the application switches to v0.2-only reads and writes.
+- [x] Run and review `migrate:okf-v0.2` dry-run reports for every production workspace, create the maintenance-window database/vault backups, apply the all-bundle cutover, and complete the browser/E2E release gate before enabling portable import.
+- [ ] Implement portable OKF v0.2 archive import through staged validation,
+  target-workspace trust review, atomic activation, and projection/index
+  rebuilding; do not import foreign database identifiers or trust claims.
 - [ ] Add richer relation-candidate editing before approval.
 - [ ] Add column-aware PDF extraction before trusting high-confidence topics from multi-column documents.
 - [x] Replace production heading-only topic generation with automatic document-wide LLM topic discovery.

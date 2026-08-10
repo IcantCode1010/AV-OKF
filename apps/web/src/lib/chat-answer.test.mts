@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildChatAnswerPrompt,
   buildNotDirectlyAnsweredReply,
+  chatAnswerProviderSchema,
   discloseChatAssumptions,
   generateChatAnswer,
   hasValidCitationMarkers,
@@ -34,6 +35,18 @@ function makeEvidence(index: number): ChatRetrievalEvidence {
     text: "GEN OFF BUS light indicates a generator bus fault. Reset the generator per QRH 6.2.",
   };
 }
+
+test("provider structured output requires entityCandidates for OpenAI strict schemas", () => {
+  assert.equal(chatAnswerProviderSchema.safeParse({
+    answer: "Supported answer [1].",
+    supported: true,
+  }).success, false);
+  assert.equal(chatAnswerProviderSchema.safeParse({
+    answer: "Supported answer [1].",
+    entityCandidates: [],
+    supported: true,
+  }).success, true);
+});
 
 test("discloseChatAssumptions names each assumed field and value", () => {
   const answer = discloseChatAssumptions("Supported answer [1].", [

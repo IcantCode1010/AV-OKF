@@ -290,7 +290,7 @@ Deliverables:
 - Typed relation field and controlled vocabulary
 - Markdown exporter
 - `index.md` generation
-- `source_manifest.md` generation
+- portable `references/sources/*.md` source-reference generation (replaced the v0.1 `source_manifest.md` contract)
 - derived OKF-to-RAG coverage projection; OKF frontmatter remains the source of truth
 - OKF-to-RAG coverage links
 - Bundle validation
@@ -298,7 +298,7 @@ Deliverables:
 - Deterministic relation lint for relation enum values, target resolution, and target type matching
 - GitHub Actions `okflint validate` CI gate
 - Workspace-scoped bundle library with Generic, Aviation, and versioned custom profiles
-- Generic `type`-required metadata contract with optional `title`, `description`, `tags`, and `updated`
+- OKF v0.2 `type`-required metadata contract with optional standard metadata and stricter AV-OKF trust/provenance extensions
 - Required upload/chat bundle assignment and bundle-isolated retrieval, relations, lifecycle, and RAG filtering
 - Dry-run/resumable migration into General Knowledge with backup and recovery journal
 - Durable BullMQ bundle deletion that removes OKF and derived knowledge while preserving source PDFs, document metadata, and extraction history as Unassigned documents
@@ -387,7 +387,7 @@ Agent-readiness pass: `routeChatQuestion` now also accepts the structured input 
 
 Stage 6 closeout correction: the LLM fallback classifier is now implemented for low-confidence rule results, with high-confidence safety routes kept rules-first. The current Stage 6 boundary is router-first retrieval, evidence-bound answer synthesis, citations, and traceability; gap-targeted hybrid retrieval and claim-level validation move to Stage 7.
 
-Stage 6.5 architecture correction: OKF retrieval should read the exported OKF bundle files directly, not depend on `okf_topic` rows embedded into the RAG vector database. The `okf_topic` RAG projection remains a legacy/optional cache from the Stage 4 follow-up, but the agent path should treat `knowledge/` as the reviewed knowledge source of truth. RAG remains the raw document discovery layer; OKF remains the reviewed Markdown/YAML bundle the agent can crawl through `index.md`, frontmatter, links, relations, `source_manifest.md`, and `log.md`.
+Stage 6.5 architecture correction: OKF retrieval reads exported bundle files directly, not `okf_topic` rows in RAG. The agent treats the v0.2 Markdown/YAML bundle as reviewed knowledge and traverses `index.md`, nested frontmatter, portable source references, standard links, typed relations, and `log.md`. RAG remains the raw document discovery layer.
 
 Stage 6.5 implementation status: complete. `okf-bundle-retriever.ts` reads the active bundle live on every query with no cache, uses the shared frontmatter parser, rejects unsafe paths, ignores reserved/non-approved/malformed files, applies lifecycle state, and uses a deterministic precision gate before approved OKF evidence can qualify. The admin OKF-to-RAG sync is labeled as a legacy optional cache rather than the primary agent path.
 
@@ -709,7 +709,11 @@ Agent decision framework:
 
 ## Next Platform Milestone: OKF v0.2 And Portable Import
 
-Status: planned. The current application still emits `okf_version: '0.1'` and
+Status: v0.2 hard cutover complete; portable import is next. The v0.2-only
+runtime, exporter, validator, staged migration, production activation, and
+release verification are complete. All active bundles were migrated during a
+backed-up maintenance window on 2026-08-06 and pass bundle validation and
+relation lint. The application
 has no finished UI or API for importing an arbitrary bundle archive. The
 product decision is a v0.2-only hard cutover, not permanent dual-read support.
 
@@ -727,7 +731,7 @@ Required sequencing:
    and writes to v0.2.
 5. Remove v0.1 production reads after successful cutover; do not maintain a
    permanent compatibility parser.
-6. Implement archive import against the stable v0.2 contract.
+6. Implement archive import against the now-active stable v0.2 contract.
 
 Migration and format rules:
 
@@ -746,7 +750,7 @@ Portable import modes:
 - **Structure-only:** validate and import Markdown for human exploration, but
   do not honor external approval claims as target-workspace trust.
 - **Source-linked reviewed:** import or map source documents, verify
-  `source_file` identities and source pages, rebuild projections and lookup
+  `sources[].resource` identities and source pages, rebuild projections and lookup
   indexes, and require target-workspace authorization before concepts become
   trusted agent evidence.
 
@@ -764,6 +768,8 @@ Import safety requirements:
 
 Reference:
 
+- [OKF v0.2 Adoption Decision](../architecture/okf-v0.2-adoption.md)
+- [Published OKF v0.2 Specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 - [Document-to-OKF Bundle Walkthrough](../user-guides/file-processing-walkthrough.md)
 
 Exit criteria:

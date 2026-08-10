@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringArray, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringArray, getOkfPrimarySource, parseOkfMarkdown } from "./okf-frontmatter.ts";
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import { getKnowledgeBundleByIdentity, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
@@ -343,7 +343,7 @@ export async function loadRelationDiscoveryConcepts(input: {
     concepts.push({
       filePath,
       pages: getFrontmatterNumberArray(parsed.frontmatter, "source_pages"),
-      sourceFile: getFrontmatterScalar(parsed.frontmatter, "source_file") ?? "",
+      sourceFile: getOkfPrimarySource(parsed.frontmatter)?.resource ?? "",
       tags: getFrontmatterStringArray(parsed.frontmatter, "tags"),
       terms: tokenizeRelationTerms(`${getFrontmatterScalar(parsed.frontmatter, "title") ?? ""} ${getFrontmatterScalar(parsed.frontmatter, "description") ?? ""}`),
     });

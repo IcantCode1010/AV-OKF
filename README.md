@@ -67,6 +67,13 @@ The [Document-to-OKF Bundle Walkthrough](docs/user-guides/file-processing-walkth
 describes the complete processing pipeline, portable bundle structure, trust
 boundary, validation steps, and proposed source-linked import contract.
 
+The [OKF v0.2 Adoption Decision](docs/architecture/okf-v0.2-adoption.md) pins
+the published v0.2 specification as the portability contract and separates
+standard OKF metadata from AV-OKF review, lifecycle, retrieval, and agent-trust
+policy. The backed-up production cutover completed on 2026-08-06, and runtime
+reads and exports are now v0.2-only. Portable archive import remains the next
+separately reviewed platform slice.
+
 ## Current Status
 
 AV-OKF is a late-stage MVP with a working end-to-end document-to-agent pipeline and a workspace-scoped, multi-bundle knowledge vault.
@@ -113,7 +120,25 @@ Stage 3 adds manual topic generation from extracted page records. It does not ru
 
 Approved topics export into the document's selected bundle under `knowledge/workspaces/{workspaceId}/bundles/{bundleId}`. Uploads start in one bundle; an active chat may search an ordered user-selected scope of one to ten active workspace bundles. OKF, graph, and raw-RAG retrieval cannot leave that per-turn snapshot, graph traversal remains bundle-local, and the live chat path reads current bundle files on every OKF query. Raw RAG remains the labeled unreviewed discovery layer.
 
-Generic OKF requires only `type`; `title`, `description`, `tags`, and `updated` are optional interoperable fields. Agent trust is a separate gate requiring active lifecycle, approval, usable content, and source-file/page provenance. Aviation and custom profiles extend the generic contract without changing its base semantics.
+OKF v0.2 base conformance requires only `type`; `title`, `description`,
+`resource`, and `tags` are optional standard fields. AV-OKF exports `generated`,
+`verified`, `sources`, `status`, and portable source-reference concepts while
+retaining typed relations, source pages, approval mode, and lifecycle detail as
+extensions. Agent trust remains a separate gate requiring current `stable`
+status, verification, usable content, active lifecycle, and source provenance.
+Aviation and custom profiles extend the generic contract without changing it.
+
+The cutover command is dry-run by default:
+
+```bash
+pnpm --dir apps/web migrate:okf-v0.2
+```
+
+Apply requires the explicit confirmation token and a verified PostgreSQL backup
+path. The generated JSON and Markdown reports are written under `docs/debug/`.
+For the Docker maintenance window, `scripts/cutover-okf-v02.ps1` stops the web
+and worker, creates a custom-format PostgreSQL backup, runs the staged cutover
+against the mounted vault, and restarts application services only after success.
 
 Create bundles from `/knowledge`. Existing single-bundle installations can inspect or apply the resumable migration with:
 
@@ -211,4 +236,5 @@ This is still a single-node VPS architecture. Multiple web containers are possib
 
 - [Product Requirements Document](docs/product-requirements/AV-OKF_Agentic_Maintenance_Triage_PRD.md)
 - [MVP Stages Roadmap](docs/roadmap/mvp-stages.md)
+- [OKF v0.2 Adoption Decision](docs/architecture/okf-v0.2-adoption.md)
 - [VPS Production Deployment](docs/deployment/vps-production.md)

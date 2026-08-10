@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -26,6 +26,7 @@ const document: Document = {
   storageKey: "opaque.pdf",
   originalFilename: "amm-32.pdf",
   mimeType: "application/pdf",
+  contentSha256: "b".repeat(64),
   customProperties: [],
   subjectFamily: "Boeing 737NG",
   documentType: "AMM",
@@ -63,11 +64,12 @@ test("exportApprovedTopicForDocument writes an approved topic from document and 
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-service-export-"));
 
   try {
+    await prepareV02Root(root);
     const exported = await exportApprovedTopicForDocument({
       document,
       exportedAt: new Date("2026-07-02T12:00:00.000Z"),
       knowledgeRoot: root,
-      knowledgeVersion: "0.1.0",
+      knowledgeVersion: "0.2.0",
       topicId: approvedTopic.id,
       topics: [approvedTopic],
     });
@@ -77,8 +79,9 @@ test("exportApprovedTopicForDocument writes an approved topic from document and 
       "concepts/system-topic/32-main-gear-brake-system-494f144a6e.md",
     );
     const markdown = await readFile(path.join(root, exported.filename), "utf8");
-    assert.match(markdown, /type: "system_topic"/);
-    assert.match(markdown, /review_status: "approved"/);
+    assert.match(markdown, /type: system_topic/);
+    assert.match(markdown, /status: stable/);
+    assert.doesNotMatch(markdown, /review_status:/);
   } finally {
     await rm(root, { force: true, recursive: true });
   }
@@ -131,12 +134,13 @@ test("exportApprovedTopicForDocument resolves and syncs coverage against the pro
   };
 
   try {
+    await prepareV02Root(root);
     const exported = await exportApprovedTopicForDocument({
       coverageRepository,
       document: productionDocument,
       exportedAt: new Date("2026-07-02T12:00:00.000Z"),
       knowledgeRoot: root,
-      knowledgeVersion: "0.1.0",
+      knowledgeVersion: "0.2.0",
       topicId: approvedTopic.id,
       topics: [approvedTopic],
     });
@@ -177,12 +181,13 @@ test("exportApprovedTopicForDocument skips coverage resolution on the local JSON
   };
 
   try {
+    await prepareV02Root(root);
     const exported = await exportApprovedTopicForDocument({
       coverageRepository,
       document,
       exportedAt: new Date("2026-07-02T12:00:00.000Z"),
       knowledgeRoot: root,
-      knowledgeVersion: "0.1.0",
+      knowledgeVersion: "0.2.0",
       topicId: approvedTopic.id,
       topics: [approvedTopic],
     });
@@ -202,4 +207,17 @@ function restoreBackendEnv(previousValue: string | undefined) {
   } else {
     process.env.AV_OKF_BACKEND = previousValue;
   }
+}
+
+async function prepareV02Root(root: string) {
+  await writeFile(path.join(root, "index.md"), [
+    "---",
+    'okf_version: "0.2"',
+    "type: index",
+    "title: Test bundle",
+    "status: stable",
+    "---",
+    "",
+    "# Test bundle",
+  ].join("\n"));
 }

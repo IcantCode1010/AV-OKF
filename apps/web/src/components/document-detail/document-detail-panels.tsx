@@ -682,7 +682,7 @@ function SelectedTopicPanel({
               <input name="documentId" type="hidden" value={documentId} />
               <input name="topicId" type="hidden" value={topic.id} />
               <label className="grid gap-2 text-sm">Concept type<select className={selectClassName} defaultValue={String(topic.okfMetadata.type ?? "system_topic")} name="okfField__type">{Object.entries(profile.types).map(([id, definition]) => <option key={id} value={id}>{definition.label}</option>)}</select></label>
-              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "updated", "review_status", "source_file", "source_pages", "source_authority", "knowledge_version", "relations"].includes(field)).map(([field, definition]) => (
+              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "resource", "tags", "sources", "generated", "verified", "status", "stale_after", "source_pages", "knowledge_version", "relations", "av_okf_approval_mode", "av_okf_lifecycle", "av_okf_role"].includes(field)).map(([field, definition]) => (
                 <label className="grid gap-2 text-sm" key={field}>{field.replaceAll("_", " ")}{definition.required ? " (required)" : ""}<Input defaultValue={Array.isArray(topic.okfMetadata[field]) ? (topic.okfMetadata[field] as unknown[]).join(", ") : String(topic.okfMetadata[field] ?? "")} name={`okfField__${field}`} required={Boolean(definition.required)} /></label>
               ))}
               <div className="md:col-span-2"><PendingSubmitButton pendingLabel="Saving metadata...">Save OKF metadata</PendingSubmitButton></div>

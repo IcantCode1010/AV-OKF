@@ -261,9 +261,7 @@ function evidenceContextForRoute(route: RetrievalChatRoute): string {
   return "Evidence entries are labeled approved knowledge or raw document text. If they conflict, prefer approved knowledge and say the raw text disagrees.";
 }
 
-const chatAnswerSchema = z.object({
-  answer: z.string(),
-  entityCandidates: z.array(z.object({
+const chatEntityCandidateSchema = z.object({
     citationIndex: z.number().int().positive(),
     entityType: z.enum([
       "location",
@@ -278,8 +276,16 @@ const chatAnswerSchema = z.object({
     evidenceQuote: z.string(),
     name: z.string(),
     summary: z.string(),
-  })).max(3).optional().default([]),
+});
+
+export const chatAnswerProviderSchema = z.object({
+  answer: z.string(),
+  entityCandidates: z.array(chatEntityCandidateSchema).max(3),
   supported: z.boolean(),
+});
+
+const chatAnswerSchema = chatAnswerProviderSchema.extend({
+  entityCandidates: z.array(chatEntityCandidateSchema).max(3).optional().default([]),
 });
 
 function parseAnswerPayload(rawOutput: unknown): {
@@ -351,7 +357,7 @@ async function callChatAnswerProvider(input: {
 }): Promise<unknown> {
   const result = await generateText({
     model: getSdkModel(input.provider, input.apiKey),
-    output: Output.object({ schema: chatAnswerSchema }),
+    output: Output.object({ schema: chatAnswerProviderSchema }),
     prompt: input.prompt,
     system:
       "You answer questions strictly from supplied evidence. Return only the requested structured object.",
