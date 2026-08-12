@@ -14,13 +14,16 @@ import { createBulkTopicApprovalQueue } from "@/lib/bulk-topic-approval-queue";
 export async function prepareBulkTopicApprovalAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
   const bundleId = getString(formData, "knowledgeBundleId");
+  const documentId = getString(formData, "documentId");
   const topicIds = formData.getAll("topicIds").filter((value): value is string => typeof value === "string");
   let runId: string;
   try {
     const run = await createBulkTopicApprovalPreflight({ bundleId, context, topicIds });
     runId = run.id;
   } catch (error) {
-    redirect(`/knowledge/${bundleId}/review?error=${encodeURIComponent(errorMessage(error))}`);
+    const query = new URLSearchParams({ error: errorMessage(error) });
+    if (documentId) query.set("documentId", documentId);
+    redirect(`/knowledge/${bundleId}/review?${query.toString()}`);
   }
   redirect(`/knowledge/${bundleId}/review/${runId}`);
 }

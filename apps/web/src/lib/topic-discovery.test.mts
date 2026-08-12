@@ -5,6 +5,7 @@ import {
   buildPageWindows,
   discoverDocumentTopics,
   getTopicDiscoveryMaxOutputTokens,
+  isAdministrativeTopicTitle,
   resolveExplicitTopicContinuations,
   validateDiscoveredTopics,
   type TopicDiscoveryProvider,
@@ -38,6 +39,18 @@ test("validation removes junk and duplicate titles while preserving valid covera
   ], [page(1, "a"), page(2, "b")]);
   assert.equal(topics.length, 1);
   assert.deepEqual(topics[0]!.pageNumbers, [1, 2]);
+});
+
+test("validation excludes administrative sections but preserves operational revision topics", () => {
+  assert.equal(isAdministrativeTopicTitle("Effective Pages List"), true);
+  assert.equal(isAdministrativeTopicTitle("Manual Revision History"), true);
+  assert.equal(isAdministrativeTopicTitle("Software Revision Procedure"), false);
+  const topics = validateDiscoveredTopics([
+    topic({ pageNumbers: [1], title: "Effective Pages List" }),
+    topic({ pageNumbers: [2], title: "Manual Revision History" }),
+    topic({ pageNumbers: [3], title: "Software Revision Procedure" }),
+  ], [page(1, "a"), page(2, "b"), page(3, "c")]);
+  assert.deepEqual(topics.map((entry) => entry.title), ["Software Revision Procedure"]);
 });
 
 test("document discovery performs window analysis then global consolidation", async () => {

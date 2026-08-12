@@ -788,7 +788,8 @@ function SelectedTopicPanel({
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-sm font-medium">Enriched topic</p>
                     <Badge variant="outline">
-                      {topic.enrichmentModel ?? "model pending"}
+                      {topic.enrichmentStatus === "failed" ? "Failed · " : ""}
+                      {topic.enrichmentModel ?? "Model unavailable"}
                     </Badge>
                   </div>
                   {topic.enrichedAt ? (

@@ -19,10 +19,13 @@ type ReviewTopic = {
   enrichedBody: string | null;
   enrichedSummary: string | null;
   enrichedTitle: string | null;
+  enrichmentLevel: "complete" | "partial" | "not_enriched";
+  enrichmentScore: number;
   enrichmentStatus: string;
   exportedFilePath: string | null;
   id: string;
   okfType: string;
+  overlapWarnings: string[];
   pageEnd: number;
   pageStart: number;
   proposedSourcePageNumbers: number[];
@@ -80,6 +83,36 @@ export type BulkTopicApprovalStatusSnapshot = {
   fingerprint: string;
 };
 
+export function bulkTopicSelectionFingerprint(input: {
+  bundleId: string;
+  topicIds: string[];
+  workspaceId: string;
+}): string {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      bundleId: input.bundleId,
+      topicIds: [...new Set(input.topicIds.filter(Boolean))].sort(),
+      workspaceId: input.workspaceId,
+    }))
+    .digest("hex");
+}
+
+export async function createOrReuseBulkPreflight<T>(input: {
+  create: () => Promise<T>;
+  findExisting: () => Promise<T | null>;
+}): Promise<T> {
+  const existing = await input.findExisting();
+  if (existing) return existing;
+  try {
+    return await input.create();
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) throw error;
+    const winner = await input.findExisting();
+    if (!winner) throw error;
+    return winner;
+  }
+}
+
 export function topicRevisionFingerprint(topic: TopicLike): string {
   return createHash("sha256").update(JSON.stringify({
     confidence: topic.confidence,
@@ -87,9 +120,8 @@ export function topicRevisionFingerprint(topic: TopicLike): string {
     enrichedSummary: topic.enrichedSummary,
     enrichedTitle: topic.enrichedTitle,
     okfMetadata: topic.okfMetadata,
-    proposedSourcePageNumbers: topic.proposedSourcePageNumbers,
     reviewStatus: topic.reviewStatus,
-    sourcePageNumbers: topic.sourcePageNumbers,
+    sourcePageNumbers: bulkApprovalSourcePageNumbers(topic),
     updatedAt: topic.updatedAt.toISOString(),
   })).digest("hex");
 }
@@ -116,9 +148,43 @@ export function findPageOverlapErrors(
   return errors;
 }
 
+export function shouldBlockBulkPageOverlap(mode: string): boolean {
+  return mode === "automated";
+}
+
+export function bulkApprovalSourcePageNumbers(topic: {
+  proposedSourcePageNumbers: number[];
+  sourcePageNumbers: number[];
+}): number[] {
+  return [...new Set([...topic.sourcePageNumbers, ...topic.proposedSourcePageNumbers])]
+    .sort((left, right) => left - right);
+}
+
+export function buildTopicEnrichmentAssessment(topic: {
+  enrichedBody: string | null;
+  enrichedSummary: string | null;
+  enrichedTitle: string | null;
+  enrichmentStatus: string;
+  sourcePageNumbers: number[];
+}): { level: "complete" | "partial" | "not_enriched"; score: number } {
+  const checks = [
+    topic.enrichmentStatus === "completed",
+    Boolean(topic.enrichedTitle?.trim()),
+    Boolean(topic.enrichedSummary?.trim()),
+    Boolean(topic.enrichedBody?.trim()),
+    topic.sourcePageNumbers.length > 0,
+  ];
+  const score = checks.filter(Boolean).length * 20;
+  return {
+    level: score === 100 ? "complete" : score === 0 ? "not_enriched" : "partial",
+    score,
+  };
+}
+
 export async function listBulkReviewTopics(input: {
   bundleId: string;
   context: AuthWorkspaceContext;
+  documentId?: string;
 }): Promise<ReviewTopic[]> {
   const bundle = await getKnowledgeBundleByIdentity({
     bundleId: input.bundleId,
@@ -129,13 +195,15 @@ export async function listBulkReviewTopics(input: {
     include: { document: true },
     orderBy: [{ document: { title: "asc" } }, { pageStart: "asc" }, { id: "asc" }],
     where: {
+      ...(input.documentId ? { documentId: input.documentId } : {}),
       document: { deletedAt: null },
       knowledgeBundleId: input.bundleId,
       workspaceId: input.context.workspaceId,
     },
   });
-  return topics.map((topic) => {
+  const reviewTopics: ReviewTopic[] = topics.map((topic) => {
     const eligibilityErrors = topicEligibilityErrors(topic, bundle.profile, topic.document);
+    const enrichment = buildTopicEnrichmentAssessment(topic);
     return {
       confidence: topic.confidence,
       documentId: topic.documentId,
@@ -145,10 +213,13 @@ export async function listBulkReviewTopics(input: {
       enrichedBody: topic.enrichedBody,
       enrichedSummary: topic.enrichedSummary,
       enrichedTitle: topic.enrichedTitle,
+      enrichmentLevel: enrichment.level,
+      enrichmentScore: enrichment.score,
       enrichmentStatus: topic.enrichmentStatus,
       exportedFilePath: topic.exportedFilePath,
       id: topic.id,
       okfType: getOkfType(topic.okfMetadata),
+      overlapWarnings: [],
       pageEnd: topic.pageEnd,
       pageStart: topic.pageStart,
       proposedSourcePageNumbers: topic.proposedSourcePageNumbers,
@@ -156,6 +227,25 @@ export async function listBulkReviewTopics(input: {
       sourcePageNumbers: topic.sourcePageNumbers,
     };
   });
+  for (const topic of reviewTopics.filter((candidate) => candidate.eligible)) {
+    const topicPages = bulkApprovalSourcePageNumbers(topic);
+    for (const other of reviewTopics) {
+      if (other.id === topic.id || other.documentId !== topic.documentId) continue;
+      if (other.reviewStatus !== "approved" && !other.eligible) continue;
+      const otherPages = other.reviewStatus === "approved"
+        ? other.sourcePageNumbers
+        : bulkApprovalSourcePageNumbers(other);
+      const sharedPages = intersectPages(topicPages, otherPages);
+      if (sharedPages.length === 0) continue;
+      const otherTitle = other.enrichedTitle?.trim() || "another topic";
+      const approvalLabel = other.reviewStatus === "approved" ? "approved topic " : "";
+      topic.overlapWarnings.push(
+        `Shares ${formatPageList(sharedPages)} with ${approvalLabel}${otherTitle}.`,
+      );
+    }
+    topic.overlapWarnings.sort((left, right) => left.localeCompare(right));
+  }
+  return reviewTopics;
 }
 
 export async function createBulkTopicApprovalPreflight(input: {
@@ -165,21 +255,32 @@ export async function createBulkTopicApprovalPreflight(input: {
 }) {
   const topicIds = [...new Set(input.topicIds.filter(Boolean))];
   if (topicIds.length === 0) throw new Error("bulk_topic_selection_required");
+  const selectionFingerprint = bulkTopicSelectionFingerprint({
+    bundleId: input.bundleId,
+    topicIds,
+    workspaceId: input.context.workspaceId,
+  });
+  const db = getPrisma();
+  const findExisting = () => db.bulkTopicApprovalRun.findFirst({
+    include: { items: { include: { document: true, topic: true }, orderBy: { createdAt: "asc" } } },
+    where: {
+      knowledgeBundleId: input.bundleId,
+      mode: "human",
+      selectionFingerprint,
+      workspaceId: input.context.workspaceId,
+    },
+  });
+  const existing = await findExisting();
+  if (existing) return existing;
   const bundle = await getKnowledgeBundleByIdentity({ bundleId: input.bundleId, workspaceId: input.context.workspaceId });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
-  const db = getPrisma();
   const topics = await db.topicRecord.findMany({
     include: { document: true },
     where: { id: { in: topicIds }, knowledgeBundleId: input.bundleId, workspaceId: input.context.workspaceId },
   });
   if (topics.length !== topicIds.length) throw new Error("bulk_topic_selection_scope_mismatch");
   const eligibilityErrors = topics.flatMap((topic) => topicEligibilityErrors(topic, bundle.profile, topic.document).map((error) => `${topic.id}:${error}`));
-  const approved = await db.topicRecord.findMany({
-    select: { documentId: true, id: true, sourcePageNumbers: true },
-    where: { documentId: { in: [...new Set(topics.map((topic) => topic.documentId))] }, reviewStatus: "approved", workspaceId: input.context.workspaceId },
-  });
-  const overlapErrors = findPageOverlapErrors(topics, approved);
-  const errors = [...eligibilityErrors, ...overlapErrors];
+  const errors = eligibilityErrors;
   if (errors.length > 0) throw new Error(`bulk_topic_preflight_failed:${errors.join(",")}`);
   const tokenCounter = getTokenCounter();
   const items = topics.map((topic) => ({
@@ -191,15 +292,19 @@ export async function createBulkTopicApprovalPreflight(input: {
     topicId: topic.id,
     workspaceId: input.context.workspaceId,
   }));
-  return db.bulkTopicApprovalRun.create({
-    data: {
-      estimatedEmbeddingTokens: items.reduce((total, item) => total + item.estimatedEmbeddingTokens, 0),
-      items: { create: items },
-      knowledgeBundleId: input.bundleId,
-      requestedBy: input.context.userId,
-      workspaceId: input.context.workspaceId,
-    },
-    include: { items: { include: { document: true, topic: true }, orderBy: { createdAt: "asc" } } },
+  return createOrReuseBulkPreflight({
+    create: () => db.bulkTopicApprovalRun.create({
+      data: {
+        estimatedEmbeddingTokens: items.reduce((total, item) => total + item.estimatedEmbeddingTokens, 0),
+        items: { create: items },
+        knowledgeBundleId: input.bundleId,
+        requestedBy: input.context.userId,
+        selectionFingerprint,
+        workspaceId: input.context.workspaceId,
+      },
+      include: { items: { include: { document: true, topic: true }, orderBy: { createdAt: "asc" } } },
+    }),
+    findExisting,
   });
 }
 
@@ -517,18 +622,41 @@ async function processBulkItem(input: { itemId: string; mode: string; requestedB
         ? automaticTopicEligibilityErrors(item.topic, bundle.profile, documentRecord)
         : topicEligibilityErrors(item.topic, bundle.profile, documentRecord);
       if (errors.length > 0) throw new Error(errors[0]);
-      const approved = await db.topicRecord.findMany({
-        select: { documentId: true, id: true, sourcePageNumbers: true },
-        where: { documentId: item.documentId, id: { not: item.topicId }, reviewStatus: "approved", workspaceId: input.workspaceId },
-      });
-      const overlap = findPageOverlapErrors([item.topic], approved);
-      if (overlap.length > 0) throw new Error(overlap[0]);
+      const approvalPages = bulkApprovalSourcePageNumbers(item.topic);
+      if (shouldBlockBulkPageOverlap(input.mode)) {
+        const approved = await db.topicRecord.findMany({
+          select: { documentId: true, id: true, sourcePageNumbers: true },
+          where: { documentId: item.documentId, id: { not: item.topicId }, reviewStatus: "approved", workspaceId: input.workspaceId },
+        });
+        const overlap = findPageOverlapErrors(
+          [{ ...item.topic, sourcePageNumbers: approvalPages }],
+          approved,
+        );
+        if (overlap.length > 0) throw new Error(overlap[0]);
+      }
       await claimBulkTopicForRun({
         runId: input.runId,
         topicId: item.topicId,
         updateMany: (args) => db.topicRecord.updateMany(args),
         workspaceId: input.workspaceId,
       });
+      if (item.topic.proposedSourcePageNumbers.length > 0) {
+        await db.$transaction(async (tx) => {
+          const promotedTopic = await tx.topicRecord.update({
+            data: {
+              pageEnd: Math.max(...approvalPages),
+              pageStart: Math.min(...approvalPages),
+              proposedSourcePageNumbers: [],
+              sourcePageNumbers: approvalPages,
+            },
+            where: { id: item.topic.id },
+          });
+          await tx.bulkTopicApprovalItem.update({
+            data: { revisionFingerprint: topicRevisionFingerprint(promotedTopic) },
+            where: { id: item.id },
+          });
+        });
+      }
       await db.bulkTopicApprovalItem.update({ data: { startedAt: item.startedAt ?? new Date(), status: "approving" }, where: { id: item.id } });
       await approveTopicContentSource(item.topicId, "enriched", {
         approvalMode: input.mode === "automated" ? "automated" : "human_bulk",
@@ -581,7 +709,6 @@ export function topicEligibilityErrors(topic: TopicLike, profile: KnowledgeProfi
   if (!topic.enrichedSummary?.trim()) errors.push("topic_enriched_summary_required");
   if (!topic.enrichedBody?.trim()) errors.push("topic_enriched_body_required");
   if (topic.sourcePageNumbers.length === 0) errors.push("topic_source_pages_required");
-  if (topic.proposedSourcePageNumbers.length > 0) errors.push("topic_proposed_pages_require_review");
   const type = getOkfType(topic.okfMetadata);
   if (!profile.types[type]) errors.push(`knowledge_profile_type_not_allowed:${type}`);
   const metadata = topic.okfMetadata && typeof topic.okfMetadata === "object"
@@ -636,6 +763,16 @@ function topicsOverlap(left: { documentId: string; sourcePageNumbers: number[] }
   if (left.documentId !== right.documentId) return false;
   const pages = new Set(left.sourcePageNumbers);
   return right.sourcePageNumbers.some((page) => pages.has(page));
+}
+
+function intersectPages(left: number[], right: number[]): number[] {
+  const rightPages = new Set(right);
+  return [...new Set(left.filter((page) => rightPages.has(page)))]
+    .sort((first, second) => first - second);
+}
+
+function formatPageList(pages: number[]): string {
+  return `${pages.length === 1 ? "page" : "pages"} ${pages.join(", ")}`;
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

@@ -384,6 +384,7 @@ function buildWindowPrompt(title: string, pages: ExtractedPageRecord[], index: n
     `Window ${index + 1} of ${total}.`,
     "Identify meaningful section-level topics. Merge continuation pages within this window.",
     "Create concise noun-phrase or procedure titles and brief factual summaries.",
+    "Exclude document-administration material such as tables of contents, effective-page lists, and revision histories.",
     "Never use page numbers, fractions, bullets, warnings, sentence fragments, or isolated codes as titles.",
     "Return source page numbers, evidence headings, rationale, topic type, and low/medium/high confidence.",
     "Use only the supplied text.",
@@ -400,6 +401,7 @@ function buildConsolidationPrompt(title: string, pages: ExtractedPageRecord[], p
     `Document: ${title}`,
     "Consolidate the candidate topics into the final document-wide section-level topic list.",
     "Merge duplicates and sections continued across pages. Keep genuinely distinct subjects separate.",
+    "Remove document-administration material such as tables of contents, effective-page lists, and revision histories.",
     "Correct fragmented titles. Preserve exact identifiers only when they are part of a meaningful title.",
     "Every fact and source page must be supported by the supplied outline/candidates.",
     "Document outline:",
@@ -541,8 +543,14 @@ function isJunkTitle(value: string) {
   if (/^\d+(?:[./-]\d+)*$/.test(value)) return true;
   if (/^(?:page|figure|table)\s+\d+/i.test(value)) return true;
   if (/^(?:warning|caution|note)\s*:/i.test(value)) return true;
+  if (isAdministrativeTopicTitle(value)) return true;
   if (/^[a-z]/.test(value) || /[.!?]$/.test(value)) return true;
   return value.split(/\s+/).length > 18;
+}
+
+export function isAdministrativeTopicTitle(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return /^(?:table of contents|contents|list of effective pages|effective pages list|record of revisions|revision record|(?:manual |document )?revision history)$/.test(normalized);
 }
 
 function normalizeTopicType(value: string) {

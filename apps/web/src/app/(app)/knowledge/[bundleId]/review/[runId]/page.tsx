@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import {
+  bulkApprovalSourcePageNumbers,
   buildBulkTopicApprovalStatusSnapshot,
+  findPageOverlapErrors,
   getBulkTopicApprovalRun,
   isRetryableBulkFailure,
 } from "@/lib/bulk-topic-approval";
@@ -22,6 +24,14 @@ export default async function BulkTopicApprovalRunPage({ params, searchParams }:
   if (!run || run.knowledgeBundleId !== bundleId) notFound();
   const statusSnapshot = buildBulkTopicApprovalStatusSnapshot(run);
   const retryableCount = run.items.filter((item) => item.status === "failed" && isRetryableBulkFailure(item.failureCode)).length;
+  const sharedPagePairCount = findPageOverlapErrors(
+    run.items.map((item) => ({
+      documentId: item.documentId,
+      id: item.topicId,
+      sourcePageNumbers: bulkApprovalSourcePageNumbers(item.topic),
+    })),
+    [],
+  ).length;
   return (
     <div className="space-y-5">
       <BulkRunPoller
@@ -41,6 +51,11 @@ export default async function BulkTopicApprovalRunPage({ params, searchParams }:
         <div className="border border-amber-400/30 bg-amber-400/5 p-4">
           <h2 className="font-medium">Confirm approval and export</h2>
           <p className="mt-2 text-sm text-muted-foreground">Enrichment is already complete. The estimate covers only the future semantic lookup embeddings. Each topic succeeds or fails independently.</p>
+          {sharedPagePairCount > 0 ? (
+            <p className="mt-3 border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
+              {sharedPagePairCount} selected topic {sharedPagePairCount === 1 ? "pair shares" : "pairs share"} source pages. Shared provenance is allowed for this manually reviewed batch; each topic will remain a separate article and citation target.
+            </p>
+          ) : null}
           <form action={confirmBulkTopicApprovalAction} className="mt-4"><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Queueing batch...">Confirm and run batch</PendingSubmitButton></form>
         </div>
       ) : null}

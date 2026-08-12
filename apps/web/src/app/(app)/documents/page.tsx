@@ -11,15 +11,20 @@ import { retryPermanentDocumentDeletionAction, uploadDocumentAction } from "./ac
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
 import { getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
+import { resolveDocumentUploadBundleSelection } from "@/lib/document-upload-bundle-selection";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocumentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ deletionJob?: string; uploadError?: string }>;
+  searchParams: Promise<{
+    deletionJob?: string;
+    knowledgeBundleId?: string;
+    uploadError?: string;
+  }>;
 }) {
-  const { deletionJob, uploadError } = await searchParams;
+  const { deletionJob, knowledgeBundleId, uploadError } = await searchParams;
   const context = await requireAuthWorkspaceContext();
   const [documents, bundles, deletionSnapshot] = await Promise.all([
     getDocuments(),
@@ -29,6 +34,10 @@ export default async function DocumentsPage({
   const deletionJobs = deletionSnapshot.jobs;
   const uploadErrorMessage = formatUploadError(uploadError);
   const selectedDeletion = deletionJobs.find((job) => job.id === deletionJob);
+  const selectedBundleId = resolveDocumentUploadBundleSelection(
+    bundles,
+    knowledgeBundleId,
+  );
 
   return (
     <>
@@ -125,6 +134,7 @@ export default async function DocumentsPage({
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
                   required
                   disabled={bundles.length === 0}
+                  defaultValue={selectedBundleId}
                 >
                   {bundles.map((bundle) => (
                     <option key={bundle.id} value={bundle.id}>

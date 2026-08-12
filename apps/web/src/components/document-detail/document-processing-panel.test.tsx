@@ -17,8 +17,8 @@ const readyState: DocumentProcessingState = {
   stages: [
     {
       detail: "Topics are ready for review.",
-      id: "review",
-      label: "Human review",
+      id: "review_export",
+      label: "Review and export",
       status: "action_required",
     },
   ],
@@ -38,10 +38,12 @@ test("completed document processing continues directly into bundle topic review"
         status: "ready_for_review",
       },
       state: readyState,
+      topicCount: 12,
     }),
   );
 
-  assert.match(markup, /Review and export topics/);
-  assert.match(markup, /href="\/knowledge\/bundle-1\/review"/);
+  assert.match(markup, /Review 12 topics/);
+  assert.match(markup, /href="\/knowledge\/bundle-1\/review\?documentId=document-1"/);
+  assert.match(markup, /ACTION REQUIRED|action required/i);
   assert.doesNotMatch(markup, /panel=topics/);
 });

@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { generateText, NoOutputGeneratedError, Output } from "ai";
 import { z } from "zod";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
@@ -117,6 +117,8 @@ type ApproveTopicOptions = {
 
 const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
 const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
+const COMPACT_RETRY_SOURCE_CHAR_LIMIT = 12_000;
+export const TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS = 3_000;
 const topicEnrichmentSchema = z.object({
   body: z.string(),
   proposedSourcePageNumbers: z.array(z.number().int().positive()),
@@ -160,14 +162,35 @@ export async function enrichTopic(
     sourcePages,
     topic,
   });
+  let activePrompt = prompt;
+  let attempts = 1;
   try {
-    const result = await provider.enrich({
-      apiKey: key.apiKey,
-      prompt,
-      sourcePages,
-      summary: topic.summary,
-      title: topic.title,
-    });
+    let result: TopicEnrichmentProviderOutput;
+    try {
+      result = await provider.enrich({
+        apiKey: key.apiKey,
+        prompt: activePrompt,
+        sourcePages,
+        summary: topic.summary,
+        title: topic.title,
+      });
+    } catch (error) {
+      if (!isMissingStructuredOutput(error)) throw error;
+      attempts = 2;
+      activePrompt = buildTopicEnrichmentPrompt({
+        allowSourcePageProposals: options.sourcePageMode !== "exact",
+        compactRetry: true,
+        sourcePages,
+        topic,
+      });
+      result = await provider.enrich({
+        apiKey: key.apiKey,
+        prompt: activePrompt,
+        sourcePages,
+        summary: topic.summary,
+        title: topic.title,
+      });
+    }
     const enrichedTitle = result.title.trim();
     const enrichedSummary = result.summary.trim();
     const enrichedBodyInput = (result.body ?? result.summary).trim();
@@ -192,7 +215,7 @@ export async function enrichTopic(
       enrichedBody,
       proposedSourcePageNumbers,
       model: provider.model,
-      promptSent: prompt,
+      promptSent: activePrompt,
       provider: provider.provider,
       rawResponse: result.rawResponse,
       requestedBy: context.userId,
@@ -201,11 +224,15 @@ export async function enrichTopic(
   } catch (error) {
     return repository.failTopicEnrichment({
       context,
-      errorMessage: normalizeErrorMessage(error),
+      errorMessage: formatEnrichmentErrorMessage(error, attempts),
       model: provider.model,
-      promptSent: prompt,
+      promptSent: activePrompt,
       provider: provider.provider,
-      rawResponse: error instanceof Error ? error.message : String(error),
+      rawResponse: serializeEnrichmentError(error, {
+        attempts,
+        compactRetryUsed: attempts === 2,
+        promptCharacters: activePrompt.length,
+      }),
       requestedBy: context.userId,
       topicId,
     });
@@ -232,10 +259,14 @@ export async function approveTopicContentSource(
 
 export function buildTopicEnrichmentPrompt(input: {
   allowSourcePageProposals?: boolean;
+  compactRetry?: boolean;
   sourcePages: ExtractedPageRecord[];
   topic: TopicRecord;
 }) {
-  const sourceText = input.sourcePages
+  const sourcePages = input.compactRetry
+    ? compactSourcePages(input.sourcePages, COMPACT_RETRY_SOURCE_CHAR_LIMIT)
+    : input.sourcePages;
+  const sourceText = sourcePages
     .map((page) => `Page ${page.pageNumber}\n${page.text}`)
     .join("\n\n---\n\n");
 
@@ -247,6 +278,9 @@ export function buildTopicEnrichmentPrompt(input: {
     "Keep summary concise. Body must be a structured Markdown article grounded only in source text.",
     "The body is an article fragment: do not include a top-level H1 or repeat the title.",
     "Do not restate the summary as the opening paragraph, and do not add a Source, Sources, References, or provenance section.",
+    input.compactRetry
+      ? "This is a bounded retry using compact source excerpts. Return a complete concise article rather than an exhaustive response."
+      : null,
     input.allowSourcePageProposals === false
       ? "Use only the established source pages and return an empty proposedSourcePageNumbers array."
       : "Only propose page numbers from the supplied source context; proposals require reviewer acceptance.",
@@ -256,7 +290,7 @@ export function buildTopicEnrichmentPrompt(input: {
     "",
     "Source text:",
     sourceText || "No source text was available for this topic.",
-  ].join("\n");
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 export function createTopicEnrichmentProvider(
@@ -390,7 +424,7 @@ async function generateTopicEnrichmentOutput(input: {
     prompt: input.prompt,
     system:
       "You enrich topic records for a technical knowledge base. Return only the requested structured object.",
-    maxOutputTokens: 1200,
+    maxOutputTokens: TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS,
     temperature: 0,
   });
 
@@ -399,4 +433,51 @@ async function generateTopicEnrichmentOutput(input: {
 
 function normalizeErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingStructuredOutput(error: unknown) {
+  return NoOutputGeneratedError.isInstance(error) ||
+    normalizeErrorMessage(error) === "No output generated.";
+}
+
+function formatEnrichmentErrorMessage(error: unknown, attempts: number) {
+  if (isMissingStructuredOutput(error)) {
+    return attempts > 1
+      ? "The model did not return a complete structured topic after two attempts."
+      : "The model did not return a complete structured topic.";
+  }
+  return normalizeErrorMessage(error);
+}
+
+function serializeEnrichmentError(
+  error: unknown,
+  context: { attempts: number; compactRetryUsed: boolean; promptCharacters: number },
+) {
+  const details: Record<string, unknown> = {
+    ...context,
+    message: normalizeErrorMessage(error),
+    name: error instanceof Error ? error.name : "UnknownError",
+  };
+  if (error instanceof Error && error.cause) {
+    details.cause = error.cause instanceof Error
+      ? { message: error.cause.message, name: error.cause.name }
+      : String(error.cause);
+  }
+  return JSON.stringify(details);
+}
+
+function compactSourcePages(pages: ExtractedPageRecord[], limit: number) {
+  if (pages.length === 0) return pages;
+  const perPageLimit = Math.max(400, Math.floor(limit / pages.length));
+  return pages.map((page) => ({
+    ...page,
+    text: compactSourceText(page.text, perPageLimit),
+  }));
+}
+
+function compactSourceText(value: string, limit: number) {
+  if (value.length <= limit) return value;
+  const headLength = Math.floor(limit * 0.7);
+  const tailLength = limit - headLength;
+  return `${value.slice(0, headLength).trimEnd()}\n[...source excerpt shortened...]\n${value.slice(-tailLength).trimStart()}`;
 }

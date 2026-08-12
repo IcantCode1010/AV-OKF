@@ -4,9 +4,14 @@ import test from "node:test";
 import {
   automaticTopicBlockers,
   automaticTopicEligibilityErrors,
+  bulkTopicSelectionFingerprint,
+  buildTopicEnrichmentAssessment,
+  bulkApprovalSourcePageNumbers,
   buildBulkTopicApprovalStatusSnapshot,
   claimBulkTopicForRun,
+  createOrReuseBulkPreflight,
   findPageOverlapErrors,
+  shouldBlockBulkPageOverlap,
   topicEligibilityErrors,
   topicRevisionFingerprint,
   shouldApproveBulkTopic,
@@ -23,6 +28,50 @@ test("page overlap is scoped to one source document", () => {
     findPageOverlapErrors([...selected, { documentId: "doc-a", id: "topic-c", sourcePageNumbers: [4] }], []),
     ["bulk_topic_page_overlap:topic-a:topic-c"],
   );
+});
+
+test("bulk selection fingerprint ignores click order and duplicate ids", () => {
+  const first = bulkTopicSelectionFingerprint({
+    bundleId: "bundle-1",
+    topicIds: ["topic-b", "topic-a", "topic-a"],
+    workspaceId: "workspace-1",
+  });
+  const reordered = bulkTopicSelectionFingerprint({
+    bundleId: "bundle-1",
+    topicIds: ["topic-a", "topic-b"],
+    workspaceId: "workspace-1",
+  });
+  const otherBundle = bulkTopicSelectionFingerprint({
+    bundleId: "bundle-2",
+    topicIds: ["topic-a", "topic-b"],
+    workspaceId: "workspace-1",
+  });
+
+  assert.equal(first, reordered);
+  assert.notEqual(first, otherBundle);
+});
+
+test("repeated and concurrent preflight requests reuse one run", async () => {
+  let stored: { id: string } | null = null;
+  let createCalls = 0;
+  const prepare = () => createOrReuseBulkPreflight({
+    create: async () => {
+      createCalls += 1;
+      await Promise.resolve();
+      if (stored) throw Object.assign(new Error("duplicate"), { code: "P2002" });
+      stored = { id: "run-1" };
+      return stored;
+    },
+    findExisting: async () => stored,
+  });
+
+  const [first, second] = await Promise.all([prepare(), prepare()]);
+  const repeated = await prepare();
+
+  assert.equal(first.id, "run-1");
+  assert.equal(second.id, "run-1");
+  assert.equal(repeated.id, "run-1");
+  assert.equal(createCalls, 2);
 });
 
 test("bulk run status fingerprints are deterministic and track item progress", () => {
@@ -70,7 +119,7 @@ function makeBulkStatusItem(id: string, status: string) {
   };
 }
 
-test("page overlap against a prior approval blocks the selected topic", () => {
+test("page overlap diagnostics detect a selected topic sharing approved provenance", () => {
   assert.deepEqual(
     findPageOverlapErrors(
       [{ documentId: "doc-a", id: "selected", sourcePageNumbers: [10, 11] }],
@@ -80,13 +129,32 @@ test("page overlap against a prior approval blocks the selected topic", () => {
   );
 });
 
-test("only completed enriched and unresolved-page-free topics are eligible", () => {
+test("page overlap warns manual review but blocks unattended automation", () => {
+  assert.equal(shouldBlockBulkPageOverlap("manual"), false);
+  assert.equal(shouldBlockBulkPageOverlap("automated"), true);
+});
+
+test("completed enriched topics remain eligible when additional context pages were used", () => {
   const profile = getKnowledgeProfileTemplate("generic");
   const topic = makeTopic();
   assert.deepEqual(topicEligibilityErrors(topic, profile, { title: "Manual" }), []);
   assert.deepEqual(
     topicEligibilityErrors({ ...topic, enrichmentStatus: "failed", proposedSourcePageNumbers: [8] }, profile, { title: "Manual" }),
-    ["topic_enrichment_not_completed", "topic_proposed_pages_require_review"],
+    ["topic_enrichment_not_completed"],
+  );
+  assert.deepEqual(
+    topicEligibilityErrors({ ...topic, proposedSourcePageNumbers: [3, 4] }, profile, { title: "Manual" }),
+    [],
+  );
+});
+
+test("bulk approval promotes disclosed context pages and scores enrichment completeness", () => {
+  const topic = { ...makeTopic(), proposedSourcePageNumbers: [2, 3, 4] };
+  assert.deepEqual(bulkApprovalSourcePageNumbers(topic), [1, 2, 3, 4]);
+  assert.deepEqual(buildTopicEnrichmentAssessment(topic), { level: "complete", score: 100 });
+  assert.deepEqual(
+    buildTopicEnrichmentAssessment({ ...topic, enrichedBody: null, enrichmentStatus: "failed" }),
+    { level: "partial", score: 60 },
   );
 });
 

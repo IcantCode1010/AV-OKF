@@ -56,7 +56,7 @@ export async function createKnowledgeBundleAction(formData: FormData) {
     templateId: template === "aviation" ? "aviation" : "generic",
   });
   revalidatePath("/knowledge");
-  redirect(`/knowledge/${bundle.id}`);
+  redirect(`/documents?knowledgeBundleId=${encodeURIComponent(bundle.id)}`);
 }
 
 export async function createKnowledgeProfileDraftAction(formData: FormData) {

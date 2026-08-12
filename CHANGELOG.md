@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Prevented duplicate manual bulk-approval batches by assigning each selected
+  topic set a deterministic, database-unique fingerprint. Repeated and
+  concurrent `Prepare batch` submissions now reopen the same run instead of
+  creating competing confirmation and export workflows.
+
+- Changed shared source-page provenance from a hidden manual bulk-approval
+  failure into an explicit review and confirmation warning. Reviewer-selected
+  batches may export distinct overlapping concepts, while unattended automatic
+  approval retains the strict overlap blocker.
+
+- Improved topic-enrichment failure recovery and diagnostics: empty structured
+  model output now receives one bounded compact-source retry with a larger
+  output allowance, failed topics show the actual provider model, and new
+  discovery excludes administrative revision/effective-page sections.
+
+- Changed additional enrichment context pages from a bulk-approval blocker to
+  an explicit source disclosure. Bulk approval now promotes those pages into
+  the approved citation range, and review rows show enrichment completeness
+  plus a concise summary of established and additional source pages.
+
+- Clarified document-scoped topic review with status filters and distinct row
+  treatments for ready-to-approve, individual-review, approved, and rejected
+  topics. Review opens on actionable topics instead of mixing published work
+  into the default queue.
+
+- Made the final manual `Review and export` processing stage an obvious,
+  clickable handoff into a document-scoped review page. The header attention
+  strip now opens the same review destination instead of returning users to a
+  static processing summary.
+
+- Improved the new-knowledge-bundle handoff: bundle creation now opens the
+  document upload workflow with the new bundle preselected instead of landing
+  on an empty bundle explorer.
+
 - Fixed synthetic and legacy documents with extracted page records but no
   `ExtractionJob` appearing permanently queued in the Processing panel. The
   production mapper now derives completed extraction from existing pages only

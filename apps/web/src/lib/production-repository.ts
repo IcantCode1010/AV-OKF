@@ -1261,7 +1261,7 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
       normalizeTopicEnrichmentStatus(record.enrichmentStatus) === "failed"
         ? latestAudit?.errorMessage ?? null
         : null,
-    enrichmentModel: latestSuccess?.model ?? null,
+    enrichmentModel: latestAudit?.model ?? latestSuccess?.model ?? null,
     enrichmentStatus: normalizeTopicEnrichmentStatus(record.enrichmentStatus),
     exportedFilePath: record.exportedFilePath,
     id: record.id,

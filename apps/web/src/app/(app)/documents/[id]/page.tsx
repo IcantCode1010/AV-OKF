@@ -112,6 +112,14 @@ export default async function DocumentDetailPage({
     document: currentDocument,
     topicCount: visibleTopics.length,
   });
+  const manualReviewHref =
+    !processingState.automaticApprovalEnabled &&
+    processingState.stages.some(
+      (stage) =>
+        stage.id === "review_export" && stage.status === "action_required",
+    )
+      ? `/knowledge/${encodeURIComponent(currentBundle!.id)}/review?documentId=${encodeURIComponent(currentDocument.id)}`
+      : undefined;
   const activePanel = assigned
     ? resolveDocumentPanel({
         extractionStatus: currentDocument.extraction.status,
@@ -210,6 +218,7 @@ export default async function DocumentDetailPage({
             )}
           </div>
           {assigned ? <DocumentProcessingStatusStrip
+            actionHref={manualReviewHref}
             documentId={currentDocument.id}
             state={processingState}
           /> : <div className="border-t border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">This source is preserved but unassigned. Assign it to a bundle before authoring, indexing, export, or chat use.</div>}
@@ -251,6 +260,7 @@ export default async function DocumentDetailPage({
           knowledgeBundleId={currentBundle!.id}
           run={authoringRun}
           state={processingState}
+          topicCount={visibleTopics.length}
         />
       );
     }

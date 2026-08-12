@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NoOutputGeneratedError } from "ai";
 
 import {
   approveTopicContentSource,
+  buildTopicEnrichmentPrompt,
   createOpenAiTopicEnrichmentProvider,
   createTopicEnrichmentProvider,
   enrichTopic,
+  TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS,
   type TopicEnrichmentProvider,
   type TopicEnrichmentRepository,
 } from "./topic-enrichment.ts";
@@ -344,6 +347,73 @@ test("failed enrichment stores failure audit and returns failed state", async ()
   assert.equal(audits.length, 1);
   assert.equal(audits[0]?.succeeded, false);
   assert.equal(audits[0]?.errorMessage, "anthropic_unavailable");
+});
+
+test("missing structured output retries once with bounded compact source text", async () => {
+  const longText = "Hydraulic system operation and limitations. ".repeat(800);
+  const fake = createFakeRepository({
+    sourcePages: [page(1, longText), page(2, longText)],
+  });
+  let attempt = 0;
+  const { calls, provider } = createProvider("openai", async () => {
+    attempt += 1;
+    if (attempt === 1) throw new NoOutputGeneratedError();
+    return {
+      body: "## Operation\nUse the documented operating limits.",
+      proposedSourcePageNumbers: [],
+      rawResponse: "recovered response",
+      summary: "Documented hydraulic operation and limits.",
+      title: "Hydraulic System Operation",
+    };
+  });
+
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    provider,
+    repository: fake.repository,
+  });
+
+  assert.equal(result.enrichmentStatus, "completed");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]?.prompt ?? "", /bounded retry using compact source excerpts/i);
+  assert.ok((calls[1]?.prompt.length ?? Infinity) < (calls[0]?.prompt.length ?? 0));
+});
+
+test("repeated empty output stores actionable diagnostics and stops after two attempts", async () => {
+  const fake = createFakeRepository();
+  const { calls, provider } = createProvider("openai", async () => {
+    throw new NoOutputGeneratedError({ cause: new Error("response_incomplete") });
+  });
+
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    provider,
+    repository: fake.repository,
+  });
+
+  assert.equal(result.enrichmentStatus, "failed");
+  assert.equal(calls.length, 2);
+  assert.equal(
+    fake.audits[0]?.errorMessage,
+    "The model did not return a complete structured topic after two attempts.",
+  );
+  const diagnostics = JSON.parse(fake.audits[0]!.rawResponse);
+  assert.equal(diagnostics.attempts, 2);
+  assert.equal(diagnostics.compactRetryUsed, true);
+  assert.equal(diagnostics.cause.message, "response_incomplete");
+});
+
+test("enrichment prompt and output allowance support complete structured articles", () => {
+  const prompt = buildTopicEnrichmentPrompt({
+    compactRetry: true,
+    sourcePages: [page(1, "Procedure details. ".repeat(2_000))],
+    topic: baseTopic(),
+  });
+  assert.equal(TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS, 3_000);
+  assert.ok(prompt.length < 13_500);
+  assert.match(prompt, /source excerpt shortened/i);
 });
 
 test("re-enrichment creates a second audit row and keeps latest success on topic", async () => {
