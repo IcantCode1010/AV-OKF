@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Reorganized the application into a persistent bundle-centered workspace with
+  an authenticated active-bundle cookie, grouped Use/Manage/Workspace
+  navigation, system-aware light/dark themes, and compatibility redirects.
+  Bundle Browse now pairs a resizable physical tree with a large reader, Graph
+  has a dedicated full-workspace view and concept drawer, and Documents default
+  to the active bundle while retaining Unassigned and All workspace views.
+- Added bundle-scoped Activity derived from existing extraction, discovery,
+  authoring, bulk approval, relation verification, and document event records.
+  It polls only while work is active and exposes safe actions and outcomes
+  without prompts, raw model responses, or hidden reasoning.
+- Made Chat the default landing experience. `/chat` resumes the active bundle's
+  most recent conversation, new sessions are persisted only with their first
+  message, conversation history is separate, and the conversation workspace is
+  edge-to-edge while retaining multi-bundle scope and evidence controls.
+- Fixed the Relations sidebar transition by replacing its unbounded candidate
+  read with a bounded review projection. The page now loads every actionable
+  verification item plus the latest 50 verifier rejections, retains complete
+  run totals, and navigates through the normal Next.js client transition.
+
 - Prevented duplicate manual bulk-approval batches by assigning each selected
   topic set a deterministic, database-unique fingerprint. Repeated and
   concurrent `Prepare batch` submissions now reopen the same run instead of

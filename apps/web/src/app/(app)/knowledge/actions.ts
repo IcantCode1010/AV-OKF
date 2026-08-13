@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { ACTIVE_KNOWLEDGE_BUNDLE_COOKIE } from "@/lib/active-knowledge-bundle";
 import { markOkfConceptLifecycle } from "@/lib/okf-lifecycle";
 import { isProductionBackend } from "@/lib/production-document-service";
 import {
@@ -55,8 +57,15 @@ export async function createKnowledgeBundleAction(formData: FormData) {
     name: getFormString(formData, "name"),
     templateId: template === "aviation" ? "aviation" : "generic",
   });
+  (await cookies()).set(ACTIVE_KNOWLEDGE_BUNDLE_COOKIE, bundle.id, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 365,
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
   revalidatePath("/knowledge");
-  redirect(`/documents?knowledgeBundleId=${encodeURIComponent(bundle.id)}`);
+  redirect(`/documents?scope=bundle&knowledgeBundleId=${encodeURIComponent(bundle.id)}`);
 }
 
 export async function createKnowledgeProfileDraftAction(formData: FormData) {
@@ -100,8 +109,8 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
   if (relations.length > 0) profile.relations = [...new Set(relations)];
 
   const version = await createKnowledgeProfileDraft({ bundleId, context, profile });
-  revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?profileDraft=${version}`);
+  revalidatePath(`/knowledge/${bundleId}/settings`);
+  redirect(`/knowledge/${bundleId}/settings?profileDraft=${version}`);
 }
 
 export async function activateKnowledgeProfileAction(formData: FormData) {
@@ -111,8 +120,8 @@ export async function activateKnowledgeProfileAction(formData: FormData) {
   const version = Number.parseInt(getFormString(formData, "version"), 10);
   if (!Number.isInteger(version)) throw new Error("knowledge_profile_version_invalid");
   await activateKnowledgeProfileVersion({ bundleId, context, version });
-  revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?profileActivated=${version}`);
+  revalidatePath(`/knowledge/${bundleId}/settings`);
+  redirect(`/knowledge/${bundleId}/settings?profileActivated=${version}`);
 }
 
 export async function deleteKnowledgeBundleAction(formData: FormData) {
@@ -145,8 +154,8 @@ export async function discoverRelationsAction(formData: FormData) {
     requestedBy: context.userId,
     workspaceId: context.workspaceId,
   });
-  revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?section=relations&relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}#relation-discovery`);
+  revalidatePath(`/knowledge/${bundleId}/relations`);
+  redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
 }
 
 export async function reviewRelationCandidateAction(formData: FormData) {
@@ -159,7 +168,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   if (!candidate) throw new Error("relation_candidate_not_found");
   if (decision === "reject") {
     await getPrisma().okfRelationCandidate.update({ data: { reviewedAt: new Date(), reviewedBy: context.userId, status: "rejected" }, where: { id: candidate.id } });
-    revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
+    revalidatePath(`/knowledge/${candidate.knowledgeBundleId}/relations`);
     return;
   }
   const bundle = await getKnowledgeBundle({ bundleId: candidate.knowledgeBundleId, context });
@@ -192,8 +201,8 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   });
   if (originalSource.contentHash !== candidate.sourceContentHash || originalTarget.contentHash !== candidate.targetContentHash) {
     await retryOkfRelationVerification({ candidateId: candidate.id, workspaceId: context.workspaceId });
-    revalidatePath(`/knowledge/${bundle.id}`);
-    redirect(`/knowledge/${bundle.id}?section=relations&relationError=relation_verification_stale_content#relation-discovery`);
+    revalidatePath(`/knowledge/${bundle.id}/relations`);
+    redirect(`/knowledge/${bundle.id}/relations?relationError=relation_verification_stale_content`);
   }
   validateRelationVerifierDecision({
     allowedRelations: bundle.profile.relations,
@@ -230,7 +239,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   });
   if (!preflight.accepted) {
     const code = preflight.issues.find((issue) => issue.severity === "error")?.code ?? "relation_preflight_failed";
-    redirect(`/knowledge/${bundle.id}?section=relations&relationError=${encodeURIComponent(code)}#relation-discovery`);
+    redirect(`/knowledge/${bundle.id}/relations?relationError=${encodeURIComponent(code)}`);
   }
   const sourceTopic = await getPrisma().topicRecord.findFirst({ where: { exportedFilePath: sourceFile, knowledgeBundleId: bundle.id, workspaceId: context.workspaceId } });
   if (!sourceTopic) throw new Error("relation_source_topic_not_found");
@@ -256,7 +265,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
     data: { reason: verifiedReason, reviewedAt, reviewedBy: context.userId, status: "approved" },
     where: { id: candidate.id },
   });
-  revalidatePath(`/knowledge/${bundle.id}`);
+  revalidatePath(`/knowledge/${bundle.id}/relations`);
 }
 
 export async function retryRelationCandidateVerificationAction(formData: FormData) {
@@ -272,7 +281,7 @@ export async function retryRelationCandidateVerificationAction(formData: FormDat
     requestedDirection: direction === "reverse" || direction === "proposed" ? direction : null,
     workspaceId: context.workspaceId,
   });
-  revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
+  revalidatePath(`/knowledge/${candidate.knowledgeBundleId}/relations`);
 }
 
 export async function deleteOkfBundleFilesAction(formData: FormData) {
@@ -293,7 +302,7 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
 
   if (!isProductionBackend()) {
     redirect(
-      `/knowledge/${bundle.id}?deleteError=${encodeURIComponent(
+      `/knowledge/${bundle.id}/settings?deleteError=${encodeURIComponent(
         "lifecycle_requires_production_backend",
       )}`,
     );
@@ -301,7 +310,7 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
 
   if (filenames.length === 0) {
     redirect(
-      `/knowledge/${bundle.id}?deleteError=${encodeURIComponent(
+      `/knowledge/${bundle.id}/settings?deleteError=${encodeURIComponent(
         "okf_bundle_delete_requires_selection",
       )}`,
     );
@@ -325,7 +334,7 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
       error.message === "okf_lifecycle_reason_required"
     ) {
       redirect(
-        `/knowledge/${bundle.id}?deleteError=${encodeURIComponent(error.message)}`,
+        `/knowledge/${bundle.id}/settings?deleteError=${encodeURIComponent(error.message)}`,
       );
     }
 
@@ -334,8 +343,9 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
 
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/bundle");
-  revalidatePath(`/knowledge/${bundle.id}`);
-  redirect(`/knowledge/${bundle.id}?deleted=${filenames.length}`);
+  revalidatePath(`/knowledge/${bundle.id}/settings`);
+  revalidatePath(`/knowledge/${bundle.id}/browse`);
+  redirect(`/knowledge/${bundle.id}/settings?deleted=${filenames.length}`);
 }
 
 function getFormString(formData: FormData, key: string) {

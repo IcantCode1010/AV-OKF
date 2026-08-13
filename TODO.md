@@ -1,5 +1,16 @@
 # AV-OKF TODO
 
+## Bundle-Centered Experience
+
+- [x] Add a workspace-validated active-bundle cookie and searchable persistent selector.
+- [x] Group navigation into Use, Manage, and Workspace workflows.
+- [x] Split the explorer into resizable Browse and full-workspace Graph views with shared file selection.
+- [x] Add dedicated Review, Relations, Activity, and Bundle settings destinations.
+- [x] Default Documents and uploads to the active bundle while preserving Unassigned and All workspace filters.
+- [x] Resume the active bundle's latest chat and delay session persistence until the first message.
+- [x] Add system-aware light, dark, and system theme selection.
+- [ ] Evaluate annotations, concept correction requests, visual bundle diffs, and rollback as separately reviewed features.
+
 ## Agent Rollout
 
 - [x] Tombstone entire historical assistant answers when any supporting citation belongs to a deleted bundle, including mixed-source answers.

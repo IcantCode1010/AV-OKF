@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useTheme } from "next-themes";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -14,12 +17,15 @@ import {
   FileText,
   Folder,
   FolderOpen,
+  GripVertical,
   Maximize2,
   Network,
+  Search,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Collapsible,
   CollapsibleContent,
@@ -36,7 +42,7 @@ import type {
   OkfTreeNode,
 } from "@/lib/okf-explorer";
 
-export function KnowledgeExplorer({ snapshot }: { snapshot: OkfExplorerSnapshot }) {
+function useExplorerSelection() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,20 +55,45 @@ export function KnowledgeExplorer({ snapshot }: { snapshot: OkfExplorerSnapshot 
     [pathname, router, searchParams],
   );
 
+  return selectFile;
+}
+
+export function KnowledgeExplorer({ snapshot }: { snapshot: OkfExplorerSnapshot }) {
+  return <KnowledgeBrowse snapshot={snapshot} />;
+}
+
+export function KnowledgeBrowse({ snapshot }: { snapshot: OkfExplorerSnapshot }) {
+  const selectFile = useExplorerSelection();
+  const [filter, setFilter] = useState("");
+  const [treeWidth, setTreeWidth] = useState(288);
+  const filteredTree = useMemo(
+    () => filterTree(snapshot.tree, filter),
+    [filter, snapshot.tree],
+  );
+
+  const beginResize = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const startX = event.clientX;
+    const startWidth = treeWidth;
+    const move = (moveEvent: PointerEvent) => {
+      setTreeWidth(Math.min(440, Math.max(220, startWidth + moveEvent.clientX - startX)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  }, [treeWidth]);
+
   return (
     <>
-      <div className="hidden min-h-0 flex-1 overflow-hidden border-y border-border lg:grid lg:grid-cols-[260px_minmax(360px,1fr)_minmax(360px,480px)]">
-        <ExplorerTreePane
-          selectedFile={snapshot.selectedFile}
-          tree={snapshot.tree}
-          onSelect={selectFile}
-        />
-        <ExplorerGraphPane
-          edges={snapshot.edges}
-          nodes={snapshot.nodes}
-          selectedFile={snapshot.selectedFile}
-          onSelect={selectFile}
-        />
+      <div
+        className="relative hidden min-h-0 flex-1 overflow-hidden border-y border-border lg:grid"
+        style={{ gridTemplateColumns: `${treeWidth}px 8px minmax(0,1fr)` }}
+      >
+        <ExplorerTreePane filter={filter} onFilter={setFilter} selectedFile={snapshot.selectedFile} tree={filteredTree} onSelect={selectFile} />
+        <button aria-label="Resize concept tree" className="group flex cursor-col-resize items-center justify-center border-r border-border bg-muted/20 hover:bg-muted" onPointerDown={beginResize} type="button"><GripVertical className="size-3.5 text-muted-foreground group-hover:text-foreground" /></button>
         <ExplorerReaderPane
           document={snapshot.selectedDocument}
           files={snapshot.files.map((file) => ({ filename: file.filename, title: file.title }))}
@@ -72,23 +103,16 @@ export function KnowledgeExplorer({ snapshot }: { snapshot: OkfExplorerSnapshot 
       </div>
 
       <Tabs className="min-h-[560px] flex-1 lg:hidden" defaultValue="tree">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="tree"><Folder className="size-4" />Tree</TabsTrigger>
-          <TabsTrigger value="graph"><Network className="size-4" />Graph</TabsTrigger>
           <TabsTrigger value="reader"><BookOpen className="size-4" />Reader</TabsTrigger>
         </TabsList>
         <TabsContent value="tree" className="min-h-[560px] border-y border-border">
           <ExplorerTreePane
+            filter={filter}
+            onFilter={setFilter}
             selectedFile={snapshot.selectedFile}
-            tree={snapshot.tree}
-            onSelect={selectFile}
-          />
-        </TabsContent>
-        <TabsContent value="graph" className="min-h-[560px] border-y border-border">
-          <ExplorerGraphPane
-            edges={snapshot.edges}
-            nodes={snapshot.nodes}
-            selectedFile={snapshot.selectedFile}
+            tree={filteredTree}
             onSelect={selectFile}
           />
         </TabsContent>
@@ -105,11 +129,31 @@ export function KnowledgeExplorer({ snapshot }: { snapshot: OkfExplorerSnapshot 
   );
 }
 
+export function KnowledgeGraphExplorer({
+  browseHref,
+  snapshot,
+}: {
+  browseHref: string;
+  snapshot: OkfExplorerSnapshot;
+}) {
+  const selectFile = useExplorerSelection();
+  return (
+    <div className="grid min-h-0 flex-1 overflow-hidden border-y border-border lg:grid-cols-[minmax(0,1fr)_360px]">
+      <ExplorerGraphPane edges={snapshot.edges} nodes={snapshot.nodes} onSelect={selectFile} selectedFile={snapshot.selectedFile} standalone />
+      <GraphDetailPane browseHref={browseHref} document={snapshot.selectedDocument} onSelect={selectFile} />
+    </div>
+  );
+}
+
 function ExplorerTreePane({
+  filter,
+  onFilter,
   onSelect,
   selectedFile,
   tree,
 }: {
+  filter: string;
+  onFilter: (value: string) => void;
   onSelect: (filename: string) => void;
   selectedFile: string | null;
   tree: OkfTreeNode[];
@@ -119,6 +163,10 @@ function ExplorerTreePane({
       <div className="border-b border-border px-4 py-3">
         <p className="text-xs font-semibold uppercase text-muted-foreground">Bundle files</p>
         <p className="mt-1 text-xs text-muted-foreground">Physical folder structure</p>
+        <div className="relative mt-3">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input aria-label="Filter bundle files" className="h-8 bg-background pl-8 text-xs" onChange={(event) => onFilter(event.target.value)} placeholder="Filter concepts" value={filter} />
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
         {tree.length > 0 ? (
@@ -203,14 +251,16 @@ function ExplorerGraphPane({
   nodes,
   onSelect,
   selectedFile,
+  standalone = false,
 }: {
   edges: OkfExplorerEdge[];
   nodes: OkfExplorerNode[];
   onSelect: (filename: string) => void;
   selectedFile: string | null;
+  standalone?: boolean;
 }) {
   return (
-    <section className="relative min-h-[560px] border-r border-border bg-background" aria-label="Knowledge graph">
+    <section className={cn("relative min-h-[560px] bg-background", !standalone && "border-r border-border")} aria-label="Knowledge graph">
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur">
         <div>
           <p className="text-xs font-semibold uppercase text-muted-foreground">Knowledge graph</p>
@@ -241,6 +291,7 @@ function KnowledgeGraph({
   selectedFile: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { resolvedTheme } = useTheme();
   const graphRef = useRef<GraphInstance | null>(null);
   const nodesRef = useRef(nodes);
   const [error, setError] = useState<string | null>(null);
@@ -294,14 +345,14 @@ function KnowledgeGraph({
       .then(({ Graph }) => {
         if (cancelled) return;
         const graph = new Graph(container, {
-          backgroundColor: "#0b0d10",
+          backgroundColor: resolvedTheme === "light" ? "#ffffff" : "#0b0d10",
           curvedLinks: true,
           enableDrag: true,
           fitViewDelay: 300,
           fitViewOnInit: true,
           fitViewPadding: 0.22,
           linkDefaultArrows: true,
-          linkDefaultColor: "#586171",
+          linkDefaultColor: resolvedTheme === "light" ? "#a1a1aa" : "#586171",
           linkDefaultWidth: 1.1,
           pointGreyoutOpacity: 0.18,
           pointDefaultSize: 7,
@@ -385,7 +436,7 @@ function KnowledgeGraph({
     };
   // Topology changes rebuild the simulation; selection changes do not.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topologyKey]);
+  }, [topologyKey, resolvedTheme]);
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -457,6 +508,55 @@ function KnowledgeGraph({
   );
 }
 
+function GraphDetailPane({
+  browseHref,
+  document,
+  onSelect,
+}: {
+  browseHref: string;
+  document: OkfExplorerDocument | null;
+  onSelect: (filename: string) => void;
+}) {
+  if (!document || document.isReserved) {
+    return (
+      <aside className="min-h-0 overflow-auto border-t border-border bg-muted/10 p-5 lg:border-l lg:border-t-0">
+        <Network className="size-5 text-muted-foreground" />
+        <p className="mt-3 text-sm font-medium">Select a concept</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose a graph node to inspect its trust state, source, and typed relationships.</p>
+      </aside>
+    );
+  }
+  const fileHref = `${browseHref}?file=${encodeURIComponent(document.filename)}`;
+  return (
+    <aside className="min-h-0 overflow-auto border-t border-border bg-muted/10 lg:border-l lg:border-t-0">
+      <div className="border-b border-border p-5">
+        <div className="flex flex-wrap gap-2"><Badge variant="secondary">{document.type}</Badge><Badge variant="outline">{formatTrustStatus(document.trustStatus)}</Badge></div>
+        <h2 className="mt-3 text-lg font-semibold">{document.title}</h2>
+        {document.description ? <p className="mt-2 text-sm leading-6 text-muted-foreground">{document.description}</p> : null}
+        <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs"><dt className="text-muted-foreground">Source</dt><dd>{document.sourceFile ?? "Not specified"}</dd><dt className="text-muted-foreground">Pages</dt><dd>{formatPages(document.sourcePages)}</dd></dl>
+        <Button asChild className="mt-4 w-full"><Link href={fileHref}><BookOpen />Read concept</Link></Button>
+      </div>
+      <CompactRelationList label="Outgoing" rows={document.outgoing.map((edge) => ({ file: edge.target, relation: edge.relation, title: edge.target.split("/").at(-1) ?? edge.target }))} onSelect={onSelect} />
+      <CompactRelationList label="Incoming" rows={document.incoming.map((edge) => ({ file: edge.sourceFile, relation: edge.relation, title: edge.sourceTitle }))} onSelect={onSelect} />
+    </aside>
+  );
+}
+
+function CompactRelationList({ label, onSelect, rows }: {
+  label: string;
+  onSelect: (filename: string) => void;
+  rows: Array<{ file: string; relation: string; title: string }>;
+}) {
+  return (
+    <section className="border-b border-border p-5">
+      <h3 className="text-xs font-semibold uppercase text-muted-foreground">{label} relations</h3>
+      <div className="mt-3 space-y-1">
+        {rows.length ? rows.map((row) => <button className="w-full border-l-2 border-border px-3 py-2 text-left hover:border-primary hover:bg-muted" key={`${row.relation}-${row.file}`} onClick={() => onSelect(row.file)} type="button"><span className="block truncate text-xs font-medium">{row.title}</span><span className="mt-1 block text-[10px] uppercase text-primary">{row.relation.replaceAll("_", " ")}</span></button>) : <p className="text-xs text-muted-foreground">No {label.toLowerCase()} relations.</p>}
+      </div>
+    </section>
+  );
+}
+
 function ExplorerReaderPane({
   document,
   files,
@@ -516,7 +616,7 @@ function ExplorerReaderPane({
       ) : null}
 
       <div className="px-5 py-5">
-        <div className="okf-reader prose prose-invert max-w-none text-sm leading-7 text-foreground/90 [&_a]:text-primary [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-xl [&_h2]:mt-7 [&_h2]:text-lg [&_h3]:text-base [&_table]:text-xs">
+        <div className="okf-reader prose max-w-none text-sm leading-7 text-foreground/90 dark:prose-invert [&_a]:text-primary [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-xl [&_h2]:mt-7 [&_h2]:text-lg [&_h3]:text-base [&_table]:text-xs">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -617,6 +717,20 @@ function EmptyPane({ label }: { label: string }) {
       <div><BookOpen className="mx-auto mb-3 size-5" />{label}</div>
     </div>
   );
+}
+
+function filterTree(tree: OkfTreeNode[], query: string): OkfTreeNode[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return tree;
+  return tree.flatMap((node) => {
+    if (node.kind === "file") {
+      return node.label.toLowerCase().includes(normalized) || node.id.toLowerCase().includes(normalized)
+        ? [node]
+        : [];
+    }
+    const children = filterTree(node.children, query);
+    return children.length ? [{ ...node, children }] : [];
+  });
 }
 
 function resolveReaderLink(sourceFile: string, href: string | undefined, files: string[]) {

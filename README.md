@@ -98,6 +98,11 @@ citations, evidence cards, traces, and deterministic evidence validation
 
 Stages 7C and 7D now provide bounded read-only agent tools and user-controlled multi-bundle chat scope. Production chat still follows deterministic routing and mandatory evidence validation; model-directed tool choice is evaluation-only. Unrestricted or mutating agent loops remain deliberately deferred.
 
+The product UI is bundle-centered: select one active knowledge bundle, then use
+Chat, Browse, Graph, Documents, Review, Relations, and Activity without losing
+that context. Chat may still add session-specific sources without changing the
+global active bundle.
+
 ## Web App
 
 The web application lives in `apps/web`.

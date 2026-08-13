@@ -1,4 +1,5 @@
 import { DocumentLibrary } from "@/components/document-library";
+import Link from "next/link";
 import { DocumentDeletionPoller } from "@/components/document-deletion-poller";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,8 @@ import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
 import { getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
 import { resolveDocumentUploadBundleSelection } from "@/lib/document-upload-bundle-selection";
+import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -21,23 +24,31 @@ export default async function DocumentsPage({
   searchParams: Promise<{
     deletionJob?: string;
     knowledgeBundleId?: string;
+    scope?: string;
     uploadError?: string;
   }>;
 }) {
-  const { deletionJob, knowledgeBundleId, uploadError } = await searchParams;
+  const { deletionJob, knowledgeBundleId, scope, uploadError } = await searchParams;
   const context = await requireAuthWorkspaceContext();
   const [documents, bundles, deletionSnapshot] = await Promise.all([
     getDocuments(),
     listKnowledgeBundles(context),
     getDocumentDeletionStatusSnapshot(context),
   ]);
+  const { activeBundle } = await resolveActiveKnowledgeBundle(context, bundles);
   const deletionJobs = deletionSnapshot.jobs;
   const uploadErrorMessage = formatUploadError(uploadError);
   const selectedDeletion = deletionJobs.find((job) => job.id === deletionJob);
   const selectedBundleId = resolveDocumentUploadBundleSelection(
     bundles,
-    knowledgeBundleId,
+    knowledgeBundleId ?? activeBundle?.id,
   );
+  const documentScope = scope === "all" || scope === "unassigned" ? scope : "bundle";
+  const visibleDocuments = documentScope === "all"
+    ? documents
+    : documentScope === "unassigned"
+      ? documents.filter((document) => !document.knowledgeBundleId)
+      : documents.filter((document) => document.knowledgeBundleId === selectedBundleId);
 
   return (
     <>
@@ -57,6 +68,12 @@ export default async function DocumentsPage({
           </p>
         </div>
         <Badge variant="outline">Max upload 25 MB</Badge>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/30 p-1 sm:w-fit" aria-label="Document scope">
+        <Button asChild size="sm" variant={documentScope === "bundle" ? "secondary" : "ghost"}><Link href={`/documents?scope=bundle&knowledgeBundleId=${encodeURIComponent(selectedBundleId)}`}>This bundle</Link></Button>
+        <Button asChild size="sm" variant={documentScope === "unassigned" ? "secondary" : "ghost"}><Link href="/documents?scope=unassigned">Unassigned</Link></Button>
+        <Button asChild size="sm" variant={documentScope === "all" ? "secondary" : "ghost"}><Link href="/documents?scope=all">All workspace</Link></Button>
       </div>
 
       {context.role === "admin" && (deletionJobs.length > 0 || deletionJob) ? (
@@ -193,7 +210,7 @@ export default async function DocumentsPage({
         </CardContent>
       </Card>
 
-      <DocumentLibrary documents={documents} />
+      <DocumentLibrary documents={visibleDocuments} />
     </>
   );
 }

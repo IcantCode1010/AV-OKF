@@ -304,6 +304,8 @@ Deliverables:
 - Durable BullMQ bundle deletion that removes OKF and derived knowledge while preserving source PDFs, document metadata, and extraction history as Unassigned documents
 - Bundle-first Knowledge page
 - Three-pane OKF bundle explorer with a physical file tree, force-directed typed-relation graph, and rendered Markdown reader
+- Bundle-centered application shell with an authenticated active-bundle selector, grouped workflow navigation, dedicated Browse and Graph workspaces, bundle Activity, and active-context Documents/Review/Relations/Settings pages
+- Chat-first landing that resumes the active bundle's latest conversation and creates a new session only when its first question is submitted
 - Shared `?file=` deep-link selection across tree rows, graph nodes, internal links, outgoing relations, and derived backlinks
 - Active-lifecycle filtering, safe relation warnings, and a usable tree/reader fallback when WebGL is unavailable
 
@@ -323,6 +325,7 @@ Architecture note:
 - [Link Resolution](../architecture/link-resolution.md)
 - [Typed Relations](../architecture/typed-relations.md)
 - [Knowledge Explorer V2](../architecture/knowledge-explorer.md)
+- [Bundle-Centered Workspace](../architecture/bundle-centered-workspace.md)
 
 ## Stage 5.6: LLM-Assisted Knowledge Authoring
 

@@ -358,6 +358,56 @@ export async function listOkfRelationCandidates(input: { knowledgeBundleId: stri
   });
 }
 
+export async function getOkfRelationReviewQueue(input: {
+  knowledgeBundleId: string;
+  workspaceId: string;
+}) {
+  const where = {
+    knowledgeBundleId: input.knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  };
+  const select = {
+    id: true,
+    reason: true,
+    signals: true,
+    sourceFile: true,
+    targetFile: true,
+    verificationConfidence: true,
+    verificationDirection: true,
+    verificationError: true,
+    verificationEvidenceQuote: true,
+    verificationModel: true,
+    verificationProvider: true,
+    verificationRationale: true,
+    verificationRelation: true,
+    verificationStatus: true,
+  } as const;
+
+  const [actionable, filtered] = await Promise.all([
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [
+        { verificationConfidence: "desc" },
+        { sourceFile: "asc" },
+        { targetFile: "asc" },
+      ],
+      select,
+      where: {
+        ...where,
+        status: "pending",
+        verificationStatus: { in: ["queued", "running", "confirmed", "failed"] },
+      },
+    }),
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      select,
+      take: 50,
+      where: { ...where, verificationStatus: "filtered" },
+    }),
+  ]);
+
+  return { actionable, filtered };
+}
+
 export async function getLatestOkfRelationDiscoveryRun(input: { knowledgeBundleId: string; workspaceId: string }) {
   return getPrisma().okfRelationDiscoveryRun.findFirst({
     orderBy: { createdAt: "desc" },

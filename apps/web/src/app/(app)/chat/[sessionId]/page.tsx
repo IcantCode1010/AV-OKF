@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { History } from "lucide-react";
 
 import { ChatConversationPanel } from "@/components/chat/chat-conversation-panel";
 import { ChatSidePanelSheet } from "@/components/chat/chat-side-panel-sheet";
@@ -41,14 +41,14 @@ export default async function ChatSessionPage({
     null;
 
   return (
-    <div className="grid h-[calc(100vh-7rem)] min-h-[32rem] gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-card/30">
+    <div className="grid h-full min-h-[32rem] lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="flex min-h-0 min-w-0 flex-col bg-background">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3">
           <div className="flex items-center gap-3">
             <Button asChild variant="ghost" size="icon">
-              <Link href="/chat">
-                <ArrowLeft className="h-4 w-4" />
-                <span className="sr-only">Back to conversations</span>
+              <Link href="/chat/history">
+                <History className="h-4 w-4" />
+                <span className="sr-only">All conversations</span>
               </Link>
             </Button>
             <div className="min-w-0">
@@ -76,8 +76,8 @@ export default async function ChatSessionPage({
         />
       </div>
 
-      <aside className="hidden min-h-0 lg:block">
-        <div className="h-full overflow-y-auto">
+      <aside className="hidden min-h-0 border-l bg-muted/20 lg:block">
+        <div className="h-full overflow-y-auto p-4">
           <ChatSidePanelContent
             latestAssistantMessage={latestAssistantMessage}
           />

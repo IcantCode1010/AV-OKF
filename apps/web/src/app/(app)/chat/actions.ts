@@ -26,6 +26,19 @@ export async function createChatSessionAction(formData: FormData) {
   redirect(`/chat/${session.id}`);
 }
 
+export async function createAndSendChatMessageAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const knowledgeBundleId = getFormString(formData, "knowledgeBundleId");
+  const content = getFormString(formData, "content").trim();
+  if (!content) throw new Error("chat_message_required");
+  const bundle = await getKnowledgeBundle({ bundleId: knowledgeBundleId, context });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const session = await createChatSession(bundle.id, content.slice(0, 72));
+  await sendChatMessage(session.id, content);
+  revalidatePath("/chat");
+  redirect(`/chat/${session.id}`);
+}
+
 export async function sendChatMessageAction(formData: FormData) {
   const sessionId = getFormString(formData, "sessionId");
   const content = getFormString(formData, "content").trim();
