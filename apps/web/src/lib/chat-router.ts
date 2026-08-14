@@ -117,6 +117,7 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerModel?: string;
   answerProvider?: string;
   answerOutcome?: "answered" | "insufficient_evidence" | "retrieval_unavailable";
+  answerProjectionFallback?: { reasonCodes: string[] };
   adaptiveRetry?: import("./chat-adaptive-retry.ts").AdaptiveRetryTrace;
   agentExecution?: import("./agent-tools.ts").AgentExecutionTrace;
   bundleScope?: {
@@ -130,6 +131,15 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
     conflictingValues: string[];
   };
   evidenceSufficiency?: import("./chat-evidence-sufficiency.ts").EvidenceSufficiency;
+  retrievalSufficiency?: import("./chat-evidence-sufficiency.ts").EvidenceSufficiency;
+  relatedEvidence?: import("./chat-types.ts").ChatRelatedEvidence[];
+  citationProjection?: {
+    citedCount: number;
+    relatedCount: number;
+    remapped: boolean;
+    retrievedCount: number;
+  };
+  finalizationVersion?: "answer-citations-v2";
   entityCandidates?: ChatEntityCandidate[];
   ragInvocationReason?: import("./chat-evidence-sufficiency.ts").RagInvocationReason;
   queryUnderstanding?: ChatQueryUnderstandingTrace;

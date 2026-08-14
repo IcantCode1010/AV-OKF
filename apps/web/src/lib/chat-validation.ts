@@ -22,6 +22,7 @@ export type ChatValidationResult = {
  * deterministic: claim-level semantic judging belongs to a later stage.
  */
 export function validateChatAnswerEvidence(input: {
+  availableCitations?: ChatCitation[];
   answerOutcome?: "answered" | "insufficient_evidence" | "retrieval_unavailable";
   answerContent: string;
   citations: ChatCitation[];
@@ -109,6 +110,38 @@ export function validateChatAnswerEvidence(input: {
     violations.push("raw_rag_used_without_okf_fallback_label");
   }
 
+  if (
+    input.trace?.requiresGraphTraversal &&
+    input.trace.okfEvidenceMode === "graph"
+  ) {
+    const citedOkfFiles = new Set(
+      input.citations
+        .filter((citation) => citation.sourceType === "okf")
+        .map(citationIdentity),
+    );
+    const missingGraphSource = (input.availableCitations ?? [])
+      .filter((citation) => citation.sourceType === "okf")
+      .some((citation) => !citedOkfFiles.has(citationIdentity(citation)));
+    if (missingGraphSource) {
+      violations.push("answer_missing_graph_relation_citation");
+    }
+  }
+
+  if (input.route === "hybrid") {
+    const availableTypes = new Set(
+      (input.availableCitations ?? []).map((citation) => citation.sourceType),
+    );
+    const citedTypes = new Set(
+      input.citations.map((citation) => citation.sourceType),
+    );
+    if (availableTypes.has("okf") && !citedTypes.has("okf")) {
+      violations.push("answer_missing_hybrid_okf_citation");
+    }
+    if (availableTypes.has("rag") && !citedTypes.has("rag")) {
+      violations.push("answer_missing_hybrid_rag_citation");
+    }
+  }
+
   return {
     profile,
     safeAnswerMode: violations.length
@@ -117,4 +150,14 @@ export function validateChatAnswerEvidence(input: {
     status: violations.length ? "fail" : "pass",
     violations,
   };
+}
+
+function citationIdentity(citation: ChatCitation) {
+  return [
+    citation.knowledgeBundleId ?? "",
+    citation.okfFilePath ?? "",
+    citation.documentTitle,
+    citation.pageStart,
+    citation.pageEnd,
+  ].join("|");
 }

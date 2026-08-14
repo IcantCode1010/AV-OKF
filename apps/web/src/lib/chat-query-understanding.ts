@@ -71,6 +71,9 @@ export function shouldRunQueryUnderstanding(input: {
   decision: ChatRouterDecision;
   question: string;
 }): boolean {
+  if (input.decision.route === "unsupported") {
+    return false;
+  }
   if (
     Boolean(input.clarificationOriginQuestion) ||
     input.decision.confidence === "low" ||
@@ -150,7 +153,7 @@ export async function understandChatQuery(
   const fallback = (warning: string): ChatQueryUnderstandingTrace => ({
     ambiguityLevel: inferFallbackAmbiguity(input.decision),
     assumptions: input.clarificationAlreadyAsked
-      ? buildSafeDefaultAssumptions(input.decision.requiredContext)
+      ? resolveRequiredAssumptions({ input, modelAssumptions: [], sourceText })
       : [],
     detectedEntities: protectedEntities,
     originalQuestion,
@@ -192,7 +195,7 @@ export async function understandChatQuery(
     const requiredAssumptionFields = new Set(
       input.decision.requiredContext.filter(isChatContextField),
     );
-    const assumptions = input.clarificationAlreadyAsked
+    const validatedAssumptions = input.clarificationAlreadyAsked
       ? validateAssumptions(
           parsed.data.assumptions.filter((assumption) =>
             requiredAssumptionFields.has(assumption.field),
@@ -200,9 +203,16 @@ export async function understandChatQuery(
           sourceText,
         )
       : [];
-    if (!assumptions) {
+    if (!validatedAssumptions) {
       return fallback("query_understanding_invalid_assumptions");
     }
+    const assumptions = input.clarificationAlreadyAsked
+      ? resolveRequiredAssumptions({
+          input,
+          modelAssumptions: validatedAssumptions,
+          sourceText,
+        })
+      : [];
 
     const retrievalQuery = appendConversationAssumptions(
       normalizeWhitespace(parsed.data.retrievalQuery),
@@ -275,7 +285,7 @@ function buildQueryUnderstandingPrompt(
     "Do not invent people, organizations, products, jurisdictions, dates, versions, document types, or decision context.",
     input.clarificationAlreadyAsked
       ? "A clarification was already requested. Do not ask another question. Use only conversation-grounded assumptions or the listed safe defaults for context that is still missing."
-      : "If essential context is missing, provide one concise clarifying question and return no assumptions.",
+      : "If essential context is missing, ask one concise combined question for the subject or entity, applicable scope or version, source authority, and intended action. Return no assumptions.",
     "Return a structured object with retrievalQuery, detectedEntities, ambiguityLevel, clarifyingQuestion, and assumptions.",
     "Each assumption must contain field, value, and basis (conversation or safe_default).",
     "Allowed safe defaults: subject_or_entity=all subjects represented in the workspace; applicable_scope_or_version=all available scopes and versions; source_authority=approved OKF first, with raw documents only as labeled discovery; intended_action=informational guidance only, not authorization to act.",
@@ -309,16 +319,51 @@ function buildRetrievalSeed(input: ChatQueryUnderstandingInput): string {
     .join(" ");
 }
 
-function buildSafeDefaultAssumptions(
-  requiredContext: string[],
-): ChatContextAssumption[] {
-  const requestedFields = new Set(requiredContext.filter(isChatContextField));
+function resolveRequiredAssumptions(input: {
+  input: ChatQueryUnderstandingInput;
+  modelAssumptions: ChatContextAssumption[];
+  sourceText: string;
+}): ChatContextAssumption[] {
+  const requiredFields = input.input.decision.requiredContext.filter(isChatContextField);
+  const modelByField = new Map(
+    input.modelAssumptions.map((assumption) => [assumption.field, assumption]),
+  );
+  const derivedSubject = requiredFields.includes("subject_or_entity")
+    ? deriveClarificationSubject(input.input.question)
+    : null;
 
-  return [...requestedFields].map((field) => ({
-    basis: "safe_default",
-    field,
-    value: SAFE_CONTEXT_DEFAULTS[field],
-  }));
+  return requiredFields.map((field) => {
+    const modelAssumption = modelByField.get(field);
+    if (modelAssumption?.basis === "conversation") {
+      return modelAssumption;
+    }
+    if (
+      field === "subject_or_entity" &&
+      derivedSubject &&
+      includesEntity(input.sourceText, derivedSubject)
+    ) {
+      return {
+        basis: "conversation",
+        field,
+        value: derivedSubject,
+      };
+    }
+    return modelAssumption ?? {
+      basis: "safe_default",
+      field,
+      value: SAFE_CONTEXT_DEFAULTS[field],
+    };
+  });
+}
+
+function deriveClarificationSubject(question: string): string | null {
+  const normalized = normalizeWhitespace(question)
+    .replace(/^[\s"'`]*(?:the|a|an)\s+/i, "")
+    .replace(/[\s.!?"'`]+$/g, "")
+    .trim();
+  if (!normalized || normalized.split(/\s+/).length > 8) return null;
+  if (isUnresolvedVagueQuestion(normalized)) return null;
+  return normalized;
 }
 
 function validateAssumptions(

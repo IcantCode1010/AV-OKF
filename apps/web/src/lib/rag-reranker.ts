@@ -17,6 +17,7 @@ export type RagRerankStatus =
 
 export type RagRerankTrace = {
   applied: boolean;
+  diagnostic?: "duplicate_alias" | "invalid_score" | "missing_alias" | "schema_invalid" | "unknown_alias";
   dropped: number;
   model?: string;
   provider?: string;
@@ -24,8 +25,8 @@ export type RagRerankTrace = {
 };
 
 const scoreSchema = z.object({
-  chunkId: z.string(),
-  reason: z.string(),
+  alias: z.string(),
+  reason: z.string().max(160),
   relevance: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
 });
 const responseSchema = z.object({ scores: z.array(scoreSchema) });
@@ -33,7 +34,7 @@ const responseSchema = z.object({ scores: z.array(scoreSchema) });
 export async function rerankRawRagCandidates(
   input: { candidates: RetrievalResult[]; query: string; workspaceId: string },
   options: {
-    callProvider?: (input: { apiKey: string; candidates: RetrievalResult[]; model: string; provider: "anthropic" | "openai"; query: string }) => Promise<unknown>;
+    callProvider?: (input: { apiKey: string; candidates: Array<{ alias: string; excerpt: string }>; model: string; provider: "anthropic" | "openai"; query: string }) => Promise<unknown>;
     getApiKey?: typeof getWorkspaceLlmApiKeyForEnrichment;
     reserveCall?: (workspaceId: string) => Promise<boolean>;
   } = {},
@@ -50,11 +51,15 @@ export async function rerankRawRagCandidates(
     return failOpen(input.candidates, "budget_exceeded");
   }
   const provider = getLlmProvider(key.provider);
+  const providerCandidates = input.candidates.map((candidate, index) => ({
+    alias: `c${index + 1}`,
+    excerpt: truncate(candidate.text),
+  }));
   let raw: unknown;
   try {
     raw = await (options.callProvider ?? callRerankProvider)({
       apiKey: key.apiKey,
-      candidates: input.candidates,
+      candidates: providerCandidates,
       model: provider.model,
       provider: key.provider,
       query: input.query,
@@ -63,12 +68,43 @@ export async function rerankRawRagCandidates(
     return failOpen(input.candidates, "provider_failed", provider.id, provider.model);
   }
   const parsed = responseSchema.safeParse(raw);
-  if (!parsed.success || !isCompleteScoreSet(parsed.data.scores, input.candidates)) {
-    return failOpen(input.candidates, "malformed_response", provider.id, provider.model);
+  if (!parsed.success) {
+    logMalformedResponse({
+      candidateCount: input.candidates.length,
+      diagnostic: "schema_invalid",
+      model: provider.model,
+      provider: provider.id,
+    });
+    return failOpen(
+      input.candidates,
+      "malformed_response",
+      provider.id,
+      provider.model,
+      "schema_invalid",
+    );
   }
-  const scoreById = new Map(parsed.data.scores.map((score) => [score.chunkId, score.relevance]));
+  const diagnostic = validateScoreSet(
+    parsed.data.scores,
+    providerCandidates.map((item) => item.alias),
+  );
+  if (diagnostic) {
+    logMalformedResponse({
+      candidateCount: input.candidates.length,
+      diagnostic,
+      model: provider.model,
+      provider: provider.id,
+    });
+    return failOpen(
+      input.candidates,
+      "malformed_response",
+      provider.id,
+      provider.model,
+      diagnostic,
+    );
+  }
+  const scoreByAlias = new Map(parsed.data.scores.map((score) => [score.alias, score.relevance]));
   const results = input.candidates
-    .map((candidate, rank) => ({ candidate, rank, relevance: scoreById.get(candidate.chunkId)! }))
+    .map((candidate, rank) => ({ candidate, rank, relevance: scoreByAlias.get(`c${rank + 1}`)! }))
     .filter((item) => item.relevance > 0)
     .sort((a, b) => b.relevance - a.relevance || a.rank - b.rank)
     .map((item) => item.candidate);
@@ -78,15 +114,16 @@ export async function rerankRawRagCandidates(
   };
 }
 
-async function callRerankProvider(input: { apiKey: string; candidates: RetrievalResult[]; model: string; provider: "anthropic" | "openai"; query: string }) {
+async function callRerankProvider(input: { apiKey: string; candidates: Array<{ alias: string; excerpt: string }>; model: string; provider: "anthropic" | "openai"; query: string }) {
   const result = await generateText({
     model: getSdkModel(input.provider, input.apiKey),
     output: Output.object({ schema: responseSchema }),
     prompt: JSON.stringify({
       query: input.query,
-      chunks: input.candidates.map((candidate) => ({ chunkId: candidate.chunkId, excerpt: truncate(candidate.text) })),
+      chunks: input.candidates,
     }),
-    system: "Score every supplied chunk exactly once for whether it directly helps answer the query. Use relevance 0 (irrelevant) through 3 (directly answer-bearing). Never create IDs.",
+    system: "Score every supplied chunk alias exactly once for whether it directly helps answer the query. Use relevance 0 (irrelevant) through 3 (directly answer-bearing). Never create aliases. Keep each reason under 160 characters.",
+    maxOutputTokens: 1_000,
     temperature: 0,
   });
   return result.output;
@@ -108,15 +145,35 @@ async function reserveRerankCall(workspaceId: string) {
   });
 }
 
-function isCompleteScoreSet(scores: Array<{ chunkId: string }>, candidates: RetrievalResult[]) {
-  const expected = new Set(candidates.map((candidate) => candidate.chunkId));
-  const actual = new Set(scores.map((score) => score.chunkId));
-  return scores.length === candidates.length && actual.size === expected.size && [...actual].every((id) => expected.has(id));
+function validateScoreSet(
+  scores: Array<{ alias: string; relevance: number }>,
+  aliases: string[],
+): RagRerankTrace["diagnostic"] | undefined {
+  const expected = new Set(aliases);
+  const actual = new Set(scores.map((score) => score.alias));
+  if (actual.size !== scores.length) return "duplicate_alias";
+  if ([...actual].some((alias) => !expected.has(alias))) return "unknown_alias";
+  if (scores.length !== aliases.length || aliases.some((alias) => !actual.has(alias))) {
+    return "missing_alias";
+  }
+  if (scores.some((score) => !Number.isInteger(score.relevance) || score.relevance < 0 || score.relevance > 3)) {
+    return "invalid_score";
+  }
+  return undefined;
 }
 
 function truncate(text: string) {
   const words = text.trim().split(/\s+/);
   return words.slice(0, 300).join(" ");
+}
+
+function logMalformedResponse(input: {
+  candidateCount: number;
+  diagnostic: NonNullable<RagRerankTrace["diagnostic"]>;
+  model: string;
+  provider: string;
+}) {
+  console.error("rag_rerank_malformed_response", input);
 }
 
 function readCallCap() {
@@ -129,6 +186,12 @@ function baseTrace(status: RagRerankStatus): RagRerankTrace {
   return { applied: false, dropped: 0, status };
 }
 
-function failOpen(results: RetrievalResult[], status: RagRerankStatus, provider?: string, model?: string) {
-  return { results, trace: { ...baseTrace(status), ...(provider ? { provider } : {}), ...(model ? { model } : {}) } };
+function failOpen(
+  results: RetrievalResult[],
+  status: RagRerankStatus,
+  provider?: string,
+  model?: string,
+  diagnostic?: RagRerankTrace["diagnostic"],
+) {
+  return { results, trace: { ...baseTrace(status), ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(diagnostic ? { diagnostic } : {}) } };
 }

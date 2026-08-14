@@ -33,6 +33,9 @@ export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
   const ragSources = message.citations.filter(
     (citation) => citation.sourceType === "rag",
   );
+  const relatedSources = (message.trace?.relatedEvidence ?? []).map(
+    ({ rank, ...citation }) => ({ ...citation, index: rank }),
+  );
 
   return (
     <Collapsible>
@@ -55,7 +58,7 @@ export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
             </div>
           </div>
           <span className="font-mono text-[0.68rem] text-muted-foreground">
-            {sourceCountLabel(profile)}
+            {sourceCountLabel(profile, relatedSources.length)}
           </span>
           <ChevronDown className="evidence-chevron h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform" />
         </CollapsibleTrigger>
@@ -90,6 +93,19 @@ export function ChatEvidenceCard({ message }: { message: ChatMessage }) {
                 title={copy.detailTitle}
               />
             )}
+            {relatedSources.length > 0 ? (
+              <div className="mt-3 border-t border-current/10 pt-3">
+                <SourceGroup
+                  citations={relatedSources}
+                  emptyText="No related retrieval results."
+                  sessionId={message.sessionId}
+                  title="Related, not used"
+                />
+                <p className="mt-2 text-[0.68rem] text-muted-foreground">
+                  These results were retrieved but were not used as authority for this answer.
+                </p>
+              </div>
+            ) : null}
           </div>
         </CollapsibleContent>
       </div>
@@ -277,18 +293,21 @@ function evidenceCardCopy(profile: ChatAnswerEvidenceProfile) {
   };
 }
 
-function sourceCountLabel(profile: ChatAnswerEvidenceProfile): string {
+function sourceCountLabel(
+  profile: ChatAnswerEvidenceProfile,
+  relatedCount: number,
+): string {
   if (profile.evidenceKind === "none") {
-    return profile.sourceCounts.total > 0
-      ? `${profile.sourceCounts.total} related`
+    return relatedCount > 0
+      ? `${relatedCount} related`
       : "0 results";
   }
 
   if (profile.evidenceKind === "raw_rag") {
-    return `${profile.sourceCounts.rag} chunks`;
+    return `${profile.sourceCounts.rag} cited chunk${profile.sourceCounts.rag === 1 ? "" : "s"}`;
   }
 
-  return `${profile.sourceCounts.total} sources`;
+  return `${profile.sourceCounts.total} cited source${profile.sourceCounts.total === 1 ? "" : "s"}`;
 }
 
 function formatPageRange(citation: ChatCitation): string {

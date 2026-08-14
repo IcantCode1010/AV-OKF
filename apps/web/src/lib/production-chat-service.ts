@@ -40,6 +40,7 @@ import {
   type ChatRetrievalFn,
 } from "./chat-retrieval.ts";
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
+import { finalizeChatTurn } from "./chat-turn-finalization.ts";
 import { annotateChatCitationLifecycle } from "./chat-citation-lifecycle.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
 import type { AgentExecutionTrace } from "./agent-tools.ts";
@@ -137,8 +138,15 @@ export function createProductionChatService(
 
       try {
         const result = await repository.getSessionWithMessages({ context, sessionId });
+        const projectedMessages = result.messages.map(projectMessageEvidenceForDisplay);
         const annotatedCitations = await annotateCitations({
-          citations: result.messages.flatMap((message) => message.citations),
+          citations: projectedMessages.flatMap((message) => [
+            ...message.citations,
+            ...(message.trace?.relatedEvidence ?? []).map(({ rank, ...citation }) => ({
+              ...citation,
+              index: rank,
+            })),
+          ]),
           knowledgeBundleId:
             result.session.primaryKnowledgeBundleId ??
             result.session.knowledgeBundles[0]?.id,
@@ -147,13 +155,33 @@ export function createProductionChatService(
         let citationOffset = 0;
         return {
           ...result,
-          messages: result.messages.map((message) => {
+          messages: projectedMessages.map((message) => {
+            const activeCount = message.citations.length;
+            const relatedCount = message.trace?.relatedEvidence?.length ?? 0;
             const citations = annotatedCitations.slice(
               citationOffset,
-              citationOffset + message.citations.length,
+              citationOffset + activeCount,
             );
-            citationOffset += message.citations.length;
-            return { ...message, citations };
+            const relatedEvidence = annotatedCitations
+              .slice(
+                citationOffset + activeCount,
+                citationOffset + activeCount + relatedCount,
+              )
+              .map(({ index, ...citation }) => ({
+                ...citation,
+                rank: index,
+                reason: message.trace?.relatedEvidence?.find(
+                  (item) => item.rank === index,
+                )?.reason ?? "retrieved_not_cited" as const,
+              }));
+            citationOffset += activeCount + relatedCount;
+            return {
+              ...message,
+              citations,
+              trace: message.trace
+                ? { ...message.trace, relatedEvidence }
+                : message.trace,
+            };
           }),
         };
       } catch (error) {
@@ -446,28 +474,6 @@ export function createProductionChatService(
           mode: "deterministic" as const,
         };
       }
-      const agentExecution = isRetrievalRoute(decision.route)
-        ? appendValidationToolTrace(
-            retrieval.agentExecution,
-            knowledgeBundleIds,
-            answerValidation,
-          )
-        : retrieval.agentExecution;
-      const finalAdaptiveRetry = adaptiveRetry
-        ? {
-            ...adaptiveRetry,
-            ...(answerValidation
-              ? { validationStatus: answerValidation.status }
-              : {}),
-            ...(answerValidation?.status === "fail" &&
-            adaptiveRetry.outcome === "applied"
-              ? {
-                  fallbackUsed: true,
-                  outcome: "validation_failed" as const,
-                }
-              : {}),
-          }
-        : undefined;
       const persistedEvidenceSufficiency = classifyEvidenceSufficiency(
         persistedRetrieval,
         decision,
@@ -480,8 +486,7 @@ export function createProductionChatService(
       const persistedAssistantTrace = {
         ...traceWithoutCrossBundleConflict,
         approvedOkfAvailable: persistedRetrieval.approvedOkfAvailable,
-        evidenceSufficiency: persistedEvidenceSufficiency,
-        finalEvidenceStatus: resolveEvidenceStatus(persistedRetrieval),
+        retrievalSufficiency: persistedEvidenceSufficiency,
         ragInvocationReason: resolveRagInvocationReason(
           persistedRetrieval,
           decision,
@@ -502,19 +507,118 @@ export function createProductionChatService(
           effectiveQueryUnderstanding.assumptions,
         ),
       };
-      const entityCandidates =
+      const proposedEntityCandidates =
         answerValidation?.status === "pass" &&
         disclosedAnswer.mode === "llm" &&
         disclosedAnswer.outcome === "answered"
           ? disclosedAnswer.entityCandidates
           : undefined;
+      let finalAnswer = disclosedAnswer;
+      let finalizedTurn = finalizeChatTurn({
+        citations: persistedRetrieval.citations,
+        content: finalAnswer.content,
+        entityCandidates: proposedEntityCandidates,
+        outcome: finalAnswer.outcome,
+        retrievalError: persistedRetrieval.retrievalError,
+      });
+      let answerProjectionFallback = answerValidation?.status === "fail"
+        ? { reasonCodes: [...answerValidation.violations] }
+        : undefined;
+      if (!retrieval.metadataClarification && !unresolvedVagueFollowUp) {
+        const finalProjectionValidation = validateAnswer({
+          answerOutcome: finalAnswer.outcome,
+          answerContent: finalizedTurn.content,
+          availableCitations: persistedRetrieval.citations,
+          citations: finalizedTurn.citations,
+          retrievalError: persistedRetrieval.retrievalError,
+          route: decision.route,
+          trace: persistedAssistantTrace,
+        });
+        if (
+          finalProjectionValidation.status === "fail" &&
+          finalAnswer.mode === "llm" &&
+          finalAnswer.outcome === "answered" &&
+          isRetrievalRoute(decision.route)
+        ) {
+          answerProjectionFallback = {
+            reasonCodes: Array.from(new Set([
+              ...(answerProjectionFallback?.reasonCodes ?? []),
+              ...finalProjectionValidation.violations,
+            ])),
+          };
+          finalAnswer = {
+            ...finalAnswer,
+            content: discloseChatAssumptions(
+              buildRetrievalAnswer(decision.route, persistedRetrieval),
+              effectiveQueryUnderstanding.assumptions,
+            ),
+            mode: "deterministic" as const,
+            entityCandidates: undefined,
+          };
+          finalizedTurn = finalizeChatTurn({
+            citations: persistedRetrieval.citations,
+            content: finalAnswer.content,
+            outcome: finalAnswer.outcome,
+            retrievalError: persistedRetrieval.retrievalError,
+          });
+          const fallbackValidation = validateAnswer({
+            answerOutcome: finalAnswer.outcome,
+            answerContent: finalizedTurn.content,
+            availableCitations: persistedRetrieval.citations,
+            citations: finalizedTurn.citations,
+            retrievalError: persistedRetrieval.retrievalError,
+            route: decision.route,
+            trace: persistedAssistantTrace,
+          });
+          if (fallbackValidation.status === "fail") {
+            throw new Error("deterministic_answer_projection_invalid");
+          }
+          answerValidation = fallbackValidation;
+        } else {
+          answerValidation = finalProjectionValidation;
+        }
+      }
+      const agentExecution = isRetrievalRoute(decision.route)
+        ? appendValidationToolTrace(
+            persistedRetrieval.agentExecution,
+            knowledgeBundleIds,
+            answerValidation,
+          )
+        : persistedRetrieval.agentExecution;
+      const finalAdaptiveRetry = adaptiveRetry
+        ? {
+            ...adaptiveRetry,
+            ...(answerValidation
+              ? { validationStatus: answerValidation.status }
+              : {}),
+            ...(answerValidation?.status === "fail" &&
+            adaptiveRetry.outcome === "applied"
+              ? {
+                  fallbackUsed: true,
+                  outcome: "validation_failed" as const,
+                }
+              : {}),
+          }
+        : undefined;
+      const finalTrace = {
+        ...persistedAssistantTrace,
+        citationProjection: finalizedTurn.citationProjection,
+        evidenceSufficiency: retrieval.metadataClarification
+          ? persistedEvidenceSufficiency
+          : finalizedTurn.finalSufficiency,
+        finalEvidenceStatus: retrieval.metadataClarification
+          ? resolveEvidenceStatus(persistedRetrieval)
+          : finalizedTurn.finalEvidenceStatus,
+        finalizationVersion: "answer-citations-v2" as const,
+        relatedEvidence: finalizedTurn.relatedEvidence,
+      };
       const knowledgeGap: KnowledgeGapDraft | undefined =
-        disclosedAnswer.outcome === "insufficient_evidence" &&
+        finalAnswer.outcome === "insufficient_evidence" &&
         isRetrievalRoute(decision.route)
           ? {
-              finalEvidenceStatus: resolveEvidenceStatus(persistedRetrieval),
+              finalEvidenceStatus: finalizedTurn.finalEvidenceStatus,
               question: content,
-              reason: persistedRetrieval.citations.length === 0
+              reason: finalizedTurn.relatedEvidence.length === 0
                 ? "no_matching_evidence"
                 : "related_evidence_not_answering",
               retrievalQuery,
@@ -527,21 +631,24 @@ export function createProductionChatService(
           : undefined;
 
       return repository.appendUserMessageAndAssistantReply({
-        assistantContent: disclosedAnswer.content,
+        assistantContent: finalizedTurn.content,
         assistantTrace: {
-          ...persistedAssistantTrace,
+          ...finalTrace,
           ...(finalAdaptiveRetry ? { adaptiveRetry: finalAdaptiveRetry } : {}),
           ...(agentExecution ? { agentExecution } : {}),
-          answerMode: disclosedAnswer.mode,
-          answerOutcome: disclosedAnswer.outcome,
+          answerMode: finalAnswer.mode,
+          answerOutcome: finalAnswer.outcome,
+          ...(answerProjectionFallback ? { answerProjectionFallback } : {}),
           answerEvidenceProfile: buildAnswerEvidenceProfile({
-            citations: persistedRetrieval.citations,
-            trace: persistedAssistantTrace,
+            citations: finalizedTurn.citations,
+            trace: finalTrace,
           }),
-          ...(entityCandidates?.length ? { entityCandidates } : {}),
+          ...(finalizedTurn.entityCandidates?.length
+            ? { entityCandidates: finalizedTurn.entityCandidates }
+            : {}),
           ...(answerValidation ? { answerValidation } : {}),
         },
-        citations: persistedRetrieval.citations,
+        citations: finalizedTurn.citations,
         content,
         context,
         knowledgeBundleIds,
@@ -552,6 +659,38 @@ export function createProductionChatService(
         sessionId,
       });
     },
+  };
+}
+
+function projectMessageEvidenceForDisplay(message: ChatMessage): ChatMessage {
+  if (
+    message.role !== "assistant" ||
+    message.trace?.finalizationVersion === "answer-citations-v2"
+  ) {
+    return message;
+  }
+  const projection = finalizeChatTurn({
+    citations: message.citations,
+    content: message.content,
+    entityCandidates: message.trace?.entityCandidates,
+    outcome: message.trace?.answerOutcome,
+  });
+  return {
+    ...message,
+    citations: projection.citations,
+    content: projection.content,
+    trace: message.trace
+      ? {
+          ...message.trace,
+          citationProjection: projection.citationProjection,
+          evidenceSufficiency: projection.finalSufficiency,
+          finalEvidenceStatus: projection.finalEvidenceStatus,
+          relatedEvidence: projection.relatedEvidence,
+          ...(projection.entityCandidates
+            ? { entityCandidates: projection.entityCandidates }
+            : { entityCandidates: undefined }),
+        }
+      : message.trace,
   };
 }
 

@@ -29,6 +29,11 @@ export type ChatCitation = {
   text: string;
 };
 
+export type ChatRelatedEvidence = Omit<ChatCitation, "index"> & {
+  rank: number;
+  reason: "related_not_answering" | "retrieved_not_cited";
+};
+
 export type ChatMessage = {
   citations: ChatCitation[];
   content: string;

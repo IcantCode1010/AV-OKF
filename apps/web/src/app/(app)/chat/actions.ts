@@ -81,19 +81,36 @@ export async function updateChatKnowledgeSourcesAction(formData: FormData) {
 
 export async function promoteChatEntityCandidateAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
-  const result = await promoteChatEntityCandidate({
-    candidateId: getFormString(formData, "candidateId"),
-    context,
-    messageId: getFormString(formData, "messageId"),
-  });
+  const sessionId = getFormString(formData, "sessionId");
+  let result;
+  try {
+    result = await promoteChatEntityCandidate({
+      candidateId: getFormString(formData, "candidateId"),
+      context,
+      messageId: getFormString(formData, "messageId"),
+    });
+  } catch (error) {
+    if (isSafeEntityPromotionError(error)) {
+      redirect(`/chat/${sessionId}?entityError=${encodeURIComponent(error.message)}`);
+    }
+    throw error;
+  }
 
-  revalidatePath(`/chat/${getFormString(formData, "sessionId")}`);
+  revalidatePath(`/chat/${sessionId}`);
   revalidatePath(`/documents/${result.documentId}`);
   redirect(
     `/documents/${result.documentId}?panel=topics&topic=${result.topicId}&entityCandidate=${
       result.created ? "created" : "existing"
     }`,
   );
+}
+
+function isSafeEntityPromotionError(error: unknown): error is Error {
+  return error instanceof Error && [
+    "chat_entity_candidate_not_found",
+    "chat_entity_candidate_source_unavailable",
+    "chat_entity_identity_collision",
+  ].includes(error.message);
 }
 
 function parseMetadataSelection(

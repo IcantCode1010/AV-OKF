@@ -1,5 +1,5 @@
-import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation } from "./chat-types.ts";
@@ -108,6 +108,19 @@ export async function promoteChatEntityCandidate(
   const topicId = buildEntityTopicId(bundle.id, candidate.name);
   try {
     const created = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(2147483021, hashtext(${`${input.context.workspaceId}:${bundle.id}:${topicId}`}))`;
+      const existingById = await tx.topicRecord.findUnique({
+        where: { id: topicId },
+      });
+      if (existingById) {
+        assertMatchingEntityIdentity({
+          bundleId: bundle.id,
+          name: candidate.name,
+          topic: existingById,
+          workspaceId: input.context.workspaceId,
+        });
+        return { created: false, topic: existingById };
+      }
       const concurrent = await tx.topicRecord.findFirst({
         where: {
           knowledgeBundleId: bundle.id,
@@ -173,6 +186,22 @@ export async function promoteChatEntityCandidate(
     };
   } catch (error) {
     if (isUniqueConstraintError(error)) {
+      const concurrentById = await db.topicRecord.findUnique({
+        where: { id: topicId },
+      });
+      if (concurrentById) {
+        assertMatchingEntityIdentity({
+          bundleId: bundle.id,
+          name: candidate.name,
+          topic: concurrentById,
+          workspaceId: input.context.workspaceId,
+        });
+        return {
+          created: false,
+          documentId: concurrentById.documentId,
+          topicId: concurrentById.id,
+        };
+      }
       const concurrent = await findExistingEntity({
         bundleId: bundle.id,
         db,
@@ -300,8 +329,38 @@ export function buildEntityTopicId(bundleId: string, name: string) {
     .slice(0, 24)}`;
 }
 
+export function assertMatchingEntityIdentity(input: {
+  bundleId: string;
+  name: string;
+  topic: {
+    enrichedTitle?: string | null;
+    knowledgeBundleId: string;
+    title: string;
+    topicType: string;
+    workspaceId: string;
+  };
+  workspaceId: string;
+}) {
+  const expectedName = normalizeEntityName(input.name);
+  const names = [input.topic.title, input.topic.enrichedTitle]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeEntityName);
+  if (
+    input.topic.workspaceId !== input.workspaceId ||
+    input.topic.knowledgeBundleId !== input.bundleId ||
+    input.topic.topicType !== "entity" ||
+    !names.includes(expectedName)
+  ) {
+    throw new Error("chat_entity_identity_collision");
+  }
+}
+
+function normalizeEntityName(name: string) {
+  return name.normalize("NFKC").trim().toLocaleLowerCase();
+}
+
 function isUniqueConstraintError(value: unknown) {
-  return isRecord(value) && value.code === "P2002";
+  return value instanceof Prisma.PrismaClientKnownRequestError && value.code === "P2002";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

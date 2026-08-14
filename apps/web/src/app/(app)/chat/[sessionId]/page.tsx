@@ -15,14 +15,17 @@ export const dynamic = "force-dynamic";
 
 export default async function ChatSessionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ entityError?: string }>;
 }) {
   if (!isChatAvailable()) {
     notFound();
   }
 
   const { sessionId } = await params;
+  const { entityError } = await searchParams;
   const result = await getChatSessionWithMessages(sessionId);
 
   if (!result) {
@@ -64,6 +67,11 @@ export default async function ChatSessionPage({
             />
           </ChatSidePanelSheet>
         </div>
+        {entityError ? (
+          <div className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            {entityPromotionErrorMessage(entityError)}
+          </div>
+        ) : null}
 
         <ChatConversationPanel
           availableBundles={availableBundles.map((bundle) => ({
@@ -85,4 +93,14 @@ export default async function ChatSessionPage({
       </aside>
     </div>
   );
+}
+
+function entityPromotionErrorMessage(code: string) {
+  if (code === "chat_entity_identity_collision") {
+    return "This entity conflicts with an existing knowledge record and was not added.";
+  }
+  if (code === "chat_entity_candidate_source_unavailable") {
+    return "The supporting source is no longer available, so this entity cannot be added.";
+  }
+  return "This entity suggestion is no longer available. Refresh the conversation and try again.";
 }
