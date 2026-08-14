@@ -131,10 +131,21 @@ export function getFrontmatterRelations(
     const target = asString(entry.target);
     if (!relation || !target) return [];
     return [{
+      ...(
+        entry.av_okf_approval_mode === "automated" ||
+          entry.av_okf_approval_mode === "human"
+          ? { approvalMode: entry.av_okf_approval_mode }
+          : {}
+      ),
       reason: asString(entry.reason) ?? "",
       relation,
       target,
       targetType: asString(entry.target_type),
+      ...(
+        typeof entry.verification_confidence === "number"
+          ? { verificationConfidence: entry.verification_confidence }
+          : {}
+      ),
     }];
   });
 }

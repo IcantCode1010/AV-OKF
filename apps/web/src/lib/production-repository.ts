@@ -64,6 +64,21 @@ export type ProductionDocumentRepository = ReturnType<
   typeof createPostgresDocumentRepository
 >;
 
+export function resolveKnowledgeAuthoringAutomationSettings(schema: unknown) {
+  const profile = schema as {
+    automation?: {
+      autoApproveEnrichedTopics?: boolean;
+      autoApproveVerifiedRelations?: boolean;
+    };
+  };
+  return {
+    automaticRelationApprovalEnabled:
+      profile.automation?.autoApproveVerifiedRelations === true,
+    automaticTopicApprovalEnabled:
+      profile.automation?.autoApproveEnrichedTopics === true,
+  };
+}
+
 type DbCustomProperty = {
   key: string;
   value: string;
@@ -1060,9 +1075,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       if (!document.knowledgeBundle.activeProfileVersion) {
         throw new Error("knowledge_bundle_active_profile_missing");
       }
-      const profile = document.knowledgeBundle.activeProfileVersion.schema as {
-        automation?: { autoApproveEnrichedTopics?: boolean };
-      };
+      const automation = resolveKnowledgeAuthoringAutomationSettings(
+        document.knowledgeBundle.activeProfileVersion.schema,
+      );
       const member = await db.workspaceMember.findFirst({
         orderBy: { createdAt: "asc" },
         select: { userId: true },
@@ -1070,8 +1085,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return db.knowledgeAuthoringRun.create({
         data: {
-          automaticTopicApprovalEnabled:
-            profile.automation?.autoApproveEnrichedTopics === true,
+          ...automation,
           documentId: input.documentId,
           knowledgeBundleId: document.knowledgeBundleId,
           profileVersion: document.knowledgeBundle.activeProfileVersion.version,

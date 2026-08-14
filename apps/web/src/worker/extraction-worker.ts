@@ -61,6 +61,10 @@ import {
   runOkfRelationVerificationJob,
 } from "../lib/okf-relation-verification.ts";
 import {
+  attemptAutomaticRelationApproval,
+  reconcileAutomaticRelationApprovals,
+} from "../lib/okf-relation-approval.ts";
+import {
   createOkfRelationVerificationQueue,
   type OkfRelationVerificationJobPayload,
 } from "../lib/okf-relation-verification-queue.ts";
@@ -115,6 +119,7 @@ async function main() {
   await reconcileDocumentDeletionJobs(enqueueDocumentDeletionJob);
   await reconcileKnowledgeBundleDeletionJobs(enqueueKnowledgeBundleDeletionJob);
   await reconcileOkfRelationVerificationJobs(relationVerificationQueue);
+  await reconcileAutomaticRelationApprovals();
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
@@ -206,7 +211,15 @@ async function main() {
 
   relationVerificationWorker = new Worker<OkfRelationVerificationJobPayload>(
     "okf-relation-verification",
-    async (job) => runOkfRelationVerificationJob(job.data, { attemptNumber: job.attemptsMade + 1 }),
+    async (job) => {
+      const result = await runOkfRelationVerificationJob(job.data, {
+        attemptNumber: job.attemptsMade + 1,
+      });
+      if (result?.status === "confirmed") {
+        await attemptAutomaticRelationApproval(job.data.candidateId);
+      }
+      return result;
+    },
     { concurrency: 1, connection: { url: redisUrl } },
   );
 

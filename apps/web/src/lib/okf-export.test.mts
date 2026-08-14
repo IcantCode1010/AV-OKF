@@ -10,6 +10,7 @@ import {
   exportTopicToKnowledge,
 } from "./okf-export.ts";
 import {
+  getFrontmatterRelations,
   getFrontmatterSources,
   getFrontmatterVerificationEvents,
   parseOkfMarkdown,
@@ -157,6 +158,33 @@ test("typed relations are emitted in frontmatter and as Markdown links", () => {
   }).content);
   assert.equal(Array.isArray(parsed.frontmatter.relations), true);
   assert.match(parsed.body, /\[references\]\(dispatch\.md\)/);
+});
+
+test("automation-verified relations emit portable provenance and graph-readable target types", () => {
+  const parsed = parseOkfMarkdown(buildOkfSystemTopic({
+    document: exportDocument,
+    knowledgeVersion: "0.2.0",
+    topic: {
+      ...approvedTopic,
+      relations: [{
+        approvalMode: "automated",
+        reason: "Evidence: Direct reference. Quote: \"Use the dispatch checklist.\"",
+        relation: "references",
+        target: "dispatch.md",
+        targetType: "procedure",
+        verificationConfidence: 0.94,
+      }],
+    },
+  }).content);
+
+  assert.deepEqual(getFrontmatterRelations(parsed.frontmatter), [{
+    approvalMode: "automated",
+    reason: "Evidence: Direct reference. Quote: \"Use the dispatch checklist.\"",
+    relation: "references",
+    target: "dispatch.md",
+    targetType: "procedure",
+    verificationConfidence: 0.94,
+  }]);
 });
 
 test("export writes topic, source reference, v0.2 index, and date-grouped log idempotently", async () => {

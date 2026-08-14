@@ -57,14 +57,21 @@ target_type matches the resolved target file's frontmatter type
 
 Relation targets are internal bundle links for MVP. See [Link Resolution](link-resolution.md) for the exact Markdown and path rules.
 
-## Reviewed Discovery
+## Deterministic Discovery And Publication
 
-Relation discovery is a review aid, not a graph-writing agent. There are two staged inputs:
+Relation discovery begins with deterministic candidate generation. There are two staged inputs:
 
 1. Bundle discovery compares approved exported concepts with deterministic signals.
 2. Assisted authoring may send up to 50 deterministically filtered draft-topic pairs through the same verifier one pair at a time, but stores confirmed results only in `KnowledgeAuthoringRun.relationSuggestions`.
 
-Neither path writes OKF frontmatter. Authoring suggestions require a user to promote them to pending review, and every pending candidate requires a second explicit approval before the source topic is updated and re-exported. Automatic topic approval does not promote or approve relations.
+Manual mode remains review-first: authoring suggestions require a user to
+promote them, and confirmed candidates require explicit approval before the
+source topic is re-exported. A bundle administrator may separately enable
+`automation.autoApproveVerifiedRelations`. That setting is disabled by default
+and snapshotted on each authoring run. After both endpoint topics are approved
+and exported, the worker promotes and re-verifies the candidate, then publishes
+it without human approval only when confidence is at least 0.90 and every
+application safety check passes.
 
 Candidate quality is profile-scoped. Basic English function words remain code-owned; Generic and Aviation discovery stopwords live in the versioned bundle profile. A title/description signal requires at least two meaningful shared terms. The UI records the actual sorted shared terms and tags, not only category names. Concepts are sorted by bundle-relative path before pairing, so rerunning discovery produces stable proposed direction and ordering.
 
@@ -79,7 +86,16 @@ Reverse `references` and `supports` edges remain possible when independently jus
 
 V3 inserts an evidence-verification boundary before human review. Each deterministic candidate is queued independently. A structured provider response must select only the active profile vocabulary and include an exact quote from the selected relation source. The application canonicalizes extraction whitespace but does not case-fold, remove punctuation, or fuzzy-match evidence. Prompt-like text inside a concept remains untrusted data, and the verifier has no tools or graph-writing authority. Content hashes bind the result to both concept versions.
 
-Only `confirmed` candidates enter the reviewer list or pending-edge graph preflight. `queued`, `running`, `filtered`, and `failed` candidates never enter frontmatter, the explorer graph, or agent traversal. A direction change clears confirmation and queues another one-pair verification because the evidence must come from the newly selected source. Final approval rechecks content hashes, vocabulary, quote, target/path safety, and graph integrity before exporting the rationale and exact quote in the portable `reason` field.
+Only `confirmed` candidates are eligible for review or automatic publication.
+`queued`, `running`, `filtered`, and `failed` candidates never enter
+frontmatter, the explorer graph, or agent traversal. A direction change clears
+confirmation and queues another one-pair verification because evidence must
+come from the newly selected source. Both human and automatic publication
+recheck content hashes, vocabulary, the exact quote, target/path safety, and
+graph integrity. Automatic publication additionally requires 0.90 confidence.
+The exported relation retains the rationale and quote in `reason`, records
+`av_okf_approval_mode: automated`, and remains removable by a user. Automation
+cannot retract, archive, delete, or otherwise change lifecycle state.
 
 The rollout removes old `pending` candidates only. Human-approved and human-rejected history and every OKF Markdown file remain unchanged. The first configured-provider checkpoint requires at least 80% precision on a representative human-reviewed sample; approximately 90% is required before considering reduced review, semantic expansion, or stronger operational-relation trust.
 

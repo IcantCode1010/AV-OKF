@@ -22,6 +22,7 @@ export type KnowledgeProfileSchema = {
   };
   automation: {
     autoApproveEnrichedTopics: boolean;
+    autoApproveVerifiedRelations: boolean;
   };
   clarificationFields: string[];
   fields: Record<string, { required?: boolean; type: KnowledgeFieldType }>;
@@ -127,7 +128,10 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   okfVersion: "0.2",
   agent: { boundedAdaptiveRetryEnabled: false },
-  automation: { autoApproveEnrichedTopics: false },
+  automation: {
+    autoApproveEnrichedTopics: false,
+    autoApproveVerifiedRelations: false,
+  },
   clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: BASE_FIELDS,
   id: "generic",
@@ -205,6 +209,8 @@ export function normalizeKnowledgeProfile(
   normalized.automation = {
     autoApproveEnrichedTopics:
       normalized.automation?.autoApproveEnrichedTopics === true,
+    autoApproveVerifiedRelations:
+      normalized.automation?.autoApproveVerifiedRelations === true,
   };
   if (!Array.isArray(normalized.clarificationFields)) {
     normalized.clarificationFields = ["generic", "aviation"].includes(normalized.id)
@@ -240,7 +246,10 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
   if (typeof profile.agent?.boundedAdaptiveRetryEnabled !== "boolean") {
     errors.push("knowledge_profile_agent_invalid");
   }
-  if (typeof profile.automation?.autoApproveEnrichedTopics !== "boolean") {
+  if (
+    typeof profile.automation?.autoApproveEnrichedTopics !== "boolean" ||
+    typeof profile.automation?.autoApproveVerifiedRelations !== "boolean"
+  ) {
     errors.push("knowledge_profile_automation_invalid");
   }
   if (profile.fields.type?.required !== true || profile.fields.type.type !== "string") {

@@ -33,6 +33,7 @@ export type OkfExplorerNode = {
 };
 
 export type OkfExplorerEdge = {
+  approvalMode?: "automated" | "human" | null;
   id: string;
   reason: string;
   relation: string;
@@ -41,6 +42,7 @@ export type OkfExplorerEdge = {
 };
 
 export type OkfExplorerBacklink = {
+  approvalMode?: "automated" | "human" | null;
   reason: string;
   relation: string;
   sourceFile: string;
@@ -252,6 +254,7 @@ export async function buildOkfExplorerSnapshot(
 
       const target = resolveRelationPath(file.filename, relation.target)!;
       edges.push({
+        ...(relation.approvalMode ? { approvalMode: relation.approvalMode } : {}),
         id: `${file.filename}::${relationIndex}::${target}`,
         reason: relation.reason.trim(),
         relation: relation.relation,
@@ -463,6 +466,7 @@ function getBacklinks(
   return edges
     .filter((edge) => edge.target === filename)
     .map((edge) => ({
+      ...(edge.approvalMode ? { approvalMode: edge.approvalMode } : {}),
       reason: edge.reason,
       relation: edge.relation,
       sourceFile: edge.source,

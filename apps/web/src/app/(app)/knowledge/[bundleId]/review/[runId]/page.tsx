@@ -2,7 +2,8 @@ import Link from "next/link";
 import { ArrowLeft, CheckCircle2, CircleAlert, Clock3 } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { confirmBulkTopicApprovalAction, retryBulkTopicApprovalAction } from "@/app/(app)/knowledge/bulk-actions";
+import { retryBulkTopicApprovalAction } from "@/app/(app)/knowledge/bulk-actions";
+import { BulkRunConfirmationPanel } from "@/components/bulk-run-confirmation-panel";
 import { BulkRunPoller } from "@/components/bulk-run-poller";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Badge } from "@/components/ui/badge";
@@ -48,16 +49,12 @@ export default async function BulkTopicApprovalRunPage({ params, searchParams }:
       {query.error ? <div className="border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100">{query.error}</div> : null}
 
       {run.status === "awaiting_confirmation" ? (
-        <div className="border border-amber-400/30 bg-amber-400/5 p-4">
-          <h2 className="font-medium">Confirm approval and export</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Enrichment is already complete. The estimate covers only the future semantic lookup embeddings. Each topic succeeds or fails independently.</p>
-          {sharedPagePairCount > 0 ? (
-            <p className="mt-3 border border-sky-400/30 bg-sky-400/10 p-3 text-sm text-sky-100">
-              {sharedPagePairCount} selected topic {sharedPagePairCount === 1 ? "pair shares" : "pairs share"} source pages. Shared provenance is allowed for this manually reviewed batch; each topic will remain a separate article and citation target.
-            </p>
-          ) : null}
-          <form action={confirmBulkTopicApprovalAction} className="mt-4"><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Queueing batch...">Confirm and run batch</PendingSubmitButton></form>
-        </div>
+        <BulkRunConfirmationPanel
+          bundleId={bundleId}
+          itemCount={run.items.length}
+          runId={run.id}
+          sharedPagePairCount={sharedPagePairCount}
+        />
       ) : null}
 
       <div className="space-y-3">

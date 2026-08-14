@@ -54,6 +54,11 @@ PDF page opening, graph editing, generic Markdown links as graph edges, clusteri
 
 ## Relation Discovery Boundary
 
-The graph currently renders only reviewed typed relations already present in OKF frontmatter. A separate reviewed relation-discovery slice will propose candidate edges from deterministic bundle signals and optional workspace-LLM classification, but candidates remain outside the trusted graph until a reviewer approves them and the source concept is re-exported successfully.
+The graph renders only typed relations present in active OKF frontmatter.
+Manual relations enter after review and re-export. Bundles that explicitly
+enable automatic verified relations may also publish 90%+ exact-quote verifier
+results after the same deterministic graph preflight. Those edges carry
+automation provenance and are labeled in the reader. Candidates and failed or
+filtered verifier results remain outside the graph.
 
 The Knowledge Explorer may host that review workflow, but it must not become an unrestricted graph editor. Exported `relations` frontmatter remains the source of truth, incoming backlinks remain derived, and pending or rejected candidates must never influence agent graph traversal.

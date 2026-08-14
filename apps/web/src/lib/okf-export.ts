@@ -126,7 +126,18 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   addCustomMetadata(frontmatterFields, input.topic.okfMetadata);
 
   if (relations.length > 0) {
-    frontmatterFields.relations = relations;
+    frontmatterFields.relations = relations.map((relation) => ({
+      relation: relation.relation,
+      target: relation.target,
+      ...(relation.targetType ? { target_type: relation.targetType } : {}),
+      reason: relation.reason,
+      ...(relation.approvalMode
+        ? { av_okf_approval_mode: relation.approvalMode }
+        : {}),
+      ...(typeof relation.verificationConfidence === "number"
+        ? { verification_confidence: relation.verificationConfidence }
+        : {}),
+    }));
   }
 
   if (input.topic.coveredRagChunkIds && input.topic.coveredRagChunkIds.length > 0) {

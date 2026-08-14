@@ -70,6 +70,9 @@ test("review list opens on actionable topics and keeps approved topics in a sepa
   assert.match(markup, /Topic needing individual review/);
   assert.doesNotMatch(markup, /Approved emergency procedure/);
   assert.match(markup, /type="hidden" name="documentId" value="document-1"/);
+  assert.match(markup, /Step 1 of 2/);
+  assert.match(markup, /Continue to confirmation/);
+  assert.match(markup, /Nothing is approved or exported until Step 2/);
 });
 
 test("review rows disclose additional source context without presenting it as a blocker", () => {

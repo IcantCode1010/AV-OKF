@@ -41,6 +41,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { selectNavigationKnowledgeBundle } from "@/lib/active-bundle-navigation";
 import { cn } from "@/lib/utils";
 
 type RecentChat = { id: string; title: string };
@@ -86,16 +87,21 @@ export function AppShell({
   workspace: Workspace;
 }) {
   const pathname = usePathname();
+  const navigationBundle = selectNavigationKnowledgeBundle(
+    bundles,
+    activeBundle,
+    pathname,
+  );
   const edgeToEdge = pathname.startsWith("/chat/") ||
     /^\/knowledge\/[^/]+\/(browse|graph|activity)/.test(pathname);
 
   return (
     <div className="min-h-dvh bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-white/10 bg-[#17191d] text-zinc-100 lg:block">
-        <SidebarContent activeBundle={activeBundle} bundles={bundles} recentChats={recentChats} workspace={workspace} />
+        <SidebarContent activeBundle={navigationBundle} bundles={bundles} recentChats={recentChats} workspace={workspace} />
       </aside>
       <div className="min-w-0 lg:pl-64">
-        <TopBar activeBundle={activeBundle} pathname={pathname} user={user} workspace={workspace} bundles={bundles} recentChats={recentChats} />
+        <TopBar activeBundle={navigationBundle} pathname={pathname} user={user} workspace={workspace} bundles={bundles} recentChats={recentChats} />
         <main className={cn("flex min-w-0 w-full max-w-none flex-col", edgeToEdge ? "h-[calc(100dvh-3.25rem)] overflow-hidden" : "gap-6 px-4 py-6 sm:px-6 lg:px-8")}>{children}</main>
       </div>
     </div>
@@ -204,6 +210,7 @@ function titleForPathname(pathname: string) {
   if (/\/review/.test(pathname)) return "Review";
   if (/\/relations/.test(pathname)) return "Relations";
   if (/\/activity/.test(pathname)) return "Activity";
+  if (/\/knowledge\/[^/]+\/topic/.test(pathname)) return "Approved concept";
   if (/\/knowledge\/[^/]+\/settings/.test(pathname)) return "Bundle settings";
   if (pathname === "/knowledge") return "Knowledge bundles";
   if (pathname === "/settings") return "Settings";

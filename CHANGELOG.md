@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Clarified the manual bulk-approval handoff as an explicit two-step flow.
+  Topic selection now continues to a clearly labeled confirmation step, and
+  the confirmation action remains sticky above long topic lists while stating
+  that approval has not started. Bundle deep links also drive the displayed
+  shell context, preventing a review run from being labeled as another active
+  bundle.
+- Added bundle-scoped automatic verified relations during document authoring.
+  When enabled through a versioned bundle profile, relation classification
+  compares new topics with approved concepts in the same bundle, verifies each
+  deterministic candidate against an exact source quote, and automatically
+  publishes only results at 90% confidence or higher after vocabulary, path,
+  target-type, duplicate, cycle, and supersession checks. The setting defaults
+  off, is snapshotted per authoring run, resumes after worker restarts, and
+  grants no deletion or lifecycle authority.
+- Added portable relation provenance and corrected v0.2 relation serialization
+  to emit `target_type`, `av_okf_approval_mode`, and verifier confidence.
+  Automation-created graph edges are visibly labeled in the concept reader.
+- Fixed extraction-triggered authoring runs so they snapshot both bundle
+  automation settings. The extraction repository previously copied automatic
+  topic approval but silently left automatic verified relations disabled.
+  Added fail-closed regression coverage for both settings.
+- Completed a real-provider Generic-bundle pilot with a 104-page equipment
+  manual. Processing discovered 31 topics, enriched 26, and automatically
+  approved/exported 17 without failures. The verifier assessed 50
+  deterministic relation pairs, rejected 49 as unsupported, blocked one
+  invalid exact quote, and published no graph edge. The result is recorded as
+  a safe hold for a related-document positive-control evaluation rather than a
+  reason to weaken evidence requirements.
+
 - Reorganized the application into a persistent bundle-centered workspace with
   an authenticated active-bundle cookie, grouped Use/Manage/Workspace
   navigation, system-aware light/dark themes, and compatibility redirects.

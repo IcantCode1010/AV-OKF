@@ -37,11 +37,12 @@
 - [x] Keep metadata changes reversible with original/proposed/applied values and actor-independent audit history.
 - [x] Pause high-cost enrichment runs for explicit confirmation.
 - [x] Restrict relation classification to deterministic candidate pairs and the active profile vocabulary.
-- [x] Stop at `ready_for_review` by default; allow bundle admins to opt into high-confidence-only automatic enriched-topic approval/export while keeping relation and lifecycle actions human-only.
+- [x] Stop at `ready_for_review` by default; allow bundle admins to opt into high-confidence-only automatic enriched-topic approval/export while keeping lifecycle actions human-only.
 - [x] Add a bundle-scoped review screen for selecting already-enriched topics and publishing them through a durable, sequential approval/export batch.
 - [x] Continue review-ready document processing directly into the bundle's bulk topic approval and export screen.
 - [ ] Pre-filter bulk review to the originating document when opened from Processing, with an explicit option to show every ready topic in the bundle.
 - [x] Add bundle-scoped automatic approval/export with profile snapshots, exact-page enrichment, persisted skip reasons, and distinct chat provenance.
+- [x] Add a separate bundle-scoped, default-off automatic verified-relation setting snapshotted per authoring run. Publish only exact-quote verifier results at 90% confidence or higher after shared graph preflight.
 - [ ] Evaluate automatic approval quality over real bundles before considering medium-confidence eligibility.
 - [ ] Consider a future per-row raw/enriched choice in bulk review; the current bulk workflow intentionally approves enriched content only while raw approval remains individual.
 - [ ] Add run-level token usage and provider cost reporting from provider response metadata.
@@ -85,7 +86,11 @@
 - [x] Human-review a 12-candidate Aviation dry-run sample and record acceptance, false-positive, missed-relation, and direction-correction findings.
 - [x] Add asynchronous one-pair LLM verification with exact source quotes, content hashes, append-only attempts, retry/reconciliation, and confirmed-only human review.
 - [x] Require direction changes to reverify evidence against the new source and revalidate verified evidence at approval/export time.
+- [x] Reconcile authoring suggestions after individual or bulk topic export so verified relations can be created automatically without entering the human review queue.
+- [x] Persist automation provenance in relation frontmatter and label automation-verified edges in the human explorer.
+- [x] Run a real-provider, non-aviation automatic-relation pilot in an isolated Generic bundle; all 50 proposed pairs failed closed and no unsupported edge was published.
 - [ ] Run the V3 configured-provider Docker evaluation and record whether a representative sample reaches the 80% internal precision checkpoint.
+- [ ] Add a related-document positive-control corpus with known explicit links; the first isolated equipment-manual pilot produced no confirmed edge, so precision and recall could not be measured.
 - [ ] Require approximately 90% precision before considering reduced review, bulk relation approval, semantic expansion, or stronger operational-relation trust.
 - [ ] Repeat the human review against a populated live Generic bundle; the current Generic coverage is deterministic fixture-only.
 - [ ] Tune profile stopwords and the source-page-proximity companion rule, then rerun the same evaluation before adding semantic candidates.

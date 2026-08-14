@@ -325,22 +325,44 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
   const topics = await db.topicRecord.findMany({
     orderBy: [{ pageStart: "asc" }, { id: "asc" }],
     where: {
-      documentId: input.documentId,
       knowledgeBundleId: input.knowledgeBundleId,
-      reviewStatus: { in: ["needs_review", "needs_cleanup"] },
+      OR: [
+        {
+          documentId: input.documentId,
+          reviewStatus: { in: ["needs_review", "needs_cleanup"] },
+        },
+        {
+          exportedFilePath: { not: null },
+          reviewStatus: "approved",
+        },
+      ],
       workspaceId: input.workspaceId,
     },
   });
+  const currentTopicIds = new Set(
+    topics
+      .filter((topic) => topic.documentId === input.documentId)
+      .map((topic) => topic.id),
+  );
   const concepts = topics.map((topic) => ({
     filePath: `topic:${topic.id}`,
     pages: topic.sourcePageNumbers,
-    sourceFile: input.documentId,
-    tags: [],
+    sourceFile: topic.documentId,
+    tags: getRelationTopicTags(topic.okfMetadata),
     terms: tokenizeRelationTerms(`${topic.title} ${topic.summary}`),
   }));
   const candidates = buildDeterministicRelationCandidates(concepts, {
     stopwords: bundle.profile.relationDiscovery.stopwords,
-  }).slice(0, 50);
+  })
+    .filter((candidate) => {
+      const sourceId = parseTopicReference(candidate.sourceFile);
+      const targetId = parseTopicReference(candidate.targetFile);
+      return Boolean(
+        (sourceId && currentTopicIds.has(sourceId)) ||
+          (targetId && currentTopicIds.has(targetId)),
+      );
+    })
+    .slice(0, 50);
   if (candidates.length === 0) {
     await stageAudit(input.runId, "relation_classification", "completed");
     return;
@@ -457,6 +479,8 @@ export async function createKnowledgeAuthoringRun(input: { context: AuthWorkspac
   return db.knowledgeAuthoringRun.create({
     data: {
       automaticTopicApprovalEnabled: bundle.profile.automation.autoApproveEnrichedTopics,
+      automaticRelationApprovalEnabled:
+        bundle.profile.automation.autoApproveVerifiedRelations,
       documentId: document.id,
       knowledgeBundleId: document.knowledgeBundleId,
       profileVersion: bundle.activeProfileVersion,
@@ -559,12 +583,26 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
     let promotedCandidate;
     if (existingCandidate) {
       promotedCandidate = await db.okfRelationCandidate.update({
-        data: { reason: suggestion.reason, signals, verificationStatus: "queued" },
+        data: {
+          authoringRunId: run.id,
+          automaticApprovalActor: run.requestedBy,
+          automaticApprovalError: null,
+          automaticApprovalRequested: run.automaticRelationApprovalEnabled,
+          reason: suggestion.reason,
+          signals,
+          verificationStatus:
+            existingCandidate.verificationStatus === "confirmed"
+              ? "confirmed"
+              : "queued",
+        },
         where: candidateKey,
       });
     } else {
       promotedCandidate = await db.okfRelationCandidate.create({
         data: {
+          authoringRunId: run.id,
+          automaticApprovalActor: run.requestedBy,
+          automaticApprovalRequested: run.automaticRelationApprovalEnabled,
           knowledgeBundleId: run.knowledgeBundleId,
           reason: suggestion.reason,
           relation: suggestion.relation,
@@ -576,14 +614,51 @@ export async function promoteAuthoringRelationSuggestions(input: { context: Auth
         },
       });
     }
-    await getOkfRelationVerificationQueue().enqueue({
-      candidateId: promotedCandidate.id,
-      knowledgeBundleId: run.knowledgeBundleId,
-      workspaceId: run.workspaceId,
-    });
+    if (promotedCandidate.verificationStatus !== "confirmed") {
+      await getOkfRelationVerificationQueue().enqueue({
+        candidateId: promotedCandidate.id,
+        knowledgeBundleId: run.knowledgeBundleId,
+        workspaceId: run.workspaceId,
+      });
+    } else if (promotedCandidate.automaticApprovalRequested) {
+      const { attemptAutomaticRelationApproval } = await import(
+        "./okf-relation-approval.ts"
+      );
+      await attemptAutomaticRelationApproval(promotedCandidate.id);
+    }
     promoted += 1;
   }
   return { knowledgeBundleId: run.knowledgeBundleId, promoted, skipped };
+}
+
+export async function reconcileAutomaticAuthoringRelationsForDocument(input: {
+  documentId: string;
+  workspaceId: string;
+}) {
+  const runs = await getPrisma().knowledgeAuthoringRun.findMany({
+    orderBy: { createdAt: "asc" },
+    where: {
+      automaticRelationApprovalEnabled: true,
+      documentId: input.documentId,
+      status: { in: ["ready_for_review", "completed"] },
+      workspaceId: input.workspaceId,
+    },
+  });
+  let promoted = 0;
+  let skipped = 0;
+  for (const run of runs) {
+    const result = await promoteAuthoringRelationSuggestions({
+      context: {
+        role: "member",
+        userId: run.requestedBy ?? "system",
+        workspaceId: run.workspaceId,
+      },
+      runId: run.id,
+    });
+    promoted += result.promoted;
+    skipped += result.skipped;
+  }
+  return { promoted, skipped };
 }
 
 export function normalizeAuthoringRelationSuggestions(value: unknown) {
@@ -603,6 +678,14 @@ export function normalizeAuthoringRelationSuggestions(value: unknown) {
 
 export function parseTopicReference(value: string) {
   return value.startsWith("topic:") && value.length > 6 ? value.slice(6) : null;
+}
+
+function getRelationTopicTags(value: unknown): string[] {
+  if (!value || typeof value !== "object" || !("tags" in value)) return [];
+  const tags = (value as { tags?: unknown }).tags;
+  return Array.isArray(tags)
+    ? tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
 }
 
 export async function undoAuthoringMetadata(input: { context: AuthWorkspaceContext; proposalId: string }) {

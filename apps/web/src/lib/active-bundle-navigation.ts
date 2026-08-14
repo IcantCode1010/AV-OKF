@@ -17,6 +17,22 @@ export function selectActiveKnowledgeBundle<T extends { id: string }>(
   return bundles.find((bundle) => bundle.id === requestedBundleId) ?? bundles[0] ?? null;
 }
 
+export function selectNavigationKnowledgeBundle<T extends { id: string }>(
+  bundles: T[],
+  activeBundle: T | null,
+  pathname: string,
+): T | null {
+  const routeBundleId = /^\/knowledge\/([^/]+)(?:\/|$)/.exec(pathname)?.[1];
+  if (!routeBundleId) return activeBundle;
+  let decodedBundleId: string;
+  try {
+    decodedBundleId = decodeURIComponent(routeBundleId);
+  } catch {
+    return activeBundle;
+  }
+  return bundles.find((bundle) => bundle.id === decodedBundleId) ?? activeBundle;
+}
+
 export function resolveBundleWorkspaceHref(bundleId: string, section: BundleWorkspaceSection): string {
   const encoded = encodeURIComponent(bundleId);
   if (section === "chat") return "/chat";

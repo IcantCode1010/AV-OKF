@@ -342,7 +342,10 @@ async function stageBundle(bundle: MigrationBundle) {
   await writeStageFile(stageRoot, "log.md", buildMigrationLog(bundle.name));
   const rawProfile = bundle.activeProfileVersion?.schema as unknown as KnowledgeProfileSchema | undefined;
   const profile = normalizeKnowledgeProfile(rawProfile ?? {
-    agent: { boundedAdaptiveRetryEnabled: false }, automation: { autoApproveEnrichedTopics: false },
+    agent: { boundedAdaptiveRetryEnabled: false }, automation: {
+      autoApproveEnrichedTopics: false,
+      autoApproveVerifiedRelations: false,
+    },
     clarificationFields: [], fields: { type: { required: true, type: "string" } },
     id: "generic", name: "Generic", okfVersion: "0.2", relationDiscovery: { stopwords: [] }, relations: [], types: {},
   });

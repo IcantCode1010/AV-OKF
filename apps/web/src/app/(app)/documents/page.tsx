@@ -172,12 +172,12 @@ export default async function DocumentsPage({
                 <Input
                   id="owner"
                   name="owner"
-                  placeholder="Maintenance Control"
+                  placeholder="Team or department"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="tags">Tags</Label>
-                <Input id="tags" name="tags" placeholder="737NG, AMM, ATA 24" />
+                <Input id="tags" name="tags" placeholder="operations, safety, handbook" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sourceType">Source type</Label>

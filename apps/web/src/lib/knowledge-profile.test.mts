@@ -17,6 +17,8 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.equal(generic.fields.type.required, true);
   assert.equal(generic.automation.autoApproveEnrichedTopics, false);
   assert.equal(aviation.automation.autoApproveEnrichedTopics, false);
+  assert.equal(generic.automation.autoApproveVerifiedRelations, false);
+  assert.equal(aviation.automation.autoApproveVerifiedRelations, false);
   assert.equal(generic.agent.boundedAdaptiveRetryEnabled, false);
   assert.equal(aviation.agent.boundedAdaptiveRetryEnabled, false);
   assert.equal(generic.fields.aircraft_family, undefined);
@@ -91,6 +93,11 @@ test("legacy built-in profiles gain safe defaults while legacy custom profiles f
   );
   assert.equal(
     normalizeKnowledgeProfile(custom as ReturnType<typeof getKnowledgeProfileTemplate>)
+      .automation.autoApproveVerifiedRelations,
+    false,
+  );
+  assert.equal(
+    normalizeKnowledgeProfile(custom as ReturnType<typeof getKnowledgeProfileTemplate>)
       .agent.boundedAdaptiveRetryEnabled,
     false,
   );
@@ -122,8 +129,11 @@ test("bundle automation is cloned per profile and does not leak between bundles"
   const first = getKnowledgeProfileTemplate("generic");
   const second = getKnowledgeProfileTemplate("generic");
   first.automation.autoApproveEnrichedTopics = true;
+  first.automation.autoApproveVerifiedRelations = true;
   assert.equal(first.automation.autoApproveEnrichedTopics, true);
+  assert.equal(first.automation.autoApproveVerifiedRelations, true);
   assert.equal(second.automation.autoApproveEnrichedTopics, false);
+  assert.equal(second.automation.autoApproveVerifiedRelations, false);
 });
 
 test("bounded adaptive retry is cloned per profile and does not leak between bundles", () => {

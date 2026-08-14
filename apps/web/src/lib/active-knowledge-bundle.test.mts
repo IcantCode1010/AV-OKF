@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveBundleWorkspaceHref, sectionForPathname, selectActiveKnowledgeBundle } from "./active-bundle-navigation.ts";
+import { resolveBundleWorkspaceHref, sectionForPathname, selectActiveKnowledgeBundle, selectNavigationKnowledgeBundle } from "./active-bundle-navigation.ts";
 
 const bundles = [
   { id: "bundle-a", name: "A" },
@@ -12,6 +12,22 @@ test("active bundle selection accepts only a bundle in the available workspace l
   assert.equal(selectActiveKnowledgeBundle(bundles, "bundle-b")?.id, "bundle-b");
   assert.equal(selectActiveKnowledgeBundle(bundles, "foreign")?.id, "bundle-a");
   assert.equal(selectActiveKnowledgeBundle([], "bundle-a"), null);
+});
+
+test("bundle routes use their own bundle for shell context without trusting unknown ids", () => {
+  const bundles = [{ id: "bundle-a" }, { id: "bundle-b" }];
+  assert.equal(
+    selectNavigationKnowledgeBundle(bundles, bundles[0]!, "/knowledge/bundle-b/review/run-1")?.id,
+    "bundle-b",
+  );
+  assert.equal(
+    selectNavigationKnowledgeBundle(bundles, bundles[0]!, "/knowledge/foreign/review")?.id,
+    "bundle-a",
+  );
+  assert.equal(
+    selectNavigationKnowledgeBundle(bundles, bundles[0]!, "/documents/doc-1")?.id,
+    "bundle-a",
+  );
 });
 
 test("bundle workspace destinations are fixed and bundle scoped", () => {

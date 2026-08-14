@@ -105,11 +105,15 @@ export default async function DocumentDetailPage({
     assigned ? Promise.resolve([]) : listKnowledgeBundles(context),
   ]);
   const visibleTopics = assigned ? topicRecords : [];
+  const reviewTopicCount = visibleTopics.filter(
+    (topic) => topic.reviewStatus === "needs_review",
+  ).length;
   const allowedRelations = currentBundle?.profile.relations ?? [];
   const processingState = buildDocumentProcessingState({
     authoringRun,
     bundleName: currentBundle?.name ?? "Unassigned",
     document: currentDocument,
+    reviewTopicCount,
     topicCount: visibleTopics.length,
   });
   const manualReviewHref =
@@ -260,7 +264,7 @@ export default async function DocumentDetailPage({
           knowledgeBundleId={currentBundle!.id}
           run={authoringRun}
           state={processingState}
-          topicCount={visibleTopics.length}
+          topicCount={reviewTopicCount}
         />
       );
     }

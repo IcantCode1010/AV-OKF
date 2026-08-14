@@ -367,6 +367,8 @@ export async function getOkfRelationReviewQueue(input: {
     workspaceId: input.workspaceId,
   };
   const select = {
+    automaticApprovalError: true,
+    automaticApprovalRequested: true,
     id: true,
     reason: true,
     signals: true,

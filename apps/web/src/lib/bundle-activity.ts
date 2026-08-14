@@ -56,6 +56,11 @@ export async function getBundleActivitySnapshot({
         extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
         id: true,
         title: true,
+        topicRecords: {
+          orderBy: { updatedAt: "desc" },
+          select: { updatedAt: true },
+          where: { reviewStatus: "needs_review" },
+        },
         topicDiscoveryJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
       },
       where: { deletedAt: null, knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
@@ -122,6 +127,14 @@ export async function getBundleActivitySnapshot({
         actionHref: `/documents/${encodeURIComponent(document.id)}?panel=logs`,
       });
     }
+    const reviewItem = buildTopicReviewActivityItem({
+      bundleId,
+      documentId: document.id,
+      occurredAt: document.topicRecords[0]?.updatedAt.toISOString(),
+      title: document.title,
+      topicCount: document.topicRecords.length,
+    });
+    if (reviewItem) items.push(reviewItem);
   }
 
   for (const run of authoringRuns) {
@@ -148,7 +161,7 @@ export async function getBundleActivitySnapshot({
       title: run.mode === "automated" ? "Automatic topic approval" : "Bulk topic approval",
       detail: run.errorMessage ?? `${succeeded} exported${failed > 0 ? `, ${failed} failed` : ""}`,
       resultCount: succeeded,
-      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/review?run=${encodeURIComponent(run.id)}`,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/review/${encodeURIComponent(run.id)}`,
     });
   }
 
@@ -166,6 +179,27 @@ export async function getBundleActivitySnapshot({
   }
 
   return buildBundleActivitySnapshot(items);
+}
+
+export function buildTopicReviewActivityItem(input: {
+  bundleId: string;
+  documentId: string;
+  occurredAt?: string;
+  title: string;
+  topicCount: number;
+}): BundleActivityItem | null {
+  if (input.topicCount <= 0 || !input.occurredAt) return null;
+  return {
+    id: `review:${input.documentId}`,
+    documentId: input.documentId,
+    occurredAt: input.occurredAt,
+    stage: "Topic review",
+    status: "action_required",
+    title: input.title,
+    detail: `${input.topicCount} ${input.topicCount === 1 ? "topic needs" : "topics need"} review`,
+    resultCount: input.topicCount,
+    actionHref: `/knowledge/${encodeURIComponent(input.bundleId)}/review?documentId=${encodeURIComponent(input.documentId)}`,
+  };
 }
 
 export function buildBundleActivitySnapshot(items: BundleActivityItem[]): BundleActivitySnapshot {

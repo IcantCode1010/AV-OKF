@@ -443,10 +443,20 @@ export async function runBulkTopicApprovalJob(payload: BulkTopicApprovalJobPaylo
   const failed = statuses.find((entry) => entry.status === "failed")?._count ?? 0;
   const succeeded = statuses.find((entry) => entry.status === "succeeded")?._count ?? 0;
   const total = statuses.reduce((sum, entry) => sum + entry._count, 0);
-  return db.bulkTopicApprovalRun.update({
+  const completedRun = await db.bulkTopicApprovalRun.update({
     data: { completedAt: new Date(), status: failed === 0 ? "completed" : succeeded > 0 ? "completed_with_failures" : total > 0 ? "failed" : "completed" },
     where: { id: run.id },
   });
+  const { reconcileAutomaticAuthoringRelationsForDocument } = await import(
+    "./knowledge-authoring.ts"
+  );
+  for (const documentId of new Set(run.items.map((item) => item.documentId))) {
+    await reconcileAutomaticAuthoringRelationsForDocument({
+      documentId,
+      workspaceId: run.workspaceId,
+    });
+  }
+  return completedRun;
 }
 
 export async function reconcileBulkTopicApprovalRuns(enqueue: (payload: BulkTopicApprovalJobPayload) => Promise<void>) {

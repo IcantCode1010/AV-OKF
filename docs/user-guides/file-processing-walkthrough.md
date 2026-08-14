@@ -186,14 +186,22 @@ The exporter, rather than a person or external process, should update these
 reserved files. This keeps the bundle and its upstream source-of-truth records
 consistent.
 
-### 9. Discover And Approve Relations
+### 9. Discover And Publish Relations
 
-Relation discovery is optional and review-first:
+Relation discovery is optional and review-first by default:
 
 1. deterministic signals produce candidate pairs;
 2. an LLM may verify one pair and an exact source quote;
 3. a human approves the relation;
 4. the source concept is re-exported with typed relation frontmatter.
+
+A bundle administrator can instead enable **Automatically create verified
+relations**. New document topics are compared with approved concepts in the
+same bundle. Once both endpoints are approved and exported, the worker may
+publish a relation without human approval only when the verifier supplies an
+exact source quote, confidence is at least 90%, and vocabulary, path, type,
+duplicate, cycle, and supersession checks all pass. Automated relation
+publication cannot delete or change lifecycle state.
 
 Queued, filtered, failed, pending, and rejected candidates are not graph edges.
 Only approved, exported relations enter the explorer graph or agent traversal.

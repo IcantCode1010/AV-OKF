@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronRight,
   FileText,
+  Focus,
   Folder,
   FolderOpen,
   GripVertical,
@@ -33,13 +34,17 @@ import {
 } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import type {
-  OkfExplorerDocument,
-  OkfExplorerEdge,
-  OkfExplorerIssue,
-  OkfExplorerNode,
-  OkfExplorerSnapshot,
-  OkfTreeNode,
+import {
+  buildOkfGraphView,
+  type OkfGraphViewMode,
+} from "@/lib/okf-graph-view";
+import {
+  type OkfExplorerDocument,
+  type OkfExplorerEdge,
+  type OkfExplorerIssue,
+  type OkfExplorerNode,
+  type OkfExplorerSnapshot,
+  type OkfTreeNode,
 } from "@/lib/okf-explorer";
 
 function useExplorerSelection() {
@@ -137,10 +142,56 @@ export function KnowledgeGraphExplorer({
   snapshot: OkfExplorerSnapshot;
 }) {
   const selectFile = useExplorerSelection();
+  const [viewMode, setViewMode] = useState<OkfGraphViewMode>("neighborhood");
+  const graphView = useMemo(
+    () => buildOkfGraphView({
+      edges: snapshot.edges,
+      mode: viewMode,
+      nodes: snapshot.nodes,
+      selectedFile: snapshot.selectedFile,
+    }),
+    [snapshot.edges, snapshot.nodes, snapshot.selectedFile, viewMode],
+  );
+  const focusedDocument = useMemo(() => {
+    if (snapshot.selectedDocument && !snapshot.selectedDocument.isReserved) {
+      return snapshot.selectedDocument;
+    }
+    const file = snapshot.files.find((candidate) => candidate.filename === graphView.focusFile);
+    if (!file) return null;
+    const titleByFile = new Map(snapshot.nodes.map((node) => [node.id, node.title]));
+    return {
+      ...file,
+      incoming: snapshot.edges
+        .filter((edge) => edge.target === file.filename)
+        .map((edge) => ({
+          approvalMode: edge.approvalMode,
+          reason: edge.reason,
+          relation: edge.relation,
+          sourceFile: edge.source,
+          sourceTitle: titleByFile.get(edge.source) ?? edge.source,
+        })),
+      outgoing: snapshot.edges.filter((edge) => edge.source === file.filename),
+    };
+  }, [graphView.focusFile, snapshot.edges, snapshot.files, snapshot.nodes, snapshot.selectedDocument]);
   return (
-    <div className="grid min-h-0 flex-1 overflow-hidden border-y border-border lg:grid-cols-[minmax(0,1fr)_360px]">
-      <ExplorerGraphPane edges={snapshot.edges} nodes={snapshot.nodes} onSelect={selectFile} selectedFile={snapshot.selectedFile} standalone />
-      <GraphDetailPane browseHref={browseHref} document={snapshot.selectedDocument} onSelect={selectFile} />
+    <div className="grid min-h-0 flex-1 grid-rows-[560px_minmax(360px,auto)] overflow-y-auto border-y border-border lg:grid-cols-[minmax(0,1fr)_360px] lg:grid-rows-1 lg:overflow-hidden">
+      <ExplorerGraphPane
+        allEdgeCount={snapshot.edges.length}
+        allNodeCount={snapshot.nodes.length}
+        edges={graphView.edges}
+        mode={viewMode}
+        nodes={graphView.nodes}
+        onModeChange={setViewMode}
+        onSelect={selectFile}
+        selectedFile={graphView.focusFile}
+        standalone
+      />
+      <GraphDetailPane
+        browseHref={browseHref}
+        document={focusedDocument}
+        isolatedNodes={graphView.isolatedNodes}
+        onSelect={selectFile}
+      />
     </div>
   );
 }
@@ -158,6 +209,14 @@ function ExplorerTreePane({
   selectedFile: string | null;
   tree: OkfTreeNode[];
 }) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const selected = scrollContainerRef.current?.querySelector<HTMLElement>(
+      '[aria-current="page"]',
+    );
+    selected?.scrollIntoView({ block: "center" });
+  }, [selectedFile]);
+
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-border bg-muted/10" aria-label="Knowledge file tree">
       <div className="border-b border-border px-4 py-3">
@@ -168,7 +227,7 @@ function ExplorerTreePane({
           <Input aria-label="Filter bundle files" className="h-8 bg-background pl-8 text-xs" onChange={(event) => onFilter(event.target.value)} placeholder="Filter concepts" value={filter} />
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-2">
+      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto p-2">
         {tree.length > 0 ? (
           tree.map((node) => (
             <TreeNode key={node.id} node={node} onSelect={onSelect} selectedFile={selectedFile} />
@@ -195,6 +254,7 @@ function TreeNode({
   const containsSelection =
     selectedFile === node.id || Boolean(selectedFile?.startsWith(`${node.id}/`));
   const [open, setOpen] = useState(containsSelection || depth === 0);
+  const effectiveOpen = open || containsSelection;
 
   if (node.kind === "file") {
     const selected = selectedFile === node.id;
@@ -217,16 +277,16 @@ function TreeNode({
     );
   }
 
-  const FolderIcon = open ? FolderOpen : Folder;
+  const FolderIcon = effectiveOpen ? FolderOpen : Folder;
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible open={effectiveOpen} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>
         <button
           type="button"
           className="flex min-h-9 w-full items-center gap-1.5 px-2 py-1.5 text-left text-xs font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
           style={{ paddingLeft: `${depth * 14 + 6}px` }}
         >
-          {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+          {effectiveOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
           <FolderIcon className="size-3.5 text-muted-foreground" />
           <span className="truncate">{node.label}</span>
         </button>
@@ -247,14 +307,22 @@ function TreeNode({
 }
 
 function ExplorerGraphPane({
+  allEdgeCount,
+  allNodeCount,
   edges,
+  mode,
   nodes,
+  onModeChange,
   onSelect,
   selectedFile,
   standalone = false,
 }: {
+  allEdgeCount: number;
+  allNodeCount: number;
   edges: OkfExplorerEdge[];
+  mode: OkfGraphViewMode;
   nodes: OkfExplorerNode[];
+  onModeChange: (mode: OkfGraphViewMode) => void;
   onSelect: (filename: string) => void;
   selectedFile: string | null;
   standalone?: boolean;
@@ -264,10 +332,35 @@ function ExplorerGraphPane({
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between border-b border-border bg-background/90 px-4 py-3 backdrop-blur">
         <div>
           <p className="text-xs font-semibold uppercase text-muted-foreground">Knowledge graph</p>
-          <p className="mt-1 text-xs text-muted-foreground">{nodes.length} concepts · {edges.length} relations</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {mode === "neighborhood"
+              ? `${nodes.length} of ${allNodeCount} concepts / ${edges.length} of ${allEdgeCount} relations`
+              : `${allNodeCount} concepts / ${allEdgeCount} relations`}
+          </p>
+        </div>
+        <div className="flex items-center rounded-md border border-border bg-muted/30 p-0.5" aria-label="Graph view mode">
+          <Button
+            aria-pressed={mode === "neighborhood"}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => onModeChange("neighborhood")}
+            size="sm"
+            variant={mode === "neighborhood" ? "secondary" : "ghost"}
+          >
+            Neighborhood
+          </Button>
+          <Button
+            aria-pressed={mode === "all"}
+            className="h-7 px-2.5 text-xs"
+            onClick={() => onModeChange("all")}
+            size="sm"
+            variant={mode === "all" ? "secondary" : "ghost"}
+          >
+            All concepts
+          </Button>
         </div>
       </div>
       <KnowledgeGraph
+        autoFocusSelected={mode === "neighborhood"}
         edges={edges}
         nodes={nodes}
         selectedFile={selectedFile}
@@ -280,11 +373,13 @@ function ExplorerGraphPane({
 type GraphInstance = import("@cosmos.gl/graph").Graph;
 
 function KnowledgeGraph({
+  autoFocusSelected,
   edges,
   nodes,
   onSelect,
   selectedFile,
 }: {
+  autoFocusSelected: boolean;
   edges: OkfExplorerEdge[];
   nodes: OkfExplorerNode[];
   onSelect: (filename: string) => void;
@@ -301,22 +396,17 @@ function KnowledgeGraph({
     () => `${nodes.map((node) => node.id).join("|")}::${edges.map((edge) => edge.id).join("|")}`,
     [edges, nodes],
   );
-  const overviewIndices = useMemo(
-    () => [...nodes]
-      .map((node, index) => ({ degree: node.degree, id: node.id, index }))
-      .sort((a, b) => b.degree - a.degree || a.id.localeCompare(b.id))
-      .slice(0, 8)
-      .map((entry) => entry.index),
-    [nodes],
-  );
   const selectedIndex = nodes.findIndex((node) => node.id === selectedFile);
+  const selectedIndexRef = useRef(selectedIndex);
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex;
+  }, [selectedIndex]);
   const labelIndices = useMemo(
     () => Array.from(new Set([
-      ...overviewIndices,
       ...(selectedIndex >= 0 ? [selectedIndex] : []),
       ...(hoveredIndex !== null ? [hoveredIndex] : []),
     ])),
-    [hoveredIndex, overviewIndices, selectedIndex],
+    [hoveredIndex, selectedIndex],
   );
 
   useEffect(() => {
@@ -357,28 +447,39 @@ function KnowledgeGraph({
           pointGreyoutOpacity: 0.18,
           pointDefaultSize: 7,
           renderHoveredPointRing: true,
-          simulationCollision: 0.8,
-          simulationCollisionPadding: 3,
-          simulationCenter: 0.8,
-          simulationDecay: 8000,
-          simulationFriction: 0.1,
-          simulationGravity: 0.25,
-          simulationRepulsion: 0.35,
+          simulationCollision: 1,
+          simulationCollisionPadding: 10,
+          simulationCollisionRadius: 10,
+          simulationCenter: 0.15,
+          simulationDecay: 6000,
+          simulationFriction: 0.72,
+          simulationGravity: 0.08,
+          simulationLinkDistance: 80,
+          simulationLinkSpring: 0.65,
+          simulationRepulsion: 1,
           onPointClick: (index) => {
             const node = nodesRef.current[index];
             if (node) onSelect(node.id);
           },
           onPointMouseOver: (index) => setHoveredIndex(index),
           onPointMouseOut: () => setHoveredIndex(null),
-          onSimulationEnd: () => graphRef.current?.fitView(300, 0.22, false),
+          onSimulationEnd: () => frameSelectedOrFit(
+            graphRef.current,
+            autoFocusSelected ? selectedIndexRef.current : -1,
+            300,
+          ),
           onSimulationTick: () => refreshLabels(),
           onZoom: () => refreshLabels(),
         });
         graphRef.current = graph;
         const positions = new Float32Array(nodes.length * 2);
         nodes.forEach((_, index) => {
-          const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1);
-          const radius = 100 + (index % 3) * 28;
+          const ringSize = 20;
+          const ring = Math.floor(index / ringSize);
+          const positionInRing = index % ringSize;
+          const pointsInRing = Math.min(ringSize, nodes.length - ring * ringSize);
+          const angle = (Math.PI * 2 * positionInRing) / Math.max(pointsInRing, 1);
+          const radius = 120 + ring * 90;
           positions[index * 2] = Math.cos(angle) * radius;
           positions[index * 2 + 1] = Math.sin(angle) * radius;
         });
@@ -396,7 +497,7 @@ function KnowledgeGraph({
         settleTimer = window.setTimeout(() => {
           if (graphRef.current !== graph) return;
           graph.stop();
-          graph.fitView(350, 0.22, false);
+          frameSelectedOrFit(graph, autoFocusSelected ? selectedIndexRef.current : -1, 350);
         }, 1800);
         const observer = new ResizeObserver((entries) => {
           const entry = entries[0];
@@ -407,7 +508,11 @@ function KnowledgeGraph({
           window.requestAnimationFrame(() => {
             if (graphRef.current === graph) {
               graph.render();
-              graph.fitView(250, 0.22, false);
+              frameSelectedOrFit(
+                graph,
+                autoFocusSelected ? selectedIndexRef.current : -1,
+                250,
+              );
             }
           });
         });
@@ -436,7 +541,7 @@ function KnowledgeGraph({
     };
   // Topology changes rebuild the simulation; selection changes do not.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topologyKey, resolvedTheme]);
+  }, [autoFocusSelected, topologyKey, resolvedTheme]);
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -452,9 +557,11 @@ function KnowledgeGraph({
       highlightedPointIndices: selectedIndex >= 0 ? [selectedIndex] : [],
       outlinedPointIndices: selectedIndex >= 0 ? [selectedIndex] : [],
     });
-    if (selectedIndex >= 0) graph.zoomToPointByIndex(selectedIndex, 350, 1.25, true, false);
+    if (autoFocusSelected && selectedIndex >= 0) {
+      graph.zoomToPointByIndex(selectedIndex, 350, 2.2, false, false);
+    }
     refreshLabels();
-  }, [edges, refreshLabels, selectedFile, selectedIndex]);
+  }, [autoFocusSelected, edges, refreshLabels, selectedFile, selectedIndex]);
 
   useEffect(() => refreshLabels(), [refreshLabels]);
 
@@ -477,14 +584,27 @@ function KnowledgeGraph({
   return (
     <div className="relative h-full min-h-[560px] overflow-hidden pt-16">
       <div ref={containerRef} className="absolute inset-0 top-16" aria-label="Interactive force-directed graph" />
-      <Button
-        className="absolute bottom-3 right-3 z-10"
-        size="sm"
-        variant="outline"
-        onClick={() => graphRef.current?.fitView(350, 0.22, false)}
-      >
-        <Maximize2 className="size-4" />Fit
-      </Button>
+      <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2">
+        <Button
+          aria-label="Focus selected concept"
+          disabled={selectedIndex < 0}
+          onClick={() => frameSelectedOrFit(graphRef.current, selectedIndex, 350)}
+          size="sm"
+          title="Focus selected concept"
+          variant="outline"
+        >
+          <Focus className="size-4" />Focus
+        </Button>
+        <Button
+          aria-label="Fit graph in view"
+          onClick={() => graphRef.current?.fitView(350, 0.22, false)}
+          size="sm"
+          title="Fit graph in view"
+          variant="outline"
+        >
+          <Maximize2 className="size-4" />Fit
+        </Button>
+      </div>
       <div className="pointer-events-none absolute inset-0 top-16 overflow-hidden" aria-hidden="true">
         {labelIndices.map((index) => {
           const position = labelPositions.get(index);
@@ -511,10 +631,12 @@ function KnowledgeGraph({
 function GraphDetailPane({
   browseHref,
   document,
+  isolatedNodes,
   onSelect,
 }: {
   browseHref: string;
   document: OkfExplorerDocument | null;
+  isolatedNodes: OkfExplorerNode[];
   onSelect: (filename: string) => void;
 }) {
   if (!document || document.isReserved) {
@@ -523,6 +645,7 @@ function GraphDetailPane({
         <Network className="size-5 text-muted-foreground" />
         <p className="mt-3 text-sm font-medium">Select a concept</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">Choose a graph node to inspect its trust state, source, and typed relationships.</p>
+        <UnconnectedConceptList className="mt-6" nodes={isolatedNodes} onSelect={onSelect} />
       </aside>
     );
   }
@@ -538,7 +661,44 @@ function GraphDetailPane({
       </div>
       <CompactRelationList label="Outgoing" rows={document.outgoing.map((edge) => ({ file: edge.target, relation: edge.relation, title: edge.target.split("/").at(-1) ?? edge.target }))} onSelect={onSelect} />
       <CompactRelationList label="Incoming" rows={document.incoming.map((edge) => ({ file: edge.sourceFile, relation: edge.relation, title: edge.sourceTitle }))} onSelect={onSelect} />
+      <UnconnectedConceptList nodes={isolatedNodes} onSelect={onSelect} />
     </aside>
+  );
+}
+
+function UnconnectedConceptList({
+  className,
+  nodes,
+  onSelect,
+}: {
+  className?: string;
+  nodes: OkfExplorerNode[];
+  onSelect: (filename: string) => void;
+}) {
+  if (nodes.length === 0) return null;
+
+  return (
+    <details className={cn("border-b border-border p-5", className)}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold uppercase text-muted-foreground">
+        <span>Unconnected concepts</span>
+        <Badge variant="outline">{nodes.length}</Badge>
+      </summary>
+      <div className="mt-3 max-h-64 space-y-1 overflow-auto pr-1">
+        {nodes.map((node) => (
+          <button
+            className="w-full border-l-2 border-border px-3 py-2 text-left hover:border-primary hover:bg-muted"
+            key={node.id}
+            onClick={() => onSelect(node.id)}
+            type="button"
+          >
+            <span className="block truncate text-xs font-medium">{node.title}</span>
+            <span className="mt-1 block text-[10px] uppercase text-muted-foreground">
+              {node.type.replaceAll("_", " ")}
+            </span>
+          </button>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -644,6 +804,7 @@ function ExplorerReaderPane({
             icon={ArrowUpRight}
             label="Outgoing relations"
             rows={document.outgoing.map((edge) => ({
+              approvalMode: edge.approvalMode,
               file: edge.target,
               reason: edge.reason,
               relation: edge.relation,
@@ -656,6 +817,7 @@ function ExplorerReaderPane({
             icon={ArrowDownLeft}
             label="Incoming relations"
             rows={document.incoming.map((backlink) => ({
+              approvalMode: backlink.approvalMode,
               file: backlink.sourceFile,
               reason: backlink.reason,
               relation: backlink.relation,
@@ -688,7 +850,7 @@ function RelationModule({
   icon: typeof ArrowUpRight;
   label: string;
   onSelect: (filename: string) => void;
-  rows: Array<{ file: string; reason: string; relation: string; title: string }>;
+  rows: Array<{ approvalMode?: "automated" | "human" | null; file: string; reason: string; relation: string; title: string }>;
 }) {
   return (
     <section className="border-b border-border p-4 sm:border-b-0 sm:border-r last:border-r-0">
@@ -703,6 +865,7 @@ function RelationModule({
           >
             <span className="block truncate text-xs font-medium">{row.title}</span>
             <span className="mt-1 block text-[10px] uppercase text-primary">{row.relation.replaceAll("_", " ")}</span>
+            {row.approvalMode === "automated" ? <span className="mt-1 block text-[10px] font-medium uppercase text-amber-600 dark:text-amber-300">Automation-verified relation</span> : null}
             <span className="mt-1 block text-xs text-muted-foreground">{row.reason}</span>
           </button>
         )) : <p className="text-xs text-muted-foreground">{emptyLabel}</p>}
@@ -764,6 +927,15 @@ function colorForType(type: string): number[] {
     system_topic: [0.17, 0.73, 0.55, 1],
   };
   return colors[type] ?? [0.34, 0.64, 0.95, 1];
+}
+
+function frameSelectedOrFit(graph: GraphInstance | null, selectedIndex: number, duration: number) {
+  if (!graph) return;
+  if (selectedIndex >= 0) {
+    graph.zoomToPointByIndex(selectedIndex, duration, 2.2, false, false);
+    return;
+  }
+  graph.fitView(duration, 0.22, false);
 }
 
 function formatPages(pages: number[]) {

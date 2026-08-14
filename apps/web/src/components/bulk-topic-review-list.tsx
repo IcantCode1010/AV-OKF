@@ -103,25 +103,31 @@ export function BulkTopicReviewList({
           </Button>
         ))}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
-        <div className="flex items-center gap-2 text-sm">
-          <CheckSquare2 className="size-4" />
-          <span>{selected.size} selected</span>
-          <Badge variant="outline">{eligibleIds.length} ready for approval</Badge>
+      <div className="border-y border-border py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Badge variant="secondary">Step 1 of 2</Badge>
+            <CheckSquare2 className="size-4" />
+            <span>{selected.size} selected</span>
+            <Badge variant="outline">{eligibleIds.length} ready for approval</Badge>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              disabled={eligibleIds.length === 0}
+              onClick={toggleAll}
+              type="button"
+              variant="outline"
+            >
+              {allSelected ? "Clear selection" : "Select all ready"}
+            </Button>
+            <PendingSubmitButton disabled={selected.size === 0} pendingLabel="Preparing confirmation...">
+              Continue to confirmation
+            </PendingSubmitButton>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            disabled={eligibleIds.length === 0}
-            onClick={toggleAll}
-            type="button"
-            variant="outline"
-          >
-            {allSelected ? "Clear selection" : "Select all ready"}
-          </Button>
-          <PendingSubmitButton disabled={selected.size === 0} pendingLabel="Checking batch...">
-            Prepare batch
-          </PendingSubmitButton>
-        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          This checks the selected topics and opens a final confirmation. Nothing is approved or exported until Step 2.
+        </p>
       </div>
 
       {[...groups.entries()].map(([key, documentTopics]) => {

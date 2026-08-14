@@ -183,7 +183,7 @@ model KnowledgeBundle {
   topics                 TopicRecord[]
   lifecycles             OkfConceptLifecycle[]
   coverageLinks          OkfConceptChunkLink[]
-  primaryChatSessions    ChatSession[]                    @relation("PrimaryChatBundle")
+  primaryChatSessions    ChatSession[]                   @relation("PrimaryChatBundle")
   chatSessionSelections  ChatSessionKnowledgeBundle[]
   relationCandidates     OkfRelationCandidate[]
   relationDiscoveryRuns  OkfRelationDiscoveryRun[]
@@ -217,42 +217,48 @@ model KnowledgeBundleProfileVersion {
 }
 
 model OkfRelationCandidate {
-  id                        String                           @id @default(cuid())
-  workspaceId               String
-  knowledgeBundleId         String
-  sourceFile                String
-  targetFile                String
-  relation                  String
-  reason                    String                           @db.Text
-  signals                   Json                             @default("[]")
-  status                    String                           @default("pending")
-  discoveryRunId            String?
-  discoveryVersion          String                           @default("deterministic-v2")
-  verificationStatus        String                           @default("legacy")
-  verificationProvider      String?
-  verificationModel         String?
-  verificationRelation      String?
-  verificationDirection     String?
-  verificationEvidenceQuote String?                          @db.Text
-  verificationConfidence    Float?
-  verificationRationale     String?                          @db.Text
-  verificationError         String?                          @db.Text
-  verifierVersion           String?
-  sourceContentHash         String?
-  targetContentHash         String?
-  requestedDirection        String?
-  verifiedAt                DateTime?
-  reviewedBy                String?
-  reviewedAt                DateTime?
-  createdAt                 DateTime                         @default(now())
-  updatedAt                 DateTime                         @updatedAt
-  bundle                    KnowledgeBundle                  @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  discoveryRun              OkfRelationDiscoveryRun?         @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
-  verificationAttempts      OkfRelationVerificationAttempt[]
+  id                         String                           @id @default(cuid())
+  workspaceId                String
+  knowledgeBundleId          String
+  sourceFile                 String
+  targetFile                 String
+  relation                   String
+  reason                     String                           @db.Text
+  signals                    Json                             @default("[]")
+  status                     String                           @default("pending")
+  discoveryRunId             String?
+  discoveryVersion           String                           @default("deterministic-v2")
+  verificationStatus         String                           @default("legacy")
+  verificationProvider       String?
+  verificationModel          String?
+  verificationRelation       String?
+  verificationDirection      String?
+  verificationEvidenceQuote  String?                          @db.Text
+  verificationConfidence     Float?
+  verificationRationale      String?                          @db.Text
+  verificationError          String?                          @db.Text
+  verifierVersion            String?
+  sourceContentHash          String?
+  targetContentHash          String?
+  requestedDirection         String?
+  authoringRunId             String?
+  automaticApprovalRequested Boolean                          @default(false)
+  automaticApprovalActor     String?
+  automaticApprovalError     String?                          @db.Text
+  verifiedAt                 DateTime?
+  reviewedBy                 String?
+  reviewedAt                 DateTime?
+  createdAt                  DateTime                         @default(now())
+  updatedAt                  DateTime                         @updatedAt
+  bundle                     KnowledgeBundle                  @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  discoveryRun               OkfRelationDiscoveryRun?         @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
+  authoringRun               KnowledgeAuthoringRun?           @relation(fields: [authoringRunId], references: [id], onDelete: SetNull)
+  verificationAttempts       OkfRelationVerificationAttempt[]
 
   @@unique([knowledgeBundleId, sourceFile, targetFile, relation])
   @@index([workspaceId, knowledgeBundleId, status])
   @@index([knowledgeBundleId, verificationStatus])
+  @@index([authoringRunId, automaticApprovalRequested])
 }
 
 model OkfRelationDiscoveryRun {
@@ -296,35 +302,37 @@ model OkfRelationVerificationAttempt {
 }
 
 model KnowledgeAuthoringRun {
-  id                            String                         @id @default(cuid())
-  workspaceId                   String
-  knowledgeBundleId             String
-  documentId                    String
-  requestedBy                   String?
-  profileVersion                Int                            @default(1)
-  automaticTopicApprovalEnabled Boolean                        @default(false)
-  status                        String                         @default("queued")
-  currentStage                  String                         @default("metadata_discovery")
-  completedStages               String[]                       @default([])
-  estimatedInputTokens          Int                            @default(0)
-  enrichmentCandidateCount      Int                            @default(0)
-  validationResults             Json                           @default("[]")
-  relationSuggestions           Json                           @default("[]")
-  errorCode                     String?
-  errorMessage                  String?
-  costConfirmedAt               DateTime?
-  costConfirmedBy               String?
-  startedAt                     DateTime?
-  readyAt                       DateTime?
-  completedAt                   DateTime?
-  createdAt                     DateTime                       @default(now())
-  updatedAt                     DateTime                       @updatedAt
-  workspace                     Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  knowledgeBundle               KnowledgeBundle                @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
-  document                      Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  stageAudits                   KnowledgeAuthoringStageAudit[]
-  metadataProposals             DocumentMetadataProposal[]
-  automaticApprovalRun          BulkTopicApprovalRun?
+  id                               String                         @id @default(cuid())
+  workspaceId                      String
+  knowledgeBundleId                String
+  documentId                       String
+  requestedBy                      String?
+  profileVersion                   Int                            @default(1)
+  automaticTopicApprovalEnabled    Boolean                        @default(false)
+  automaticRelationApprovalEnabled Boolean                        @default(false)
+  status                           String                         @default("queued")
+  currentStage                     String                         @default("metadata_discovery")
+  completedStages                  String[]                       @default([])
+  estimatedInputTokens             Int                            @default(0)
+  enrichmentCandidateCount         Int                            @default(0)
+  validationResults                Json                           @default("[]")
+  relationSuggestions              Json                           @default("[]")
+  errorCode                        String?
+  errorMessage                     String?
+  costConfirmedAt                  DateTime?
+  costConfirmedBy                  String?
+  startedAt                        DateTime?
+  readyAt                          DateTime?
+  completedAt                      DateTime?
+  createdAt                        DateTime                       @default(now())
+  updatedAt                        DateTime                       @updatedAt
+  workspace                        Workspace                      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle                  KnowledgeBundle                @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document                         Document                       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  stageAudits                      KnowledgeAuthoringStageAudit[]
+  metadataProposals                DocumentMetadataProposal[]
+  automaticApprovalRun             BulkTopicApprovalRun?
+  relationCandidates               OkfRelationCandidate[]
 
   @@index([workspaceId, status, createdAt])
   @@index([documentId, createdAt])

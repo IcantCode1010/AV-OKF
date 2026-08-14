@@ -75,13 +75,24 @@ function ActivityRow({ item }: { item: BundleActivityItem }) {
           <Badge variant={item.status === "failed" ? "destructive" : "secondary"}>{item.status.replaceAll("_", " ")}</Badge>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{new Date(item.occurredAt).toLocaleString()}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{formatActivityTimestamp(item.occurredAt)}</p>
       </div>
       {item.actionHref ? (
         <Button asChild variant="ghost" size="sm"><Link href={item.actionHref}>Open <ArrowUpRight className="h-4 w-4" /></Link></Button>
       ) : null}
     </div>
   );
+}
+
+function formatActivityTimestamp(value: string) {
+  return `${new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+    year: "numeric",
+  }).format(new Date(value))} UTC`;
 }
 
 function Summary({ label, value, tone }: { label: string; value: number; tone: "active" | "attention" | "failed" | "complete" }) {

@@ -51,6 +51,13 @@ export async function exportTopicToOkfAction(formData: FormData) {
       topics,
     });
     await updateTopicExportedFilePath(topicId, exported.filename);
+    const { reconcileAutomaticAuthoringRelationsForDocument } = await import(
+      "@/lib/knowledge-authoring"
+    );
+    await reconcileAutomaticAuthoringRelationsForDocument({
+      documentId,
+      workspaceId: context.workspaceId,
+    });
   } catch (error) {
     if (isRecoverableOkfExportError(error)) {
       redirect(

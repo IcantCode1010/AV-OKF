@@ -33,6 +33,9 @@ export default async function KnowledgePage() {
       })),
     })),
   );
+  const visibleDeletionJobs = deletionSnapshot.jobs.filter(
+    (job) => job.status !== "completed",
+  );
 
   return (
     <div className="space-y-6">
@@ -51,11 +54,11 @@ export default async function KnowledgePage() {
         <Badge variant="outline">{bundles.length} bundle{bundles.length === 1 ? "" : "s"}</Badge>
       </div>
 
-      {deletionSnapshot.jobs.length > 0 ? (
+      {visibleDeletionJobs.length > 0 ? (
         <Card>
           <CardHeader><CardTitle>Bundle deletion</CardTitle><CardDescription>Knowledge cleanup runs in the background. Source documents remain available as Unassigned.</CardDescription></CardHeader>
           <CardContent className="space-y-3">
-            {deletionSnapshot.jobs.map((job) => (
+            {visibleDeletionJobs.map((job) => (
               <div className="flex flex-col gap-3 border border-border p-3 sm:flex-row sm:items-center sm:justify-between" key={job.id}>
                 <div>
                   <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{job.bundleName}</span><Badge variant={job.status === "failed" ? "destructive" : "outline"}>{job.status}</Badge></div>

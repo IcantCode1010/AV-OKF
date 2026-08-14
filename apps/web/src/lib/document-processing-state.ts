@@ -145,6 +145,7 @@ export function buildDocumentProcessingState(input: {
   authoringRun: ProcessingAuthoringRun | null;
   bundleName: string;
   document: Pick<Document, "extraction" | "storageKey" | "topicDiscovery">;
+  reviewTopicCount?: number;
   topicCount: number;
 }): DocumentProcessingState {
   const stages = initializeStages();
@@ -171,7 +172,7 @@ export function buildDocumentProcessingState(input: {
   for (const id of authoringStageIds) {
     stages[stageIndex(id)] = deriveAuthoringStage(id, run, input.document.topicDiscovery);
   }
-  stages[7] = deriveReviewStage(run, input.topicCount);
+  stages[7] = deriveReviewStage(run, input.reviewTopicCount ?? input.topicCount);
 
   return finish(stages, run.automaticTopicApprovalEnabled, true, input.bundleName);
 }
@@ -307,6 +308,13 @@ function deriveReviewStage(
     return stage("review_export", "waiting");
   }
   if (!run.automaticTopicApprovalEnabled) {
+    if (topicCount === 0) {
+      return stage(
+        "review_export",
+        "completed",
+        "All discovered topics have been reviewed.",
+      );
+    }
     return stage(
       "review_export",
       "action_required",

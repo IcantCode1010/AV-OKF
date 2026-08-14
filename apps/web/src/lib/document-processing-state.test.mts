@@ -87,6 +87,23 @@ test("manual review remains an action-required terminal state", () => {
   assert.equal(state.showHeader, true);
 });
 
+test("manual review completes when every discovered topic is already resolved", () => {
+  const state = buildDocumentProcessingState({
+    authoringRun: authoringFixture({
+      completedStages: ["metadata_discovery", "concept_discovery", "enrichment", "relation_classification", "validation"],
+      currentStage: "review",
+      status: "ready_for_review",
+    }),
+    bundleName: "General Knowledge",
+    document: documentFixture("completed"),
+    reviewTopicCount: 0,
+    topicCount: 101,
+  });
+  assert.equal(stageStatus(state, "review_export"), "completed");
+  assert.match(stageDetail(state, "review_export"), /reviewed/i);
+  assert.equal(state.showHeader, false);
+});
+
 test("automatic approval exposes queued, running, partial, and clean completion", () => {
   for (const [status, expected] of [
     ["queued", "queued"],
