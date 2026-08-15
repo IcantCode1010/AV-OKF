@@ -8,8 +8,16 @@ import {
   isAdministrativeTopicTitle,
   resolveExplicitTopicContinuations,
   validateDiscoveredTopics,
+  normalizeDiscoveredTopicType,
   type TopicDiscoveryProvider,
 } from "./topic-discovery.ts";
+
+test("topic type normalization maps model variants into the active profile vocabulary", () => {
+  const allowed = ["concept", "procedure", "system"];
+  assert.equal(normalizeDiscoveredTopicType("Operational Procedure", allowed), "procedure");
+  assert.equal(normalizeDiscoveredTopicType("System Overview", allowed), "system");
+  assert.equal(normalizeDiscoveredTopicType("Unexpected Type", allowed), "concept");
+});
 
 const page = (pageNumber: number, text: string) => ({
   charCount: text.length,

@@ -90,6 +90,7 @@ export function getTopicDiscoveryMaxOutputTokens(stage: TopicDiscoveryStage) {
 }
 
 export async function discoverDocumentTopics(input: {
+  allowedTopicTypes?: string[];
   documentTitle: string;
   onWindowComplete?: (completed: number, total: number) => Promise<void> | void;
   pages: ExtractedPageRecord[];
@@ -104,7 +105,7 @@ export async function discoverDocumentTopics(input: {
   const proposals: DiscoveredTopic[] = [];
 
   for (const [index, window] of windows.entries()) {
-    const prompt = buildWindowPrompt(input.documentTitle, window, index, windows.length);
+    const prompt = buildWindowPrompt(input.documentTitle, window, index, windows.length, input.allowedTopicTypes);
     try {
       const result = await input.provider.discover({ prompt, stage: "window" });
       const parsed = candidateListSchema.parse(result.output);
@@ -146,7 +147,11 @@ export async function discoverDocumentTopics(input: {
       pages,
       topics: parsed.topics,
     });
-    const topics = validateDiscoveredTopics(continuationResult.topics, pages);
+    const topics = validateDiscoveredTopics(
+      continuationResult.topics,
+      pages,
+      input.allowedTopicTypes,
+    );
     audits.push({
       errorMessage: null,
       promptSent: consolidationPrompt,
@@ -227,6 +232,7 @@ export function buildPageWindows(
 export function validateDiscoveredTopics<Topic extends DiscoveredTopic>(
   topics: Topic[],
   pages: ExtractedPageRecord[],
+  allowedTopicTypes?: string[],
 ): Topic[] {
   const validPages = new Set(pages.map((page) => page.pageNumber));
   const titles = new Set<string>();
@@ -250,7 +256,7 @@ export function validateDiscoveredTopics<Topic extends DiscoveredTopic>(
       rationale: topic.rationale.trim(),
       summary,
       title,
-      topicType: normalizeTopicType(topic.topicType),
+      topicType: normalizeDiscoveredTopicType(topic.topicType, allowedTopicTypes),
     });
   }
   if (accepted.length === 0) throw new Error("topic_discovery_no_valid_topics");
@@ -378,7 +384,7 @@ function preparePages(pages: ExtractedPageRecord[]) {
     .filter((page) => page.text.length > 0);
 }
 
-function buildWindowPrompt(title: string, pages: ExtractedPageRecord[], index: number, total: number) {
+function buildWindowPrompt(title: string, pages: ExtractedPageRecord[], index: number, total: number, allowedTopicTypes?: string[]) {
   return [
     `Document: ${title}`,
     `Window ${index + 1} of ${total}.`,
@@ -387,6 +393,9 @@ function buildWindowPrompt(title: string, pages: ExtractedPageRecord[], index: n
     "Exclude document-administration material such as tables of contents, effective-page lists, and revision histories.",
     "Never use page numbers, fractions, bullets, warnings, sentence fragments, or isolated codes as titles.",
     "Return source page numbers, evidence headings, rationale, topic type, and low/medium/high confidence.",
+    ...(allowedTopicTypes?.length
+      ? [`Choose topic type from this vocabulary only: ${[...allowedTopicTypes].sort().join(", ")}.`]
+      : []),
     "Use only the supplied text.",
     ...pages.map((page) => `\n--- PAGE ${page.pageNumber} ---\n${page.text}`),
   ].join("\n");
@@ -553,8 +562,35 @@ export function isAdministrativeTopicTitle(value: string) {
   return /^(?:table of contents|contents|list of effective pages|effective pages list|record of revisions|revision record|(?:manual |document )?revision history)$/.test(normalized);
 }
 
-function normalizeTopicType(value: string) {
+const TOPIC_TYPE_ALIASES: Record<string, string> = {
+  adjustment_procedure: "procedure",
+  emergency: "condition",
+  emergency_procedure: "procedure",
+  emergency_procedures: "procedure",
+  flight_control_emergency: "condition",
+  installation_procedure: "procedure",
+  landing_procedure: "procedure",
+  maintenance_procedure: "procedure",
+  non_normal_checklist: "procedure",
+  non_normal_procedures: "procedure",
+  normal_procedures: "procedure",
+  operating_instructions: "procedure",
+  operational_procedure: "procedure",
+  procedural: "procedure",
+  procedures: "procedure",
+  system_overview: "system",
+  troubleshooting_procedure: "procedure",
+};
+
+export function normalizeDiscoveredTopicType(value: string, allowedTopicTypes?: string[]) {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  const allowed = new Set(allowedTopicTypes ?? []);
+  if (normalized && (allowed.size === 0 || allowed.has(normalized))) return normalized;
+  const alias = TOPIC_TYPE_ALIASES[normalized];
+  if (alias && (allowed.size === 0 || allowed.has(alias))) return alias;
+  if (allowed.has("concept")) return "concept";
+  if (allowed.has("system_topic")) return "system_topic";
+  if (allowed.size > 0) return [...allowed].sort()[0]!;
   return normalized || "system_topic";
 }
 

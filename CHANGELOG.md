@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Reworked the Relations workspace into a human-readable, concept-centered
+  review queue. Confirmed candidates are grouped by source concept and show
+  plain-language relationship sentences, concept titles, source documents,
+  confidence, and exact evidence before expandable technical audit details.
+  Added status views, search, relation-type filtering, incremental rendering,
+  concise verifier rejection reasons, and lifecycle-safe approval controls.
+- Split relation discovery into two complementary paths. Document authoring
+  now proposes explicit evidence-backed relations only among concepts from the
+  uploaded file, while the Relations workspace offers **Expand graph** to add
+  bounded cross-document semantic-neighbor candidates from the existing OKF
+  embedding index. Every candidate still passes one-pair LLM verification,
+  exact-quote validation, graph preflight, and profile vocabulary checks.
+- Normalized common LLM topic-type variants into active profile types and
+  expanded the generic relation vocabulary with structural and operational
+  relationships. Automatic relation publication is now restricted to 95%+
+  confidence `applies_to`, `part_of`, `implements`, and `references`;
+  operational and lifecycle relations continue to require human review.
+
 - Clarified the manual bulk-approval handoff as an explicit two-step flow.
   Topic selection now continues to a clearly labeled confirmation step, and
   the confirmation action remains sticky above long topic lists while stating

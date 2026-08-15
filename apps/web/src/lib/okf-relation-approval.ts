@@ -25,7 +25,13 @@ import {
 import { validateTopicRelations } from "./okf-relations.ts";
 import { getPrisma } from "./prisma.ts";
 
-export const AUTOMATIC_RELATION_MIN_CONFIDENCE = 0.9;
+export const AUTOMATIC_RELATION_MIN_CONFIDENCE = 0.95;
+export const AUTOMATIC_RELATION_TYPES = new Set([
+  "applies_to",
+  "implements",
+  "part_of",
+  "references",
+]);
 
 const AUTOMATIC_POLICY_FAILURES = new Set([
   "knowledge_bundle_not_found",
@@ -56,6 +62,9 @@ export function getAutomaticRelationApprovalBlocker(input: {
 }): string | null {
   if (!input.automaticApprovalRequested) return "automatic_relation_not_requested";
   if (input.verificationStatus !== "confirmed") return "automatic_relation_not_confirmed";
+  if (!input.verificationRelation || !AUTOMATIC_RELATION_TYPES.has(input.verificationRelation)) {
+    return "automatic_relation_requires_human_review";
+  }
   if ((input.verificationConfidence ?? 0) < AUTOMATIC_RELATION_MIN_CONFIDENCE) {
     return "automatic_relation_confidence_below_threshold";
   }

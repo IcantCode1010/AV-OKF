@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { DEFAULT_RELATIONS } from "./knowledge-profile.ts";
+
 import {
   RelationValidationError,
   getAllowedRelations,
@@ -13,15 +15,7 @@ import {
 
 test("getAllowedRelations reads vocabulary from okf-base.yaml", async () => {
   const allowed = await getAllowedRelations();
-  const manifestAllowed = [
-    "routes_to",
-    "references",
-    "supports",
-    "covered_by",
-    "supersedes",
-    "conflicts_with",
-    "depends_on",
-  ];
+  const manifestAllowed = [...DEFAULT_RELATIONS];
 
   assert.deepEqual(allowed, manifestAllowed);
 

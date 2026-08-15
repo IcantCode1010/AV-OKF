@@ -69,9 +69,17 @@ const CLARIFICATION_FIELD_TYPES = new Set<KnowledgeFieldType>([
 ]);
 
 export const DEFAULT_RELATIONS = [
+  "applies_to",
+  "part_of",
+  "implements",
   "routes_to",
   "references",
   "supports",
+  "requires",
+  "triggers",
+  "affects",
+  "mitigates",
+  "governs",
   "covered_by",
   "supersedes",
   "conflicts_with",
@@ -201,6 +209,11 @@ export function normalizeKnowledgeProfile(
     !normalized.fields.entity_type
   ) {
     normalized.fields.entity_type = { type: "string" };
+  }
+  if (["generic", "aviation"].includes(normalized.id)) {
+    normalized.relations = [
+      ...new Set([...DEFAULT_RELATIONS, ...(normalized.relations ?? [])]),
+    ];
   }
   normalized.agent = {
     boundedAdaptiveRetryEnabled:

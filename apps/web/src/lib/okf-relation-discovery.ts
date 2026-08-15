@@ -5,6 +5,11 @@ import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringAr
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import { getKnowledgeBundleByIdentity, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
+import {
+  createOkfConceptEmbeddingRepository,
+  type OkfSemanticNeighbor,
+} from "./okf-concept-embedding.ts";
+import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 import { getOkfRelationVerificationQueue, type OkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 import {
   loadOkfRelationPreflightContext,
@@ -31,6 +36,7 @@ const BASE_STOPWORDS = new Set([
 ]);
 
 export type RelationDiscoveryConcept = {
+  contentHash?: string;
   filePath: string;
   pages: number[];
   sourceFile: string;
@@ -67,14 +73,35 @@ export async function discoverOkfRelationCandidates(
       discovered: activeRun.totalCandidates,
       runId: activeRun.id,
       suppressed: activeRun.suppressedCount,
+      semanticCandidates: 0,
       warnings: activeRun.warningCount,
     };
   }
   const concepts = await loadRelationDiscoveryConcepts(input);
 
-  const discoveredCandidates = buildDeterministicRelationCandidates(concepts, {
+  const deterministicCandidates = buildDeterministicRelationCandidates(concepts, {
     stopwords: bundle.profile.relationDiscovery.stopwords,
   });
+  const semanticNeighbors = await createOkfConceptEmbeddingRepository()
+    .findNeighbors({
+      candidates: concepts.flatMap((concept) => concept.contentHash
+        ? [{ contentHash: concept.contentHash, filePath: concept.filePath }]
+        : []),
+      knowledgeBundleId: bundle.id,
+      maxPairs: 200,
+      minSimilarity: readSemanticRelationThreshold(),
+      topKPerConcept: 8,
+      workspaceId: input.workspaceId,
+    })
+    .catch(() => []);
+  const semanticCandidates = buildSemanticRelationCandidates(
+    concepts,
+    semanticNeighbors,
+  );
+  const discoveredCandidates = mergeRelationDiscoveryCandidates([
+    ...deterministicCandidates,
+    ...semanticCandidates,
+  ]);
   const context = await loadOkfRelationPreflightContext({
     knowledgeBundleId: bundle.id,
     workspaceId: input.workspaceId,
@@ -137,6 +164,9 @@ export async function discoverOkfRelationCandidates(
         rows.push(await tx.okfRelationCandidate.update({
           data: {
             discoveryRunId: run.id,
+            discoveryVersion: candidate.signals.includes("semantic_neighbor")
+              ? "semantic-neighbor-v1"
+              : "deterministic-v2",
             reason: candidate.reason,
             requestedDirection: null,
             signals: candidate.signals,
@@ -157,6 +187,9 @@ export async function discoverOkfRelationCandidates(
         data: {
           ...candidate,
           discoveryRunId: run.id,
+          discoveryVersion: candidate.signals.includes("semantic_neighbor")
+            ? "semantic-neighbor-v1"
+            : "deterministic-v2",
           verificationStatus: "queued",
         },
       }));
@@ -180,9 +213,63 @@ export async function discoverOkfRelationCandidates(
     alreadyRunning: created.run.status === "running" && created.candidates.length === 0,
     discovered: created.run.totalCandidates,
     runId: created.run.id,
+    semanticCandidates: semanticCandidates.length,
     suppressed,
     warnings: warningCount,
   };
+}
+
+export function buildSemanticRelationCandidates(
+  concepts: RelationDiscoveryConcept[],
+  neighbors: OkfSemanticNeighbor[],
+): RelationDiscoveryCandidate[] {
+  const conceptByFile = new Map(concepts.map((concept) => [concept.filePath, concept]));
+  return neighbors.flatMap((neighbor) => {
+    const source = conceptByFile.get(neighbor.sourceFile);
+    const target = conceptByFile.get(neighbor.targetFile);
+    if (!source || !target || !source.sourceFile || source.sourceFile === target.sourceFile) {
+      return [];
+    }
+    return [{
+      reason: `Semantic neighbor similarity ${neighbor.score.toFixed(3)}; requires exact-evidence verification.`,
+      relation: "references",
+      signals: [
+        "semantic_neighbor",
+        `semantic_similarity:${neighbor.score.toFixed(3)}`,
+      ],
+      sourceFile: neighbor.sourceFile,
+      targetFile: neighbor.targetFile,
+    }];
+  });
+}
+
+function mergeRelationDiscoveryCandidates(
+  candidates: RelationDiscoveryCandidate[],
+) {
+  const merged = new Map<string, RelationDiscoveryCandidate>();
+  for (const candidate of candidates) {
+    const key = `${candidate.sourceFile}\u0000${candidate.targetFile}\u0000${candidate.relation}`;
+    const current = merged.get(key);
+    merged.set(key, current
+      ? {
+          ...current,
+          signals: [...new Set([...current.signals, ...candidate.signals])],
+        }
+      : candidate);
+  }
+  return [...merged.values()].sort((left, right) =>
+    left.sourceFile.localeCompare(right.sourceFile) ||
+    left.targetFile.localeCompare(right.targetFile) ||
+    left.relation.localeCompare(right.relation),
+  );
+}
+
+function readSemanticRelationThreshold() {
+  const value = Number(process.env.OKF_RELATION_SEMANTIC_MIN_SIMILARITY ?? "0.62");
+  if (!Number.isFinite(value) || value < -1 || value > 1) {
+    throw new Error("invalid_env_OKF_RELATION_SEMANTIC_MIN_SIMILARITY");
+  }
+  return value;
 }
 
 export function buildDeterministicRelationCandidates(
@@ -341,6 +428,7 @@ export async function loadRelationDiscoveryConcepts(input: {
     const parsed = parseOkfMarkdown(markdown);
     if (!isAgentReadyOkfMetadata(parsed.frontmatter, parsed.body)) continue;
     concepts.push({
+      contentHash: hashOkfSource(markdown),
       filePath,
       pages: getFrontmatterNumberArray(parsed.frontmatter, "source_pages"),
       sourceFile: getOkfPrimarySource(parsed.frontmatter)?.resource ?? "",
@@ -371,8 +459,10 @@ export async function getOkfRelationReviewQueue(input: {
     automaticApprovalRequested: true,
     id: true,
     reason: true,
+    relation: true,
     signals: true,
     sourceFile: true,
+    status: true,
     targetFile: true,
     verificationConfidence: true,
     verificationDirection: true,
@@ -385,7 +475,7 @@ export async function getOkfRelationReviewQueue(input: {
     verificationStatus: true,
   } as const;
 
-  const [actionable, filtered] = await Promise.all([
+  const [actionable, filtered, published] = await Promise.all([
     getPrisma().okfRelationCandidate.findMany({
       orderBy: [
         { verificationConfidence: "desc" },
@@ -405,9 +495,15 @@ export async function getOkfRelationReviewQueue(input: {
       take: 50,
       where: { ...where, verificationStatus: "filtered" },
     }),
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [{ reviewedAt: "desc" }, { id: "asc" }],
+      select,
+      take: 50,
+      where: { ...where, automaticApprovalRequested: true, status: "approved" },
+    }),
   ]);
 
-  return { actionable, filtered };
+  return { actionable, filtered, published };
 }
 
 export async function getLatestOkfRelationDiscoveryRun(input: { knowledgeBundleId: string; workspaceId: string }) {

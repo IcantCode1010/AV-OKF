@@ -24,7 +24,7 @@
 - [x] Run and commit the 30-question mixed-domain baseline/candidate comparison. The tuned 2026-07-25 real-provider run improved from 15/30 to 23/30 with 100% citation precision, no baseline regression, and zero policy violations.
 - [x] Tighten bounded retry without relaxing policy: append canonical expansion terms to the unchanged query, retain raw discovery labeling through merges, and deterministically repair malformed citation formatting before falling back.
 - [x] Complete the blinded 30-question technical review worksheet. The candidate produced 23 complete fixed-trial responses versus 15 for baseline, with no new incorrect candidate response.
-- [ ] Run Relation Discovery V3 against the configured provider and meet the 80% internal precision checkpoint before considering semantic expansion.
+- [ ] Run Relation Discovery V3 against the configured provider and meet the 80% internal precision checkpoint before broadening semantic candidate generation or relation automation.
 - [ ] Pilot adaptive retry on one internal non-safety-critical bundle for at least seven days and 50 eligible turns.
 - [ ] Run the trust-UX protocol with five non-technical reviewers; any criterion missed by more than one reviewer requires a UI correction.
 - [ ] Keep free model-directed tool choice evaluation-only until it beats the complete deterministic route baseline with zero policy violations.
@@ -73,6 +73,11 @@
 
 ## Reviewed Relation Discovery
 
+- [x] Separate automatic document-local relation discovery from an explicitly triggered bundle-level graph expansion.
+- [x] Add bounded cross-document semantic-neighbor candidates using the existing live OKF embedding index; embeddings propose pairs but never create edges.
+- [x] Normalize common model-generated topic-type variants into the active profile vocabulary.
+- [x] Restrict automatic relation publication to high-confidence low-risk structural types while keeping operational and lifecycle relations review-required.
+
 - [x] Add a design for workspace-scoped relation candidates with `pending`, `approved`, and `rejected` states.
 - [x] Discover bundle candidate pairs deterministically; keep assisted-authoring LLM classification limited to the separately staged suggestion path.
 - [x] Exclude self-links, existing edges, inactive concepts, unsafe targets, and duplicate candidates.
@@ -91,10 +96,10 @@
 - [x] Run a real-provider, non-aviation automatic-relation pilot in an isolated Generic bundle; all 50 proposed pairs failed closed and no unsupported edge was published.
 - [ ] Run the V3 configured-provider Docker evaluation and record whether a representative sample reaches the 80% internal precision checkpoint.
 - [ ] Add a related-document positive-control corpus with known explicit links; the first isolated equipment-manual pilot produced no confirmed edge, so precision and recall could not be measured.
-- [ ] Require approximately 90% precision before considering reduced review, bulk relation approval, semantic expansion, or stronger operational-relation trust.
+- [ ] Require approximately 90% precision before considering reduced review, broader semantic generation, or stronger operational-relation trust.
 - [ ] Repeat the human review against a populated live Generic bundle; the current Generic coverage is deterministic fixture-only.
 - [ ] Tune profile stopwords and the source-page-proximity companion rule, then rerun the same evaluation before adding semantic candidates.
-- [ ] Decide from those metrics whether semantic top-K neighbors or weighted scoring are justified; free-form LLM pair generation remains out of scope.
+- [ ] Evaluate the new semantic-neighbor and document-local candidate paths on a positive-control multi-document corpus and record precision, recall, direction corrections, and publication outcomes.
 
 ## Chat Source Clarity
 

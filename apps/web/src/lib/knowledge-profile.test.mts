@@ -37,6 +37,9 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.deepEqual(generic.relationDiscovery.stopwords, GENERIC_RELATION_DISCOVERY_STOPWORDS);
   assert.equal(generic.relationDiscovery.stopwords.includes("aircraft"), false);
   assert.equal(aviation.relationDiscovery.stopwords.includes("aircraft"), true);
+  assert.equal(generic.relations.includes("part_of"), true);
+  assert.equal(generic.relations.includes("applies_to"), true);
+  assert.equal(generic.relations.includes("triggers"), true);
 });
 
 test("profile clarification fields reject unsafe, unknown, duplicate, and unsupported fields", () => {

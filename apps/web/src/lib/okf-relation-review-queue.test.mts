@@ -11,9 +11,13 @@ test("relation review queue keeps actionable rows complete and bounds rejection 
     okfRelationCandidate: {
       findMany: async (query: Record<string, unknown>) => {
         queries.push(query);
-        return queries.length === 1
-          ? [{ id: "candidate-actionable", verificationStatus: "confirmed" }]
-          : [{ id: "candidate-filtered", verificationStatus: "filtered" }];
+        if (queries.length === 1) {
+          return [{ id: "candidate-actionable", verificationStatus: "confirmed" }];
+        }
+        if (queries.length === 2) {
+          return [{ id: "candidate-filtered", verificationStatus: "filtered" }];
+        }
+        return [{ id: "candidate-published", status: "approved" }];
       },
     },
   };
@@ -26,7 +30,8 @@ test("relation review queue keeps actionable rows complete and bounds rejection 
 
     assert.deepEqual(queue.actionable.map((candidate) => candidate.id), ["candidate-actionable"]);
     assert.deepEqual(queue.filtered.map((candidate) => candidate.id), ["candidate-filtered"]);
-    assert.equal(queries.length, 2);
+    assert.deepEqual(queue.published.map((candidate) => candidate.id), ["candidate-published"]);
+    assert.equal(queries.length, 3);
     assert.equal(queries[0].take, undefined);
     assert.equal(queries[1].take, 50);
     assert.deepEqual(
@@ -37,6 +42,13 @@ test("relation review queue keeps actionable rows complete and bounds rejection 
       (queries[1].where as { verificationStatus: string }).verificationStatus,
       "filtered",
     );
+    assert.equal(queries[2].take, 50);
+    assert.deepEqual(queries[2].where, {
+      automaticApprovalRequested: true,
+      knowledgeBundleId: "bundle-1",
+      status: "approved",
+      workspaceId: "workspace-1",
+    });
   } finally {
     if (previous === undefined) delete prismaGlobal.avOkfPrisma;
     else prismaGlobal.avOkfPrisma = previous;

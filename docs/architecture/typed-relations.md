@@ -37,6 +37,14 @@ The relation vocabulary lives in `okf-base.yaml` under `relations.allowed`. The 
 | `supersedes` | Source object replaces the target. | Target should be treated as stale unless explicitly requested for history. |
 | `conflicts_with` | Source object contradicts the target. | Validator should flag conflict and prefer approved, current, authoritative source. |
 | `depends_on` | Source object requires the target before it can be safely used. | Missing target should produce missing-context or missing-evidence handling. |
+| `part_of` | Source is explicitly a component or subordinate part of the target. | Structural navigation signal. |
+| `applies_to` | Source explicitly applies to the target entity, system, product, or scope. | Scope signal; does not grant authority by itself. |
+| `implements` | Source puts the target policy, requirement, or design into practice. | Implementation context requiring source evidence. |
+| `requires` | Source explicitly requires the target as an input, prerequisite, component, or condition. | Operational relation requiring human review. |
+| `triggers` | Source initiates the target procedure, event, or response. | Operational relation requiring human review. |
+| `affects` | Source has a stated effect on the target. | Context relation requiring human review. |
+| `mitigates` | Source reduces or controls the target risk, condition, or effect. | Safety-sensitive relation requiring human review. |
+| `governs` | Source establishes an authoritative rule or policy for the target. | Authority-sensitive relation requiring human review. |
 
 Do not use a generic relation when the intent is operational. A fault route that sends the user to the MEL should use `routes_to`; a training topic that merely provides background should use `references`.
 
@@ -63,6 +71,17 @@ Relation discovery begins with deterministic candidate generation. There are two
 
 1. Bundle discovery compares approved exported concepts with deterministic signals.
 2. Assisted authoring may send up to 50 deterministically filtered draft-topic pairs through the same verifier one pair at a time, but stores confirmed results only in `KnowledgeAuthoringRun.relationSuggestions`.
+
+Document authoring also makes one bounded structured candidate-proposal call
+over known concepts from that document. Proposed file IDs, relation names, and
+exact evidence quotes are validated before the existing one-pair verifier runs.
+The model cannot introduce a concept or write an edge from this step.
+
+The separate **Expand graph** action combines deterministic bundle candidates
+with at most eight stored-embedding neighbors per approved concept, capped at
+200 pairs. Semantic neighbors must come from different source documents and
+remain proposals until the same exact-quote verifier and graph preflight pass.
+Embeddings never create graph edges directly.
 
 Manual mode remains review-first: authoring suggestions require a user to
 promote them, and confirmed candidates require explicit approval before the
@@ -97,7 +116,7 @@ The exported relation retains the rationale and quote in `reason`, records
 `av_okf_approval_mode: automated`, and remains removable by a user. Automation
 cannot retract, archive, delete, or otherwise change lifecycle state.
 
-The rollout removes old `pending` candidates only. Human-approved and human-rejected history and every OKF Markdown file remain unchanged. The first configured-provider checkpoint requires at least 80% precision on a representative human-reviewed sample; approximately 90% is required before considering reduced review, semantic expansion, or stronger operational-relation trust.
+The rollout removes old `pending` candidates only. Human-approved and human-rejected history and every OKF Markdown file remain unchanged. The first configured-provider checkpoint requires at least 80% precision on a representative human-reviewed sample; approximately 90% is required before considering reduced review, broader semantic generation, or stronger operational-relation trust. The bounded semantic-neighbor pass only proposes pairs from the existing embedding index and does not relax exact evidence or graph validation.
 
 Run `pnpm --dir apps/web eval:relations` with `RELATION_EVAL_WORKSPACE_ID` and optional comma-separated `RELATION_EVAL_BUNDLE_IDS` to write a dry-run before/after report. The report includes candidate counts, terms, tags, direction, warnings, and suppression reasons and leaves explicit human-review fields incomplete. Semantic neighbor generation, weighted scoring, broader LLM classification, and bulk relation approval remain blocked until a representative sample is reviewed.
 

@@ -28,7 +28,7 @@ test("automatic relation approval requires an explicit request and confirmed ver
   }), "automatic_relation_not_confirmed");
 });
 
-test("automatic relation approval rejects confidence below 90 percent and incomplete evidence", () => {
+test("automatic relation approval rejects confidence below the publication threshold and incomplete evidence", () => {
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationConfidence: AUTOMATIC_RELATION_MIN_CONFIDENCE - 0.001,
@@ -37,4 +37,15 @@ test("automatic relation approval rejects confidence below 90 percent and incomp
     ...confirmedCandidate,
     verificationEvidenceQuote: null,
   }), "relation_verification_required");
+});
+
+test("automatic relation approval is limited to low-risk structural relations", () => {
+  assert.equal(getAutomaticRelationApprovalBlocker({
+    ...confirmedCandidate,
+    verificationRelation: "part_of",
+  }), null);
+  assert.equal(getAutomaticRelationApprovalBlocker({
+    ...confirmedCandidate,
+    verificationRelation: "depends_on",
+  }), "automatic_relation_requires_human_review");
 });

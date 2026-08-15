@@ -139,7 +139,7 @@ export async function discoverRelationsAction(formData: FormData) {
     workspaceId: context.workspaceId,
   });
   revalidatePath(`/knowledge/${bundleId}/relations`);
-  redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
+  redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&semanticCandidates=${result.semanticCandidates}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
 }
 
 export async function reviewRelationCandidateAction(formData: FormData) {

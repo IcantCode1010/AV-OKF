@@ -12,9 +12,17 @@ base:
   status_field: status
 relations:
   allowed:
+    - applies_to
+    - part_of
+    - implements
     - routes_to
     - references
     - supports
+    - requires
+    - triggers
+    - affects
+    - mitigates
+    - governs
     - covered_by
     - supersedes
     - conflicts_with

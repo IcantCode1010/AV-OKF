@@ -128,8 +128,8 @@ const stageCopy: Record<
     label: "Topic enrichment",
   },
   relation_classification: {
-    detail: "Identifying possible relationships between concepts for later review.",
-    label: "Relation classification",
+    detail: "Finding explicit relationships between this document's concepts and verifying them against source evidence.",
+    label: "Local relation discovery",
   },
   validation: {
     detail: "Checking source coverage, metadata readiness, and review requirements.",

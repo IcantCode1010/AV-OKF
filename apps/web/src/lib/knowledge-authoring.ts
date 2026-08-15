@@ -9,6 +9,7 @@ import { getLlmProvider, getSdkModel } from "./llm-providers.ts";
 import {
   buildDeterministicRelationCandidates,
   tokenizeRelationTerms,
+  type RelationDiscoveryCandidate,
 } from "./okf-relation-discovery.ts";
 import {
   loadOkfRelationPreflightContext,
@@ -26,6 +27,7 @@ import {
   verifyOkfRelationCandidate,
 } from "./okf-relation-verifier.ts";
 import { getOkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
+import { discoverDocumentRelationCandidates } from "./okf-document-relation-candidates.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
@@ -325,25 +327,12 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
   const topics = await db.topicRecord.findMany({
     orderBy: [{ pageStart: "asc" }, { id: "asc" }],
     where: {
+      documentId: input.documentId,
       knowledgeBundleId: input.knowledgeBundleId,
-      OR: [
-        {
-          documentId: input.documentId,
-          reviewStatus: { in: ["needs_review", "needs_cleanup"] },
-        },
-        {
-          exportedFilePath: { not: null },
-          reviewStatus: "approved",
-        },
-      ],
+      reviewStatus: { in: ["needs_review", "needs_cleanup"] },
       workspaceId: input.workspaceId,
     },
   });
-  const currentTopicIds = new Set(
-    topics
-      .filter((topic) => topic.documentId === input.documentId)
-      .map((topic) => topic.id),
-  );
   const concepts = topics.map((topic) => ({
     filePath: `topic:${topic.id}`,
     pages: topic.sourcePageNumbers,
@@ -351,18 +340,32 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
     tags: getRelationTopicTags(topic.okfMetadata),
     terms: tokenizeRelationTerms(`${topic.title} ${topic.summary}`),
   }));
-  const candidates = buildDeterministicRelationCandidates(concepts, {
+  const deterministicCandidates = buildDeterministicRelationCandidates(concepts, {
     stopwords: bundle.profile.relationDiscovery.stopwords,
-  })
-    .filter((candidate) => {
-      const sourceId = parseTopicReference(candidate.sourceFile);
-      const targetId = parseTopicReference(candidate.targetFile);
-      return Boolean(
-        (sourceId && currentTopicIds.has(sourceId)) ||
-          (targetId && currentTopicIds.has(targetId)),
-      );
-    })
-    .slice(0, 50);
+  });
+  let modelCandidateError: string | null = null;
+  const modelCandidates = await discoverDocumentRelationCandidates({
+    allowedRelations: bundle.profile.relations,
+    apiKey: input.apiKey,
+    concepts: topics.map((topic) => ({
+      body: topic.enrichedBody ?? topic.summary,
+      description: topic.enrichedSummary ?? topic.summary,
+      filePath: `topic:${topic.id}`,
+      title: topic.enrichedTitle ?? topic.title,
+      type: topic.topicType,
+    })),
+    model: input.model,
+    provider: input.provider,
+  }).catch((error) => {
+    modelCandidateError = error instanceof Error
+      ? error.message
+      : "document_relation_candidate_generation_failed";
+    return [];
+  });
+  const candidates = mergeAuthoringRelationCandidates(
+    deterministicCandidates,
+    modelCandidates,
+  ).slice(0, 50);
   if (candidates.length === 0) {
     await stageAudit(input.runId, "relation_classification", "completed");
     return;
@@ -370,7 +373,9 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
   const allowed = bundle.profile.relations;
   const topicByReference = new Map(topics.map((topic) => [`topic:${topic.id}`, topic]));
   const accepted: Array<Record<string, unknown>> = [];
-  const auditResults: Array<Record<string, unknown>> = [];
+  const auditResults: Array<Record<string, unknown>> = modelCandidateError
+    ? [{ stage: "document_local_candidate_generation", error: modelCandidateError }]
+    : [];
   await stageAudit(input.runId, "relation_classification", "running", undefined, input.provider, input.model, JSON.stringify({ candidateCount: candidates.length }));
   for (const candidate of candidates) {
     const sourceTopic = topicByReference.get(candidate.sourceFile);
@@ -425,6 +430,30 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
     where: { id: input.runId },
   });
   await stageAudit(input.runId, "relation_classification", "completed", undefined, input.provider, input.model, JSON.stringify({ candidateCount: candidates.length }), JSON.stringify(auditResults));
+}
+
+function mergeAuthoringRelationCandidates(
+  deterministic: RelationDiscoveryCandidate[],
+  model: RelationDiscoveryCandidate[],
+) {
+  const merged = new Map<string, RelationDiscoveryCandidate>();
+  for (const candidate of [...deterministic, ...model]) {
+    const key = `${candidate.sourceFile}\u0000${candidate.targetFile}\u0000${candidate.relation}`;
+    const current = merged.get(key);
+    merged.set(key, current
+      ? {
+          ...current,
+          signals: [...new Set([...current.signals, ...candidate.signals])],
+        }
+      : candidate);
+  }
+  return [...merged.values()].sort((left, right) =>
+    Number(right.signals.includes("llm_document_local_candidate")) -
+      Number(left.signals.includes("llm_document_local_candidate")) ||
+    left.sourceFile.localeCompare(right.sourceFile) ||
+    left.targetFile.localeCompare(right.targetFile) ||
+    left.relation.localeCompare(right.relation),
+  );
 }
 
 async function completeStage(runId: string, stage: string, nextStage: string) {

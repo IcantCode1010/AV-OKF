@@ -5,20 +5,13 @@ import { z } from "zod";
 
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import { getLlmProvider, getSdkModel, type LlmProviderId } from "./llm-providers.ts";
+import { RELATION_DEFINITIONS } from "./okf-relation-definitions.ts";
+
+export { RELATION_DEFINITIONS } from "./okf-relation-definitions.ts";
 
 export const OKF_RELATION_VERIFIER_VERSION = "evidence-v1";
 
 const ZERO_WIDTH_AND_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200D\u2060\uFEFF]/g;
-
-const RELATION_DEFINITIONS: Record<string, string> = {
-  conflicts_with: "The source is incompatible with or contradicts the target.",
-  covered_by: "The source subject is governed or comprehensively addressed by the target.",
-  depends_on: "The source cannot be applied or understood without the target.",
-  references: "The source explicitly points to or cites the target.",
-  routes_to: "The source directs the reader or workflow to the target.",
-  supersedes: "The source replaces the target as current guidance.",
-  supports: "The source provides direct supporting evidence or detail for the target.",
-};
 
 const verifierSchema = z.object({
   confidence: z.number().min(0).max(1),

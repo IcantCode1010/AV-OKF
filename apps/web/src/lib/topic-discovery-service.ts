@@ -1,6 +1,7 @@
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import { getLlmProvider } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
+import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
 import {
   createSdkTopicDiscoveryProvider,
   discoverDocumentTopics,
@@ -42,7 +43,10 @@ export async function runTopicDiscoveryJob(
     return { status: "failed" as const, topicsCreated: 0 };
   }
   const knowledgeBundleId = document.knowledgeBundleId;
-  const bundle = await db.knowledgeBundle.findFirst({ where: { id: knowledgeBundleId, status: "active", workspaceId: payload.workspaceId } });
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: knowledgeBundleId,
+    workspaceId: payload.workspaceId,
+  });
   if (!bundle) {
     await db.topicDiscoveryJob.update({ data: { errorCode: "knowledge_bundle_unavailable", status: "failed" }, where: { id: job.id } });
     return { status: "failed" as const, topicsCreated: 0 };
@@ -88,6 +92,7 @@ export async function runTopicDiscoveryJob(
 
   try {
     const result = await discoverDocumentTopics({
+      allowedTopicTypes: Object.keys(bundle.profile.types),
       documentTitle: document.title,
       onWindowComplete: async (completed, total) => {
         await db.topicDiscoveryJob.update({
