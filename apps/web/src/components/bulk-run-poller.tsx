@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 const POLL_INTERVAL_MS = 2_000;
 
@@ -18,8 +19,13 @@ export function BulkRunPoller({
   fingerprint: string;
   runId: string;
 }) {
+  const router = useRouter();
+  const latestFingerprint = useRef(fingerprint);
+
   useEffect(() => {
     if (!active) return;
+
+    latestFingerprint.current = fingerprint;
 
     let cancelled = false;
     let requestInFlight = false;
@@ -37,8 +43,9 @@ export function BulkRunPoller({
 
         const next = (await response.json()) as BulkRunStatusResponse;
         if (!isBulkRunStatusResponse(next) || cancelled) return;
-        if (hasBulkRunStatusChanged(fingerprint, next.fingerprint)) {
-          window.location.reload();
+        if (hasBulkRunStatusChanged(latestFingerprint.current, next.fingerprint)) {
+          latestFingerprint.current = next.fingerprint;
+          router.refresh();
         }
       } catch {
         // A transient status failure must not interrupt the run view.
@@ -53,7 +60,7 @@ export function BulkRunPoller({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [active, fingerprint, runId]);
+  }, [active, fingerprint, router, runId]);
 
   return null;
 }

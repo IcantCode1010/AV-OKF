@@ -11,21 +11,30 @@ import {
 } from "@/lib/bulk-topic-approval";
 import { createBulkTopicApprovalQueue } from "@/lib/bulk-topic-approval-queue";
 
-export async function prepareBulkTopicApprovalAction(formData: FormData) {
+export type PrepareBulkTopicApprovalState = {
+  error: string | null;
+  confirmationHref: string | null;
+};
+
+export async function prepareBulkTopicApprovalAction(
+  _previousState: PrepareBulkTopicApprovalState,
+  formData: FormData,
+): Promise<PrepareBulkTopicApprovalState> {
   const context = await requireAuthWorkspaceContext();
   const bundleId = getString(formData, "knowledgeBundleId");
-  const documentId = getString(formData, "documentId");
   const topicIds = formData.getAll("topicIds").filter((value): value is string => typeof value === "string");
-  let runId: string;
   try {
     const run = await createBulkTopicApprovalPreflight({ bundleId, context, topicIds });
-    runId = run.id;
+    return {
+      error: null,
+      confirmationHref: `/knowledge/${encodeURIComponent(bundleId)}/review/${encodeURIComponent(run.id)}`,
+    };
   } catch (error) {
-    const query = new URLSearchParams({ error: errorMessage(error) });
-    if (documentId) query.set("documentId", documentId);
-    redirect(`/knowledge/${bundleId}/review?${query.toString()}`);
+    return {
+      error: errorMessage(error),
+      confirmationHref: null,
+    };
   }
-  redirect(`/knowledge/${bundleId}/review/${runId}`);
 }
 
 export async function confirmBulkTopicApprovalAction(formData: FormData) {

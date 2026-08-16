@@ -315,6 +315,51 @@ export async function getBulkTopicApprovalRun(input: { context: AuthWorkspaceCon
   });
 }
 
+export async function listAwaitingBulkTopicApprovalRuns(input: {
+  bundleId: string;
+  context: AuthWorkspaceContext;
+  documentId?: string;
+}) {
+  const runs = await getPrisma().bulkTopicApprovalRun.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      createdAt: true,
+      id: true,
+      items: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          revisionFingerprint: true,
+          topic: true,
+        },
+      },
+    },
+    take: 5,
+    where: {
+      knowledgeBundleId: input.bundleId,
+      mode: "human",
+      status: "awaiting_confirmation",
+      workspaceId: input.context.workspaceId,
+      ...(input.documentId
+        ? { items: { some: { documentId: input.documentId } } }
+        : {}),
+    },
+  });
+  return runs.filter(isBulkTopicApprovalRunConfirmable);
+}
+
+export function isBulkTopicApprovalRunConfirmable(run: {
+  items: Array<{
+    revisionFingerprint: string;
+    topic: TopicLike;
+  }>;
+}) {
+  return run.items.length > 0 && run.items.every((item) =>
+    item.topic.reviewStatus === "needs_review" &&
+    topicRevisionFingerprint(item.topic) === item.revisionFingerprint,
+  );
+}
+
 export async function getBulkTopicApprovalStatusSnapshot(input: {
   context: AuthWorkspaceContext;
   runId: string;
@@ -370,6 +415,26 @@ export function buildBulkTopicApprovalStatusSnapshot(
   return {
     active: ["queued", "running"].includes(run.status),
     fingerprint,
+  };
+}
+
+export function summarizeBulkTopicApprovalProgress(items: Array<{
+  status: string;
+  topic: { enrichedTitle: string | null; title: string };
+}>) {
+  const succeeded = items.filter((item) => item.status === "succeeded").length;
+  const failed = items.filter((item) => item.status === "failed").length;
+  const inProgress = items.filter((item) => ["approving", "exporting"].includes(item.status)).length;
+  const pending = items.filter((item) => item.status === "pending").length;
+  const active = items.find((item) => ["approving", "exporting"].includes(item.status));
+  return {
+    activeTitle: active?.topic.enrichedTitle ?? active?.topic.title ?? null,
+    completed: succeeded + failed,
+    failed,
+    inProgress,
+    pending,
+    succeeded,
+    total: items.length,
   };
 }
 

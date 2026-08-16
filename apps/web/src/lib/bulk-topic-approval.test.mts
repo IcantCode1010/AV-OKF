@@ -11,7 +11,9 @@ import {
   claimBulkTopicForRun,
   createOrReuseBulkPreflight,
   findPageOverlapErrors,
+  isBulkTopicApprovalRunConfirmable,
   shouldBlockBulkPageOverlap,
+  summarizeBulkTopicApprovalProgress,
   topicEligibilityErrors,
   topicRevisionFingerprint,
   shouldApproveBulkTopic,
@@ -106,6 +108,40 @@ test("bulk run status fingerprints are deterministic and track item progress", (
   assert.equal(running.fingerprint, reversed.fingerprint);
   assert.equal(completed.active, false);
   assert.notEqual(running.fingerprint, completed.fingerprint);
+});
+
+test("bulk progress reports the active topic and real terminal counts", () => {
+  const progress = summarizeBulkTopicApprovalProgress([
+    { status: "succeeded", topic: { enrichedTitle: "Exported topic", title: "Original exported" } },
+    { status: "exporting", topic: { enrichedTitle: "Current topic", title: "Original current" } },
+    { status: "pending", topic: { enrichedTitle: null, title: "Waiting topic" } },
+    { status: "failed", topic: { enrichedTitle: "Failed topic", title: "Original failed" } },
+  ]);
+
+  assert.deepEqual(progress, {
+    activeTitle: "Current topic",
+    completed: 2,
+    failed: 1,
+    inProgress: 1,
+    pending: 1,
+    succeeded: 1,
+    total: 4,
+  });
+});
+
+test("stale prepared confirmations cannot be presented as actionable", () => {
+  const currentTopic = makeTopic({ reviewStatus: "needs_review" });
+  const revisionFingerprint = topicRevisionFingerprint(currentTopic);
+
+  assert.equal(isBulkTopicApprovalRunConfirmable({
+    items: [{ revisionFingerprint, topic: currentTopic }],
+  }), true);
+  assert.equal(isBulkTopicApprovalRunConfirmable({
+    items: [{
+      revisionFingerprint,
+      topic: { ...currentTopic, reviewStatus: "approved" },
+    }],
+  }), false);
 });
 
 function makeBulkStatusItem(id: string, status: string) {
@@ -240,7 +276,7 @@ test("an approval-complete retry resumes at export without approving again", () 
   );
 });
 
-function makeTopic() {
+function makeTopic(overrides: Record<string, unknown> = {}) {
   return {
     bulkApprovalRunId: null,
     confidence: "high",
@@ -258,5 +294,6 @@ function makeTopic() {
     sourcePageNumbers: [1, 2],
     updatedAt: new Date("2026-07-20T12:00:00Z"),
     workspaceId: "ws-1",
+    ...overrides,
   };
 }

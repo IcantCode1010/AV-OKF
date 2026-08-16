@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, CheckSquare2, CircleAlert, FileText, XCircle } from "lucide-react";
+import { CheckCircle2, CheckSquare2, CircleAlert, FileText, LoaderCircle, XCircle } from "lucide-react";
 
-import { prepareBulkTopicApprovalAction } from "@/app/(app)/knowledge/bulk-actions";
-import { PendingSubmitButton } from "@/components/pending-submit-button";
+import {
+  prepareBulkTopicApprovalAction,
+} from "@/app/(app)/knowledge/bulk-actions";
+import type { PrepareBulkTopicApprovalState } from "@/app/(app)/knowledge/bulk-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +36,11 @@ export type BulkReviewTopic = {
 type ReviewFilter = "all" | "approved" | "needs_action" | "ready" | "rejected";
 type ReviewCategory = "approved" | "needs_review" | "ready" | "rejected";
 
+const initialPrepareBulkTopicApprovalState: PrepareBulkTopicApprovalState = {
+  error: null,
+  confirmationHref: null,
+};
+
 export function BulkTopicReviewList({
   bundleId,
   documentId,
@@ -43,6 +50,10 @@ export function BulkTopicReviewList({
   documentId?: string;
   topics: BulkReviewTopic[];
 }) {
+  const [prepareState, prepareAction, preparing] = useActionState(
+    prepareBulkTopicApprovalAction,
+    initialPrepareBulkTopicApprovalState,
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<ReviewFilter>(() =>
     topics.some((topic) => topicNeedsAction(topic)) ? "needs_action" : "all",
@@ -66,6 +77,12 @@ export function BulkTopicReviewList({
   }, [visibleTopics]);
   const allSelected = eligibleIds.length > 0 && eligibleIds.every((id) => selected.has(id));
 
+  useEffect(() => {
+    if (prepareState.confirmationHref) {
+      window.location.assign(prepareState.confirmationHref);
+    }
+  }, [prepareState.confirmationHref]);
+
   function toggleAll() {
     setSelected(allSelected ? new Set() : new Set(eligibleIds));
   }
@@ -76,7 +93,7 @@ export function BulkTopicReviewList({
   }
 
   return (
-    <form action={prepareBulkTopicApprovalAction} className="space-y-5">
+    <form action={prepareAction} className="space-y-5">
       <input name="knowledgeBundleId" type="hidden" value={bundleId} />
       {documentId ? <input name="documentId" type="hidden" value={documentId} /> : null}
       <div
@@ -120,14 +137,27 @@ export function BulkTopicReviewList({
             >
               {allSelected ? "Clear selection" : "Select all ready"}
             </Button>
-            <PendingSubmitButton disabled={selected.size === 0} pendingLabel="Preparing confirmation...">
-              Continue to confirmation
-            </PendingSubmitButton>
+            <Button disabled={selected.size === 0 || preparing} type="submit">
+              {preparing ? <><LoaderCircle className="animate-spin motion-reduce:animate-none" />Validating selection...</> : "Continue to confirmation"}
+            </Button>
           </div>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           This checks the selected topics and opens a final confirmation. Nothing is approved or exported until Step 2.
         </p>
+        {preparing ? (
+          <div aria-live="polite" className="mt-3 border border-primary/30 bg-primary/5 p-3 text-sm">
+            <p className="font-medium">Preparing your confirmation</p>
+            <p className="mt-1 text-muted-foreground">
+              Validating {selected.size} selected {selected.size === 1 ? "topic" : "topics"}. Approval has not started yet.
+            </p>
+          </div>
+        ) : null}
+        {prepareState.error ? (
+          <div aria-live="assertive" className="mt-3 border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            Confirmation could not be prepared: {formatError(prepareState.error)}
+          </div>
+        ) : null}
       </div>
 
       {[...groups.entries()].map(([key, documentTopics]) => {

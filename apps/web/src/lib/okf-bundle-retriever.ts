@@ -950,7 +950,24 @@ function tokenizeField(value: string): string[] {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .split(/\s+/)
-    .filter((term) => term.length > 1);
+    .filter((term) => term.length > 1)
+    .map(normalizeRetrievalToken);
+}
+
+function normalizeRetrievalToken(term: string): string {
+  if (term.length > 4 && term.endsWith("ies")) {
+    return `${term.slice(0, -3)}y`;
+  }
+  if (
+    term.length > 3 &&
+    term.endsWith("s") &&
+    !term.endsWith("ss") &&
+    !term.endsWith("us") &&
+    !term.endsWith("is")
+  ) {
+    return term.slice(0, -1);
+  }
+  return term;
 }
 
 function matchingTerms(queryTerms: string[], targetTerms: Set<string>): string[] {

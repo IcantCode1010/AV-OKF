@@ -624,6 +624,7 @@ const CANONICAL_QUESTION_PATTERNS = [
   /^what (is|are|does)\b/,
   /^how (do|does|is|are)\b/,
   /^where (is|are)\b/,
+  /^tell me\b/,
   /^explain\b/,
   /^describe\b/,
 ];

@@ -231,6 +231,33 @@ test("ranking is deterministic", async () => {
   }
 });
 
+test("lexical matching normalizes simple plurals and ranks the specific concept first", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-plurals-"));
+
+  try {
+    await writeTopic(root, "overview.md", {
+      description: "Overview of flight controls including spoilers and flaps.",
+      title: "Flight Control Systems Overview",
+    });
+    await writeTopic(root, "spoiler.md", {
+      body: "The speedbrake lever controls flight spoiler movement.",
+      description: "Manual operation of the flight spoiler control system.",
+      title: "Flight Spoiler Control System",
+    });
+
+    const results = await retrieveOkfBundleEvidence({
+      knowledgeRoot: root,
+      query: "how do i activate the spoilers",
+      workspaceId: "wrk_1",
+    });
+
+    assert.equal(results[0]?.filePath, "spoiler.md");
+    assert.ok(results[0]?.matchedTerms.includes("spoiler"));
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("retriever reads bundle live and stops surfacing unapproved changes", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-live-"));
   const target = path.join(root, "brakes.md");
