@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "corpus": {
+    "commit": "fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f",
+    "license": "Apache-2.0",
+    "repository": "https://github.com/GoogleCloudPlatform/knowledge-catalog"
+  },
+  "integrity": {
+    "mismatches": [],
+    "valid": true
+  },
+  "expectedTotals": {
+    "bundleFiles": 79,
+    "markdownFiles": 78,
+    "conceptFiles": 53,
+    "indexFiles": 24,
+    "logFiles": 1,
+    "resourceFiles": 1
+  },
+  "totals": {
+    "bundleFiles": 79,
+    "conceptFiles": 53,
+    "indexFiles": 24,
+    "logFiles": 1,
+    "markdownFiles": 78,
+    "resourceFiles": 1
+  },
+  "summary": {
+    "agentReadyConcepts": 0,
+    "conceptValidationFailures": 0,
+    "portableCompatibleBundles": 4,
+    "roundTripsPassed": 78,
+    "runtimeReadyBundles": 0,
+    "warnings": 0
+  },
+  "bundles": [
+    {
+      "agentReadyConcepts": 0,
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 18,
+        "conceptFiles": 9,
+        "indexFiles": 7,
+        "logFiles": 1,
+        "markdownFiles": 17,
+        "resourceFiles": 1
+      },
+      "expectedCounts": {
+        "bundleFiles": 18,
+        "markdownFiles": 17,
+        "conceptFiles": 9,
+        "indexFiles": 7,
+        "logFiles": 1,
+        "resourceFiles": 1
+      },
+      "fields": {
+        "attester": 2,
+        "description": 9,
+        "executor": 2,
+        "generated": 9,
+        "not": 1,
+        "parameters": 2,
+        "resource": 3,
+        "runtime": 2,
+        "sources": 5,
+        "stale_after": 7,
+        "status": 9,
+        "tags": 9,
+        "title": 9,
+        "type": 9,
+        "usage_window": 1,
+        "verified": 8
+      },
+      "name": "acme_retail",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 17,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "Attested Computation": 2,
+        "BigQuery Table": 1,
+        "Metric": 3,
+        "Policy": 2,
+        "Skill": 1
+      },
+      "warnings": []
+    },
+    {
+      "agentReadyConcepts": 0,
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 15,
+        "conceptFiles": 9,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "markdownFiles": 15,
+        "resourceFiles": 0
+      },
+      "expectedCounts": {
+        "bundleFiles": 15,
+        "markdownFiles": 15,
+        "conceptFiles": 9,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "resourceFiles": 0
+      },
+      "fields": {
+        "description": 9,
+        "generated": 9,
+        "resource": 9,
+        "sources": 9,
+        "tags": 9,
+        "title": 9,
+        "type": 9
+      },
+      "name": "crypto_bitcoin",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 15,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "BigQuery Dataset": 1,
+        "BigQuery Table": 4,
+        "Reference": 4
+      },
+      "warnings": []
+    },
+    {
+      "agentReadyConcepts": 0,
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 14,
+        "conceptFiles": 9,
+        "indexFiles": 5,
+        "logFiles": 0,
+        "markdownFiles": 14,
+        "resourceFiles": 0
+      },
+      "expectedCounts": {
+        "bundleFiles": 14,
+        "markdownFiles": 14,
+        "conceptFiles": 9,
+        "indexFiles": 5,
+        "logFiles": 0,
+        "resourceFiles": 0
+      },
+      "fields": {
+        "description": 9,
+        "generated": 9,
+        "resource": 9,
+        "sources": 9,
+        "tags": 9,
+        "title": 9,
+        "type": 9
+      },
+      "name": "ga4",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 14,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "BigQuery Dataset": 1,
+        "BigQuery Table": 1,
+        "Reference": 7
+      },
+      "warnings": []
+    },
+    {
+      "agentReadyConcepts": 0,
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 32,
+        "conceptFiles": 26,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "markdownFiles": 32,
+        "resourceFiles": 0
+      },
+      "expectedCounts": {
+        "bundleFiles": 32,
+        "markdownFiles": 32,
+        "conceptFiles": 26,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "resourceFiles": 0
+      },
+      "fields": {
+        "description": 26,
+        "generated": 26,
+        "resource": 26,
+        "sources": 26,
+        "status": 1,
+        "tags": 26,
+        "title": 26,
+        "type": 26
+      },
+      "name": "stackoverflow",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 32,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "BigQuery Dataset": 1,
+        "BigQuery Table": 16,
+        "Reference": 9
+      },
+      "warnings": []
+    }
+  ]
+}

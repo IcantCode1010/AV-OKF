@@ -17,16 +17,11 @@ export type OkfV02ValidationIssue = {
   message: string;
 };
 
-export async function validateOkfV02BundleRoot(
+export async function validatePortableOkfV02BundleRoot(
   knowledgeRoot: string,
 ): Promise<OkfV02ValidationIssue[]> {
   const issues: OkfV02ValidationIssue[] = [];
   const files = await collectMarkdownFiles(knowledgeRoot);
-  const paths = new Set(files);
-  if (!paths.has("index.md")) {
-    issues.push(issue("index.md", "okf_v02_index_missing", "Root index.md is required."));
-    return issues;
-  }
 
   for (const filePath of files) {
     const fullPath = await resolveKnowledgePath({ knowledgeRoot, relativePath: filePath });
@@ -34,6 +29,7 @@ export async function validateOkfV02BundleRoot(
       issues.push(issue(filePath, "okf_v02_path_unsafe", "File resolves outside the bundle."));
       continue;
     }
+
     let parsed;
     try {
       parsed = parseOkfMarkdown(await readFile(fullPath, "utf8"));
@@ -45,22 +41,101 @@ export async function validateOkfV02BundleRoot(
       ));
       continue;
     }
-    if (filePath === "log.md") continue;
-    if (filePath === "index.md") {
-      if (parsed.frontmatter.okf_version !== "0.2") {
-        issues.push(issue(filePath, "okf_v02_version_missing", "index.md must declare okf_version: 0.2."));
-      }
-      if (Object.keys(parsed.frontmatter).some((key) => key !== "okf_version")) {
+
+    const reservedName = path.posix.basename(filePath).toLowerCase();
+    if (reservedName === "index.md") {
+      const keys = Object.keys(parsed.frontmatter);
+      if (filePath !== "index.md" && keys.length > 0) {
         issues.push(issue(
           filePath,
           "okf_v02_index_frontmatter_forbidden",
-          "index.md frontmatter may contain only okf_version.",
+          "Only the bundle-root index.md may contain frontmatter.",
         ));
+      } else if (filePath === "index.md") {
+        if (keys.some((key) => key !== "okf_version")) {
+          issues.push(issue(
+            filePath,
+            "okf_v02_index_frontmatter_forbidden",
+            "Root index.md frontmatter may contain only okf_version.",
+          ));
+        }
+        if (
+          parsed.frontmatter.okf_version !== undefined &&
+          parsed.frontmatter.okf_version !== "0.2"
+        ) {
+          issues.push(issue(
+            filePath,
+            "okf_v02_version_unsupported",
+            "Declared OKF version is not 0.2.",
+          ));
+        }
       }
       continue;
     }
+
+    if (reservedName === "log.md") {
+      for (const heading of parsed.body.matchAll(/^##\s+(.+?)\s*$/gm)) {
+        const value = heading[1] ?? "";
+        if (!isIsoDate(value)) {
+          issues.push(issue(
+            filePath,
+            "okf_v02_log_date_invalid",
+            `Log date heading is not YYYY-MM-DD: ${value}`,
+          ));
+        }
+      }
+      continue;
+    }
+
     for (const code of validateOkfV02Frontmatter(parsed.frontmatter)) {
       issues.push(issue(filePath, code, code));
+    }
+  }
+
+  return sortIssues(issues);
+}
+
+export async function validateOkfV02BundleRoot(
+  knowledgeRoot: string,
+): Promise<OkfV02ValidationIssue[]> {
+  const issues = await validatePortableOkfV02BundleRoot(knowledgeRoot);
+  const files = await collectMarkdownFiles(knowledgeRoot);
+  const paths = new Set(files);
+  if (!paths.has("index.md")) {
+    issues.push(issue("index.md", "okf_v02_index_missing", "Root index.md is required."));
+    return sortIssues(issues);
+  }
+
+  try {
+    const rootIndexPath = await resolveKnowledgePath({
+      knowledgeRoot,
+      relativePath: "index.md",
+    });
+    const rootIndex = rootIndexPath
+      ? parseOkfMarkdown(await readFile(rootIndexPath, "utf8"))
+      : null;
+    if (rootIndex?.frontmatter.okf_version !== "0.2") {
+      issues.push(issue(
+        "index.md",
+        "okf_v02_version_missing",
+        "index.md must declare okf_version: 0.2.",
+      ));
+    }
+  } catch {
+    // Portable validation already reports the parse or path error.
+  }
+
+  for (const filePath of files) {
+    const reservedName = path.posix.basename(filePath).toLowerCase();
+    if (reservedName === "index.md" || reservedName === "log.md") continue;
+    const fullPath = await resolveKnowledgePath({ knowledgeRoot, relativePath: filePath });
+    if (!fullPath) continue;
+    let parsed;
+    try {
+      parsed = parseOkfMarkdown(await readFile(fullPath, "utf8"));
+    } catch {
+      // Portable validation already reports malformed frontmatter.
+      continue;
     }
     for (const relation of getFrontmatterRelations(parsed.frontmatter)) {
       const target = normalizeRelationTarget(filePath, relation.target);
@@ -101,9 +176,7 @@ export async function validateOkfV02BundleRoot(
       }
     }
   }
-  return issues.sort((left, right) =>
-    left.filePath.localeCompare(right.filePath) || left.code.localeCompare(right.code),
-  );
+  return sortIssues(issues);
 }
 
 async function collectMarkdownFiles(root: string) {
@@ -155,4 +228,16 @@ function normalizeRelationTarget(sourcePath: string, value: string) {
 
 function issue(filePath: string, code: string, message: string): OkfV02ValidationIssue {
   return { code, filePath, message };
+}
+
+function isIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+}
+
+function sortIssues(issues: OkfV02ValidationIssue[]) {
+  return issues.sort((left, right) =>
+    left.filePath.localeCompare(right.filePath) || left.code.localeCompare(right.code),
+  );
 }

@@ -5,7 +5,10 @@ import path from "node:path";
 import test from "node:test";
 
 import { assertOkfV02Bundle } from "./okf-version.ts";
-import { validateOkfV02BundleRoot } from "./okf-v02-validation.ts";
+import {
+  validateOkfV02BundleRoot,
+  validatePortableOkfV02BundleRoot,
+} from "./okf-v02-validation.ts";
 
 test("v0.2 validator accepts a trusted concept with a portable source reference", async () => {
   const root = await createFixture();
@@ -64,6 +67,73 @@ test("v0.2 validator rejects broken and escaping typed relation targets", async 
     assert.equal(
       (await validateOkfV02BundleRoot(root)).some(
         (issue) => issue.code === "okf_v02_relation_target_unsafe",
+      ),
+      true,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("portable validation accepts multiword types without a root index", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-v02-portable-"));
+  try {
+    await mkdir(path.join(root, "tables"), { recursive: true });
+    await writeFile(path.join(root, "tables", "events.md"), `---
+type: BigQuery Table
+x_producer:
+  nested: true
+---
+
+Events.
+`);
+    assert.deepEqual(await validatePortableOkfV02BundleRoot(root), []);
+    assert.equal(
+      (await validateOkfV02BundleRoot(root)).some(
+        (issue) => issue.code === "okf_v02_index_missing",
+      ),
+      true,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("nested indexes are reserved files rather than concepts", async () => {
+  const root = await createFixture();
+  try {
+    await mkdir(path.join(root, "concepts"), { recursive: true });
+    await writeFile(path.join(root, "concepts", "index.md"), "# Concepts\n");
+    assert.deepEqual(await validatePortableOkfV02BundleRoot(root), []);
+    assert.deepEqual(await validateOkfV02BundleRoot(root), []);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("root version is optional for portable bundles and mandatory at runtime", async () => {
+  const root = await createFixture();
+  try {
+    await writeFile(path.join(root, "index.md"), "# Portable bundle\n");
+    assert.deepEqual(await validatePortableOkfV02BundleRoot(root), []);
+    assert.equal(
+      (await validateOkfV02BundleRoot(root)).some(
+        (issue) => issue.code === "okf_v02_version_missing",
+      ),
+      true,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("portable validation rejects malformed log date headings", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-v02-log-"));
+  try {
+    await writeFile(path.join(root, "log.md"), "# Log\n\n## August 16\n- Updated\n");
+    assert.equal(
+      (await validatePortableOkfV02BundleRoot(root)).some(
+        (issue) => issue.code === "okf_v02_log_date_invalid",
       ),
       true,
     );

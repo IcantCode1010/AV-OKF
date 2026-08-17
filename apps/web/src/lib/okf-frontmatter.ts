@@ -86,7 +86,12 @@ export function serializeOkfMarkdown(input: {
     lineWidth: 0,
     sortMapEntries: false,
   }).trimEnd();
-  return `---\n${frontmatter}\n---\n\n${input.body.trim()}\n`;
+  const body = input.body
+    .replace(/\r\n?/g, "\n")
+    .replace(/\n+$/, "");
+  return body
+    ? `---\n${frontmatter}\n---\n\n${body}\n`
+    : `---\n${frontmatter}\n---\n`;
 }
 
 export function getFrontmatterScalar(

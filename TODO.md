@@ -53,7 +53,16 @@
 
 ## Bundle Profile Conformance And Migration
 
-- [ ] Write a dry-run inventory that maps every live bundle file to its owning workspace, bundle, active profile, source document, and exported topic.
+- [x] Phase 1: remove v0.1 examples from active guidance and add a regression test for legacy OKF contract fields.
+- [x] Purge all runtime documents and document-derived knowledge across every workspace; verify the empty state is idempotent while preserving bundles and profiles.
+- [x] Phase 2: pin all four official upstream v0.2 sample bundles at commit `fe3268a` as an attributed, fingerprinted compatibility corpus; validate 78 deterministic Markdown round trips and preserve portable/runtime/agent-readiness separation.
+- [ ] Phase 3: validate claim-level Markdown footnotes against `sources[].id` without weakening generic conformance.
+- [ ] Phase 4: add non-destructive first-enrichment and re-enrichment diff guards.
+- [ ] Phase 5: add reviewed retrieval-trigger proposals learned from retrieval misses and knowledge gaps.
+- [ ] Phase 6: add privacy-minimized bundle retrieval-health and concept-usage telemetry.
+- [ ] Phase 7: evaluate an index-guided, bounded mini research mode with parallel subqueries.
+- [ ] Phase 8: implement staged, v0.2-only portable bundle import after every prior gate passes.
+- [x] Replace the retired live-data inventory task with fixture-owned compatibility reporting that runs offline and fails CI when fixture hashes or results drift.
 - [ ] Ensure every bundle contains and validates against its own generated `okf-base.yaml`; do not apply the repository aviation profile to Generic bundles.
 - [ ] Correct suspicious or incomplete source metadata through the document metadata workflow, then regenerate affected OKF files through the exporter rather than editing Markdown directly.
 - [ ] Migrate or remove legacy compatibility files that cannot satisfy their active profile or no longer have a valid source/topic projection.

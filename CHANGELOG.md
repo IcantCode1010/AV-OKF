@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added a pinned Apache-2.0 OKF v0.2 compatibility corpus containing all four
+  official Google sample bundles at commit `fe3268a`, with per-file SHA-256
+  integrity checks and a deterministic committed report. All 78 Markdown files
+  round-trip successfully, all 53 concepts pass portable frontmatter
+  validation, and none is promoted to AV-OKF agent-ready evidence.
+- Split generic portable bundle validation from strict AV-OKF runtime
+  validation. Portable bundles now accept descriptive multiword concept types,
+  optional root indexes/version declarations, and reserved nested indexes,
+  while production still requires `okf_version: "0.2"` and retains source,
+  relation, lifecycle, profile, and trust gates. Added a focused compatibility
+  command and CI enforcement.
+
+- Added a guarded all-workspace document purge command with dry-run inventory,
+  exact confirmation, durable sequential deletion, retry monitoring, orphaned
+  object/knowledge cleanup, citation tombstoning, and idempotent verification.
+  The 2026-08-16 clean-slate run permanently removed 24 documents, 17 tracked
+  source objects, 216 topics, one orphaned PDF, 14 orphaned runtime knowledge
+  files, and eight remaining citation-backed answers while preserving bundle
+  registries and profiles.
+
+- Reconciled active user and architecture guidance with the production OKF
+  v0.2-only contract. The document pipeline now describes portable
+  `references/sources/` concepts, `generated`, `verified`, `sources`, and
+  `status` instead of v0.1 manifests and trust fields. Added a documentation
+  regression test that rejects legacy contract examples outside the explicitly
+  historical migration note.
+
 - Reworked the Relations workspace into a human-readable, concept-centered
   review queue. Confirmed candidates are grouped by source concept and show
   plain-language relationship sentences, concept titles, source documents,

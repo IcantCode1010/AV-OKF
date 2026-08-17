@@ -20,19 +20,17 @@ evidence.
 
 ## Compatibility Note
 
-The current application generates bundle manifests with:
+AV-OKF runs a v0.2-only production runtime. Every active bundle must declare:
 
 ```yaml
-okf_version: '0.1'
+okf_version: "0.2"
 ```
 
-The product direction is to move to OKF v0.2 without maintaining a permanent
-dual-read mode. That migration has not yet been implemented. Do not relabel a
-current AV-OKF export as v0.2. A future v0.2 importer must be introduced
-together with the exporter, parser, validator, and existing-bundle migration.
-
-The structure below describes the format the application accepts today and the
-stable packaging rules that should carry forward to v0.2.
+The declaration must agree in the bundle database row and root `index.md`.
+Production does not fall back to v0.1. Generated concepts use the v0.2
+`generated`, `verified`, `sources`, `status`, and `stale_after` families while
+AV-OKF applies stricter workspace, lifecycle, approval, and source-evidence
+rules before treating a concept as trusted agent evidence.
 
 ## End-To-End Pipeline
 
@@ -51,7 +49,7 @@ flowchart TD
     J -->|"Enabled and eligible"| L["Automatic approval"]
     K --> M["Export approved topic"]
     L --> M
-    M --> N["Update index, source manifest, and log"]
+    M --> N["Update index, source reference, and log"]
     N --> O["Optionally discover and review relations"]
     O --> P["Validate portable bundle"]
 ```
@@ -179,7 +177,7 @@ Only approved topics can be exported. Export writes the concept Markdown file
 and updates:
 
 - `index.md`;
-- `source_manifest.md`;
+- the source-reference concept under `references/sources/`;
 - `log.md`.
 
 The exporter, rather than a person or external process, should update these
@@ -222,12 +220,12 @@ knowledge/
                 ├── okf-base.yaml
                 ├── index.md
                 ├── log.md
-                ├── source_manifest.md
                 ├── concepts/
                 │   └── {type}/
                 ├── procedures/
                 │   └── {type}/
                 ├── references/
+                │   ├── sources/
                 │   └── {type}/
                 ├── routing/
                 │   └── {type}/
@@ -245,11 +243,14 @@ copied across tenants.
 | --- | --- |
 | `okf-base.yaml` | Bundle profile, allowed fields, types, statuses, relations, and hygiene rules. |
 | `index.md` | Human and agent entrypoint containing links to exported concepts. |
-| `source_manifest.md` | Portable list of source document identities and source metadata. |
 | `log.md` | Append-only export and lifecycle history. |
 | `okf-vault.json` | Workspace-level registry pointing to each bundle manifest. It lives outside the bundle. |
 
-Reserved files are not concept graph nodes.
+`index.md` and `log.md` are the OKF reserved Markdown files and are not concept
+graph nodes. `okf-base.yaml` and `okf-vault.json` are AV-OKF profile and vault
+artifacts. Source documents are represented as ordinary concepts under
+`references/sources/`, using `av_okf_role: source_document`; they remain
+visible to humans but are never answer-eligible evidence.
 
 ### Folder Placement
 
@@ -276,7 +277,7 @@ profile-defined organization rule and must agree with `okf-base.yaml`.
 
 ## Concept Markdown Contract
 
-### Generic OKF Fields
+### Generic OKF v0.2 Fields
 
 The interoperable base fields are:
 
@@ -285,8 +286,13 @@ The interoperable base fields are:
 | `type` | Required | Stable concept type identifier. |
 | `title` | Optional for generic conformance | Human-readable title. |
 | `description` | Optional for generic conformance | Concise concept summary. |
+| `resource` | Optional | URI or bundle path for the represented resource. |
 | `tags` | Optional | List of retrieval and organization keywords. |
-| `updated` | Optional | Last modification date in `YYYY-MM-DD` form. |
+| `sources` | Optional | Structured provenance records. |
+| `generated` | Optional | Actor and timestamp for the current content. |
+| `verified` | Optional | One or more verification events. |
+| `status` | Optional | `draft`, `stable`, or `deprecated`; absent means stable. |
+| `stale_after` | Optional | Absolute date after which the concept is stale. |
 
 Only `type` is required for generic structural validity. That does not make a
 file trusted agent evidence.
@@ -296,17 +302,18 @@ file trusted agent evidence.
 An agent-ready concept also needs:
 
 - active lifecycle state;
-- `review_status: approved`;
+- current `status: stable`;
+- recognized `verified` provenance;
 - a usable title and article body;
-- `source_file`;
+- at least one resolvable `sources[].resource`;
 - one or more valid `source_pages`;
 - source provenance accepted by the bundle profile.
 
 Common extension fields include:
 
 ```text
-approved_by
-approved_at
+av_okf_approval_mode
+av_okf_lifecycle
 source_authority
 knowledge_version
 subject_family
@@ -327,22 +334,29 @@ of `type`, `title`, `description`, `tags`, or `updated`.
 ```markdown
 ---
 type: "procedure"
-review_status: "approved"
 title: "Vehicle Pre-Start Inspection"
 description: "Checks required before operating the vehicle."
 tags:
   - vehicle
   - inspection
   - safety
-source_file: "vehicle-operations-manual.pdf"
+status: "stable"
+generated:
+  by: "av-okf/authoring-v1"
+  at: "2026-07-26T14:30:00Z"
+verified:
+  - by: "human:user-id"
+    at: "2026-07-26T15:00:00Z"
+sources:
+  - id: "source-a1b2c3d4e5f6"
+    resource: "/references/sources/source-document-a1b2c3d4e5f6.md"
+    title: "Vehicle Operations Manual"
 source_pages:
   - 12
   - 13
 source_authority: "Manufacturer operations manual"
 knowledge_version: "0.1.0"
-updated: "2026-07-26"
-approved_by: "user-id"
-approved_at: "2026-07-26"
+av_okf_approval_mode: "human_individual"
 relations:
   - relation: "depends_on"
     target: "../../concepts/system/braking-system-a1b2c3d4e5.md"
@@ -413,7 +427,8 @@ okf-handoff/
 │   ├── okf-base.yaml
 │   ├── index.md
 │   ├── log.md
-│   ├── source_manifest.md
+│   ├── references/
+│   │   └── sources/
 │   └── concepts-or-profile-folders/
 ├── sources/
 │   └── original-source-files.pdf
@@ -422,9 +437,10 @@ okf-handoff/
 
 `bundle/` is the portable OKF bundle. `sources/` and `import-map.json` form an
 optional AV-OKF transport envelope and are not part of the OKF specification.
-In the current exporter, `source_file` contains the AV-OKF document title. It
-is a portable source identity and is not guaranteed to equal the uploaded
-object's original filename.
+Each trusted concept points through `sources[].resource` to a bundle-local
+source-reference concept. That reference carries the portable
+`urn:sha256:<digest>` identity; database document IDs never appear in the
+bundle.
 
 A proposed `import-map.json` shape is:
 
@@ -434,7 +450,7 @@ A proposed `import-map.json` shape is:
   "bundleDirectory": "bundle",
   "sources": [
     {
-      "sourceFile": "vehicle-operations-manual.pdf",
+      "resource": "urn:sha256:a1b2c3d4e5f6...",
       "path": "sources/vehicle-operations-manual.pdf"
     }
   ]
@@ -455,14 +471,14 @@ The mapping uses portable filenames, never database document IDs.
 **Source-linked trusted import**
 
 - imports or maps each original PDF inside the target workspace;
-- resolves `source_file` to a readable document in the target bundle;
+- resolves each source-reference digest to a readable document in the target bundle;
 - validates source pages against the extracted document;
 - recreates topic-to-file projections;
 - requires explicit target-workspace review before imported content becomes
   trusted agent evidence.
 
-An external `review_status: approved` value is metadata, not sufficient proof
-that the receiving workspace approved the concept.
+External `verified` events are portable provenance, not sufficient proof that
+the receiving workspace approved the concept for trusted retrieval.
 
 ### Safe Import Sequence
 
@@ -477,7 +493,7 @@ A future importer should:
    and relation targets.
 5. Create a new target bundle and profile version using server-generated IDs.
 6. Upload or map source PDFs within the authenticated workspace.
-7. Resolve each concept's `source_file` and verify its page numbers.
+7. Resolve each concept's `sources[].resource` and verify its page numbers.
 8. Copy the validated bundle into the new bundle root atomically.
 9. Rebuild database projections, lifecycle records, backlinks, and OKF lookup
    embeddings from the Markdown files.
@@ -514,7 +530,7 @@ Before accepting a bundle, confirm:
 - every concept type is defined by the profile;
 - every index link resolves;
 - every relation target resolves inside the bundle;
-- every `source_file` identity resolves through the import mapping to one
+- every source-reference resource resolves through the import mapping to one
   supplied or existing source document;
 - source pages are valid for the mapped document;
 - reserved files were generated or reconciled, not independently hand-edited;
@@ -529,7 +545,7 @@ A complete source-linked knowledge package contains:
 - page-preserving extraction records in the receiving system;
 - optional raw RAG chunks for unreviewed discovery;
 - reviewed Markdown concepts with portable provenance;
-- deterministic index, source manifest, and log files;
+- deterministic index and log files plus portable source-reference concepts;
 - reviewed typed relations;
 - a bundle profile that describes the allowed structure;
 - enough mapping information to rebuild database projections without embedding

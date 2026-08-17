@@ -85,6 +85,12 @@ export async function enqueueDocumentDeletionJob(
   });
 }
 
+export async function closeDocumentDeletionQueue() {
+  if (!cachedQueue) return;
+  await cachedQueue.close();
+  cachedQueue = null;
+}
+
 export async function requestPermanentDocumentDeletion(input: {
   context: AuthWorkspaceContext;
   documentId: string;

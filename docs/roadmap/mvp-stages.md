@@ -712,11 +712,21 @@ Agent decision framework:
 
 ## Next Platform Milestone: OKF v0.2 And Portable Import
 
-Status: v0.2 hard cutover complete; portable import is next. The v0.2-only
+Status: v0.2 hard cutover, active-guidance reconciliation, and the pinned
+upstream compatibility corpus are complete. All four official sample bundles
+at commit `fe3268a` pass portable validation and deterministic round trips;
+they remain separate from AV runtime and agent-readiness decisions. Claim-level
+`sources[].id` footnote validation is the next gated slice before portable
+import. Runtime documents and document-derived knowledge were intentionally
+purged across all workspaces on 2026-08-16, leaving the existing bundle
+registries and profiles as an empty starting point. Existing user data no
+longer gates compatibility work; controlled repository fixtures are the test
+authority for each phase. The v0.2-only
 runtime, exporter, validator, staged migration, production activation, and
 release verification are complete. All active bundles were migrated during a
 backed-up maintenance window on 2026-08-06 and pass bundle validation and
-relation lint. The application
+relation lint. Active user and architecture documentation is guarded against
+reintroducing v0.1 contract examples. The application
 has no finished UI or API for importing an arbitrary bundle archive. The
 product decision is a v0.2-only hard cutover, not permanent dual-read support.
 
@@ -735,6 +745,15 @@ Required sequencing:
 5. Remove v0.1 production reads after successful cutover; do not maintain a
    permanent compatibility parser.
 6. Implement archive import against the now-active stable v0.2 contract.
+
+Completed compatibility gate:
+
+- pinned 79 upstream bundle files under Apache-2.0 with exact SHA-256 digests;
+- validated 78 Markdown round trips and 53 generic concept frontmatter blocks;
+- accepted descriptive multiword types and reserved nested indexes;
+- kept optional generic root-version behavior separate from AV-OKF's mandatory
+  production declaration;
+- confirmed no fixture concept qualifies as agent-ready evidence.
 
 Migration and format rules:
 

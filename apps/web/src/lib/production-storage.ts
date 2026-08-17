@@ -1,4 +1,10 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
@@ -11,6 +17,7 @@ type DocumentObjectKeyInput = {
 export type ObjectStorage = {
   deleteObject(key: string): Promise<void>;
   getObject(key: string): Promise<Buffer>;
+  listObjectKeys?(prefix: string): Promise<string[]>;
   putObject(input: {
     body: Buffer;
     contentType: string;
@@ -66,6 +73,24 @@ export function createS3ObjectStorage(config = getS3ConfigFromEnv()): ObjectStor
       );
 
       return streamToBuffer(response.Body);
+    },
+    async listObjectKeys(prefix) {
+      const keys: string[] = [];
+      let continuationToken: string | undefined;
+      do {
+        const response = await client.send(new ListObjectsV2Command({
+          Bucket: config.bucket,
+          ContinuationToken: continuationToken,
+          Prefix: prefix,
+        }));
+        keys.push(...(response.Contents ?? []).flatMap((entry) =>
+          entry.Key ? [entry.Key] : [],
+        ));
+        continuationToken = response.IsTruncated
+          ? response.NextContinuationToken
+          : undefined;
+      } while (continuationToken);
+      return keys.sort();
     },
     async putObject(input) {
       await client.send(

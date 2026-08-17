@@ -3,7 +3,7 @@
 ## Decision
 
 The Google Cloud Platform Knowledge Catalog
-[Open Knowledge Format v0.2 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+[Open Knowledge Format v0.2 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f/okf/SPEC.md)
 is the normative portability contract for AV-OKF bundles.
 
 AV-OKF runs a v0.2-only runtime. The backed-up production migration completed
@@ -26,9 +26,39 @@ OKF v0.2 governs the portable filesystem representation:
 - actor identifiers and optional attested-computation contracts;
 - bundle validation, export, import, and round-trip behavior.
 
-The root `index.md` declares `okf_version: "0.2"`. Generic
-consumers must tolerate unknown concept types, unknown extension fields, missing
-optional metadata, and broken links as required by the specification.
+The specification makes the root `index.md` and its `okf_version` declaration
+optional. AV-OKF production bundles deliberately require both and fail closed
+without them. Generic consumers must tolerate unknown concept types, including
+descriptive multiword types, unknown extension fields, missing optional
+metadata, and broken links as required by the specification.
+
+## Compatibility Corpus And Validation Layers
+
+Phase 2 pins all four upstream sample bundles at commit
+`fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f` as an offline, Apache-2.0 test
+corpus. The corpus contains 79 bundle files: 78 Markdown files and one inert
+attester resource. Generated viewers are excluded, every included file is
+SHA-256 fingerprinted, and fixture line endings are fixed to LF.
+
+Compatibility is reported as three separate states:
+
+1. **Portable-compatible:** every non-reserved concept has parseable
+   frontmatter and a non-empty `type`; reserved indexes and logs follow the
+   generic v0.2 rules.
+2. **AV runtime-ready:** portable validation passes and the stricter root
+   version, relation, source-reference, lifecycle, and profile checks pass.
+3. **Agent-ready:** the concept also has active AV-OKF lifecycle, approval,
+   content, source-page, and workspace mappings.
+
+The pinned upstream bundles pass portable validation and deterministic semantic
+round trips. They are intentionally not runtime-ready because their root
+indexes omit the optional version declaration, and none is agent-ready because
+the fixtures have no AV-OKF database or source-page projection. The committed
+result is [the upstream compatibility report](../debug/okf-v02-upstream-compatibility.json).
+
+`validatePortableOkfV02BundleRoot` implements generic bundle conformance.
+`validateOkfV02BundleRoot` builds on it and retains the production-only gates.
+Neither validator executes or fetches a resource referenced by a bundle.
 
 ## Where AV-OKF Adds Policy
 

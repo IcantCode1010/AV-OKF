@@ -13,6 +13,17 @@ test("generic OKF accepts type as the only required field", () => {
   });
 });
 
+test("generic OKF accepts descriptive multiword and unknown types", () => {
+  assert.deepEqual(validateGenericOkfMetadata({ type: " BigQuery Table " }), {
+    metadata: { type: "BigQuery Table" },
+    valid: true,
+  });
+  assert.deepEqual(validateGenericOkfMetadata({ type: "Custom Producer Type" }), {
+    metadata: { type: "Custom Producer Type" },
+    valid: true,
+  });
+});
+
 test("generic OKF normalizes optional fields", () => {
   assert.deepEqual(
     validateGenericOkfMetadata({
@@ -35,16 +46,16 @@ test("generic OKF normalizes optional fields", () => {
   );
 });
 
-test("generic OKF rejects invalid type, tags, and stale date", () => {
+test("generic OKF rejects missing type, invalid tags, and stale date", () => {
   const result = validateGenericOkfMetadata({
     tags: ["valid", " "],
-    type: "../policy",
+    type: " ",
     stale_after: "2026-02-31",
   });
   assert.equal(result.valid, false);
   if (!result.valid) {
     assert.deepEqual(result.errors, [
-      "generic_okf_type_invalid",
+      "generic_okf_type_required",
       "generic_okf_tags_invalid",
       "okf_v02_stale_after_invalid",
     ].sort((a, b) => result.errors.indexOf(a) - result.errors.indexOf(b)));

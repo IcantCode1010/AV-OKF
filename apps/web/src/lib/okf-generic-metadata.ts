@@ -37,8 +37,6 @@ export function validateGenericOkfMetadata(
 
   if (!type) {
     errors.push("generic_okf_type_required");
-  } else if (type.length > 128 || !/^[A-Za-z][A-Za-z0-9_-]*$/.test(type)) {
-    errors.push("generic_okf_type_invalid");
   }
 
   if (value.title !== undefined && !title) {
