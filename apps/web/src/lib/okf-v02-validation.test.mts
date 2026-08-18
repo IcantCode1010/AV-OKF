@@ -142,6 +142,65 @@ test("portable validation rejects malformed log date headings", async () => {
   }
 });
 
+test("claim footnote mismatches warn portably but block AV runtime readiness", async () => {
+  const root = await createFixture();
+  try {
+    const conceptPath = path.join(root, "concept.md");
+    const original = await readFile(conceptPath, "utf8");
+    await writeFile(
+      conceptPath,
+      original
+        .replace(
+          "  - resource: /references/sources/manual.md",
+          "  - id: manual\n    resource: /references/sources/manual.md",
+        )
+        .replace(
+          "Inspection body.",
+          "Inspection body.[^different]\n\n[^different]: Different source",
+        ),
+    );
+
+    assert.equal(
+      (await validatePortableOkfV02BundleRoot(root)).some(
+        (issue) => issue.code.startsWith("okf_v02_claim_"),
+      ),
+      false,
+    );
+    assert.equal(
+      (await validateOkfV02BundleRoot(root)).some(
+        (issue) => issue.code === "okf_v02_claim_source_missing",
+      ),
+      true,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("AV runtime accepts claim footnotes joined to exact source ids", async () => {
+  const root = await createFixture();
+  try {
+    const conceptPath = path.join(root, "concept.md");
+    const original = await readFile(conceptPath, "utf8");
+    await writeFile(
+      conceptPath,
+      original
+        .replace(
+          "  - resource: /references/sources/manual.md",
+          "  - id: manual\n    resource: /references/sources/manual.md",
+        )
+        .replace(
+          "Inspection body.",
+          "Inspection body.[^manual]\n\n[^manual]: Manual",
+        ),
+    );
+
+    assert.deepEqual(await validateOkfV02BundleRoot(root), []);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 async function createFixture() {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-v02-validator-"));
   await mkdir(path.join(root, "references", "sources"), { recursive: true });

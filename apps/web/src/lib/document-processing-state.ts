@@ -3,12 +3,16 @@ import type {
   ExtractionStatus,
   TopicDiscoveryStatus,
 } from "./document-vault.ts";
+import type { DocumentBatchProgress } from "./document-batch-progress.ts";
 
 export type DocumentProcessingStageId =
   | "upload"
+  | "inspection"
   | "extraction"
   | "metadata_discovery"
   | "concept_discovery"
+  | "full_rag_index"
+  | "grounded_crawler"
   | "enrichment"
   | "relation_classification"
   | "validation"
@@ -71,10 +75,15 @@ export type DocumentProcessingFingerprintSnapshot = {
     status: string;
   } | null;
   extraction: {
+    completedBatches?: number;
     errorCode: string | null;
+    inspectionStatus?: string;
+    ocrPageCount?: number;
     pageCount: number;
     status: string;
+    totalBatches?: number;
   };
+  ragIndex?: { completedBatches: number; status: string; totalBatches: number } | null;
   topicDiscovery: {
     completedWindows: number;
     errorMessage: string | null;
@@ -86,6 +95,8 @@ export type DocumentProcessingFingerprintSnapshot = {
 const authoringStageIds: DocumentProcessingStageId[] = [
   "metadata_discovery",
   "concept_discovery",
+  "full_rag_index",
+  "grounded_crawler",
   "enrichment",
   "relation_classification",
   "validation",
@@ -111,6 +122,10 @@ const stageCopy: Record<
     detail: "The source PDF is stored securely in its assigned knowledge bundle.",
     label: "PDF uploaded",
   },
+  inspection: {
+    detail: "Checking PDF integrity, encryption, page count, and which pages require OCR.",
+    label: "PDF inspection",
+  },
   extraction: {
     detail: "Reading the PDF and creating page-level source records.",
     label: "Text extraction",
@@ -122,6 +137,14 @@ const stageCopy: Record<
   concept_discovery: {
     detail: "Finding and consolidating the concepts discussed in the document.",
     label: "Concept discovery",
+  },
+  full_rag_index: {
+    detail: "Building a complete, inactive search index across every readable nonblank page.",
+    label: "Full-document search index",
+  },
+  grounded_crawler: {
+    detail: "Checking document-wide evidence for diffuse topics and explicit relationships missed by local windows.",
+    label: "Grounded document crawl",
   },
   enrichment: {
     detail: "Preparing grounded titles, summaries, and article content for review.",
@@ -145,13 +168,15 @@ export function buildDocumentProcessingState(input: {
   authoringRun: ProcessingAuthoringRun | null;
   bundleName: string;
   document: Pick<Document, "extraction" | "storageKey" | "topicDiscovery">;
+  extractionProgress?: DocumentBatchProgress | null;
   reviewTopicCount?: number;
   topicCount: number;
 }): DocumentProcessingState {
   const stages = initializeStages();
   stages[0] = stage("upload", input.document.storageKey ? "completed" : "skipped");
-  stages[1] = stage("extraction", extractionStageStatus(input.document.extraction.status),
-    extractionDetail(input.document.extraction.status));
+  stages[1] = stage("inspection", inspectionStageStatus(input.document.extraction.status, input.extractionProgress));
+  stages[2] = stage("extraction", extractionStageStatus(input.document.extraction.status),
+    extractionDetail(input.document.extraction.status, input.extractionProgress));
 
   const run = input.authoringRun;
   if (input.document.extraction.status === "failed") {
@@ -161,7 +186,7 @@ export function buildDocumentProcessingState(input: {
     return finish(stages, false, false, input.bundleName);
   }
   if (!run) {
-    stages[2] = stage(
+    stages[stageIndex("metadata_discovery")] = stage(
       "metadata_discovery",
       "action_required",
       "Extraction is complete. Start AI-assisted authoring when you are ready.",
@@ -172,7 +197,7 @@ export function buildDocumentProcessingState(input: {
   for (const id of authoringStageIds) {
     stages[stageIndex(id)] = deriveAuthoringStage(id, run, input.document.topicDiscovery);
   }
-  stages[7] = deriveReviewStage(run, input.reviewTopicCount ?? input.topicCount);
+  stages[stageIndex("review_export")] = deriveReviewStage(run, input.reviewTopicCount ?? input.topicCount);
 
   return finish(stages, run.automaticTopicApprovalEnabled, true, input.bundleName);
 }
@@ -405,10 +430,21 @@ function extractionStageStatus(status: ExtractionStatus): DocumentProcessingStag
   return status;
 }
 
-function extractionDetail(status: ExtractionStatus) {
+function extractionDetail(status: ExtractionStatus, progress?: DocumentBatchProgress | null) {
+  if ((status === "queued" || status === "running") && progress?.totalBatches) {
+    return `Extracted ${progress.completedPages} of ${progress.totalPages} pages across ${progress.completedBatches} of ${progress.totalBatches} batches. OCR pages: ${progress.ocrPages}.`;
+  }
   if (status === "failed") return "Text extraction failed. Review the error and retry the stored PDF.";
   if (status === "completed") return "Page-level source records are ready for downstream processing.";
   return stageCopy.extraction.detail;
+}
+
+function inspectionStageStatus(status: ExtractionStatus, progress?: DocumentBatchProgress | null): DocumentProcessingStageStatus {
+  if (progress?.inspectionStatus === "action_required") return "action_required";
+  if (progress?.inspectionStatus === "completed") return "completed";
+  if (status === "failed") return "failed";
+  if (status === "running") return "running";
+  return status === "queued" ? "queued" : "waiting";
 }
 
 function discoveryProgress(discovery: Document["topicDiscovery"]) {

@@ -36,6 +36,7 @@ services:
       DATABASE_URL: postgresql://av_okf:av_okf@postgres:5432/av_okf
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
       S3_REGION: us-east-1
       S3_BUCKET: av-okf
       S3_ACCESS_KEY_ID: av_okf_minio
@@ -153,9 +154,12 @@ services:
     environment:
       MINIO_ROOT_USER: av_okf_minio
       MINIO_ROOT_PASSWORD: av_okf_minio_secret
+      MINIO_API_CORS_ALLOW_ORIGIN: ${APP_BASE_URL:-http://localhost:3000}
     command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio-data:/data
+    ports:
+      - "9000:9000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]

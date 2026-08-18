@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added the large-PDF grounded processing pipeline: direct presigned MinIO uploads, streamed inspection and SHA-256, selective local OCR, resumable 20-page extraction, durable overlapping discovery, batched full-document RAG, one-pass grounded crawling, flat consolidation, and portable `av_okf_citations`.
+- Raised the bounded processing envelope to 250 MB or 5,000 pages, with the final production limit still gated on real and mechanical upper-bound verification.
+- Fixed PDF inspection so recoverable qpdf warning exits, including legacy linearization hint-table warnings, remain processable and cannot be mistaken for password protection merely because qpdf reports that the file is not encrypted.
+- Moved authoring token confirmation into the active processing-timeline event so users can see exactly which stage is paused and continue from that row without searching the panel header.
+- Fixed enrichment for topics with non-contiguous evidence pages so page anchors use bounded local neighborhoods instead of pulling every intervening page into the model prompt. Provider context-limit failures now receive one globally bounded compact retry with actionable final diagnostics.
+
+- Added reviewed retrieval-trigger learning for insufficient-evidence chat
+  turns. Specific approved OKF near misses can now create bundle-scoped search
+  alias proposals in the Knowledge gaps reviewer, but proposals remain inert
+  until human approval. Approved aliases are workspace-, bundle-, path-, and
+  content-hash-bound and improve lexical concept discovery without rewriting
+  OKF files or changing trust; pending, rejected, stale, and unavailable
+  proposals cannot affect answers, validation, citations, or graph traversal.
+
+- Added non-destructive topic enrichment revisions. First enrichment remains
+  separate from raw discovery content and now records deterministic baseline,
+  candidate, and diff data. Changed re-enrichment output waits for an explicit
+  **Use new enrichment** or **Keep current enrichment** decision instead of
+  overwriting accepted content; equivalent reruns create no review task and
+  failed reruns preserve the accepted article. Workspace-scoped fingerprint
+  and atomic-claim guards prevent stale or concurrent decisions, while topic
+  approval and bulk export remain blocked until pending revisions are resolved.
+
+- Added exact claim-level provenance validation for OKF v0.2 Markdown
+  footnotes. Claim references now join case-sensitively to `sources[].id`,
+  duplicate source IDs and footnote definitions fail AV runtime validation,
+  and missing source or definition joins are reported deterministically while
+  code examples and escaped references are ignored. Portable conformance stays
+  permissive: the pinned corpus remains four-for-four compatible, while its
+  report now records 45 claim references, 33 exact matches, and 11 Stack
+  Overflow source-ID warnings without modifying upstream fixtures.
 - Added a pinned Apache-2.0 OKF v0.2 compatibility corpus containing all four
   official Google sample bundles at commit `fe3268a`, with per-file SHA-256
   integrity checks and a deterministic committed report. All 78 Markdown files

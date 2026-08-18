@@ -779,7 +779,11 @@ export function topicEligibilityErrors(topic: TopicLike, profile: KnowledgeProfi
   const errors: string[] = [];
   if (topic.reviewStatus === "approved") errors.push("topic_already_approved");
   else if (topic.reviewStatus === "rejected") errors.push("topic_rejected");
-  if (topic.enrichmentStatus !== "completed") errors.push("topic_enrichment_not_completed");
+  if (topic.enrichmentStatus === "review_required") {
+    errors.push("topic_enrichment_review_required");
+  } else if (topic.enrichmentStatus !== "completed") {
+    errors.push("topic_enrichment_not_completed");
+  }
   if (!topic.enrichedTitle?.trim()) errors.push("topic_enriched_title_required");
   if (!topic.enrichedSummary?.trim()) errors.push("topic_enriched_summary_required");
   if (!topic.enrichedBody?.trim()) errors.push("topic_enriched_body_required");

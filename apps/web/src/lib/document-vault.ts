@@ -10,8 +10,17 @@ import {
   normalizeTopicRelations,
   type TopicRelation,
 } from "./okf-relation-types.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  buildTopicEnrichmentDiff,
+  hasExistingTopicEnrichment,
+  normalizeTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+  type TopicEnrichmentDiff,
+} from "./topic-enrichment-diff.ts";
+import { buildTopicEnrichmentContextPageNumbers } from "./topic-enrichment-context.ts";
 
-export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
 export type Workspace = {
   id: string;
@@ -107,6 +116,7 @@ export type TopicEnrichmentStatus =
   | "none"
   | "pending"
   | "completed"
+  | "review_required"
   | "failed";
 
 export type ApprovedContentSource = "raw" | "enriched";
@@ -123,6 +133,31 @@ export type TopicEnrichmentAudit = {
   requestedBy: string;
   succeeded: boolean;
   errorMessage: string | null;
+  baselineFingerprint?: string | null;
+  baselineTitle?: string | null;
+  baselineSummary?: string | null;
+  baselineBody?: string | null;
+  baselineProposedSourcePageNumbers?: number[];
+  candidateTitle?: string | null;
+  candidateSummary?: string | null;
+  candidateBody?: string | null;
+  candidateProposedSourcePageNumbers?: number[];
+  diff?: TopicEnrichmentDiff;
+  disposition?: "applied" | "awaiting_review" | "failed" | "rejected" | "unchanged";
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+};
+
+export type PendingTopicEnrichment = {
+  auditId: string;
+  body: string;
+  createdAt: string;
+  diff: TopicEnrichmentDiff;
+  model: string;
+  proposedSourcePageNumbers: number[];
+  provider: string;
+  summary: string;
+  title: string;
 };
 
 export type TopicRecord = {
@@ -147,6 +182,7 @@ export type TopicRecord = {
   enrichedAt: string | null;
   enrichmentModel: string | null;
   enrichmentErrorMessage: string | null;
+  pendingEnrichment?: PendingTopicEnrichment | null;
   editedAt: string | null;
   editedBy: string | null;
   pageStart: number;
@@ -507,7 +543,7 @@ export function assertPdfUpload(file: { name: string; size: number; type: string
   }
 
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error("upload_exceeds_25mb_limit");
+    throw new Error("upload_exceeds_250mb_limit");
   }
 }
 
@@ -990,11 +1026,14 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     const store = await readStore();
     const topic = getStoreTopic(store, topicId);
     const document = getStoreDocument(store, topic.documentId);
+    const contextPageNumbers = new Set(buildTopicEnrichmentContextPageNumbers({
+      pageEnd: topic.pageEnd,
+      pageStart: topic.pageStart,
+      sourcePageNumbers: topic.sourcePageNumbers,
+    }));
     return {
       sourcePages: document.extraction.pageRecords.filter(
-        (pageRecord) =>
-          pageRecord.pageNumber >= Math.max(1, topic.pageStart - 2) &&
-          pageRecord.pageNumber <= topic.pageEnd + 2,
+        (pageRecord) => contextPageNumbers.has(pageRecord.pageNumber),
       ),
       topic: normalizeTopicRecord(topic, store.topicEnrichmentAudits),
     };
@@ -1005,6 +1044,12 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const topic = getStoreTopic(store, topicId);
       if (topic.reviewStatus === "approved") {
         throw new Error("topic_enrichment_requires_unapproved_topic");
+      }
+      if (topic.enrichmentStatus === "pending") {
+        throw new Error("topic_enrichment_already_pending");
+      }
+      if (topic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
       }
       topic.enrichmentStatus = "pending";
       topic.enrichmentErrorMessage = null;
@@ -1025,15 +1070,44 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       provider: string;
       rawResponse: string;
       requestedBy: string;
+      baselineFingerprint: string;
     },
   ) {
     return mutateStore(async (store) => {
       store.topicEnrichmentAudits ??= [];
       const topic = getStoreTopic(store, topicId);
       const createdAt = formatTimestamp(new Date());
+      const baseline = buildAcceptedTopicEnrichmentSnapshot(topic);
+      if (topicEnrichmentSnapshotFingerprint(baseline) !== input.baselineFingerprint) {
+        throw new Error("topic_enrichment_baseline_changed");
+      }
+      const candidate = normalizeTopicEnrichmentSnapshot({
+        body: input.enrichedBody ?? input.enrichedSummary,
+        proposedSourcePageNumbers: input.proposedSourcePageNumbers ?? [],
+        summary: input.enrichedSummary,
+        title: input.enrichedTitle,
+      });
+      const diff = buildTopicEnrichmentDiff(baseline, candidate);
+      const hadExistingEnrichment = hasExistingTopicEnrichment(topic);
+      const disposition = !hadExistingEnrichment
+        ? "applied"
+        : diff.changed
+          ? "awaiting_review"
+          : "unchanged";
       store.topicEnrichmentAudits.push({
+        baselineBody: baseline.body,
+        baselineFingerprint: input.baselineFingerprint,
+        baselineProposedSourcePageNumbers: baseline.proposedSourcePageNumbers,
+        baselineSummary: baseline.summary,
+        baselineTitle: baseline.title,
+        candidateBody: candidate.body,
+        candidateProposedSourcePageNumbers: candidate.proposedSourcePageNumbers,
+        candidateSummary: candidate.summary,
+        candidateTitle: candidate.title,
         id: `audit-${randomUUID()}`,
         createdAt,
+        diff,
+        disposition,
         errorMessage: null,
         model: input.model,
         promptSent: input.promptSent,
@@ -1043,14 +1117,18 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         succeeded: true,
         topicId,
       });
-      topic.enrichedTitle = input.enrichedTitle;
-      topic.enrichedSummary = input.enrichedSummary;
-      topic.enrichedBody = input.enrichedBody ?? input.enrichedSummary;
-      topic.proposedSourcePageNumbers = input.proposedSourcePageNumbers ?? [];
-      topic.enrichmentStatus = "completed";
+      if (disposition === "applied") {
+        topic.enrichedTitle = candidate.title;
+        topic.enrichedSummary = candidate.summary;
+        topic.enrichedBody = candidate.body;
+        topic.proposedSourcePageNumbers = candidate.proposedSourcePageNumbers;
+        topic.enrichedAt = createdAt;
+      }
+      topic.enrichmentStatus = disposition === "awaiting_review"
+        ? "review_required"
+        : "completed";
       topic.enrichmentErrorMessage = null;
       topic.enrichmentModel = input.model;
-      topic.enrichedAt = createdAt;
       topic.updatedAt = createdAt;
       return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
@@ -1072,6 +1150,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const topic = getStoreTopic(store, topicId);
       const createdAt = formatTimestamp(new Date());
       store.topicEnrichmentAudits.push({
+        disposition: "failed",
         id: `audit-${randomUUID()}`,
         createdAt,
         errorMessage: input.errorMessage,
@@ -1083,9 +1162,64 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         succeeded: false,
         topicId,
       });
-      topic.enrichmentStatus = "failed";
+      topic.enrichmentStatus = hasExistingTopicEnrichment(topic) ? "completed" : "failed";
       topic.enrichmentErrorMessage = input.errorMessage;
       topic.updatedAt = createdAt;
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function resolveTopicEnrichmentCandidate(
+    topicId: string,
+    input: {
+      auditId: string;
+      decision: "accept" | "reject";
+      resolvedBy: string;
+    },
+  ) {
+    return mutateStore(async (store) => {
+      store.topicEnrichmentAudits ??= [];
+      const topic = getStoreTopic(store, topicId);
+      if (topic.reviewStatus === "approved") {
+        throw new Error("topic_enrichment_requires_unapproved_topic");
+      }
+      const audit = store.topicEnrichmentAudits.find(
+        (candidate) => candidate.id === input.auditId && candidate.topicId === topicId,
+      );
+      if (!audit || audit.disposition !== "awaiting_review") {
+        throw new Error("topic_enrichment_candidate_not_pending");
+      }
+      const baseline = buildAcceptedTopicEnrichmentSnapshot(topic);
+      if (
+        !audit.baselineFingerprint ||
+        topicEnrichmentSnapshotFingerprint(baseline) !== audit.baselineFingerprint
+      ) {
+        throw new Error("topic_enrichment_baseline_changed");
+      }
+      if (
+        input.decision === "accept" &&
+        (!audit.candidateTitle || !audit.candidateSummary || !audit.candidateBody)
+      ) {
+        throw new Error("topic_enrichment_candidate_invalid");
+      }
+
+      const resolvedAt = formatTimestamp(new Date());
+      if (input.decision === "accept") {
+        topic.enrichedTitle = audit.candidateTitle!;
+        topic.enrichedSummary = audit.candidateSummary!;
+        topic.enrichedBody = audit.candidateBody!;
+        topic.proposedSourcePageNumbers = audit.candidateProposedSourcePageNumbers ?? [];
+        topic.enrichedAt = resolvedAt;
+        topic.enrichmentModel = audit.model;
+        audit.disposition = "applied";
+      } else {
+        audit.disposition = "rejected";
+      }
+      audit.resolvedAt = resolvedAt;
+      audit.resolvedBy = input.resolvedBy;
+      topic.enrichmentStatus = "completed";
+      topic.enrichmentErrorMessage = null;
+      topic.updatedAt = resolvedAt;
       return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
   }
@@ -1103,6 +1237,9 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const topic = getStoreTopic(store, topicId);
       if (topic.reviewStatus === "approved") {
         throw new Error("topic_already_approved");
+      }
+      if (topic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
       }
       if (approvedContentSource === "enriched") {
         if (!topic.enrichedTitle || !topic.enrichedSummary) {
@@ -1154,6 +1291,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     getTopicEnrichmentInput,
     generateTopicRecords,
     markTopicEnrichmentPending,
+    resolveTopicEnrichmentCandidate,
     startExtraction,
     updateTopicReviewStatus,
     updateTopicRelations,
@@ -1278,6 +1416,13 @@ export async function failTopicEnrichment(
   return defaultVault.failTopicEnrichment(topicId, input);
 }
 
+export async function resolveTopicEnrichmentCandidate(
+  topicId: string,
+  input: Parameters<typeof defaultVault.resolveTopicEnrichmentCandidate>[1],
+) {
+  return defaultVault.resolveTopicEnrichmentCandidate(topicId, input);
+}
+
 export async function approveTopicContent(
   topicId: string,
   approvedContentSource: ApprovedContentSource,
@@ -1381,13 +1526,35 @@ function normalizeTopicRecord(
     .filter((audit) => audit.topicId === topic.id)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const latestAudit = topicAudits.at(-1);
-  const latestSuccess = topicAudits.filter((audit) => audit.succeeded).at(-1);
+  const latestSuccess = topicAudits.filter((audit) =>
+    audit.succeeded &&
+    (!audit.disposition || audit.disposition === "applied")
+  ).at(-1);
+  const pendingAudit = topicAudits.filter(
+    (audit) => audit.disposition === "awaiting_review",
+  ).at(-1);
   topic.enrichedAt ??= latestSuccess?.createdAt ?? null;
   topic.enrichmentModel ??= latestSuccess?.model ?? null;
   topic.enrichmentErrorMessage ??=
-    topic.enrichmentStatus === "failed"
+    latestAudit?.succeeded === false
       ? latestAudit?.errorMessage ?? null
       : null;
+  topic.pendingEnrichment = pendingAudit?.candidateTitle &&
+      pendingAudit.candidateSummary &&
+      pendingAudit.candidateBody &&
+      pendingAudit.diff
+    ? {
+        auditId: pendingAudit.id,
+        body: pendingAudit.candidateBody,
+        createdAt: pendingAudit.createdAt,
+        diff: pendingAudit.diff,
+        model: pendingAudit.model,
+        proposedSourcePageNumbers: pendingAudit.candidateProposedSourcePageNumbers ?? [],
+        provider: pendingAudit.provider,
+        summary: pendingAudit.candidateSummary,
+        title: pendingAudit.candidateTitle,
+      }
+    : null;
   topic.relations = normalizeTopicRelations(topic.relations);
   return topic;
 }

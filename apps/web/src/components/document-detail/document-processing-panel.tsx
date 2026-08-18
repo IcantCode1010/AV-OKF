@@ -103,13 +103,37 @@ export function DocumentProcessingPanel({
             stage.id === "review_export" &&
             stage.status === "action_required" &&
             !state.automaticApprovalEnabled;
+          const isCostConfirmationAction =
+            stage.id === "metadata_discovery" &&
+            stage.status === "action_required" &&
+            run?.status === "awaiting_cost_confirmation";
 
           return (
             <li className="relative pb-5 last:pb-0" key={stage.id}>
               {index < state.stages.length - 1 ? (
                 <span aria-hidden className="absolute left-[11px] top-6 h-[calc(100%-1.25rem)] w-px bg-border" />
               ) : null}
-              {isManualReviewAction ? (
+              {isCostConfirmationAction ? (
+                <form
+                  action={confirmKnowledgeAuthoringCostAction}
+                  className="flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center"
+                >
+                  <input name="documentId" type="hidden" value={documentId} />
+                  <input name="runId" type="hidden" value={run.id} />
+                  <input name="returnPanel" type="hidden" value="processing" />
+                  <div className="flex min-w-0 flex-1 gap-3">
+                    <StageIcon stage={stage} />
+                    <StageContent stage={stage} />
+                  </div>
+                  <PendingSubmitButton
+                    className="self-start sm:self-center"
+                    pendingLabel="Confirming and starting..."
+                  >
+                    Confirm {run.estimatedInputTokens.toLocaleString()} tokens and continue
+                    <ArrowRight className="h-4 w-4" />
+                  </PendingSubmitButton>
+                </form>
+              ) : isManualReviewAction ? (
                 <Link
                   aria-label={`Review ${topicCount} ${topicCount === 1 ? "topic" : "topics"}`}
                   className="group flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 outline-none transition-colors hover:border-amber-500/60 hover:bg-amber-500/15 focus-visible:ring-3 focus-visible:ring-amber-500/30 sm:flex-row"
@@ -244,16 +268,7 @@ function ProcessingAction({
     );
   }
   if (run.status === "awaiting_cost_confirmation") {
-    return (
-      <form action={confirmKnowledgeAuthoringCostAction}>
-        <input name="documentId" type="hidden" value={documentId} />
-        <input name="runId" type="hidden" value={run.id} />
-        <input name="returnPanel" type="hidden" value="processing" />
-        <PendingSubmitButton pendingLabel="Confirming...">
-          Confirm {run.estimatedInputTokens.toLocaleString()} tokens
-        </PendingSubmitButton>
-      </form>
-    );
+    return null;
   }
   if (run.status === "failed") {
     return <RetryAuthoringForm documentId={documentId} runId={run.id} />;

@@ -94,6 +94,14 @@ export async function runTopicDiscoveryJob(
     const result = await discoverDocumentTopics({
       allowedTopicTypes: Object.keys(bundle.profile.types),
       documentTitle: document.title,
+      loadWindowResult: async ({ contentHash, ordinal }) => {
+        const window = await db.topicDiscoveryWindow.findUnique({
+          where: { jobId_ordinal: { jobId: job.id, ordinal } },
+        });
+        return window?.status === "completed" && window.contentHash === contentHash
+          ? { topics: window.candidates }
+          : null;
+      },
       onWindowComplete: async (completed, total) => {
         await db.topicDiscoveryJob.update({
           data: {
@@ -112,6 +120,33 @@ export async function runTopicDiscoveryJob(
         text: page.text,
       })),
       provider,
+      saveWindowResult: async (window) => {
+        await db.topicDiscoveryWindow.upsert({
+          create: {
+            attempts: 1,
+            candidates: window.candidates,
+            contentHash: window.contentHash,
+            documentId: document.id,
+            inputTokens: window.inputTokens,
+            jobId: job.id,
+            ordinal: window.ordinal,
+            pageEnd: window.pageEnd,
+            pageStart: window.pageStart,
+            status: "completed",
+          },
+          update: {
+            attempts: { increment: 1 },
+            candidates: window.candidates,
+            contentHash: window.contentHash,
+            errorCode: null,
+            inputTokens: window.inputTokens,
+            pageEnd: window.pageEnd,
+            pageStart: window.pageStart,
+            status: "completed",
+          },
+          where: { jobId_ordinal: { jobId: job.id, ordinal: window.ordinal } },
+        });
+      },
     });
     const preserved = await db.topicRecord.findMany({
       select: { sourcePageNumbers: true },

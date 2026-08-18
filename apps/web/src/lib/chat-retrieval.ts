@@ -7,6 +7,7 @@ import {
 import type { ChatCitation } from "./chat-types.ts";
 import {
   retrieveOkfBundleEvidenceWithDiagnostics,
+  tokenizeOkfRetrievalQuery,
   type MetadataClarification,
   type OkfBundleEvidence,
   type OkfBundleRetrievalDiagnostics,
@@ -30,6 +31,10 @@ import {
   createAgentToolExecutor,
   type AgentExecutionTrace,
 } from "./agent-tools.ts";
+import {
+  deriveRetrievalTriggerCandidates,
+  type RetrievalTriggerCandidate,
+} from "./retrieval-trigger-proposals.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
@@ -69,6 +74,7 @@ export type ChatRetrievalResult = {
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";
   metadataClarification?: MetadataClarification;
+  retrievalTriggerCandidates?: RetrievalTriggerCandidate[];
   rerank: RagRerankTrace;
   retrievalError: boolean;
   retrievalToolsCalled: string[];
@@ -150,6 +156,10 @@ async function retrieveOkfBundleDiagnosticsWithLifecycle(input: {
     workspaceId: input.workspaceId,
   });
   await assertOkfV02Bundle({ knowledgeRoot, okfVersion: bundle.okfVersion });
+  const retrievalTriggers = await loadApprovedRetrievalTriggers({
+    knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
 
   return retrieveOkfBundleEvidenceWithDiagnostics({
     ...input,
@@ -158,7 +168,35 @@ async function retrieveOkfBundleDiagnosticsWithLifecycle(input: {
     knowledgeBundleId,
     knowledgeRoot,
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
+    retrievalTriggers: retrievalTriggers.map((trigger) => ({
+      contentHash: trigger.targetContentHash,
+      filePath: trigger.targetFilePath,
+      terms: trigger.approvedTerms,
+    })),
   });
+}
+
+async function loadApprovedRetrievalTriggers(input: {
+  knowledgeBundleId: string;
+  workspaceId: string;
+}) {
+  try {
+    return await getPrisma().okfRetrievalTriggerProposal.findMany({
+      select: {
+        approvedTerms: true,
+        targetContentHash: true,
+        targetFilePath: true,
+      },
+      where: {
+        knowledgeBundleId: input.knowledgeBundleId,
+        status: "approved",
+        workspaceId: input.workspaceId,
+      },
+    });
+  } catch (error) {
+    console.error("okf_retrieval_trigger_lookup_failed", error);
+    return [];
+  }
 }
 
 async function traverseOkfRelationsWithLifecycle(input: {
@@ -440,6 +478,11 @@ async function runSingleBundleChatRetrievalCore(
         workspaceId,
       }));
       const okfResults = okfDiagnostics.qualifiedEvidence;
+      const retrievalTriggerCandidates = deriveRetrievalTriggerCandidates({
+        knowledgeBundleId: effectiveKnowledgeBundleId,
+        nearMissCandidates: okfDiagnostics.nearMissCandidates,
+        queryTerms: tokenizeOkfRetrievalQuery(query),
+      });
 
       if (okfResults.length > 0) {
         if (decision.requiresGraphTraversal) {
@@ -511,7 +554,7 @@ async function runSingleBundleChatRetrievalCore(
       }
 
       if (input.deferRawRagFallback) {
-        return attachSearchSummary(
+        return withRetrievalTriggerCandidates(await attachSearchSummary(
           buildOkfBundleRetrievalResult(
             [],
             toolsForRoute,
@@ -523,7 +566,7 @@ async function runSingleBundleChatRetrievalCore(
             effectiveKnowledgeBundleId,
           ),
           input,
-        );
+        ), retrievalTriggerCandidates);
       }
 
       // query-router.md fallback rule: okf_only with no approved OKF object
@@ -536,7 +579,7 @@ async function runSingleBundleChatRetrievalCore(
         topK: RAG_TOP_K,
         workspaceId,
       });
-      return attachSearchSummary(
+      return withRetrievalTriggerCandidates(await attachSearchSummary(
         buildRetrievalResult(
           discovery.results,
           ["okf_retrieval", "rag_retrieval"],
@@ -547,7 +590,7 @@ async function runSingleBundleChatRetrievalCore(
           discovery.trace,
         ),
         input,
-      );
+      ), retrievalTriggerCandidates);
     }
 
     if (decision.route === "rag_only") {
@@ -578,6 +621,11 @@ async function runSingleBundleChatRetrievalCore(
       workspaceId,
     }));
     const okfResults = okfDiagnostics.qualifiedEvidence;
+    const retrievalTriggerCandidates = deriveRetrievalTriggerCandidates({
+      knowledgeBundleId: effectiveKnowledgeBundleId,
+      nearMissCandidates: okfDiagnostics.nearMissCandidates,
+      queryTerms: tokenizeOkfRetrievalQuery(query),
+    });
     if (!clarificationAlreadyAsked && okfDiagnostics.metadataClarification) {
       return buildMetadataClarificationResult(
         okfDiagnostics.metadataClarification,
@@ -593,7 +641,7 @@ async function runSingleBundleChatRetrievalCore(
       workspaceId,
     });
 
-    return attachSearchSummary(
+    return withRetrievalTriggerCandidates(await attachSearchSummary(
       buildCombinedRetrievalResult(
         okfResults,
         rag.results,
@@ -607,7 +655,7 @@ async function runSingleBundleChatRetrievalCore(
         effectiveKnowledgeBundleId,
       ),
       input,
-    );
+    ), retrievalTriggerCandidates);
   } catch {
     // A retrieval failure (missing/invalid embedding credentials, budget
     // exceeded, transient provider/db error) must never crash the chat
@@ -751,6 +799,9 @@ export function mergeBundleRetrievalResults(
         status: "not_applicable",
       },
     retrievalError: annotated.every((result) => result.retrievalError),
+    retrievalTriggerCandidates: dedupeRetrievalTriggerCandidates(
+      annotated.flatMap((result) => result.retrievalTriggerCandidates ?? []),
+    ),
     retrievalToolsCalled: [...new Set(annotated.flatMap((result) => result.retrievalToolsCalled))],
     searchSummary: {
       approvedKnowledgeMatches: annotated.reduce(
@@ -854,6 +905,10 @@ export function mergeAdaptiveRetrievalResults(
           ...retry.retrievalToolsCalled,
         ]),
       ],
+      retrievalTriggerCandidates: dedupeRetrievalTriggerCandidates([
+        ...(original.retrievalTriggerCandidates ?? []),
+        ...(retry.retrievalTriggerCandidates ?? []),
+      ]),
       searchSummary: retry.searchSummary ?? original.searchSummary,
       sourcesRead: [...new Set([...original.sourcesRead, ...retry.sourcesRead])],
     },
@@ -1091,6 +1146,25 @@ function normalizeOkfDiagnostics(
   return Array.isArray(result)
     ? { nearMissCandidates: [], qualifiedEvidence: result }
     : result;
+}
+
+function withRetrievalTriggerCandidates(
+  result: ChatRetrievalResult,
+  candidates: RetrievalTriggerCandidate[],
+): ChatRetrievalResult {
+  return candidates.length > 0
+    ? { ...result, retrievalTriggerCandidates: candidates }
+    : result;
+}
+
+function dedupeRetrievalTriggerCandidates(candidates: RetrievalTriggerCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.knowledgeBundleId}:${candidate.filePath}:${candidate.contentHash}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function buildMetadataClarificationResult(

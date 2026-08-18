@@ -124,8 +124,8 @@ test("exportApprovedTopicForDocument resolves and syncs coverage against the pro
   const coverageRepository: OkfCoverageRepository = {
     async listActiveChunksForDocument() {
       return [
-        { id: "chunk_1", sourcePageNumbers: [41] },
-        { id: "chunk_2", sourcePageNumbers: [99] },
+        { contentHash: "a".repeat(64), id: "chunk_1", sourcePageNumbers: [41] },
+        { contentHash: "b".repeat(64), id: "chunk_2", sourcePageNumbers: [99] },
       ];
     },
     async syncOkfConceptChunkLinks(input) {
@@ -146,8 +146,8 @@ test("exportApprovedTopicForDocument resolves and syncs coverage against the pro
     });
 
     const markdown = await readFile(path.join(root, exported.filename), "utf8");
-    assert.match(markdown, /covered_rag_chunk_ids:/);
-    assert.match(markdown, /  - chunk_1/);
+    assert.match(markdown, /av_okf_citations:/);
+    assert.match(markdown, new RegExp(`avchunk:${productionDocument.contentSha256}:${"a".repeat(64)}`));
     assert.equal(markdown.includes("chunk_2"), false);
     assert.deepEqual(syncCalls, [
       {

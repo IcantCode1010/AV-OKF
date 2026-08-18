@@ -25,6 +25,10 @@ type ExportTopic = {
   relations?: TopicRelation[];
   sourcePageNumbers: number[];
   coveredRagChunkIds?: string[];
+  portableCitations?: Array<{
+    chunks: Array<{ id: string; pages: number[] }>;
+    source: string;
+  }>;
   coverageType?: string;
   okfMetadata?: Record<string, unknown>;
   topicType?: string;
@@ -91,6 +95,7 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   );
   const exportedAt = input.exportedAt ?? new Date();
   const source = buildSourceReferenceIdentity(input.document);
+  validatePortableCitations(input.topic.portableCitations ?? [], source.id, source.digest, input.topic.sourcePageNumbers);
   const verification = buildVerificationEvent(input.topic, exportedAt);
   const frontmatterFields: OkfV02Frontmatter = {
     type,
@@ -140,8 +145,8 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
     }));
   }
 
-  if (input.topic.coveredRagChunkIds && input.topic.coveredRagChunkIds.length > 0) {
-    frontmatterFields.covered_rag_chunk_ids = input.topic.coveredRagChunkIds;
+  if (input.topic.portableCitations && input.topic.portableCitations.length > 0) {
+    frontmatterFields.av_okf_citations = input.topic.portableCitations;
     frontmatterFields.coverage_type = input.topic.coverageType ?? "direct_source";
   }
 
@@ -387,6 +392,7 @@ function addCustomMetadata(
     "source_pages",
     "knowledge_version",
     "av_okf_approval_mode",
+    "av_okf_citations",
     "relations",
   ]);
   for (const [key, value] of Object.entries(metadata)) {
@@ -445,6 +451,26 @@ function buildSourceReferenceIdentity(document: ExportDocument) {
     filePath: `references/sources/source-document-${digest.slice(0, 12)}.md`,
     id: `source-${digest.slice(0, 12)}`,
   };
+}
+
+function validatePortableCitations(
+  citations: NonNullable<ExportTopic["portableCitations"]>,
+  sourceId: string,
+  sourceDigest: string,
+  sourcePages: number[],
+) {
+  const allowedPages = new Set(sourcePages);
+  for (const citation of citations) {
+    if (citation.source !== sourceId) throw new Error("okf_citation_source_mismatch");
+    for (const chunk of citation.chunks) {
+      if (!chunk.id.startsWith(`avchunk:${sourceDigest}:`) || !/^avchunk:[a-f0-9]{64}:[a-f0-9]{64}$/.test(chunk.id)) {
+        throw new Error("okf_citation_chunk_id_invalid");
+      }
+      if (!chunk.pages.length || chunk.pages.some((page) => !Number.isInteger(page) || page < 1 || !allowedPages.has(page))) {
+        throw new Error("okf_citation_pages_invalid");
+      }
+    }
+  }
 }
 
 function slugify(value: string) {

@@ -121,6 +121,17 @@ export type ProductionDocumentService = {
         >
       : never,
   ): Promise<TopicRecord>;
+  resolveTopicEnrichmentCandidate(
+    topicId: string,
+    input: Parameters<ProductionDocumentRepository["resolveTopicEnrichmentCandidate"]>[0] extends {
+      context: infer _Context;
+    }
+      ? Omit<
+          Parameters<ProductionDocumentRepository["resolveTopicEnrichmentCandidate"]>[0],
+          "context" | "topicId"
+        >
+      : never,
+  ): Promise<TopicRecord>;
   approveTopicContent(
     topicId: string,
     approvedContentSource: ApprovedContentSource,
@@ -359,6 +370,13 @@ export function createProductionDocumentService(
     },
     async failTopicEnrichment(topicId, input): Promise<TopicRecord> {
       return repository.failTopicEnrichment({
+        context: await requireAuthWorkspaceContext(),
+        topicId,
+        ...input,
+      });
+    },
+    async resolveTopicEnrichmentCandidate(topicId, input): Promise<TopicRecord> {
+      return repository.resolveTopicEnrichmentCandidate({
         context: await requireAuthWorkspaceContext(),
         topicId,
         ...input,

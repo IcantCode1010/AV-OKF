@@ -72,6 +72,13 @@ export async function exportApprovedTopicForDocument(
           workspaceId: input.document.workspaceId,
         })
       : null;
+  const portableCitations = coverage && input.document.workspaceId && input.document.contentSha256
+    ? buildPortableCitations({
+        chunks: coverage.chunks,
+        sourceDigest: input.document.contentSha256,
+        sourcePages: topic.sourcePageNumbers,
+      })
+    : [];
 
   const exported = await exportTopicToKnowledge({
     directory,
@@ -87,6 +94,7 @@ export async function exportApprovedTopicForDocument(
           ...topic,
           coverageType: coverage.coverageType,
           coveredRagChunkIds: coverage.chunkIds,
+          portableCitations,
         }
       : topic,
   });
@@ -131,6 +139,20 @@ export async function exportApprovedTopicForDocument(
   }
 
   return exported;
+}
+
+function buildPortableCitations(input: { chunks: Array<{ contentHash: string; sourcePageNumbers: number[] }>; sourceDigest: string; sourcePages: number[] }) {
+  const digest = input.sourceDigest.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("okf_export_requires_source_hash");
+  const allowedPages = new Set(input.sourcePages);
+  const portableChunks = input.chunks.map((chunk) => ({
+      id: `avchunk:${digest}:${chunk.contentHash}`,
+      pages: chunk.sourcePageNumbers.filter((page) => allowedPages.has(page)),
+    })).filter((chunk) => chunk.pages.length > 0);
+  return portableChunks.length ? [{
+    chunks: portableChunks,
+    source: `source-${digest.slice(0, 12)}`,
+  }] : [];
 }
 
 function getKnowledgeVersion() {

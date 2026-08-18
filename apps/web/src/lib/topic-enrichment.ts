@@ -9,6 +9,7 @@ import {
   failTopicEnrichment,
   getTopicEnrichmentInput,
   markTopicEnrichmentPending,
+  resolveTopicEnrichmentCandidate as resolveTopicEnrichmentCandidateBackend,
   type ApprovedContentSource,
   type ExtractedPageRecord,
   type TopicRecord,
@@ -22,6 +23,10 @@ import {
   type LlmProviderId,
 } from "./llm-providers.ts";
 import { normalizeOkfArticleBody } from "./okf-article-content.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+} from "./topic-enrichment-diff.ts";
 
 export type TopicEnrichmentProviderInput = {
   apiKey: string;
@@ -64,6 +69,7 @@ export type TopicEnrichmentRepository = {
     topicId: string;
   }): Promise<TopicRecord>;
   completeTopicEnrichment(input: {
+    baselineFingerprint: string;
     context: AuthWorkspaceContext;
     enrichedSummary: string;
     enrichedTitle: string;
@@ -118,6 +124,7 @@ type ApproveTopicOptions = {
 const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
 const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
 const COMPACT_RETRY_SOURCE_CHAR_LIMIT = 12_000;
+const COMPACT_SOURCE_MARKER = "\n[...source excerpt shortened...]\n";
 export const TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS = 3_000;
 const topicEnrichmentSchema = z.object({
   body: z.string(),
@@ -137,6 +144,9 @@ export async function enrichTopic(
     topicId,
   });
   const topic = enrichmentInput.topic;
+  const baselineFingerprint = topicEnrichmentSnapshotFingerprint(
+    buildAcceptedTopicEnrichmentSnapshot(topic),
+  );
   const sourcePages = options.sourcePageMode === "exact"
     ? enrichmentInput.sourcePages.filter((page) => topic.sourcePageNumbers.includes(page.pageNumber))
     : enrichmentInput.sourcePages;
@@ -175,7 +185,7 @@ export async function enrichTopic(
         title: topic.title,
       });
     } catch (error) {
-      if (!isMissingStructuredOutput(error)) throw error;
+      if (!isMissingStructuredOutput(error) && !isContextLengthError(error)) throw error;
       attempts = 2;
       activePrompt = buildTopicEnrichmentPrompt({
         allowSourcePageProposals: options.sourcePageMode !== "exact",
@@ -209,6 +219,7 @@ export async function enrichTopic(
     const enrichedBody = normalizedBody || enrichedSummary;
 
     return repository.completeTopicEnrichment({
+      baselineFingerprint,
       context,
       enrichedSummary,
       enrichedTitle,
@@ -237,6 +248,19 @@ export async function enrichTopic(
       topicId,
     });
   }
+}
+
+export async function resolveTopicEnrichmentCandidateDecision(
+  topicId: string,
+  input: { auditId: string; decision: "accept" | "reject" },
+  options: { context?: AuthWorkspaceContext } = {},
+) {
+  const context = options.context ?? (await requireAuthWorkspaceContext());
+  return resolveTopicEnrichmentCandidateBackend(topicId, {
+    auditId: input.auditId,
+    decision: input.decision,
+    resolvedBy: context.userId,
+  });
 }
 
 export async function approveTopicContentSource(
@@ -440,11 +464,31 @@ function isMissingStructuredOutput(error: unknown) {
     normalizeErrorMessage(error) === "No output generated.";
 }
 
+function isContextLengthError(error: unknown) {
+  const messages: string[] = [];
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    messages.push(normalizeErrorMessage(current).toLowerCase());
+    current = current instanceof Error ? current.cause : null;
+  }
+  const message = messages.join(" ");
+  return message.includes("maximum context length") ||
+    message.includes("context_length_exceeded") ||
+    message.includes("reduce the length of the messages");
+}
+
 function formatEnrichmentErrorMessage(error: unknown, attempts: number) {
   if (isMissingStructuredOutput(error)) {
     return attempts > 1
       ? "The model did not return a complete structured topic after two attempts."
       : "The model did not return a complete structured topic.";
+  }
+  if (isContextLengthError(error)) {
+    return attempts > 1
+      ? "The source context remained too large for the configured model after a bounded retry."
+      : "The source context is too large for the configured model.";
   }
   return normalizeErrorMessage(error);
 }
@@ -468,16 +512,32 @@ function serializeEnrichmentError(
 
 function compactSourcePages(pages: ExtractedPageRecord[], limit: number) {
   if (pages.length === 0) return pages;
-  const perPageLimit = Math.max(400, Math.floor(limit / pages.length));
-  return pages.map((page) => ({
+  const selectedPages = selectEvenlySpacedPages(pages, 64);
+  const markerAllowance = selectedPages.length * COMPACT_SOURCE_MARKER.length;
+  const perPageLimit = Math.max(
+    1,
+    Math.floor((limit - markerAllowance) / selectedPages.length),
+  );
+  return selectedPages.map((page) => ({
     ...page,
     text: compactSourceText(page.text, perPageLimit),
   }));
+}
+
+function selectEvenlySpacedPages(pages: ExtractedPageRecord[], maximum: number) {
+  if (pages.length <= maximum) return pages;
+  const selected = new Map<number, ExtractedPageRecord>();
+  for (let index = 0; index < maximum; index += 1) {
+    const pageIndex = Math.round((index * (pages.length - 1)) / (maximum - 1));
+    const page = pages[pageIndex];
+    if (page) selected.set(page.pageNumber, page);
+  }
+  return [...selected.values()].sort((left, right) => left.pageNumber - right.pageNumber);
 }
 
 function compactSourceText(value: string, limit: number) {
   if (value.length <= limit) return value;
   const headLength = Math.floor(limit * 0.7);
   const tailLength = limit - headLength;
-  return `${value.slice(0, headLength).trimEnd()}\n[...source excerpt shortened...]\n${value.slice(-tailLength).trimStart()}`;
+  return `${value.slice(0, headLength).trimEnd()}${COMPACT_SOURCE_MARKER}${value.slice(-tailLength).trimStart()}`;
 }

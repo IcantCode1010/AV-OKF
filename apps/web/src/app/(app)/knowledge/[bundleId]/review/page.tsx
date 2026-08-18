@@ -13,6 +13,8 @@ import {
 import { getDocumentById } from "@/lib/document-backend";
 import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
 import { listKnowledgeGaps } from "@/lib/knowledge-gaps";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { reviewRetrievalTriggerProposalAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -79,12 +81,99 @@ export default async function BulkTopicReviewPage({ params, searchParams }: {
           </div>
         </section>
       ) : null}
-      {gapsView && !document ? <KnowledgeGapList gaps={knowledgeGaps} /> : <BulkTopicReviewList bundleId={bundle.id} documentId={document?.id} topics={topics} />}
+      {gapsView && !document ? <KnowledgeGapList bundleId={bundle.id} gaps={knowledgeGaps} /> : <BulkTopicReviewList bundleId={bundle.id} documentId={document?.id} topics={topics} />}
     </div>
   );
 }
 
-function KnowledgeGapList({ gaps }: { gaps: Awaited<ReturnType<typeof listKnowledgeGaps>> }) {
+function KnowledgeGapList({ bundleId, gaps }: { bundleId: string; gaps: Awaited<ReturnType<typeof listKnowledgeGaps>> }) {
   if (!gaps.length) return <div className="border border-dashed border-border p-10 text-center"><CircleHelp className="mx-auto size-5 text-muted-foreground" /><p className="mt-3 text-sm font-medium">No open knowledge gaps</p><p className="mt-1 text-xs text-muted-foreground">Questions appear here when chat cannot find enough supported evidence.</p></div>;
-  return <div className="divide-y border border-border">{gaps.map((gap) => <article className="p-4" key={gap.id}><div className="flex flex-wrap items-start justify-between gap-2"><h2 className="text-sm font-medium">{gap.question}</h2><Badge variant="outline">{gap.route}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{gap.reason === "no_matching_evidence" ? "No matching evidence was found." : "Related evidence was found, but it did not answer the question."}</p><p className="mt-2 text-xs text-muted-foreground">Searched: {gap.searchedSources.join(", ") || "No sources recorded"}</p></article>)}</div>;
+  return (
+    <div className="divide-y border border-border">
+      {gaps.map((gap) => (
+        <article className="space-y-3 p-4" key={gap.id}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h2 className="text-sm font-medium">{gap.question}</h2>
+            <Badge variant="outline">{gap.route}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {gap.reason === "no_matching_evidence"
+              ? "No matching evidence was found."
+              : "Related evidence was found, but it did not answer the question."}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Searched: {gap.searchedSources.join(", ") || "No sources recorded"}
+          </p>
+          {gap.retrievalTriggerProposals.length > 0 ? (
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                Search alias proposals
+              </p>
+              {gap.retrievalTriggerProposals.map((proposal) => (
+                <div
+                  className="grid gap-3 border border-border p-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end"
+                  key={proposal.id}
+                >
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{proposal.targetTitle}</p>
+                      <Badge variant={proposal.status === "approved" ? "secondary" : "outline"}>
+                        {proposal.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
+                      {proposal.targetFilePath}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">{proposal.matchReason}</p>
+                  </div>
+                  {proposal.status === "pending" ? (
+                    <div className="flex flex-col gap-2 sm:min-w-80">
+                      <form action={reviewRetrievalTriggerProposalAction} className="grid gap-2">
+                        <input name="knowledgeBundleId" type="hidden" value={bundleId} />
+                        <input name="proposalId" type="hidden" value={proposal.id} />
+                        <input name="decision" type="hidden" value="approve" />
+                        <label className="grid gap-1 text-xs">
+                          Search aliases
+                          <input
+                            className="h-9 border border-input bg-background px-3 text-sm"
+                            defaultValue={proposal.suggestedTerms.join(", ")}
+                            name="terms"
+                          />
+                        </label>
+                        <PendingSubmitButton pendingLabel="Approving...">
+                          Approve aliases
+                        </PendingSubmitButton>
+                      </form>
+                      <form action={reviewRetrievalTriggerProposalAction}>
+                        <input name="knowledgeBundleId" type="hidden" value={bundleId} />
+                        <input name="proposalId" type="hidden" value={proposal.id} />
+                        <input name="decision" type="hidden" value="reject" />
+                        <PendingSubmitButton
+                          className="w-full"
+                          pendingLabel="Rejecting..."
+                          variant="outline"
+                        >
+                          Reject
+                        </PendingSubmitButton>
+                      </form>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {proposal.status === "approved"
+                        ? `Active aliases: ${proposal.approvedTerms.join(", ")}`
+                        : "This proposal will not affect retrieval."}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="border-t border-border pt-3 text-xs text-muted-foreground">
+              No safe concept near-miss was available, so no search alias was proposed.
+            </p>
+          )}
+        </article>
+      ))}
+    </div>
+  );
 }

@@ -1,0 +1,3 @@
+export const MAX_LARGE_PDF_UPLOAD_BYTES = 250 * 1024 * 1024;
+export const MAX_LARGE_PDF_PAGES = 5_000;
+export const UPLOAD_SESSION_TTL_SECONDS = 15 * 60;

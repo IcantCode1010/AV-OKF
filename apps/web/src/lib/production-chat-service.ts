@@ -627,6 +627,12 @@ export function createProductionChatService(
                 ...persistedRetrieval.retrievalToolsCalled,
                 ...persistedRetrieval.sourcesRead,
               ])),
+              ...(persistedRetrieval.retrievalTriggerCandidates?.length
+                ? {
+                    retrievalTriggerCandidates:
+                      persistedRetrieval.retrievalTriggerCandidates,
+                  }
+                : {}),
             }
           : undefined;
 

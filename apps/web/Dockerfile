@@ -1,13 +1,19 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-alpine AS deps
+FROM node:24-bookworm-slim AS deps
 WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
-FROM node:24-alpine AS builder
+FROM node:24-bookworm-slim AS builder
 WORKDIR /app
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -16,15 +22,18 @@ RUN pnpm db:generate \
   && NEXT_DEPLOYMENT_ID="$deployment_id" pnpm build \
   && printf '%s' "$deployment_id" > .next/DEPLOYMENT_ID
 
-FROM node:24-alpine AS runner
+FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
-RUN addgroup -S nextjs \
-  && adduser -S nextjs -G nextjs \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends imagemagick openssl poppler-utils procps qpdf tesseract-ocr tesseract-ocr-eng wget \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd --system nextjs \
+  && useradd --system --gid nextjs --create-home nextjs \
   && chown -R nextjs:nextjs /app
 
 COPY --from=builder --chown=nextjs:nextjs /app/package.json ./package.json

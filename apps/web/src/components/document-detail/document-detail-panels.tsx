@@ -19,6 +19,7 @@ import {
   approveTopicContentAction,
   enrichTopicAction,
   generateTopicsAction,
+  resolveTopicEnrichmentCandidateAction,
   resolveProposedTopicPagesAction,
   updateDocumentMetadataAction,
   updateTopicContentAction,
@@ -753,6 +754,10 @@ function SelectedTopicPanel({
                   <Button disabled type="submit">
                     Enrichment pending
                   </Button>
+                ) : topic.enrichmentStatus === "review_required" ? (
+                  <Button disabled type="submit">
+                    Review proposed enrichment
+                  </Button>
                 ) : (
                   <PendingSubmitButton pendingLabel="Enriching...">
                     {hasEnrichedContent(topic)
@@ -767,9 +772,64 @@ function SelectedTopicPanel({
                 {enrichmentError}
               </div>
             ) : null}
-            {topic.enrichmentStatus === "failed" ? (
+            {topic.enrichmentErrorMessage ? (
               <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
-                {topic.enrichmentErrorMessage ?? "Enrichment failed."}
+                {topic.enrichmentErrorMessage}
+                {hasEnrichedContent(topic)
+                  ? " The previously accepted enrichment was kept."
+                  : ""}
+              </div>
+            ) : null}
+            {topic.pendingEnrichment ? (
+              <div className="space-y-3 rounded-md border border-amber-400/40 bg-amber-400/5 p-4">
+                <div>
+                  <p className="text-sm font-medium">Review proposed re-enrichment</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The accepted article has not changed. Compare this proposal before approval or bulk export.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {topic.pendingEnrichment.diff.titleChanged ? <Badge variant="outline">Title changed</Badge> : null}
+                  {topic.pendingEnrichment.diff.summaryChanged ? <Badge variant="outline">Summary changed</Badge> : null}
+                  {topic.pendingEnrichment.diff.bodyChanged ? (
+                    <Badge variant="outline">
+                      Article {formatSignedCount(topic.pendingEnrichment.diff.wordCountDelta)} words
+                    </Badge>
+                  ) : null}
+                  {topic.pendingEnrichment.diff.addedSourcePageNumbers.length > 0 ? (
+                    <Badge variant="outline">Added pages {topic.pendingEnrichment.diff.addedSourcePageNumbers.join(", ")}</Badge>
+                  ) : null}
+                  {topic.pendingEnrichment.diff.removedSourcePageNumbers.length > 0 ? (
+                    <Badge variant="outline">Removed pages {topic.pendingEnrichment.diff.removedSourcePageNumbers.join(", ")}</Badge>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <TopicEnrichmentVersion
+                    body={topic.enrichedBody ?? topic.enrichedSummary ?? ""}
+                    label="Current accepted enrichment"
+                    summary={topic.enrichedSummary ?? ""}
+                    title={topic.enrichedTitle ?? ""}
+                  />
+                  <TopicEnrichmentVersion
+                    body={topic.pendingEnrichment.body}
+                    label="Proposed replacement"
+                    summary={topic.pendingEnrichment.summary}
+                    title={topic.pendingEnrichment.title}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(["accept", "reject"] as const).map((decision) => (
+                    <form action={resolveTopicEnrichmentCandidateAction} key={decision}>
+                      <input name="auditId" type="hidden" value={topic.pendingEnrichment!.auditId} />
+                      <input name="decision" type="hidden" value={decision} />
+                      <input name="documentId" type="hidden" value={documentId} />
+                      <input name="topicId" type="hidden" value={topic.id} />
+                      <PendingSubmitButton pendingLabel="Saving decision...">
+                        {decision === "accept" ? "Use new enrichment" : "Keep current enrichment"}
+                      </PendingSubmitButton>
+                    </form>
+                  ))}
+                </div>
               </div>
             ) : null}
             {topic.enrichmentStatus !== "none" ? (
@@ -831,7 +891,7 @@ function SelectedTopicPanel({
                 </div>
               </div>
             ) : null}
-            {hasEnrichedContent(topic) ? (
+            {hasEnrichedContent(topic) && !topic.pendingEnrichment ? (
               <form
                 action={approveTopicContentAction}
                 className="space-y-3 rounded-md border border-border p-3"
@@ -1070,6 +1130,33 @@ function MetadataRow({ label, value }: { label: string; value: string }) {
 
 function hasEnrichedContent(topic: TopicRecord) {
   return Boolean(topic.enrichedTitle && topic.enrichedSummary);
+}
+
+function TopicEnrichmentVersion({
+  body,
+  label,
+  summary,
+  title,
+}: {
+  body: string;
+  label: string;
+  summary: string;
+  title: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+      <p className="mt-3 text-sm font-medium">{title}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{summary}</p>
+      <div className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-border pt-3 text-sm text-muted-foreground">
+        {body}
+      </div>
+    </div>
+  );
+}
+
+function formatSignedCount(value: number) {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 const selectClassName =

@@ -4,6 +4,7 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation, ChatMessage, ChatSession } from "./chat-types.ts";
 import type { Stage6aRouterTrace } from "./chat-router.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
+import { retrievalTriggerProposalFingerprint } from "./retrieval-trigger-proposals.ts";
 import {
   normalizeKnowledgeProfile,
   type KnowledgeProfileSchema,
@@ -265,7 +266,7 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
             },
           });
           if (input.knowledgeGap) {
-            await tx.knowledgeGap.create({
+            const gap = await tx.knowledgeGap.create({
               data: {
                 assistantMessageId: assistantRecord.id,
                 chatSessionId: input.sessionId,
@@ -280,6 +281,42 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
                 workspaceId: input.context.workspaceId,
               },
             });
+            const proposals = (input.knowledgeGap.retrievalTriggerCandidates ?? [])
+              .filter((candidate) => input.knowledgeBundleIds.includes(candidate.knowledgeBundleId))
+              .slice(0, 3);
+            for (const proposal of proposals) {
+              await tx.okfRetrievalTriggerProposal.upsert({
+                create: {
+                  fingerprint: retrievalTriggerProposalFingerprint({
+                    contentHash: proposal.contentHash,
+                    filePath: proposal.filePath,
+                    knowledgeBundleId: proposal.knowledgeBundleId,
+                    terms: proposal.suggestedTerms,
+                  }),
+                  knowledgeBundleId: proposal.knowledgeBundleId,
+                  knowledgeGapId: gap.id,
+                  matchReason: proposal.matchReason,
+                  suggestedTerms: proposal.suggestedTerms,
+                  targetContentHash: proposal.contentHash,
+                  targetFilePath: proposal.filePath,
+                  targetTitle: proposal.title,
+                  workspaceId: input.context.workspaceId,
+                },
+                update: {},
+                where: {
+                  workspaceId_knowledgeBundleId_fingerprint: {
+                    fingerprint: retrievalTriggerProposalFingerprint({
+                      contentHash: proposal.contentHash,
+                      filePath: proposal.filePath,
+                      knowledgeBundleId: proposal.knowledgeBundleId,
+                      terms: proposal.suggestedTerms,
+                    }),
+                    knowledgeBundleId: proposal.knowledgeBundleId,
+                    workspaceId: input.context.workspaceId,
+                  },
+                },
+              });
+            }
           }
           const updatedAt = new Date();
           const titleUpdate = await tx.chatSession.updateMany({

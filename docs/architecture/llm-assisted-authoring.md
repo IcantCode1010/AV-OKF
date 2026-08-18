@@ -47,6 +47,26 @@ Extraction queues one authoring run. The worker performs the stages sequentially
   Suggestions cannot affect graph traversal until publication gates pass.
 - **Validation:** checks title, summary, source coverage, enrichment failures, and unresolved source-page proposals. The run then stops at `ready_for_review`.
 
+## Non-Destructive Enrichment Revisions
+
+The first successful enrichment writes only the dedicated enriched title,
+summary, body, and proposed source-page fields. Raw discovery content remains
+unchanged. The audit records normalized before/after snapshots, a content
+fingerprint, and a deterministic field/page/word-count diff.
+
+A later enrichment run never overwrites the accepted enriched article. Changed
+output is stored as an `awaiting_review` audit candidate and the topic enters
+`review_required`. Reviewers compare the current and proposed versions and
+explicitly choose **Use new enrichment** or **Keep current enrichment**. Until
+then, individual approval and bulk export are blocked. Equivalent output is
+recorded as unchanged without creating review work. A failed rerun leaves the
+accepted article and completed eligibility intact while exposing the failure.
+
+Candidate resolution is workspace-scoped and transactional. The accepted
+baseline fingerprint must still match, and only one concurrent decision can
+claim a pending candidate. This prevents stale asynchronous output from
+replacing newer reviewer edits.
+
 ## Cost Boundary
 
 The workflow pauses before enrichment when estimated input exceeds 250,000 tokens or more than 25 topics would be enriched. A workspace user must explicitly confirm before the durable run continues.

@@ -62,7 +62,7 @@ test("assertPdfUpload rejects non-PDF and oversized uploads", () => {
         size: MAX_UPLOAD_BYTES + 1,
         type: "application/pdf",
       }),
-    /upload_exceeds_25mb_limit/,
+    /upload_exceeds_250mb_limit/,
   );
 });
 

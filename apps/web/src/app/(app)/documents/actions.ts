@@ -31,6 +31,7 @@ import { isProductionBackend } from "@/lib/production-document-service";
 import {
   approveTopicContentSource,
   enrichTopic,
+  resolveTopicEnrichmentCandidateDecision,
 } from "@/lib/topic-enrichment";
 import {
   requestPermanentDocumentDeletion,
@@ -51,11 +52,14 @@ import { getDocumentProcessingHref } from "@/lib/document-row-navigation";
 const RECOVERABLE_UPLOAD_ERRORS = new Set([
   "missing_pdf_file",
   "only_pdf_uploads_supported",
-  "upload_exceeds_25mb_limit",
+  "upload_exceeds_250mb_limit",
   "invalid_pdf_magic_bytes",
 ]);
 
 export async function uploadDocumentAction(formData: FormData) {
+  if (isProductionBackend()) {
+    throw new Error("production_upload_requires_direct_storage_session");
+  }
   const file = formData.get("file");
   const context = await requireAuthWorkspaceContext();
   const knowledgeBundleId = getFormString(formData, "knowledgeBundleId");
@@ -287,6 +291,36 @@ export async function approveTopicContentAction(formData: FormData) {
 
   revalidatePath(`/documents/${documentId}`);
   redirect(`/documents/${documentId}`);
+}
+
+export async function resolveTopicEnrichmentCandidateAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const auditId = getFormString(formData, "auditId");
+  const decisionValue = getFormString(formData, "decision");
+  if (decisionValue !== "accept" && decisionValue !== "reject") {
+    throw new Error("invalid_topic_enrichment_decision");
+  }
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+  assertActionDocumentWorkspace({
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "topic_enrichment_workspace_mismatch",
+  });
+  const topicBelongsToDocument = (await getTopicRecordsByDocumentId(documentId))
+    .some((topic) => topic.id === topicId);
+  if (!topicBelongsToDocument) {
+    throw new Error("topic_not_found");
+  }
+  await resolveTopicEnrichmentCandidateDecision(
+    topicId,
+    { auditId, decision: decisionValue },
+    { context },
+  );
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=topics&topic=${topicId}`);
 }
 
 export async function updateTopicContentAction(formData: FormData) {

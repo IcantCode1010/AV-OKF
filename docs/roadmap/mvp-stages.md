@@ -8,6 +8,8 @@ The first usable product should be a clean document vault. Chat comes later, aft
 
 ## Current Implementation Status
 
+Large-PDF grounded processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, bounded crawling, flat consolidation, and portable citations. Production rollout at the 250 MB/5,000-page ceiling remains gated on the documented real and mechanical tests.
+
 As of 2026-07-26:
 
 | Stage | Status |
@@ -716,8 +718,10 @@ Status: v0.2 hard cutover, active-guidance reconciliation, and the pinned
 upstream compatibility corpus are complete. All four official sample bundles
 at commit `fe3268a` pass portable validation and deterministic round trips;
 they remain separate from AV runtime and agent-readiness decisions. Claim-level
-`sources[].id` footnote validation is the next gated slice before portable
-import. Runtime documents and document-derived knowledge were intentionally
+`sources[].id` footnote validation is also complete: portable mismatches are
+reported without invalidating generic conformance, while unresolved or
+ambiguous attribution blocks strict AV runtime readiness. Runtime documents and
+document-derived knowledge were intentionally
 purged across all workspaces on 2026-08-16, leaving the existing bundle
 registries and profiles as an empty starting point. Existing user data no
 longer gates compatibility work; controlled repository fixtures are the test
@@ -754,6 +758,39 @@ Completed compatibility gate:
 - kept optional generic root-version behavior separate from AV-OKF's mandatory
   production declaration;
 - confirmed no fixture concept qualifies as agent-ready evidence.
+- validated 45 claim-footnote references against exact `sources[].id` values,
+  with 33 matches and 11 deterministic warnings covering 12 references in the
+  upstream Stack Overflow sample;
+- kept those attribution findings non-fatal for portable conformance while
+  making them errors in AV runtime validation.
+
+Completed enrichment-safety gate:
+
+- first enrichment remains separate from raw discovery content and records a
+  deterministic accepted baseline;
+- changed re-enrichment output is retained as a reviewable proposal instead of
+  replacing accepted content;
+- bulk and individual approval remain blocked until the reviewer accepts or
+  rejects the proposal;
+- equivalent reruns create no review work, while failed reruns preserve the
+  last accepted enrichment.
+
+Completed retrieval-learning gate:
+
+- insufficient-evidence turns can stage deterministic search-alias proposals
+  only when diagnostics identify a specific approved OKF near miss;
+- proposals are bound to the exact bundle, normalized concept path, and live
+  concept content hash, and remain inert until a reviewer approves them;
+- approved aliases extend lexical concept discovery without changing OKF
+  Markdown, lifecycle, trust, evidence text, or citation eligibility;
+- pending, rejected, stale, cross-workspace, and unavailable proposals cannot
+  affect retrieval, and diagnostic concept content remains structurally absent
+  from answer generation and validation.
+
+Next gated slice:
+
+- add privacy-minimized bundle retrieval-health and concept-usage telemetry
+  before portable archive import begins.
 
 Migration and format rules:
 

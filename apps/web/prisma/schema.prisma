@@ -74,9 +74,11 @@ model Workspace {
   okfEmbeddingJobs            OkfConceptEmbeddingJob[]
   ragRerankDailyUsage         RagRerankDailyUsage[]
   knowledgeGaps               KnowledgeGap[]
+  retrievalTriggerProposals  OkfRetrievalTriggerProposal[]
   bulkTopicApprovalRuns       BulkTopicApprovalRun[]
   documentDeletionJobs        DocumentDeletionJob[]
   knowledgeBundleDeletionJobs KnowledgeBundleDeletionJob[]
+  documentUploadSessions      DocumentUploadSession[]
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
 }
@@ -141,6 +143,11 @@ model Document {
   ragIndexVersion        Int                      @default(0)
   originalFilename       String?
   contentSha256          String?
+  inspectionStatus       String                   @default("not_started")
+  inspectionWarnings     String[]                 @default([])
+  inspectedAt            DateTime?
+  ocrPageCount           Int                      @default(0)
+  unreadablePageNumbers  Int[]                    @default([])
   mimeType               String
   workspace              Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   knowledgeBundle        KnowledgeBundle?         @relation(fields: [knowledgeBundleId], references: [id], onDelete: SetNull)
@@ -156,6 +163,9 @@ model Document {
   topicRecords           TopicRecord[]
   activityEvents         ActivityEvent[]
   bulkApprovalItems      BulkTopicApprovalItem[]
+  processingCheckpoints  DocumentProcessingCheckpoint[]
+  topicDiscoveryWindows  TopicDiscoveryWindow[]
+  crawlerCandidates      GroundedCrawlerCandidate[]
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
 
@@ -191,8 +201,10 @@ model KnowledgeBundle {
   conceptEmbeddings      OkfConceptEmbedding[]
   conceptEmbeddingJobs   OkfConceptEmbeddingJob[]
   knowledgeGaps          KnowledgeGap[]
+  retrievalTriggerProposals OkfRetrievalTriggerProposal[]
   bulkTopicApprovalRuns  BulkTopicApprovalRun[]
   documentDeletionJobs   DocumentDeletionJob[]
+  uploadSessions         DocumentUploadSession[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -314,6 +326,7 @@ model KnowledgeAuthoringRun {
   currentStage                     String                         @default("metadata_discovery")
   completedStages                  String[]                       @default([])
   estimatedInputTokens             Int                            @default(0)
+  costEstimate                     Json                           @default("{}")
   enrichmentCandidateCount         Int                            @default(0)
   validationResults                Json                           @default("[]")
   relationSuggestions              Json                           @default("[]")
@@ -455,6 +468,30 @@ model DocumentObject {
   @@index([workspaceId, documentId, kind])
 }
 
+model DocumentUploadSession {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  requestedBy       String
+  documentId        String          @unique
+  objectKey         String          @unique
+  originalFilename  String
+  contentType       String
+  expectedSizeBytes Int
+  metadata          Json
+  status            String          @default("initiated")
+  errorCode         String?
+  expiresAt         DateTime
+  finalizedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status, expiresAt])
+  @@index([knowledgeBundleId, status])
+}
+
 model ExtractionJob {
   id           String    @id @default(cuid())
   workspaceId  String
@@ -468,9 +505,34 @@ model ExtractionJob {
   completedAt  DateTime?
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   document     Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  checkpoints DocumentProcessingCheckpoint[]
 
   @@index([status, queuedAt])
   @@index([workspaceId, documentId])
+}
+
+model DocumentProcessingCheckpoint {
+  id          String        @id @default(cuid())
+  jobId       String
+  documentId  String
+  stage       String
+  batchIndex  Int
+  pageStart   Int
+  pageEnd     Int
+  status      String        @default("queued")
+  attempts    Int           @default(0)
+  outputHash  String?
+  outputKey   String?
+  errorCode   String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  job         ExtractionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  document    Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, stage, batchIndex])
+  @@index([documentId, stage, status])
 }
 
 model TopicDiscoveryJob {
@@ -492,9 +554,51 @@ model TopicDiscoveryJob {
   workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   document             Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
   audits               TopicDiscoveryAudit[]
+  windows              TopicDiscoveryWindow[]
 
   @@index([status, queuedAt])
   @@index([workspaceId, documentId, queuedAt])
+}
+
+model TopicDiscoveryWindow {
+  id            String            @id @default(cuid())
+  jobId         String
+  documentId    String
+  ordinal       Int
+  pageStart     Int
+  pageEnd       Int
+  contentHash   String
+  inputTokens   Int
+  status        String            @default("queued")
+  attempts      Int               @default(0)
+  candidates    Json              @default("[]")
+  errorCode     String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  job           TopicDiscoveryJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  document      Document          @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, ordinal])
+  @@index([documentId, status])
+}
+
+model GroundedCrawlerCandidate {
+  id               String   @id @default(cuid())
+  documentId       String
+  seed             String
+  seedHash         String
+  candidateType    String
+  payload          Json
+  evidenceChunkIds String[]
+  sourcePages      Int[]
+  evidenceQuote    String   @db.Text
+  status           String   @default("validated")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, seedHash, candidateType, evidenceQuote])
+  @@index([documentId, status])
 }
 
 model TopicDiscoveryAudit {
@@ -525,6 +629,9 @@ model ExtractedPage {
   tables      Json
   imageCount  Int
   charCount   Int
+  extractionMethod String @default("digital")
+  ocrConfidence Float?
+  warningCodes String[] @default([])
   document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, pageNumber])
@@ -561,9 +668,29 @@ model RagIndexJob {
   workspace       Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   document        Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
   chunks          RagChunk[]
+  batchCheckpoints RagIndexBatchCheckpoint[]
 
   @@index([status, queuedAt])
   @@index([workspaceId, documentId, status])
+}
+
+model RagIndexBatchCheckpoint {
+  id          String      @id @default(cuid())
+  indexJobId  String
+  batchIndex  Int
+  chunkStart  Int
+  chunkEnd    Int
+  tokenCount  Int
+  status      String      @default("queued")
+  attempts    Int         @default(0)
+  errorCode   String?
+  completedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  indexJob    RagIndexJob @relation(fields: [indexJobId], references: [id], onDelete: Cascade)
+
+  @@unique([indexJobId, batchIndex])
+  @@index([status, updatedAt])
 }
 
 model RagChunk {
@@ -792,19 +919,33 @@ model BulkTopicApprovalItem {
 }
 
 model TopicEnrichmentAudit {
-  id           String      @id @default(cuid())
-  topicId      String
-  provider     String
-  model        String
-  promptSent   String      @db.Text
-  rawResponse  String      @db.Text
-  createdAt    DateTime    @default(now())
-  requestedBy  String
-  succeeded    Boolean
-  errorMessage String?
-  topic        TopicRecord @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  id                              String      @id @default(cuid())
+  topicId                         String
+  provider                        String
+  model                           String
+  promptSent                      String      @db.Text
+  rawResponse                     String      @db.Text
+  createdAt                       DateTime    @default(now())
+  requestedBy                     String
+  succeeded                       Boolean
+  errorMessage                    String?
+  baselineFingerprint             String?
+  baselineTitle                   String?
+  baselineSummary                 String?     @db.Text
+  baselineBody                    String?     @db.Text
+  baselineProposedSourcePageNumbers Int[]     @default([])
+  candidateTitle                  String?
+  candidateSummary                String?     @db.Text
+  candidateBody                   String?     @db.Text
+  candidateProposedSourcePageNumbers Int[]    @default([])
+  diff                            Json        @default("{}")
+  disposition                     String      @default("applied")
+  resolvedAt                      DateTime?
+  resolvedBy                      String?
+  topic                           TopicRecord @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@index([topicId, createdAt])
+  @@index([topicId, disposition, createdAt])
 }
 
 model ActivityEvent {
@@ -890,8 +1031,35 @@ model KnowledgeGap {
   primaryKnowledgeBundle     KnowledgeBundle? @relation(fields: [primaryKnowledgeBundleId], references: [id], onDelete: SetNull)
   chatSession                ChatSession      @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
   assistantMessage           ChatMessage      @relation(fields: [assistantMessageId], references: [id], onDelete: Cascade)
+  retrievalTriggerProposals  OkfRetrievalTriggerProposal[]
   createdAt                  DateTime         @default(now())
   updatedAt                  DateTime         @updatedAt
 
   @@index([workspaceId, primaryKnowledgeBundleId, status, createdAt])
+}
+
+model OkfRetrievalTriggerProposal {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  knowledgeGapId    String
+  fingerprint       String
+  targetFilePath    String
+  targetTitle       String
+  targetContentHash String
+  suggestedTerms    String[]
+  approvedTerms     String[]        @default([])
+  matchReason       String          @db.Text
+  status            String          @default("pending")
+  reviewedAt        DateTime?
+  reviewedBy        String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  knowledgeGap      KnowledgeGap    @relation(fields: [knowledgeGapId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, knowledgeBundleId, fingerprint])
+  @@index([workspaceId, knowledgeBundleId, status, createdAt])
+  @@index([knowledgeGapId, status])
 }

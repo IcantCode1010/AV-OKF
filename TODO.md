@@ -1,5 +1,15 @@
 # AV-OKF TODO
 
+## Large-PDF Follow-Up
+
+- [ ] Add live Metadata discovery visibility to the Processing timeline: show queued/running state, current metadata task, completed fields versus total fields, completion summary, and actionable failure/retry status using persisted backend records rather than simulated progress.
+- [ ] Fix end-to-end live Processing progression so extraction, metadata discovery, concept discovery, RAG indexing, grounded crawling, enrichment, validation, and approval transitions appear without a manual page refresh. Audit polling fingerprints and terminal-state rules, then add a browser test that observes multiple backend stage changes on the same open page.
+- [ ] Run and record the required mixed text/scanned PDF test above 100 MB and 1,000 pages.
+- [ ] Run the mechanical 250 MB/5,000-page upper-bound fixture before enabling the full limit operationally.
+- [ ] Add multipart resumable uploads if restart-on-failure is inadequate in field use.
+- [ ] Add reviewed OCR language packs beyond English based on measured corpus demand.
+- [x] Requeue RAG batches paused by embedding budgets through startup and hourly reconciliation.
+
 ## Bundle-Centered Experience
 
 - [x] Add a workspace-validated active-bundle cookie and searchable persistent selector.
@@ -56,9 +66,9 @@
 - [x] Phase 1: remove v0.1 examples from active guidance and add a regression test for legacy OKF contract fields.
 - [x] Purge all runtime documents and document-derived knowledge across every workspace; verify the empty state is idempotent while preserving bundles and profiles.
 - [x] Phase 2: pin all four official upstream v0.2 sample bundles at commit `fe3268a` as an attributed, fingerprinted compatibility corpus; validate 78 deterministic Markdown round trips and preserve portable/runtime/agent-readiness separation.
-- [ ] Phase 3: validate claim-level Markdown footnotes against `sources[].id` without weakening generic conformance.
-- [ ] Phase 4: add non-destructive first-enrichment and re-enrichment diff guards.
-- [ ] Phase 5: add reviewed retrieval-trigger proposals learned from retrieval misses and knowledge gaps.
+- [x] Phase 3: validate claim-level Markdown footnotes against `sources[].id`; keep mismatches as portable compatibility warnings while blocking ambiguous or unresolved claim attribution from strict AV runtime readiness.
+- [x] Phase 4: add non-destructive first-enrichment and re-enrichment diff guards; first enrichment remains separately stored, changed reruns require an explicit reviewer decision, equivalent reruns create no review work, and failed reruns preserve the accepted article.
+- [x] Phase 5: add reviewed retrieval-trigger proposals learned from retrieval misses and knowledge gaps.
 - [ ] Phase 6: add privacy-minimized bundle retrieval-health and concept-usage telemetry.
 - [ ] Phase 7: evaluate an index-guided, bounded mini research mode with parallel subqueries.
 - [ ] Phase 8: implement staged, v0.2-only portable bundle import after every prior gate passes.

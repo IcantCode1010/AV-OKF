@@ -1,6 +1,7 @@
 import { Worker } from "bullmq";
 
 import { createPostgresDocumentRepository } from "../lib/production-repository.ts";
+import { getPrisma } from "../lib/prisma.ts";
 import { createBullMqExtractionQueue, type ExtractionJobPayload } from "../lib/production-queue.ts";
 import { runRagIndexJob } from "../lib/rag-indexer.ts";
 import { createBullMqRagIndexQueue, type RagIndexJobPayload } from "../lib/rag-queue.ts";
@@ -68,6 +69,7 @@ import {
   createOkfRelationVerificationQueue,
   type OkfRelationVerificationJobPayload,
 } from "../lib/okf-relation-verification-queue.ts";
+import { cleanupExpiredDocumentUploadSessions } from "../lib/document-upload-session.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
@@ -79,6 +81,8 @@ let bulkTopicApprovalWorker: Worker<BulkTopicApprovalJobPayload> | null = null;
 let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
 let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | null = null;
 let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null = null;
+let uploadCleanupTimer: ReturnType<typeof setInterval> | null = null;
+let ragBudgetResumeTimer: ReturnType<typeof setInterval> | null = null;
 
 void main();
 
@@ -101,6 +105,8 @@ async function main() {
   const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
   const relationVerificationQueue = createOkfRelationVerificationQueue(redisUrl);
 
+  const expiredUploads = await cleanupExpiredDocumentUploadSessions();
+  if (expiredUploads > 0) console.log(`Cleaned ${expiredUploads} expired document uploads.`);
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
   await reconcileQueuedTopicDiscoveryJobs(repository, topicDiscoveryQueue);
@@ -121,11 +127,23 @@ async function main() {
   await reconcileOkfRelationVerificationJobs(relationVerificationQueue);
   await reconcileAutomaticRelationApprovals();
 
+  uploadCleanupTimer = setInterval(() => {
+    void cleanupExpiredDocumentUploadSessions()
+      .then((count) => count > 0 && console.log(`Cleaned ${count} expired document uploads.`))
+      .catch((error) => console.error("Document upload cleanup failed", error));
+  }, 15 * 60 * 1_000);
+  uploadCleanupTimer.unref();
+
+  ragBudgetResumeTimer = setInterval(() => {
+    void reconcileQueuedRagJobs(ragRepository, ragQueue)
+      .catch((error) => console.error("RAG budget reconciliation failed", error));
+  }, 60 * 60 * 1_000);
+  ragBudgetResumeTimer.unref();
+
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
     async (job) => {
       await runProductionExtractionJob(job.data, {
-        ragQueue,
         repository,
         storage,
         knowledgeAuthoringQueue,
@@ -142,7 +160,14 @@ async function main() {
   ragWorker = new Worker<RagIndexJobPayload>(
     "rag-index",
     async (job) => {
-      await runRagIndexJob(job.data);
+      const result = await runRagIndexJob(job.data) as { status?: string } | undefined;
+      if (result?.status === "completed") {
+        const waitingRuns = await getPrisma().knowledgeAuthoringRun.findMany({
+          select: { documentId: true, id: true, workspaceId: true },
+          where: { documentId: job.data.documentId, status: "waiting_for_rag" },
+        });
+        for (const run of waitingRuns) await knowledgeAuthoringQueue.enqueue({ documentId: run.documentId, runId: run.id, workspaceId: run.workspaceId });
+      }
     },
     {
       concurrency: Number(process.env.RAG_INDEX_WORKER_CONCURRENCY ?? "1"),
@@ -351,6 +376,8 @@ async function reconcileQueuedKnowledgeAuthoringRuns(
 }
 
 async function shutdown() {
+  if (uploadCleanupTimer) clearInterval(uploadCleanupTimer);
+  if (ragBudgetResumeTimer) clearInterval(ragBudgetResumeTimer);
   await extractionWorker?.close();
   await ragWorker?.close();
   await bundleDeletionWorker?.close();

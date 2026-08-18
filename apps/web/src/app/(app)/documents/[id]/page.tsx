@@ -44,6 +44,7 @@ import {
   buildDocumentProcessingState,
   resolveDocumentPanel,
 } from "@/lib/document-processing-state";
+import { getDocumentBatchProgress } from "@/lib/document-batch-progress";
 
 export const dynamic = "force-dynamic";
 
@@ -99,10 +100,11 @@ export default async function DocumentDetailPage({
   const knowledgeRoot = currentBundle
     ? resolveKnowledgeBundleRoot({ bundleId: currentBundle.id, workspaceId: context.workspaceId })
     : null;
-  const [relationTargets, authoringRun, availableBundles] = await Promise.all([
+  const [relationTargets, authoringRun, availableBundles, extractionProgress] = await Promise.all([
     knowledgeRoot ? getRelationTargets(knowledgeRoot) : Promise.resolve([]),
     assigned ? getLatestKnowledgeAuthoringRun({ context, documentId: id }) : Promise.resolve(null),
     assigned ? Promise.resolve([]) : listKnowledgeBundles(context),
+    getDocumentBatchProgress(id, context.workspaceId),
   ]);
   const visibleTopics = assigned ? topicRecords : [];
   const reviewTopicCount = visibleTopics.filter(
@@ -113,6 +115,7 @@ export default async function DocumentDetailPage({
     authoringRun,
     bundleName: currentBundle?.name ?? "Unassigned",
     document: currentDocument,
+    extractionProgress,
     reviewTopicCount,
     topicCount: visibleTopics.length,
   });

@@ -29,7 +29,11 @@ test("pinned upstream corpus has exact integrity and deterministic round trips",
   assert.equal(report.summary.roundTripsPassed, 78);
   assert.equal(report.summary.conceptValidationFailures, 0);
   assert.equal(report.summary.agentReadyConcepts, 0);
-  assert.ok(Number.isInteger(report.summary.warnings));
+  assert.equal(report.summary.claimFootnoteReferences, 45);
+  assert.equal(report.summary.matchedClaimFootnotes, 33);
+  assert.equal(report.summary.claimAttributionWarnings, 11);
+  assert.equal(report.summary.warnings, 11);
+  assert.equal(report.schemaVersion, 2);
 });
 
 test("portable compatibility remains separate from AV runtime readiness", async () => {
@@ -38,13 +42,44 @@ test("portable compatibility remains separate from AV runtime readiness", async 
   for (const bundle of report.bundles) {
     assert.equal(bundle.portableCompatible, true, bundle.name);
     assert.equal(bundle.runtimeReady, false, bundle.name);
+    const expectedCodes = bundle.name === "stackoverflow"
+      ? ["okf_v02_claim_source_missing", "okf_v02_version_missing"]
+      : ["okf_v02_version_missing"];
     assert.deepEqual(
-      [...new Set(bundle.runtimeIssues.map((issue) => issue.code))],
-      ["okf_v02_version_missing"],
+      [...new Set(bundle.runtimeIssues.map((issue) => issue.code))].sort(),
+      expectedCodes,
       bundle.name,
     );
     assert.equal(bundle.agentReadyConcepts, 0, bundle.name);
     assert.ok(Array.isArray(bundle.warnings), bundle.name);
+  }
+});
+
+test("claim-level footnotes are reported without changing portable conformance", async () => {
+  const report = await buildOkfV02CompatibilityReport({ corpusRoot });
+  const stackoverflow = report.bundles.find((bundle) => bundle.name === "stackoverflow");
+  assert.ok(stackoverflow);
+  assert.deepEqual(stackoverflow.claimAttribution, {
+    definitions: 11,
+    matchedReferences: 0,
+    references: 12,
+    warnings: 11,
+  });
+  assert.equal(stackoverflow.portableCompatible, true);
+  assert.equal(
+    stackoverflow.warnings.every((warning) =>
+      warning.code === "okf_v02_claim_source_missing" && warning.target === "1"
+    ),
+    true,
+  );
+
+  for (const bundle of report.bundles.filter((item) => item.name !== "stackoverflow")) {
+    assert.equal(bundle.claimAttribution.warnings, 0, bundle.name);
+    assert.equal(
+      bundle.claimAttribution.references,
+      bundle.claimAttribution.matchedReferences,
+      bundle.name,
+    );
   }
 });
 

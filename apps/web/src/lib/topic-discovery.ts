@@ -1,11 +1,13 @@
 import { Output, generateText } from "ai";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { ExtractedPageRecord } from "./document-vault.ts";
 import { getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 
 const DEFAULT_WINDOW_TOKEN_TARGET = 18_000;
-const DEFAULT_WINDOW_PAGE_LIMIT = 20;
+const DEFAULT_WINDOW_PAGE_LIMIT = 12;
+const DEFAULT_WINDOW_OVERLAP_PAGES = 2;
 const WINDOW_MAX_OUTPUT_TOKENS = 4_000;
 const CONSOLIDATION_MAX_OUTPUT_TOKENS = 16_000;
 const CONTINUATION_BOUNDARY_LINE_LIMIT = 8;
@@ -93,6 +95,15 @@ export async function discoverDocumentTopics(input: {
   allowedTopicTypes?: string[];
   documentTitle: string;
   onWindowComplete?: (completed: number, total: number) => Promise<void> | void;
+  loadWindowResult?: (input: { contentHash: string; ordinal: number }) => Promise<unknown | null>;
+  saveWindowResult?: (input: {
+    candidates: DiscoveredTopic[];
+    contentHash: string;
+    inputTokens: number;
+    ordinal: number;
+    pageEnd: number;
+    pageStart: number;
+  }) => Promise<void>;
   pages: ExtractedPageRecord[];
   provider: TopicDiscoveryProvider;
   tokenTarget?: number;
@@ -105,11 +116,25 @@ export async function discoverDocumentTopics(input: {
   const proposals: DiscoveredTopic[] = [];
 
   for (const [index, window] of windows.entries()) {
+    const contentHash = createHash("sha256").update(window.map((page) => `${page.pageNumber}:${page.text}`).join("\n")).digest("hex");
     const prompt = buildWindowPrompt(input.documentTitle, window, index, windows.length, input.allowedTopicTypes);
     try {
-      const result = await input.provider.discover({ prompt, stage: "window" });
+      const cached = await input.loadWindowResult?.({ contentHash, ordinal: index });
+      const result = cached
+        ? { output: cached, rawResponse: "durable_window_cache" }
+        : await input.provider.discover({ prompt, stage: "window" });
       const parsed = candidateListSchema.parse(result.output);
       proposals.push(...parsed.topics);
+      if (!cached) {
+        await input.saveWindowResult?.({
+          candidates: parsed.topics,
+          contentHash,
+          inputTokens: estimateTokens(window.map((page) => page.text).join("\n")),
+          ordinal: index,
+          pageEnd: window.at(-1)!.pageNumber,
+          pageStart: window[0]!.pageNumber,
+        });
+      }
       audits.push({
         errorMessage: null,
         promptSent: prompt,
@@ -218,7 +243,7 @@ export function buildPageWindows(
       (tokens + pageTokens > tokenTarget || current.length >= DEFAULT_WINDOW_PAGE_LIMIT)
     ) {
       windows.push(current);
-      current = [current.at(-1)!, page];
+      current = [...current.slice(-DEFAULT_WINDOW_OVERLAP_PAGES), page];
       tokens = estimateTokens(current.map((item) => item.text).join("\n"));
     } else {
       current.push(page);

@@ -57,6 +57,7 @@ export type OkfBundleEvidence = {
 
 export type OkfNearMissCandidate = {
   answerableMetadata: Record<string, string[]>;
+  contentHash?: string;
   filePath: string;
   lexicalScore?: number;
   matchReason: string;
@@ -108,6 +109,11 @@ export type OkfBundleRetrievalInput = {
   knowledgeRoot?: string;
   lifecycleLookup?: OkfConceptLifecycleLookup;
   query: string;
+  retrievalTriggers?: Array<{
+    contentHash: string;
+    filePath: string;
+    terms: string[];
+  }>;
   topK?: number;
   workspaceId: string;
   semantic?: {
@@ -308,6 +314,7 @@ export async function listApprovedOkfBundleEvidence(
     | "knowledgeBundleId"
     | "knowledgeRoot"
     | "lifecycleLookup"
+    | "retrievalTriggers"
     | "workspaceId"
   >,
 ): Promise<OkfBundleEvidence[]> {
@@ -324,6 +331,9 @@ export async function listApprovedOkfBundleEvidence(
   }
 
   const trustedCandidates: OkfBundleEvidence[] = [];
+  const retrievalTriggers = new Map(
+    (input.retrievalTriggers ?? []).map((trigger) => [trigger.filePath, trigger]),
+  );
 
   for (const filePath of files) {
     if (RESERVED_BUNDLE_FILES.has(filePath)) {
@@ -339,6 +349,8 @@ export async function listApprovedOkfBundleEvidence(
     }
 
     const markdown = await readFile(fullPath, "utf8");
+    const contentHash = hashOkfSource(markdown);
+    const trigger = retrievalTriggers.get(filePath);
     const lifecycle = await resolveLifecycleStatus({
       filePath,
       knowledgeBundleId: input.knowledgeBundleId,
@@ -358,6 +370,7 @@ export async function listApprovedOkfBundleEvidence(
       null,
       lifecycle.status,
       input.clarificationFields ?? [],
+      trigger?.contentHash === contentHash ? trigger.terms : [],
     );
 
     if (evidence) {
@@ -458,6 +471,7 @@ async function buildEvidenceCandidate(
   queryTerms: string[] | null,
   lifecycleStatus: OkfConceptLifecycleStatus,
   clarificationFields: string[],
+  retrievalTriggers: string[] = [],
 ): Promise<OkfBundleEvidence | null> {
   const parsed = parseOkfMarkdown(markdown);
   const type = getFrontmatterScalar(parsed.frontmatter, "type");
@@ -490,6 +504,8 @@ async function buildEvidenceCandidate(
   const searchableMetadata = [
     type,
     sourceFile,
+    ...getFrontmatterStringArray(parsed.frontmatter, "tags"),
+    ...retrievalTriggers,
     getFrontmatterScalar(parsed.frontmatter, "subject_family"),
     getFrontmatterScalar(parsed.frontmatter, "document_type"),
     getFrontmatterScalar(parsed.frontmatter, "classification_code"),
@@ -566,6 +582,7 @@ function toNearMiss(
 ): OkfNearMissCandidate {
   return {
     answerableMetadata: candidate.answerableMetadata,
+    contentHash: candidate.contentHash,
     filePath: candidate.filePath,
     matchReason: match.matchReason,
     title: candidate.title,
@@ -952,6 +969,10 @@ function tokenizeField(value: string): string[] {
     .split(/\s+/)
     .filter((term) => term.length > 1)
     .map(normalizeRetrievalToken);
+}
+
+export function tokenizeOkfRetrievalQuery(query: string): string[] {
+  return tokenize(query);
 }
 
 function normalizeRetrievalToken(term: string): string {

@@ -439,6 +439,87 @@ test("appendUserMessageAndAssistantReply stores a knowledge gap in the message t
   }]);
 });
 
+test("knowledge-gap persistence stages reviewed retrieval aliases without changing evidence", async () => {
+  const proposalWrites: Record<string, unknown>[] = [];
+  const repository = createPostgresChatRepository({
+    chatSession: {
+      findFirst: async () => ({
+        createdAt: new Date(),
+        id: "session_1",
+        knowledgeBundleId,
+        title: "Existing chat",
+        updatedAt: new Date(),
+        userId: "usr_1",
+        workspaceId: "wrk_1",
+      }),
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        chatMessage: {
+          create: async ({ data }: { data: Record<string, unknown> }) => ({
+            citations: data.citations ?? [],
+            content: data.content,
+            createdAt: new Date(),
+            id: data.role === "assistant" ? "msg_assistant" : "msg_user",
+            role: data.role,
+            sessionId: data.sessionId,
+            trace: data.trace ?? null,
+          }),
+        },
+        chatSession: {
+          updateMany: async () => ({ count: 0 }),
+          update: async () => undefined,
+        },
+        knowledgeGap: {
+          create: async () => ({ id: "gap_1" }),
+        },
+        okfRetrievalTriggerProposal: {
+          upsert: async (input: Record<string, unknown>) => {
+            proposalWrites.push(input);
+          },
+        },
+      }),
+  });
+
+  await repository.appendUserMessageAndAssistantReply({
+    assistantContent: "Not enough evidence.",
+    assistantTrace: buildStage6aRouterTrace(
+      routeChatQuestion("What stopping equipment applies?"),
+    ),
+    citations: [],
+    content: "What stopping equipment applies?",
+    context,
+    knowledgeBundleIds: [knowledgeBundleId],
+    knowledgeGap: {
+      finalEvidenceStatus: "no_evidence",
+      question: "What stopping equipment applies?",
+      reason: "related_evidence_not_answering",
+      retrievalQuery: "stopping equipment",
+      retrievalTriggerCandidates: [{
+        contentHash: "hash_1",
+        filePath: "concepts/system/brakes.md",
+        knowledgeBundleId,
+        matchReason: "Weak lexical match: brake",
+        suggestedTerms: ["equipment", "stopping"],
+        title: "Brake System",
+      }],
+      route: "okf_only",
+      searchedSources: ["okf_retrieval", "rag_retrieval"],
+    },
+    primaryKnowledgeBundleId: knowledgeBundleId,
+    scopeVersion: 1,
+    sessionId: "session_1",
+  });
+
+  assert.equal(proposalWrites.length, 1);
+  const create = proposalWrites[0]?.create as Record<string, unknown>;
+  assert.equal(create.knowledgeGapId, "gap_1");
+  assert.equal(create.knowledgeBundleId, knowledgeBundleId);
+  assert.equal(create.targetFilePath, "concepts/system/brakes.md");
+  assert.deepEqual(create.suggestedTerms, ["equipment", "stopping"]);
+  assert.equal(typeof create.fingerprint, "string");
+});
+
 test("appendUserMessageAndAssistantReply preserves an existing title while touching updatedAt", async () => {
   const calls: string[] = [];
   const repository = createPostgresChatRepository({

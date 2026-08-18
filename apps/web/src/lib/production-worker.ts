@@ -77,15 +77,22 @@ export async function runProductionExtractionJob(
   try {
     await options.repository.startExtractionJob(payload);
     const object = await options.repository.getPrimaryDocumentObject(payload);
-    const bytes = await options.storage.getObject(object.objectKey);
-    const extractPdfPages =
-      options.extractPdfPages ?? (await import("./pdf-text-extractor.ts")).extractPdfPages;
-    const pageRecords = await extractPdfPages(bytes);
+    let extractionHasUnreadablePages = false;
+    if (options.extractPdfPages) {
+      const bytes = await options.storage.getObject(object.objectKey);
+      const pageRecords = await options.extractPdfPages(bytes);
+      await options.repository.completeExtractionJob({ ...payload, pageRecords });
+    } else {
+      const { runLargePdfExtraction } = await import("./large-pdf-extraction.ts");
+      const result = await runLargePdfExtraction({
+        ...payload,
+        objectKey: object.objectKey,
+        storage: options.storage as unknown as ObjectStorage,
+      });
+      extractionHasUnreadablePages = result.unreadablePages.length > 0;
+    }
 
-    await options.repository.completeExtractionJob({
-      ...payload,
-      pageRecords,
-    });
+    if (extractionHasUnreadablePages) return;
 
     if (options.ragQueue && options.repository.createRagIndexJobAfterExtraction) {
       try {

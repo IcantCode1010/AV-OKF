@@ -15,6 +15,8 @@ import { getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
 import { resolveDocumentUploadBundleSelection } from "@/lib/document-upload-bundle-selection";
 import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
 import { Button } from "@/components/ui/button";
+import { DirectPdfUploadForm } from "@/components/direct-pdf-upload-form";
+import { isProductionBackend } from "@/lib/production-document-service";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +69,7 @@ export default async function DocumentsPage({
             extraction and AI authoring from one workflow.
           </p>
         </div>
-        <Badge variant="outline">Max upload 25 MB</Badge>
+        <Badge variant="outline">Max upload 250 MB / 5,000 pages</Badge>
       </div>
 
       <div className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/30 p-1 sm:w-fit" aria-label="Document scope">
@@ -129,6 +131,12 @@ export default async function DocumentsPage({
               {uploadErrorMessage}
             </div>
           ) : null}
+          {isProductionBackend() ? (
+            <DirectPdfUploadForm
+              bundles={bundles.map(({ id, name }) => ({ id, name }))}
+              selectedBundleId={selectedBundleId}
+            />
+          ) : (
           <form
             action={uploadDocumentAction}
             className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]"
@@ -207,6 +215,7 @@ export default async function DocumentsPage({
               {bundles.length > 0 ? <PendingSubmitButton pendingLabel="Uploading...">Upload PDF</PendingSubmitButton> : <button className="h-9 rounded-md border border-input px-4 text-sm text-muted-foreground" disabled type="button">Create a bundle first</button>}
             </div>
           </form>
+          )}
         </CardContent>
       </Card>
 
@@ -228,8 +237,8 @@ function formatUploadError(raw: string | undefined) {
     return "Only PDF uploads are supported.";
   }
 
-  if (raw === "upload_exceeds_25mb_limit") {
-    return "File exceeds the 25 MB upload limit.";
+  if (raw === "upload_exceeds_250mb_limit") {
+    return "File exceeds the 250 MB upload limit.";
   }
 
   if (raw === "invalid_pdf_magic_bytes") {

@@ -5,6 +5,10 @@ import {
   createPostgresDocumentRepository,
   resolveProductionExtractionStatus,
 } from "./production-repository.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+} from "./topic-enrichment-diff.ts";
 
 test("existing extracted pages complete a legacy record without an extraction job", () => {
   assert.equal(resolveProductionExtractionStatus({ pageCount: 3, status: undefined }), "completed");
@@ -107,5 +111,67 @@ test("production document reads exclude soft-deleted documents", async () => {
       JSON.stringify(call).includes('"deletedAt":null'),
     ),
     true,
+  );
+});
+
+test("topic enrichment resolution rejects cross-workspace topics", async () => {
+  const repository = createPostgresDocumentRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        topicRecord: { findFirst: async () => null },
+      }),
+  });
+  await assert.rejects(
+    () => repository.resolveTopicEnrichmentCandidate({
+      auditId: "audit_1",
+      context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+      decision: "accept",
+      resolvedBy: "usr_1",
+      topicId: "topic_other_workspace",
+    }),
+    /topic_not_found/,
+  );
+});
+
+test("only one concurrent topic enrichment resolution can claim a candidate", async () => {
+  const accepted = {
+    enrichedBody: "Old body",
+    enrichedSummary: "Old summary",
+    enrichedTitle: "Old title",
+    proposedSourcePageNumbers: [],
+    reviewStatus: "needs_review",
+    summary: "Raw summary",
+    title: "Raw title",
+  };
+  const repository = createPostgresDocumentRepository({
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        topicEnrichmentAudit: {
+          findFirst: async () => ({
+            baselineFingerprint: topicEnrichmentSnapshotFingerprint(
+              buildAcceptedTopicEnrichmentSnapshot(accepted),
+            ),
+            candidateBody: "New body",
+            candidateProposedSourcePageNumbers: [],
+            candidateSummary: "New summary",
+            candidateTitle: "New title",
+            id: "audit_1",
+          }),
+          updateMany: async () => ({ count: 0 }),
+        },
+        topicRecord: {
+          findFirst: async () => accepted,
+        },
+      }),
+  });
+  await assert.rejects(
+    () => repository.resolveTopicEnrichmentCandidate({
+      auditId: "audit_1",
+      context: { role: "admin", userId: "usr_1", workspaceId: "wrk_1" },
+      decision: "accept",
+      resolvedBy: "usr_1",
+      topicId: "topic_1",
+    }),
+    /topic_enrichment_candidate_not_pending/,
   );
 });

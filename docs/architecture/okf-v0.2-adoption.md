@@ -56,6 +56,33 @@ indexes omit the optional version declaration, and none is agent-ready because
 the fixtures have no AV-OKF database or source-page projection. The committed
 result is [the upstream compatibility report](../debug/okf-v02-upstream-compatibility.json).
 
+## Claim-Level Attribution
+
+Phase 3 validates the v0.2 join between Markdown footnote labels and
+`sources[].id` without making claim attribution mandatory for generic OKF.
+Source IDs are compared exactly and case-sensitively. A valid attributed claim
+has both a body reference such as `[^policy]` and a matching Markdown definition,
+and `policy` appears exactly once in `sources[].id`.
+
+The inspector ignores fenced code, inline code, indented code, and escaped
+footnote examples. It reports duplicate source IDs, duplicate definitions,
+missing definitions, and references or definitions that cannot be joined to a
+declared source. Declared sources do not need to be used by a claim footnote;
+concept-level provenance remains valid without per-claim attribution.
+
+These findings are diagnostics for portable compatibility because v0.2 keeps
+all provenance fields optional and requires only `type` for generic concept
+conformance. The stricter AV runtime validator treats an ambiguous or unresolved
+claim footnote as an error so approved runtime knowledge cannot present a claim
+with broken source identity.
+
+The pinned upstream corpus contains 45 claim-footnote references. Thirty-three
+join exactly. Twelve Stack Overflow references across eleven concepts use the
+generic label `1` instead of their declared source IDs, producing eleven
+deterministic warnings. The four bundles remain portable-compatible, the
+fixtures remain byte-identical, and those concepts are not AV runtime-ready or
+agent-ready.
+
 `validatePortableOkfV02BundleRoot` implements generic bundle conformance.
 `validateOkfV02BundleRoot` builds on it and retains the production-only gates.
 Neither validator executes or fetches a resource referenced by a bundle.

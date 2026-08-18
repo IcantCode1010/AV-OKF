@@ -4,10 +4,12 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
 import {
+  getFrontmatterSources,
   parseOkfMarkdown,
   serializeOkfMarkdown,
   validateOkfV02Frontmatter,
 } from "./okf-frontmatter.ts";
+import { inspectOkfV02ClaimAttribution } from "./okf-v02-claim-attribution.ts";
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import {
   validateOkfV02BundleRoot,
@@ -68,6 +70,10 @@ export async function buildOkfV02CompatibilityReport(input: {
     const fieldCounts = new Map<string, number>();
     const roundTripFailures: string[] = [];
     const conceptValidationIssues: Array<{ codes: string[]; filePath: string }> = [];
+    const claimWarnings: Array<{ code: string; filePath: string; target: string }> = [];
+    let claimDefinitionCount = 0;
+    let claimFootnoteReferenceCount = 0;
+    let matchedClaimFootnoteCount = 0;
     let agentReadyConcepts = 0;
     let conceptFiles = 0;
     let indexFiles = 0;
@@ -105,6 +111,18 @@ export async function buildOkfV02CompatibilityReport(input: {
       if (isAgentReadyOkfMetadata(parsed.frontmatter, parsed.body)) {
         agentReadyConcepts += 1;
       }
+      const claimAttribution = inspectOkfV02ClaimAttribution({
+        body: parsed.body,
+        sources: getFrontmatterSources(parsed.frontmatter),
+      });
+      claimDefinitionCount += claimAttribution.definitions.length;
+      claimFootnoteReferenceCount += claimAttribution.references.length;
+      matchedClaimFootnoteCount += claimAttribution.matchedReferenceCount;
+      claimWarnings.push(...claimAttribution.issues.map((issue) => ({
+        code: issue.code,
+        filePath: relativePath,
+        target: issue.label,
+      })));
     }
 
     const counts: CompatibilityCounts = {
@@ -117,9 +135,22 @@ export async function buildOkfV02CompatibilityReport(input: {
     };
     const portableIssues = await validatePortableOkfV02BundleRoot(bundleRoot);
     const runtimeIssues = await validateOkfV02BundleRoot(bundleRoot);
-    const warnings = await collectMarkdownLinkWarnings(bundleRoot, markdownFiles);
+    const warnings = [
+      ...claimWarnings,
+      ...await collectMarkdownLinkWarnings(bundleRoot, markdownFiles),
+    ].sort((left, right) =>
+      left.filePath.localeCompare(right.filePath) ||
+      left.code.localeCompare(right.code) ||
+      left.target.localeCompare(right.target)
+    );
     bundles.push({
       agentReadyConcepts,
+      claimAttribution: {
+        definitions: claimDefinitionCount,
+        matchedReferences: matchedClaimFootnoteCount,
+        references: claimFootnoteReferenceCount,
+        warnings: claimWarnings.length,
+      },
       conceptValidationIssues,
       counts,
       expectedCounts: bundle.expected,
@@ -156,7 +187,7 @@ export async function buildOkfV02CompatibilityReport(input: {
   integrityMismatches.sort();
 
   return {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     corpus: {
       commit: manifest.source.commit,
       license: manifest.source.license.name,
@@ -170,11 +201,23 @@ export async function buildOkfV02CompatibilityReport(input: {
     totals,
     summary: {
       agentReadyConcepts: bundles.reduce((sum, bundle) => sum + bundle.agentReadyConcepts, 0),
+      claimAttributionWarnings: bundles.reduce(
+        (sum, bundle) => sum + bundle.claimAttribution.warnings,
+        0,
+      ),
+      claimFootnoteReferences: bundles.reduce(
+        (sum, bundle) => sum + bundle.claimAttribution.references,
+        0,
+      ),
       conceptValidationFailures: bundles.reduce(
         (sum, bundle) => sum + bundle.conceptValidationIssues.length,
         0,
       ),
       portableCompatibleBundles: bundles.filter((bundle) => bundle.portableCompatible).length,
+      matchedClaimFootnotes: bundles.reduce(
+        (sum, bundle) => sum + bundle.claimAttribution.matchedReferences,
+        0,
+      ),
       roundTripsPassed: bundles.reduce((sum, bundle) => sum + bundle.roundTripsPassed, 0),
       runtimeReadyBundles: bundles.filter((bundle) => bundle.runtimeReady).length,
       warnings: bundles.reduce((sum, bundle) => sum + bundle.warnings.length, 0),

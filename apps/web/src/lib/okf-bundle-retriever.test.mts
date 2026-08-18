@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   retrieveOkfBundleEvidenceWithDiagnostics,
   type OkfNearMissCandidate,
 } from "./okf-bundle-retriever.ts";
+import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 
 test("approved system_topic returns normalized OKF evidence", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-"));
@@ -794,6 +795,54 @@ test("metadata clarification is absent when no allowlisted axis partitions candi
     deriveMetadataClarification(candidates, ["subject_family"]),
     undefined,
   );
+});
+
+test("only current reviewed retrieval aliases can qualify lexical evidence", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-reviewed-alias-"));
+  try {
+    await writeTopic(root, "brakes.md", {
+      body: "Normal braking is available through the hydraulic system.",
+      description: "Approved braking system information.",
+      title: "Main Gear Brake System",
+    });
+    const source = await readFile(path.join(root, "brakes.md"), "utf8");
+    const contentHash = hashOkfSource(source);
+    const baseInput = {
+      knowledgeRoot: root,
+      query: "deceleration stopping equipment",
+      semantic: {
+        getMetadata: async () => [],
+        search: async () => assert.fail("missing vectors must not be searched"),
+      },
+      workspaceId: "wrk_1",
+    };
+
+    const withoutAlias = await retrieveOkfBundleEvidence(baseInput);
+    assert.deepEqual(withoutAlias, []);
+
+    const [withApprovedAlias] = await retrieveOkfBundleEvidence({
+      ...baseInput,
+      retrievalTriggers: [{
+        contentHash,
+        filePath: "brakes.md",
+        terms: ["deceleration", "stopping"],
+      }],
+    });
+    assert.equal(withApprovedAlias?.filePath, "brakes.md");
+    assert.equal(withApprovedAlias?.okfMatchMode, "lexical");
+
+    const staleAlias = await retrieveOkfBundleEvidence({
+      ...baseInput,
+      retrievalTriggers: [{
+        contentHash: "stale-content-hash",
+        filePath: "brakes.md",
+        terms: ["deceleration", "stopping"],
+      }],
+    });
+    assert.deepEqual(staleAlias, []);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
 });
 
 function makeNearMiss(

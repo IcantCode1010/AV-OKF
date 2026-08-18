@@ -10,6 +10,7 @@ import {
   validateOkfV02Frontmatter,
 } from "./okf-frontmatter.ts";
 import { resolveKnowledgePath } from "./knowledge-root.ts";
+import { inspectOkfV02ClaimAttribution } from "./okf-v02-claim-attribution.ts";
 
 export type OkfV02ValidationIssue = {
   code: string;
@@ -160,6 +161,12 @@ export async function validateOkfV02BundleRoot(
       } catch (error) {
         issues.push(issue(filePath, "okf_v02_relation_target_invalid", error instanceof Error ? error.message : String(error)));
       }
+    }
+    for (const claimIssue of inspectOkfV02ClaimAttribution({
+      body: parsed.body,
+      sources: getFrontmatterSources(parsed.frontmatter),
+    }).issues) {
+      issues.push(issue(filePath, claimIssue.code, claimIssue.message));
     }
     if (parsed.frontmatter.av_okf_role === "source_document") continue;
     if (isOkfV02Current(parsed.frontmatter) && parsed.frontmatter.verified) {

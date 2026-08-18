@@ -18,7 +18,7 @@ test("queued extraction is visible as active processing", () => {
     topicCount: 0,
   });
   assert.equal(state.active, true);
-  assert.equal(state.currentLabel, "Text extraction");
+  assert.equal(state.currentLabel, "PDF inspection");
   assert.equal(state.showHeader, true);
 });
 

@@ -28,10 +28,17 @@ import {
 } from "./okf-relation-verifier.ts";
 import { getOkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 import { discoverDocumentRelationCandidates } from "./okf-document-relation-candidates.ts";
+import { runGroundedTopicCrawler } from "./grounded-topic-crawler.ts";
+import { createRagRepository } from "./rag-repository.ts";
+import { createBullMqRagIndexQueue } from "./rag-queue.ts";
+import { getDefaultChunkingStrategyId } from "./rag-reindex.ts";
+import { consolidateDocumentTopicsFlat } from "./flat-topic-consolidation.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
   "concept_discovery",
+  "full_rag_index",
+  "grounded_crawler",
   "enrichment",
   "relation_classification",
   "validation",
@@ -160,6 +167,26 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
   });
 
   try {
+    if (run.completedStages.length === 0 && !run.costConfirmedAt) {
+      const sourceTokens = estimateTokens(document.extractedPages.map((page) => page.text).join("\n"));
+      const estimate = {
+        crawlerTokens: Math.ceil(sourceTokens * 0.35),
+        discoveryTokens: Math.ceil(sourceTokens * 1.2),
+        embeddingTokens: sourceTokens,
+        enrichmentTokens: sourceTokens,
+      };
+      const combinedTokens = Object.values(estimate).reduce((sum, value) => sum + value, 0);
+      await db.knowledgeAuthoringRun.update({
+        data: { costEstimate: estimate, estimatedInputTokens: combinedTokens },
+        where: { id: run.id },
+      });
+      if (requiresAuthoringCostConfirmation({ conceptCount: 0, estimatedInputTokens: combinedTokens })) {
+        return db.knowledgeAuthoringRun.update({
+          data: { currentStage: "metadata_discovery", status: "awaiting_cost_confirmation" },
+          where: { id: run.id },
+        });
+      }
+    }
     if (!run.completedStages.includes("metadata_discovery")) {
       activeStage = "metadata_discovery";
       await beginStage(run.id, activeStage);
@@ -190,6 +217,63 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       await completeStage(run.id, "concept_discovery", "enrichment");
     }
 
+    if (!run.completedStages.includes("full_rag_index")) {
+      activeStage = "full_rag_index";
+      const currentDocument = await db.document.findUnique({ select: { ragStatus: true }, where: { id: document.id } });
+      if (currentDocument?.ragStatus !== "indexed") {
+        const existingJob = await db.ragIndexJob.findFirst({
+          orderBy: { queuedAt: "desc" },
+          where: { documentId: document.id, status: { in: ["queued", "running", "awaiting_budget"] } },
+        });
+        const indexJob = existingJob ?? await createRagRepository().createIndexJob({
+          documentId: document.id,
+          extractionJobId: (await db.extractionJob.findFirst({ orderBy: { queuedAt: "desc" }, select: { id: true }, where: { documentId: document.id } }))?.id,
+          workspaceId: run.workspaceId,
+        });
+        if (!existingJob) {
+          const redisUrl = process.env.REDIS_URL;
+          if (!redisUrl) throw new Error("missing_env_REDIS_URL");
+          await createBullMqRagIndexQueue(redisUrl).enqueueIndexJob({
+            chunkingStrategyId: getDefaultChunkingStrategyId(),
+            documentId: document.id,
+            indexJobId: indexJob.id,
+            indexVersion: indexJob.indexVersion,
+            mode: "initial",
+            workspaceId: run.workspaceId,
+          });
+        }
+        return db.knowledgeAuthoringRun.update({ data: { currentStage: "full_rag_index", status: "waiting_for_rag" }, where: { id: run.id } });
+      }
+      await completeStage(run.id, "full_rag_index", "grounded_crawler");
+    }
+
+    if (!run.completedStages.includes("grounded_crawler")) {
+      activeStage = "grounded_crawler";
+      await beginStage(run.id, activeStage);
+      await stageAudit(run.id, activeStage, "running", undefined, key.provider, provider.model);
+      const crawler = await runGroundedTopicCrawler({
+        allowedRelations: activeBundle.profile.relations,
+        allowedTopicTypes: Object.keys(activeBundle.profile.types),
+        apiKey: key.apiKey,
+        documentId: document.id,
+        model: provider.model,
+        provider: key.provider,
+      });
+      await materializeGroundedCrawlerTopics({
+        documentId: document.id,
+        knowledgeBundleId: document.knowledgeBundleId,
+        workspaceId: run.workspaceId,
+      });
+      const consolidation = await consolidateDocumentTopicsFlat({
+        apiKey: key.apiKey,
+        documentId: document.id,
+        model: provider.model,
+        provider: key.provider,
+      });
+      await stageAudit(run.id, activeStage, "completed", undefined, key.provider, provider.model, undefined, JSON.stringify({ crawler, consolidation }));
+      await completeStage(run.id, "grounded_crawler", "enrichment");
+    }
+
     const topics = await db.topicRecord.findMany({
       where: { documentId: document.id, reviewStatus: { in: ["needs_review", "needs_cleanup"] }, workspaceId: run.workspaceId },
     });
@@ -209,13 +293,6 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       data: { enrichmentCandidateCount: enrichmentTopics.length, estimatedInputTokens },
       where: { id: run.id },
     });
-    if (!run.costConfirmedAt && requiresAuthoringCostConfirmation({ conceptCount: enrichmentTopics.length, estimatedInputTokens })) {
-      return db.knowledgeAuthoringRun.update({
-        data: { currentStage: "enrichment", status: "awaiting_cost_confirmation" },
-        where: { id: run.id },
-      });
-    }
-
     if (!run.completedStages.includes("enrichment")) {
       activeStage = "enrichment";
       await beginStage(run.id, activeStage);
@@ -362,9 +439,10 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
       : "document_relation_candidate_generation_failed";
     return [];
   });
+  const crawlerRelationCandidates = await loadGroundedCrawlerRelationCandidates(input.documentId, topics);
   const candidates = mergeAuthoringRelationCandidates(
     deterministicCandidates,
-    modelCandidates,
+    [...modelCandidates, ...crawlerRelationCandidates],
   ).slice(0, 50);
   if (candidates.length === 0) {
     await stageAudit(input.runId, "relation_classification", "completed");
@@ -430,6 +508,59 @@ async function classifyDraftRelations(input: { apiKey: string; documentId: strin
     where: { id: input.runId },
   });
   await stageAudit(input.runId, "relation_classification", "completed", undefined, input.provider, input.model, JSON.stringify({ candidateCount: candidates.length }), JSON.stringify(auditResults));
+}
+
+async function materializeGroundedCrawlerTopics(input: { documentId: string; knowledgeBundleId: string; workspaceId: string }) {
+  const db = getPrisma();
+  const [existing, candidates] = await Promise.all([
+    db.topicRecord.findMany({ select: { title: true }, where: { documentId: input.documentId } }),
+    db.groundedCrawlerCandidate.findMany({ orderBy: { createdAt: "asc" }, where: { candidateType: "topic", documentId: input.documentId, status: "validated" } }),
+  ]);
+  const titles = new Set(existing.map(({ title }) => title.trim().toLowerCase()));
+  for (const candidate of candidates) {
+    const payload = candidate.payload as Record<string, unknown>;
+    const title = typeof payload.title === "string" ? payload.title.trim() : "";
+    const summary = typeof payload.summary === "string" ? payload.summary.trim() : "";
+    const topicType = typeof payload.topicType === "string" ? payload.topicType : "concept";
+    const confidence = payload.confidence === "high" || payload.confidence === "medium" ? payload.confidence : "low";
+    if (!title || !summary || titles.has(title.toLowerCase()) || !candidate.sourcePages.length) continue;
+    titles.add(title.toLowerCase());
+    await db.topicRecord.create({ data: {
+      confidence,
+      discoveryMetadata: { crawlerCandidateId: candidate.id, evidenceChunkIds: candidate.evidenceChunkIds, evidenceQuote: candidate.evidenceQuote, version: "grounded-crawler-v1" },
+      documentId: input.documentId,
+      knowledgeBundleId: input.knowledgeBundleId,
+      originalSummary: summary,
+      originalTitle: title,
+      pageEnd: Math.max(...candidate.sourcePages),
+      pageStart: Math.min(...candidate.sourcePages),
+      reviewStatus: confidence === "low" ? "needs_cleanup" : "needs_review",
+      sourcePageNumbers: candidate.sourcePages,
+      summary,
+      title,
+      topicType,
+      workspaceId: input.workspaceId,
+    } });
+  }
+}
+
+async function loadGroundedCrawlerRelationCandidates(documentId: string, topics: Array<{ id: string; title: string }>): Promise<RelationDiscoveryCandidate[]> {
+  const rows = await getPrisma().groundedCrawlerCandidate.findMany({ where: { candidateType: "relation", documentId, status: "validated" } });
+  const topicByTitle = new Map(topics.map((topic) => [topic.title, topic]));
+  return rows.flatMap((row) => {
+    const payload = row.payload as Record<string, unknown>;
+    const source = typeof payload.sourceTitle === "string" ? topicByTitle.get(payload.sourceTitle) : null;
+    const target = typeof payload.targetTitle === "string" ? topicByTitle.get(payload.targetTitle) : null;
+    const relation = typeof payload.relation === "string" ? payload.relation : null;
+    if (!source || !target || !relation || source.id === target.id) return [];
+    return [{
+      reason: typeof payload.evidenceQuote === "string" ? payload.evidenceQuote : row.evidenceQuote,
+      relation,
+      signals: ["grounded_crawler_candidate", `evidence_chunk:${row.evidenceChunkIds[0] ?? "unknown"}`],
+      sourceFile: `topic:${source.id}`,
+      targetFile: `topic:${target.id}`,
+    }];
+  });
 }
 
 function mergeAuthoringRelationCandidates(

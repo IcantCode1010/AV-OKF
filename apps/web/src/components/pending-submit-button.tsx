@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -9,7 +9,8 @@ export function PendingSubmitButton({
   children,
   disabled = false,
   pendingLabel,
-}: {
+  ...buttonProps
+}: Omit<ComponentProps<typeof Button>, "children" | "disabled" | "type"> & {
   children: ReactNode;
   disabled?: boolean;
   pendingLabel: string;
@@ -17,7 +18,7 @@ export function PendingSubmitButton({
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" disabled={disabled || pending}>
+    <Button {...buttonProps} type="submit" disabled={disabled || pending}>
       {pending ? pendingLabel : children}
     </Button>
   );
