@@ -28,7 +28,10 @@ import {
 import { discoverOkfRelationCandidates } from "@/lib/okf-relation-discovery";
 import { retryOkfRelationVerification } from "@/lib/okf-relation-verification";
 import { getPrisma } from "@/lib/prisma";
-import { approveVerifiedRelationCandidate } from "@/lib/okf-relation-approval";
+import {
+  approveVerifiedRelationCandidate,
+  reviewPublishedRelationCandidate,
+} from "@/lib/okf-relation-approval";
 
 export async function createKnowledgeBundleAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
@@ -139,7 +142,7 @@ export async function discoverRelationsAction(formData: FormData) {
     workspaceId: context.workspaceId,
   });
   revalidatePath(`/knowledge/${bundleId}/relations`);
-  redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&semanticCandidates=${result.semanticCandidates}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
+  redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&relationsProposed=${result.proposed}&relationsSkipped=${result.skippedExisting}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
 }
 
 export async function reviewRelationCandidateAction(formData: FormData) {
@@ -178,7 +181,14 @@ export async function retryRelationCandidateVerificationAction(formData: FormDat
   const candidateId = getFormString(formData, "candidateId");
   const direction = getFormString(formData, "direction");
   const candidate = await getPrisma().okfRelationCandidate.findFirst({
-    where: { id: candidateId, status: "pending", workspaceId: context.workspaceId },
+    where: {
+      id: candidateId,
+      OR: [
+        { status: "pending" },
+        { publishedReviewStatus: { not: null }, status: "approved" },
+      ],
+      workspaceId: context.workspaceId,
+    },
   });
   if (!candidate) throw new Error("relation_candidate_not_found");
   await retryOkfRelationVerification({
@@ -187,6 +197,24 @@ export async function retryRelationCandidateVerificationAction(formData: FormDat
     workspaceId: context.workspaceId,
   });
   revalidatePath(`/knowledge/${candidate.knowledgeBundleId}/relations`);
+}
+
+export async function reviewPublishedRelationCandidateAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const candidateId = getFormString(formData, "candidateId");
+  const decision = getFormString(formData, "decision");
+  if (decision !== "reapprove" && decision !== "reject") {
+    throw new Error("published_relation_review_decision_invalid");
+  }
+  const result = await reviewPublishedRelationCandidate({
+    actorId: context.userId,
+    candidateId,
+    decision,
+    workspaceId: context.workspaceId,
+  });
+  revalidatePath(`/knowledge/${result.bundleId}/relations`);
+  revalidatePath(`/knowledge/${result.bundleId}/graph`);
+  revalidatePath(`/knowledge/${result.bundleId}/browse`);
 }
 
 export async function deleteOkfBundleFilesAction(formData: FormData) {

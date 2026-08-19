@@ -31,8 +31,9 @@ export default async function BundleRelationsPage({
     relationError?: string;
     relationWarnings?: string;
     relationsDiscovered?: string;
+    relationsProposed?: string;
+    relationsSkipped?: string;
     relationsSuppressed?: string;
-    semanticCandidates?: string;
   }>;
 }) {
   const [{ bundleId }, query, context] = await Promise.all([
@@ -64,7 +65,7 @@ export default async function BundleRelationsPage({
         snapshotPromise,
       ])
     : [
-        { actionable: [], filtered: [], published: [] },
+        { actionable: [], filtered: [], published: [], publishedReview: [] },
         null,
         await snapshotPromise,
       ];
@@ -81,6 +82,10 @@ export default async function BundleRelationsPage({
     candidates: queue.published,
     files: snapshot.files,
   });
+  const publishedReview = buildOkfRelationReviewItems({
+    candidates: queue.publishedReview,
+    files: snapshot.files,
+  });
   const confirmed = actionable.filter((candidate) =>
     candidate.verificationStatus === "confirmed" &&
     !candidate.automaticApprovalRequested
@@ -94,7 +99,8 @@ export default async function BundleRelationsPage({
     ...published,
   ];
   const failed = actionable.filter((candidate) => candidate.verificationStatus === "failed");
-  const active = actionable.some((candidate) => ["queued", "running"].includes(candidate.verificationStatus));
+  const active = actionable.some((candidate) => ["queued", "running"].includes(candidate.verificationStatus)) ||
+    publishedReview.some((candidate) => ["queued", "running"].includes(candidate.publishedReviewStatus ?? ""));
 
   return (
     <div className="space-y-5">
@@ -107,9 +113,7 @@ export default async function BundleRelationsPage({
           </div>
           <h1 className="mt-3 text-2xl font-semibold">Relation discovery</h1>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Document processing finds explicit local relations. Expand graph compares approved concepts across documents, then verifies every proposed connection against exact source evidence. {bundle.profile.automation.autoApproveVerifiedRelations
-              ? "Verified low-risk structural relations may publish automatically; consequential relations remain in human review."
-              : "A reviewer must approve each verified relation before it is written."}
+            Expand graph ranks deterministic candidates and verifies at most 50 connections against exact source evidence. A reviewer must approve every verified relation before it is written. Semantic expansion and automatic publishing are suspended while precision is evaluated.
           </p>
         </div>
         <form action={discoverRelationsAction}>
@@ -119,11 +123,12 @@ export default async function BundleRelationsPage({
       </header>
 
       {query.relationError ? <Notice tone="error">Relation approval was blocked: {query.relationError.replaceAll("_", " ")}.</Notice> : null}
-      {query.relationsDiscovered ? <Notice tone="success">Queued {query.relationsDiscovered} candidates, including {query.semanticCandidates ?? "0"} cross-document candidates. Suppressed {query.relationsSuppressed ?? "0"} and retained {query.relationWarnings ?? "0"} warnings.</Notice> : null}
+      {query.relationsDiscovered ? <Notice tone="success">Proposed {query.relationsProposed ?? query.relationsDiscovered}, skipped {query.relationsSkipped ?? "0"} already known, suppressed {query.relationsSuppressed ?? "0"}, and queued {query.relationsDiscovered} for verification. Retained {query.relationWarnings ?? "0"} warnings.</Notice> : null}
 
       {run ? (
-        <div className="grid grid-cols-2 divide-x divide-y border border-border text-sm sm:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+        <div className="grid grid-cols-2 divide-x divide-y border border-border text-sm sm:grid-cols-3 xl:grid-cols-7 xl:divide-y-0">
           {[
+            ["Proposed", run.proposedCount],
             ["Total", run.totalCandidates],
             ["Queued", run.queuedCount],
             ["Running", run.runningCount],
@@ -141,6 +146,7 @@ export default async function BundleRelationsPage({
         failed={failed}
         filtered={filtered}
         processing={processing}
+        publishedReview={publishedReview}
       />
     </div>
   );

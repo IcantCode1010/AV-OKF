@@ -16,16 +16,20 @@ import {
   preflightOkfRelationCandidate,
 } from "./okf-relation-preflight.ts";
 import { normalizeTopicRelations } from "./okf-relation-types.ts";
+import { applyPublishedRelationReview } from "./okf-relation-stabilization.ts";
 import { retryOkfRelationVerification } from "./okf-relation-verification.ts";
 import {
   buildRelationVerifierConcept,
   formatVerifiedRelationReason,
+  OKF_RELATION_VERIFIER_VERSION,
   validateRelationVerifierDecision,
 } from "./okf-relation-verifier.ts";
 import { validateTopicRelations } from "./okf-relations.ts";
 import { getPrisma } from "./prisma.ts";
 
 export const AUTOMATIC_RELATION_MIN_CONFIDENCE = 0.95;
+export const AUTOMATIC_RELATION_PUBLISHING_ENABLED =
+  process.env.AV_OKF_RELATION_AUTO_PUBLISH_ENABLED === "true";
 export const AUTOMATIC_RELATION_TYPES = new Set([
   "applies_to",
   "implements",
@@ -59,7 +63,10 @@ export function getAutomaticRelationApprovalBlocker(input: {
   verificationRationale: string | null;
   verificationRelation: string | null;
   verificationStatus: string;
-}): string | null {
+}, options: { publishingEnabled?: boolean } = {}): string | null {
+  if (!(options.publishingEnabled ?? AUTOMATIC_RELATION_PUBLISHING_ENABLED)) {
+    return "automatic_relation_publishing_suspended";
+  }
   if (!input.automaticApprovalRequested) return "automatic_relation_not_requested";
   if (input.verificationStatus !== "confirmed") return "automatic_relation_not_confirmed";
   if (!input.verificationRelation || !AUTOMATIC_RELATION_TYPES.has(input.verificationRelation)) {
@@ -115,6 +122,11 @@ export async function approveVerifiedRelationCandidate(input: {
       workspaceId: input.workspaceId,
     });
     if (!bundle || bundle.status !== "active") throw new Error("knowledge_bundle_not_found");
+    if (candidate.verifierVersion !== OKF_RELATION_VERIFIER_VERSION) {
+      await prisma.okfRelationCandidate.update({ data: { status: "pending" }, where: { id: candidate.id } });
+      await retryOkfRelationVerification({ candidateId: candidate.id, workspaceId: input.workspaceId });
+      return { bundleId: bundle.id, status: "reverification_queued" as const };
+    }
     if (
       !candidate.verificationRelation ||
       !candidate.verificationDirection ||
@@ -252,6 +264,10 @@ export async function approveVerifiedRelationCandidate(input: {
     await prisma.okfRelationCandidate.update({
       data: {
         automaticApprovalError: null,
+        publishedRelation: candidate.verificationRelation,
+        publishedReason: verifiedReason,
+        publishedSourceFile: sourceFile,
+        publishedTargetFile: targetFile,
         reason: verifiedReason,
         reviewedAt,
         reviewedBy: input.mode === "automated" ? `automation:${input.actorId}` : input.actorId,
@@ -270,12 +286,147 @@ export async function approveVerifiedRelationCandidate(input: {
   }
 }
 
+export async function reviewPublishedRelationCandidate(input: {
+  actorId: string;
+  candidateId: string;
+  decision: "reapprove" | "reject";
+  workspaceId: string;
+}) {
+  const prisma = getPrisma();
+  const candidate = await prisma.okfRelationCandidate.findFirst({
+    where: {
+      id: input.candidateId,
+      publishedReviewStatus: "ready",
+      status: "approved",
+      workspaceId: input.workspaceId,
+    },
+  });
+  if (
+    !candidate ||
+    !candidate.publishedSourceFile ||
+    !candidate.publishedTargetFile ||
+    !candidate.publishedRelation
+  ) {
+    throw new Error("published_relation_review_not_found");
+  }
+
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: candidate.knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle || bundle.status !== "active") throw new Error("knowledge_bundle_not_found");
+  const sourceTopic = await prisma.topicRecord.findFirst({
+    where: {
+      exportedFilePath: candidate.publishedSourceFile,
+      knowledgeBundleId: bundle.id,
+      reviewStatus: "approved",
+      workspaceId: input.workspaceId,
+    },
+  });
+  if (!sourceTopic) throw new Error("relation_source_topic_not_found");
+
+  let nextRelations = normalizeTopicRelations(sourceTopic.relations);
+  let nextReason = candidate.publishedReason ?? candidate.reason;
+  if (input.decision === "reapprove") {
+    if (
+      candidate.verificationStatus !== "confirmed" ||
+      !candidate.verificationEvidenceQuote ||
+      !candidate.verificationRationale ||
+      candidate.verificationRelation !== candidate.publishedRelation
+    ) {
+      throw new Error("published_relation_reverification_required");
+    }
+    const root = resolveKnowledgeBundleRoot({ bundleId: bundle.id, workspaceId: input.workspaceId });
+    const paths = [...new Set([
+      candidate.sourceFile,
+      candidate.targetFile,
+      candidate.publishedSourceFile,
+      candidate.publishedTargetFile,
+    ])];
+    const concepts = new Map(await Promise.all(paths.map(async (filePath) => {
+      const file = await readOkfBundleFile(root, filePath);
+      const parsed = parseOkfMarkdown(file.content);
+      return [filePath, buildRelationVerifierConcept({
+        body: parsed.body,
+        description: getFrontmatterScalar(parsed.frontmatter, "description"),
+        filePath,
+        title: getFrontmatterScalar(parsed.frontmatter, "title"),
+      })] as const;
+    })));
+    const originalSource = concepts.get(candidate.sourceFile)!;
+    const originalTarget = concepts.get(candidate.targetFile)!;
+    const source = concepts.get(candidate.publishedSourceFile)!;
+    const target = concepts.get(candidate.publishedTargetFile)!;
+    if (originalSource.contentHash !== candidate.sourceContentHash || originalTarget.contentHash !== candidate.targetContentHash) {
+      throw new Error("relation_verification_stale_content");
+    }
+    validateRelationVerifierDecision({
+      allowedRelations: [candidate.publishedRelation],
+      decision: {
+        confidence: candidate.verificationConfidence,
+        direction: "proposed",
+        evidenceQuote: candidate.verificationEvidenceQuote,
+        rationale: candidate.verificationRationale,
+        related: true,
+        relation: candidate.verificationRelation,
+      },
+      proposedSource: source,
+      proposedTarget: target,
+    });
+    nextReason = formatVerifiedRelationReason({
+      evidenceQuote: candidate.verificationEvidenceQuote,
+      rationale: candidate.verificationRationale,
+    });
+  }
+
+  nextRelations = applyPublishedRelationReview({
+    confidence: candidate.verificationConfidence,
+    decision: input.decision,
+    nextReason,
+    publishedRelation: candidate.publishedRelation,
+    publishedTargetFile: candidate.publishedTargetFile,
+    relations: nextRelations,
+  });
+
+  const root = resolveKnowledgeBundleRoot({ bundleId: bundle.id, workspaceId: input.workspaceId });
+  await validateTopicRelations(nextRelations, root);
+  await updateTopicRelations(sourceTopic.id, nextRelations);
+  const document = await getDocumentById(sourceTopic.documentId);
+  if (!document) throw new Error("document_not_found");
+  const topics = await getTopicRecordsByDocumentId(document.id);
+  const exported = await exportApprovedTopicForDocument({ document, topicId: sourceTopic.id, topics });
+  await updateTopicExportedFilePath(sourceTopic.id, exported.filename);
+
+  await prisma.okfRelationCandidate.update({
+    data: {
+      publishedReason: input.decision === "reapprove" ? nextReason : candidate.publishedReason,
+      publishedReviewStatus: null,
+      reason: input.decision === "reapprove" ? nextReason : candidate.reason,
+      reviewedAt: new Date(),
+      reviewedBy: input.actorId,
+      status: input.decision === "reject" ? "rejected" : "approved",
+    },
+    where: { id: candidate.id },
+  });
+  return { bundleId: bundle.id, status: input.decision === "reject" ? "rejected" as const : "reapproved" as const };
+}
+
 export async function attemptAutomaticRelationApproval(candidateId: string) {
   const prisma = getPrisma();
   const candidate = await prisma.okfRelationCandidate.findUnique({ where: { id: candidateId } });
   if (!candidate || candidate.status === "approved") return null;
   const blocker = getAutomaticRelationApprovalBlocker(candidate);
   if (blocker) {
+    if (blocker === "automatic_relation_publishing_suspended") {
+      await prisma.okfRelationCandidate.update({
+        data: {
+          automaticApprovalError: blocker,
+          automaticApprovalRequested: false,
+        },
+        where: { id: candidate.id },
+      });
+      return { error: blocker, status: "human_review_required" as const };
+    }
     if (blocker === "automatic_relation_confidence_below_threshold") {
       await prisma.okfRelationCandidate.update({
         data: { automaticApprovalError: blocker, verificationStatus: "filtered" },

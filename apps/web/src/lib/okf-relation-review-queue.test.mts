@@ -17,7 +17,8 @@ test("relation review queue keeps actionable rows complete and bounds rejection 
         if (queries.length === 2) {
           return [{ id: "candidate-filtered", verificationStatus: "filtered" }];
         }
-        return [{ id: "candidate-published", status: "approved" }];
+        if (queries.length === 3) return [{ id: "candidate-published", status: "approved" }];
+        return [{ id: "candidate-published-review", publishedReviewStatus: "ready", status: "approved" }];
       },
     },
   };
@@ -31,7 +32,8 @@ test("relation review queue keeps actionable rows complete and bounds rejection 
     assert.deepEqual(queue.actionable.map((candidate) => candidate.id), ["candidate-actionable"]);
     assert.deepEqual(queue.filtered.map((candidate) => candidate.id), ["candidate-filtered"]);
     assert.deepEqual(queue.published.map((candidate) => candidate.id), ["candidate-published"]);
-    assert.equal(queries.length, 3);
+    assert.deepEqual(queue.publishedReview.map((candidate) => candidate.id), ["candidate-published-review"]);
+    assert.equal(queries.length, 4);
     assert.equal(queries[0].take, undefined);
     assert.equal(queries[1].take, 50);
     assert.deepEqual(
@@ -46,6 +48,12 @@ test("relation review queue keeps actionable rows complete and bounds rejection 
     assert.deepEqual(queries[2].where, {
       automaticApprovalRequested: true,
       knowledgeBundleId: "bundle-1",
+      status: "approved",
+      workspaceId: "workspace-1",
+    });
+    assert.deepEqual(queries[3].where, {
+      knowledgeBundleId: "bundle-1",
+      publishedReviewStatus: { not: null },
       status: "approved",
       workspaceId: "workspace-1",
     });

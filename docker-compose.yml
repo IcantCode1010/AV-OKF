@@ -103,7 +103,7 @@ services:
       - knowledge-data:/data/knowledge
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "ps | grep -q '[e]xtraction-worker'"]
+      test: ["CMD-SHELL", "pgrep -f 'src/worker/extraction-worker.ts' >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -181,11 +181,18 @@ services:
     restart: "no"
 
   knowledge-init:
-    image: alpine:3.22
-    command: ["sh", "-c", "mkdir -p /data/knowledge && chown -R 100:101 /data/knowledge"]
+    image: av-okf-web:production-data-plane
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command: ["mkdir -p /data/knowledge && chown -R nextjs:nextjs /data/knowledge"]
     volumes:
       - knowledge-data:/data/knowledge
     restart: "no"
+    healthcheck:
+      disable: true
 
 volumes:
   caddy-config:

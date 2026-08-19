@@ -36,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   buildOkfGraphView,
+  getDefaultOkfGraphViewMode,
   type OkfGraphViewMode,
 } from "@/lib/okf-graph-view";
 import {
@@ -142,15 +143,19 @@ export function KnowledgeGraphExplorer({
   snapshot: OkfExplorerSnapshot;
 }) {
   const selectFile = useExplorerSelection();
-  const [viewMode, setViewMode] = useState<OkfGraphViewMode>("neighborhood");
+  const hasRelations = snapshot.edges.length > 0;
+  const [viewMode, setViewMode] = useState<OkfGraphViewMode>(() =>
+    getDefaultOkfGraphViewMode(snapshot.edges),
+  );
+  const effectiveViewMode = hasRelations ? viewMode : "all";
   const graphView = useMemo(
     () => buildOkfGraphView({
       edges: snapshot.edges,
-      mode: viewMode,
+      mode: effectiveViewMode,
       nodes: snapshot.nodes,
       selectedFile: snapshot.selectedFile,
     }),
-    [snapshot.edges, snapshot.nodes, snapshot.selectedFile, viewMode],
+    [effectiveViewMode, snapshot.edges, snapshot.nodes, snapshot.selectedFile],
   );
   const focusedDocument = useMemo(() => {
     if (snapshot.selectedDocument && !snapshot.selectedDocument.isReserved) {
@@ -179,7 +184,8 @@ export function KnowledgeGraphExplorer({
         allEdgeCount={snapshot.edges.length}
         allNodeCount={snapshot.nodes.length}
         edges={graphView.edges}
-        mode={viewMode}
+        hasRelations={hasRelations}
+        mode={effectiveViewMode}
         nodes={graphView.nodes}
         onModeChange={setViewMode}
         onSelect={selectFile}
@@ -310,6 +316,7 @@ function ExplorerGraphPane({
   allEdgeCount,
   allNodeCount,
   edges,
+  hasRelations,
   mode,
   nodes,
   onModeChange,
@@ -320,6 +327,7 @@ function ExplorerGraphPane({
   allEdgeCount: number;
   allNodeCount: number;
   edges: OkfExplorerEdge[];
+  hasRelations: boolean;
   mode: OkfGraphViewMode;
   nodes: OkfExplorerNode[];
   onModeChange: (mode: OkfGraphViewMode) => void;
@@ -337,11 +345,17 @@ function ExplorerGraphPane({
               ? `${nodes.length} of ${allNodeCount} concepts / ${edges.length} of ${allEdgeCount} relations`
               : `${allNodeCount} concepts / ${allEdgeCount} relations`}
           </p>
+          {!hasRelations && allNodeCount > 0 ? (
+            <p className="mt-1 text-xs text-amber-500">
+              No approved relations yet. Showing all concepts.
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center rounded-md border border-border bg-muted/30 p-0.5" aria-label="Graph view mode">
           <Button
             aria-pressed={mode === "neighborhood"}
             className="h-7 px-2.5 text-xs"
+            disabled={!hasRelations}
             onClick={() => onModeChange("neighborhood")}
             size="sm"
             variant={mode === "neighborhood" ? "secondary" : "ghost"}

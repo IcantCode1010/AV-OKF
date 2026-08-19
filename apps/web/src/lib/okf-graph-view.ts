@@ -9,6 +9,12 @@ export type OkfGraphView = {
   nodes: OkfExplorerNode[];
 };
 
+export function getDefaultOkfGraphViewMode(
+  edges: OkfExplorerEdge[],
+): OkfGraphViewMode {
+  return edges.length === 0 ? "all" : "neighborhood";
+}
+
 export function buildOkfGraphView(input: {
   edges: OkfExplorerEdge[];
   mode: OkfGraphViewMode;

@@ -17,13 +17,14 @@ import {
 import {
   retryRelationCandidateVerificationAction,
   reviewRelationCandidateAction,
+  reviewPublishedRelationCandidateAction,
 } from "@/app/(app)/knowledge/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { humanizeRelationFailure } from "@/lib/okf-relation-definitions";
 import type { OkfRelationReviewConcept, OkfRelationReviewItem } from "@/lib/okf-relation-review";
 
-type ReviewView = "review" | "processing" | "automatic" | "filtered" | "failed";
+type ReviewView = "review" | "published" | "processing" | "automatic" | "filtered" | "failed";
 const PAGE_SIZE = 25;
 
 export function RelationReviewWorkspace({
@@ -33,6 +34,7 @@ export function RelationReviewWorkspace({
   failed,
   filtered,
   processing,
+  publishedReview = [],
 }: {
   automatic: OkfRelationReviewItem[];
   bundleId: string;
@@ -40,12 +42,13 @@ export function RelationReviewWorkspace({
   failed: OkfRelationReviewItem[];
   filtered: OkfRelationReviewItem[];
   processing: OkfRelationReviewItem[];
+  publishedReview?: OkfRelationReviewItem[];
 }) {
-  const [view, setView] = useState<ReviewView>(() => defaultView({ automatic, confirmed, failed, processing }));
+  const [view, setView] = useState<ReviewView>(() => defaultView({ automatic, confirmed, failed, processing, publishedReview }));
   const [query, setQuery] = useState("");
   const [relation, setRelation] = useState("all");
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const itemsByView = { automatic, failed, filtered, processing, review: confirmed };
+  const itemsByView = { automatic, failed, filtered, processing, published: publishedReview, review: confirmed };
   const currentItems = itemsByView[view];
   const relationTypes = useMemo(
     () => [...new Set(currentItems.map((item) => item.relation))].sort(),
@@ -68,6 +71,7 @@ export function RelationReviewWorkspace({
     <div className="space-y-5">
       <div aria-label="Relation status filters" className="flex flex-wrap gap-1 rounded-md border border-border bg-muted/30 p-1">
         <ViewButton active={view === "review"} count={confirmed.length} icon={<ShieldCheck />} label="Needs review" onClick={() => changeView("review")} />
+        <ViewButton active={view === "published"} count={publishedReview.length} icon={<FileText />} label="Published review" onClick={() => changeView("published")} />
         <ViewButton active={view === "processing"} count={processing.length} icon={<Clock3 />} label="Processing" onClick={() => changeView("processing")} />
         <ViewButton active={view === "automatic"} count={automatic.length} icon={<CheckCircle2 />} label="Automatic" onClick={() => changeView("automatic")} />
         <ViewButton active={view === "filtered"} count={filtered.length} icon={<XCircle />} label="Filtered" onClick={() => changeView("filtered")} />
@@ -101,6 +105,8 @@ export function RelationReviewWorkspace({
 
       {view === "review" ? (
         <ConfirmedRelations bundleId={bundleId} items={visibleItems} />
+      ) : view === "published" ? (
+        <PublishedReviewRelations bundleId={bundleId} items={visibleItems} />
       ) : view === "processing" ? (
         <ProcessingRelations bundleId={bundleId} items={visibleItems} />
       ) : view === "automatic" ? (
@@ -117,6 +123,25 @@ export function RelationReviewWorkspace({
       ) : null}
     </div>
   );
+}
+
+function PublishedReviewRelations({ bundleId, items }: { bundleId: string; items: OkfRelationReviewItem[] }) {
+  return <div className="grid gap-3 xl:grid-cols-2">{items.map((item) => (
+    <article className="rounded-md border border-amber-500/30 bg-background p-4" key={item.id}>
+      <RelationSentence bundleId={bundleId} item={item} />
+      <p className="mt-2 text-sm text-muted-foreground">This relation remains published while its explanation is revalidated.</p>
+      {item.evidenceQuote ? <blockquote className="mt-3 border-l-2 border-amber-500 pl-3 text-sm leading-6 text-muted-foreground">{item.evidenceQuote}</blockquote> : null}
+      {item.rationale ? <p className="mt-3 text-sm leading-6">{item.rationale}</p> : null}
+      {item.publishedReviewStatus === "failed" ? <p className="mt-3 text-sm text-destructive">{humanizeRelationFailure(item)}</p> : null}
+      <TechnicalDetails item={item} />
+      <div className="mt-4 flex flex-wrap gap-2">
+        {item.publishedReviewStatus === "ready" && item.verificationStatus === "confirmed" ? <form action={reviewPublishedRelationCandidateAction}><input name="candidateId" type="hidden" value={item.id} /><input name="decision" type="hidden" value="reapprove" /><RelationActionButton pendingLabel="Publishing...">Re-approve explanation</RelationActionButton></form> : null}
+        {item.publishedReviewStatus === "failed" || item.verificationStatus === "filtered" ? <form action={retryRelationCandidateVerificationAction}><input name="candidateId" type="hidden" value={item.id} /><RelationActionButton pendingLabel="Queuing..." variant="outline">Retry verification</RelationActionButton></form> : null}
+        {item.publishedReviewStatus === "ready" ? <form action={reviewPublishedRelationCandidateAction}><input name="candidateId" type="hidden" value={item.id} /><input name="decision" type="hidden" value="reject" /><RelationActionButton pendingLabel="Removing..." variant="destructive">Reject and remove relation</RelationActionButton></form> : null}
+        {["queued", "running"].includes(item.publishedReviewStatus ?? "") ? <Badge variant="outline"><Clock3 className="mr-1 size-3" />{formatLabel(item.publishedReviewStatus ?? "queued")}</Badge> : null}
+      </div>
+    </article>
+  ))}</div>;
 }
 
 function ConfirmedRelations({ bundleId, items }: { bundleId: string; items: OkfRelationReviewItem[] }) {
@@ -239,8 +264,9 @@ function matchesFilters(item: OkfRelationReviewItem, query: string, relation: st
     .some((value) => value!.toLowerCase().includes(needle));
 }
 
-function defaultView(input: { automatic: OkfRelationReviewItem[]; confirmed: OkfRelationReviewItem[]; failed: OkfRelationReviewItem[]; processing: OkfRelationReviewItem[] }): ReviewView {
+function defaultView(input: { automatic: OkfRelationReviewItem[]; confirmed: OkfRelationReviewItem[]; failed: OkfRelationReviewItem[]; processing: OkfRelationReviewItem[]; publishedReview: OkfRelationReviewItem[] }): ReviewView {
   if (input.confirmed.length) return "review";
+  if (input.publishedReview.length) return "published";
   if (input.processing.length) return "processing";
   if (input.failed.length) return "failed";
   if (input.automatic.length) return "automatic";
@@ -249,6 +275,7 @@ function defaultView(input: { automatic: OkfRelationReviewItem[]; confirmed: Okf
 
 function emptyMessage(view: ReviewView) {
   if (view === "review") return "No confirmed relations are waiting for review.";
+  if (view === "published") return "No published relations require explanation review.";
   if (view === "processing") return "No relation candidates are being verified.";
   if (view === "automatic") return "No automatically processed relations are available.";
   if (view === "filtered") return "No recent verifier rejections are available.";

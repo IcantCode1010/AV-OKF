@@ -17,6 +17,8 @@ function item(overrides: Partial<OkfRelationReviewItem> = {}): OkfRelationReview
     initialProposal: "Shared terms: smoke, response",
     model: "model-1",
     provider: "openai",
+    publishedReview: false,
+    publishedReviewStatus: null,
     rationale: "The source explicitly names the target system.",
     relation: "applies_to",
     relationDefinition: "The source explicitly applies to the target.",
@@ -68,6 +70,27 @@ test("relation review presents concept titles and plain-language evidence before
   assert.match(markup, /Swap and reverify/);
   assert.match(markup, /Reject/);
   assert.match(markup, /\/knowledge\/bundle-1\/topic\?file=concepts%2Fprocedure%2Fsmoke-response.md/);
+});
+
+test("published relation review keeps the edge visible until a reviewer decides", () => {
+  const markup = renderToStaticMarkup(createElement(RelationReviewWorkspace, {
+    automatic: [],
+    bundleId: "bundle-1",
+    confirmed: [],
+    failed: [],
+    filtered: [],
+    processing: [],
+    publishedReview: [item({
+      publishedReview: true,
+      publishedReviewStatus: "ready",
+      status: "approved",
+    })],
+  }));
+
+  assert.match(markup, /Published review/);
+  assert.match(markup, /remains published while its explanation is revalidated/);
+  assert.match(markup, /Re-approve explanation/);
+  assert.match(markup, /Reject and remove relation/);
 });
 
 test("relation review groups repeated source concepts under one heading", () => {

@@ -59,13 +59,47 @@ export function getKnowledgeBundleDeletionQueue() {
 export async function enqueueKnowledgeBundleDeletionJob(
   payload: KnowledgeBundleDeletionJobPayload,
 ) {
-  await getKnowledgeBundleDeletionQueue().add("delete-bundle", payload, {
-    attempts: 5,
-    backoff: { delay: 2_000, type: "exponential" },
-    jobId: `delete-bundle-${payload.jobId}`,
-    removeOnComplete: true,
-    removeOnFail: false,
+  const queue = getKnowledgeBundleDeletionQueue();
+  const queueJobId = `delete-bundle-${payload.jobId}`;
+  await ensureKnowledgeBundleDeletionQueued({
+    add: async () => {
+      await queue.add("delete-bundle", payload, {
+        attempts: 5,
+        backoff: { delay: 2_000, type: "exponential" },
+        jobId: queueJobId,
+        removeOnComplete: true,
+        removeOnFail: false,
+      });
+    },
+    getExisting: async () => {
+      const existing = await queue.getJob(queueJobId);
+      return existing
+        ? {
+            getState: () => existing.getState(),
+            retry: async () => { await existing.retry("failed"); },
+          }
+        : null;
+    },
   });
+}
+
+export async function ensureKnowledgeBundleDeletionQueued(input: {
+  add: () => Promise<void>;
+  getExisting: () => Promise<{
+    getState: () => Promise<string>;
+    retry: () => Promise<void>;
+  } | null>;
+}) {
+  const existing = await input.getExisting();
+  if (!existing) {
+    await input.add();
+    return "added" as const;
+  }
+  if (await existing.getState() === "failed") {
+    await existing.retry();
+    return "retried" as const;
+  }
+  return "existing" as const;
 }
 
 export async function requestKnowledgeBundleDeletion(input: {

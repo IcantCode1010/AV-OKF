@@ -257,6 +257,12 @@ model OkfRelationCandidate {
   automaticApprovalRequested Boolean                          @default(false)
   automaticApprovalActor     String?
   automaticApprovalError     String?                          @db.Text
+  publishedReviewStatus      String?
+  publishedReviewFlaggedAt   DateTime?
+  publishedSourceFile        String?
+  publishedTargetFile        String?
+  publishedRelation          String?
+  publishedReason            String?                          @db.Text
   verifiedAt                 DateTime?
   reviewedBy                 String?
   reviewedAt                 DateTime?
@@ -270,6 +276,7 @@ model OkfRelationCandidate {
   @@unique([knowledgeBundleId, sourceFile, targetFile, relation])
   @@index([workspaceId, knowledgeBundleId, status])
   @@index([knowledgeBundleId, verificationStatus])
+  @@index([knowledgeBundleId, publishedReviewStatus])
   @@index([authoringRunId, automaticApprovalRequested])
 }
 
@@ -280,6 +287,8 @@ model OkfRelationDiscoveryRun {
   requestedBy       String
   status            String                 @default("running")
   totalCandidates   Int                    @default(0)
+  proposedCount     Int                    @default(0)
+  skippedExistingCount Int                 @default(0)
   suppressedCount   Int                    @default(0)
   warningCount      Int                    @default(0)
   queuedCount       Int                    @default(0)

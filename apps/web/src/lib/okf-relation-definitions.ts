@@ -32,6 +32,9 @@ export function humanizeRelationFailure(input: {
   const code = input.automaticApprovalError ?? input.verificationError;
   if (code) {
     const normalized = code.toLowerCase();
+    if (normalized.includes("target_not_identified")) return "The source quote did not identify the proposed target concept.";
+    if (normalized.includes("rationale_not_pair_specific")) return "The explanation did not specifically connect both concepts.";
+    if (normalized.includes("publishing_suspended")) return "Automatic relation publishing is suspended while relation precision is evaluated.";
     if (normalized.includes("quote") || normalized.includes("evidence")) return "No exact source evidence supported this relationship.";
     if (normalized.includes("relation") && normalized.includes("allowed")) return "The proposed relationship type is not allowed by this bundle.";
     if (normalized.includes("stale") || normalized.includes("content_hash")) return "A concept changed after verification and must be checked again.";

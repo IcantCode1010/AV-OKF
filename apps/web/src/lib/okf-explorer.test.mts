@@ -5,7 +5,10 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildOkfExplorerSnapshot } from "./okf-explorer.ts";
-import { buildOkfGraphView } from "./okf-graph-view.ts";
+import {
+  buildOkfGraphView,
+  getDefaultOkfGraphViewMode,
+} from "./okf-graph-view.ts";
 import { listOkfBundleFiles } from "./okf-bundle.ts";
 
 test("graph view defaults to the selected concept and its direct neighborhood", () => {
@@ -51,6 +54,14 @@ test("all-concepts graph view preserves the complete topology", () => {
   assert.equal(view.focusFile, "b.md");
   assert.deepEqual(view.nodes, nodes);
   assert.deepEqual(view.edges, edges);
+});
+
+test("a bundle without approved relations defaults to all concepts", () => {
+  assert.equal(getDefaultOkfGraphViewMode([]), "all");
+  assert.equal(
+    getDefaultOkfGraphViewMode([graphEdge("a-to-b", "a.md", "b.md")]),
+    "neighborhood",
+  );
 });
 
 test("graph view chooses the highest-degree concept when selection is not a graph node", () => {

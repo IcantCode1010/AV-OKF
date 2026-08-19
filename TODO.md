@@ -23,6 +23,14 @@
 
 ## Agent Rollout
 
+- [ ] Fix the persisted follow-up regression captured in chat `cmt0876lc000001s6m9ct4wx7`:
+  - retain the active clarification subject until the user explicitly changes subjects, rather than only while the clarification is the immediately preceding assistant message;
+  - require every conversation-grounded assumption shown to the user to be present in the actual retrieval query;
+  - preserve validated conversation entities when query understanding falls back after a route conflict;
+  - route repair, maintenance, installation, and operational-action questions through the high-risk applicability/version context checks;
+  - classify approved evidence as `strong` only when it covers the question's intent, not merely because an approved concept matched;
+  - add post-synthesis question/answer relevance validation without weakening citation or trust validation;
+  - add the A-4000 clarification plus repeated vague follow-up sequence as a permanent regression test.
 - [x] Tombstone entire historical assistant answers when any supporting citation belongs to a deleted bundle, including mixed-source answers.
 - [x] Add deterministic `strong`, `partial`, `weak`, and `none` evidence-sufficiency classification with an explicit raw-RAG invocation reason in trace.
 - [x] Check every selected bundle for qualified OKF before allowing raw-RAG fallback.
@@ -34,7 +42,8 @@
 - [x] Run and commit the 30-question mixed-domain baseline/candidate comparison. The tuned 2026-07-25 real-provider run improved from 15/30 to 23/30 with 100% citation precision, no baseline regression, and zero policy violations.
 - [x] Tighten bounded retry without relaxing policy: append canonical expansion terms to the unchanged query, retain raw discovery labeling through merges, and deterministically repair malformed citation formatting before falling back.
 - [x] Complete the blinded 30-question technical review worksheet. The candidate produced 23 complete fixed-trial responses versus 15 for baseline, with no new incorrect candidate response.
-- [ ] Run Relation Discovery V3 against the configured provider and meet the 80% internal precision checkpoint before broadening semantic candidate generation or relation automation.
+- [ ] Run the stabilized deterministic Relation Discovery V3 against the configured provider and meet the 80% internal precision checkpoint; require approximately 90% before re-enabling semantic candidate generation or automatic relation publication.
+- [ ] Build the next relation-enrichment phase only after stabilization measurement: explicit anchor extraction, deterministic target resolution, two-sided evidence, relation-specific contracts, application-calibrated confidence, and bounded creator/critic review.
 - [ ] Pilot adaptive retry on one internal non-safety-critical bundle for at least seven days and 50 eligible turns.
 - [ ] Run the trust-UX protocol with five non-technical reviewers; any criterion missed by more than one reviewer requires a UI correction.
 - [ ] Keep free model-directed tool choice evaluation-only until it beats the complete deterministic route baseline with zero policy violations.

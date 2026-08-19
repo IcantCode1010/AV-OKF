@@ -5,10 +5,7 @@ import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringAr
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import { getKnowledgeBundleByIdentity, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
-import {
-  createOkfConceptEmbeddingRepository,
-  type OkfSemanticNeighbor,
-} from "./okf-concept-embedding.ts";
+import type { OkfSemanticNeighbor } from "./okf-concept-embedding.ts";
 import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 import { getOkfRelationVerificationQueue, type OkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 import {
@@ -34,6 +31,8 @@ const BASE_STOPWORDS = new Set([
   "were",
   "with",
 ]);
+
+export const MAX_CANDIDATES_PER_DISCOVERY_RUN = 50;
 
 export type RelationDiscoveryConcept = {
   contentHash?: string;
@@ -72,6 +71,8 @@ export async function discoverOkfRelationCandidates(
       alreadyRunning: true,
       discovered: activeRun.totalCandidates,
       runId: activeRun.id,
+      proposed: activeRun.proposedCount,
+      skippedExisting: activeRun.skippedExistingCount,
       suppressed: activeRun.suppressedCount,
       semanticCandidates: 0,
       warnings: activeRun.warningCount,
@@ -82,26 +83,12 @@ export async function discoverOkfRelationCandidates(
   const deterministicCandidates = buildDeterministicRelationCandidates(concepts, {
     stopwords: bundle.profile.relationDiscovery.stopwords,
   });
-  const semanticNeighbors = await createOkfConceptEmbeddingRepository()
-    .findNeighbors({
-      candidates: concepts.flatMap((concept) => concept.contentHash
-        ? [{ contentHash: concept.contentHash, filePath: concept.filePath }]
-        : []),
-      knowledgeBundleId: bundle.id,
-      maxPairs: 200,
-      minSimilarity: readSemanticRelationThreshold(),
-      topKPerConcept: 8,
-      workspaceId: input.workspaceId,
-    })
-    .catch(() => []);
-  const semanticCandidates = buildSemanticRelationCandidates(
-    concepts,
-    semanticNeighbors,
-  );
-  const discoveredCandidates = mergeRelationDiscoveryCandidates([
-    ...deterministicCandidates,
-    ...semanticCandidates,
-  ]);
+  const discoveredCandidates = rankRelationDiscoveryCandidates(deterministicCandidates);
+  const existingCandidates = await getPrisma().okfRelationCandidate.findMany({
+    select: { relation: true, sourceFile: true, targetFile: true },
+    where: { knowledgeBundleId: bundle.id, workspaceId: input.workspaceId },
+  });
+  const existingIdentities = new Set(existingCandidates.map(candidateIdentity));
   const context = await loadOkfRelationPreflightContext({
     knowledgeBundleId: bundle.id,
     workspaceId: input.workspaceId,
@@ -111,8 +98,14 @@ export async function discoverOkfRelationCandidates(
     workspaceId: string;
   }> = [];
   let suppressed = 0;
+  let skippedExisting = 0;
   let warningCount = 0;
   for (const candidate of discoveredCandidates) {
+    if (existingIdentities.has(candidateIdentity(candidate))) {
+      skippedExisting += 1;
+      continue;
+    }
+    if (candidates.length >= MAX_CANDIDATES_PER_DISCOVERY_RUN) continue;
     const preflight = preflightOkfRelationCandidate({
       ...context,
       candidate: { ...candidate, reason: candidate.reason },
@@ -140,7 +133,9 @@ export async function discoverOkfRelationCandidates(
     const run = await tx.okfRelationDiscoveryRun.create({
       data: {
         knowledgeBundleId: bundle.id,
+        proposedCount: discoveredCandidates.length,
         requestedBy: input.requestedBy,
+        skippedExistingCount: skippedExisting,
         suppressedCount: suppressed,
         totalCandidates: candidates.length,
         warningCount,
@@ -164,9 +159,7 @@ export async function discoverOkfRelationCandidates(
         rows.push(await tx.okfRelationCandidate.update({
           data: {
             discoveryRunId: run.id,
-            discoveryVersion: candidate.signals.includes("semantic_neighbor")
-              ? "semantic-neighbor-v1"
-              : "deterministic-v2",
+            discoveryVersion: "deterministic-v2",
             reason: candidate.reason,
             requestedDirection: null,
             signals: candidate.signals,
@@ -187,9 +180,7 @@ export async function discoverOkfRelationCandidates(
         data: {
           ...candidate,
           discoveryRunId: run.id,
-          discoveryVersion: candidate.signals.includes("semantic_neighbor")
-            ? "semantic-neighbor-v1"
-            : "deterministic-v2",
+          discoveryVersion: "deterministic-v2",
           verificationStatus: "queued",
         },
       }));
@@ -213,7 +204,9 @@ export async function discoverOkfRelationCandidates(
     alreadyRunning: created.run.status === "running" && created.candidates.length === 0,
     discovered: created.run.totalCandidates,
     runId: created.run.id,
-    semanticCandidates: semanticCandidates.length,
+    proposed: discoveredCandidates.length,
+    semanticCandidates: 0,
+    skippedExisting,
     suppressed,
     warnings: warningCount,
   };
@@ -243,7 +236,7 @@ export function buildSemanticRelationCandidates(
   });
 }
 
-function mergeRelationDiscoveryCandidates(
+export function rankRelationDiscoveryCandidates(
   candidates: RelationDiscoveryCandidate[],
 ) {
   const merged = new Map<string, RelationDiscoveryCandidate>();
@@ -258,18 +251,23 @@ function mergeRelationDiscoveryCandidates(
       : candidate);
   }
   return [...merged.values()].sort((left, right) =>
+    contentSignalCount(right) - contentSignalCount(left) ||
+    signalCount(right, "matched_tag:") - signalCount(left, "matched_tag:") ||
+    signalCount(right, "matched_term:") - signalCount(left, "matched_term:") ||
+    Number(right.signals.includes("source_page_proximity")) - Number(left.signals.includes("source_page_proximity")) ||
     left.sourceFile.localeCompare(right.sourceFile) ||
     left.targetFile.localeCompare(right.targetFile) ||
     left.relation.localeCompare(right.relation),
   );
 }
 
-function readSemanticRelationThreshold() {
-  const value = Number(process.env.OKF_RELATION_SEMANTIC_MIN_SIMILARITY ?? "0.62");
-  if (!Number.isFinite(value) || value < -1 || value > 1) {
-    throw new Error("invalid_env_OKF_RELATION_SEMANTIC_MIN_SIMILARITY");
-  }
-  return value;
+function contentSignalCount(candidate: RelationDiscoveryCandidate) {
+  return Number(candidate.signals.includes("shared_tags")) +
+    Number(candidate.signals.includes("title_description_overlap"));
+}
+
+function signalCount(candidate: RelationDiscoveryCandidate, prefix: string) {
+  return candidate.signals.filter((signal) => signal.startsWith(prefix)).length;
 }
 
 export function buildDeterministicRelationCandidates(
@@ -458,6 +456,10 @@ export async function getOkfRelationReviewQueue(input: {
     automaticApprovalError: true,
     automaticApprovalRequested: true,
     id: true,
+    publishedRelation: true,
+    publishedReviewStatus: true,
+    publishedSourceFile: true,
+    publishedTargetFile: true,
     reason: true,
     relation: true,
     signals: true,
@@ -475,7 +477,7 @@ export async function getOkfRelationReviewQueue(input: {
     verificationStatus: true,
   } as const;
 
-  const [actionable, filtered, published] = await Promise.all([
+  const [actionable, filtered, published, publishedReview] = await Promise.all([
     getPrisma().okfRelationCandidate.findMany({
       orderBy: [
         { verificationConfidence: "desc" },
@@ -501,9 +503,14 @@ export async function getOkfRelationReviewQueue(input: {
       take: 50,
       where: { ...where, automaticApprovalRequested: true, status: "approved" },
     }),
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [{ publishedReviewFlaggedAt: "asc" }, { id: "asc" }],
+      select,
+      where: { ...where, publishedReviewStatus: { not: null }, status: "approved" },
+    }),
   ]);
 
-  return { actionable, filtered, published };
+  return { actionable, filtered, published, publishedReview };
 }
 
 export async function getLatestOkfRelationDiscoveryRun(input: { knowledgeBundleId: string; workspaceId: string }) {
@@ -550,7 +557,7 @@ function buildCandidateReason(input: {
   return `Discovered from ${details.join(", ")}.`;
 }
 
-function candidateIdentity(candidate: RelationDiscoveryCandidate) {
+function candidateIdentity(candidate: Pick<RelationDiscoveryCandidate, "relation" | "sourceFile" | "targetFile">) {
   return `${candidate.sourceFile}\u0000${candidate.targetFile}\u0000${candidate.relation}`;
 }
 

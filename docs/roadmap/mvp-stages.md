@@ -547,7 +547,7 @@ Deferred from Stage 7B:
 
 Purpose: populate the typed OKF graph with useful relationships without allowing inferred links to become trusted agent evidence automatically.
 
-Implementation status: Relation Discovery V3 is implemented around the unchanged V2 deterministic candidate generator. New candidates are verified asynchronously one pair per configured-provider call, require an exact canonical source quote and an allowed typed relation, and are bound to source/target content hashes. Only confirmed results reach human review or count as pending graph edges; filtered, failed, queued, and running candidates cannot influence frontmatter, the explorer graph, or agent traversal. Human approval and re-export remain mandatory, and changing direction requires re-verification against the new source. The next checkpoint is a configured-provider Docker sample at 80% precision; approximately 90% is required before considering any reduction in review or expansion of LLM authority.
+Implementation status: Relation Discovery V3 is stabilized around the V2 deterministic candidate generator. Each run ranks existing deterministic signals and queues at most 50 previously unseen, preflight-accepted candidates. New candidates are verified asynchronously one pair per configured-provider call, require an exact canonical source quote, pair-specific rationale, target identity for references/routing, and an allowed typed relation, and are bound to source/target content hashes. Only confirmed results reach human review; filtered, failed, queued, and running candidates cannot influence frontmatter, the explorer graph, or agent traversal. Semantic candidate generation and automatic publication are suspended. Human approval and re-export remain mandatory, and changing direction requires re-verification against the new source. The next checkpoint is a configured-provider Docker sample at 80% precision; approximately 90% is required before considering any reduction in review or expansion of LLM authority.
 
 Policy checkpoint: stay with deterministic candidate generation plus one-pair LLM verification. Do not add semantic expansion, embedding-neighbor relation discovery, free-form relation generation, or broader LLM graph construction until the Phase 3 evaluation proves recall is the limiting problem. If precision remains the limiting problem, improve filtering, verifier prompts, quote requirements, profile stopwords, and review UX instead.
 
@@ -571,7 +571,7 @@ Deliverables:
 - Re-export integration that writes approved relations into OKF frontmatter and refreshes the live graph.
 - Audit record for candidate generation and reviewer decisions.
 - Append-only verification-attempt audit records containing provider/model, prompt, raw response, result, and errors.
-- Dry-run before/after evaluation reports and mixed-domain fixtures proving discovery works without aviation-specific assumptions; reviewer acceptance metrics gate semantic expansion.
+- Dry-run cleanup and evaluation reports, bounded 50-candidate runs, published-relation explanation revalidation, and mixed-domain fixtures proving discovery works without aviation-specific assumptions; reviewer acceptance metrics gate semantic expansion and automatic publication.
 
 Exit criteria:
 

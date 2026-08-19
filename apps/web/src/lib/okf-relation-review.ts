@@ -27,6 +27,8 @@ export type OkfRelationReviewItem = {
   initialProposal: string;
   model: string | null;
   provider: string | null;
+  publishedReview: boolean;
+  publishedReviewStatus: string | null;
   rationale: string | null;
   relation: string;
   relationDefinition: string;
@@ -49,12 +51,19 @@ export function buildOkfRelationReviewItems(input: {
   const fileByPath = new Map(input.files.map((file) => [file.filename, file]));
 
   return input.candidates.map((candidate) => {
-    const reverse = candidate.verificationDirection === "reverse";
-    const sourcePath = reverse ? candidate.targetFile : candidate.sourceFile;
-    const targetPath = reverse ? candidate.sourceFile : candidate.targetFile;
+    const publishedReview = candidate.status === "approved" && candidate.publishedReviewStatus !== null;
+    const reverse = !publishedReview && candidate.verificationDirection === "reverse";
+    const sourcePath = publishedReview && candidate.publishedSourceFile
+      ? candidate.publishedSourceFile
+      : reverse ? candidate.targetFile : candidate.sourceFile;
+    const targetPath = publishedReview && candidate.publishedTargetFile
+      ? candidate.publishedTargetFile
+      : reverse ? candidate.sourceFile : candidate.targetFile;
     const source = buildConcept(sourcePath, fileByPath.get(sourcePath));
     const target = buildConcept(targetPath, fileByPath.get(targetPath));
-    const relation = candidate.verificationRelation ?? candidate.relation;
+    const relation = publishedReview
+      ? candidate.publishedRelation ?? candidate.verificationRelation ?? candidate.relation
+      : candidate.verificationRelation ?? candidate.relation;
     const relationLabel = formatRelationLabel(relation);
     const signals = Array.isArray(candidate.signals)
       ? candidate.signals.filter((signal): signal is string => typeof signal === "string")
@@ -70,6 +79,8 @@ export function buildOkfRelationReviewItems(input: {
       initialProposal: candidate.reason,
       model: candidate.verificationModel,
       provider: candidate.verificationProvider,
+      publishedReview,
+      publishedReviewStatus: candidate.publishedReviewStatus,
       rationale: candidate.verificationRationale,
       relation,
       relationDefinition: RELATION_DEFINITIONS[relation] ?? "The source concept has a verified relationship to the target concept.",

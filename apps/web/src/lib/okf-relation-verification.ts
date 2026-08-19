@@ -21,6 +21,8 @@ const TERMINAL_FILTER_CODES = new Set([
   "relation_verification_evidence_not_in_source",
   "relation_verification_incomplete_positive",
   "relation_verification_relation_not_allowed",
+  "relation_verification_rationale_not_pair_specific",
+  "relation_verification_target_not_identified",
 ]);
 
 export async function runOkfRelationVerificationJob(
@@ -32,13 +34,21 @@ export async function runOkfRelationVerificationJob(
     where: {
       id: payload.candidateId,
       knowledgeBundleId: payload.knowledgeBundleId,
-      status: "pending",
+      OR: [
+        { status: "pending" },
+        { publishedReviewStatus: { in: ["queued", "running"] }, status: "approved" },
+      ],
       workspaceId: payload.workspaceId,
     },
   });
   if (!candidate || !["queued", "running"].includes(candidate.verificationStatus)) return null;
+  const publishedReview = candidate.status === "approved";
   await prisma.okfRelationCandidate.update({
-    data: { verificationError: null, verificationStatus: "running" },
+    data: {
+      publishedReviewStatus: publishedReview ? "running" : candidate.publishedReviewStatus,
+      verificationError: null,
+      verificationStatus: "running",
+    },
     where: { id: candidate.id },
   });
   await refreshRelationDiscoveryRun(candidate.discoveryRunId);
@@ -64,7 +74,9 @@ export async function runOkfRelationVerificationJob(
       loadVerifierConcept(root, candidate.targetFile),
     ]);
     const result = await (options.verify ?? verifyOkfRelationCandidate)({
-      allowedRelations: bundle.profile.relations,
+      allowedRelations: publishedReview && candidate.publishedRelation
+        ? [candidate.publishedRelation]
+        : bundle.profile.relations,
       forcedDirection: normalizeDirection(candidate.requestedDirection),
       proposedRelation: candidate.relation,
       proposedSource: source,
@@ -89,6 +101,7 @@ export async function runOkfRelationVerificationJob(
             verificationRationale: decision.rationale,
             verificationRelation: null,
             verificationStatus: "filtered",
+            publishedReviewStatus: publishedReview ? "ready" : candidate.publishedReviewStatus,
             verifiedAt: new Date(),
             verifierVersion: OKF_RELATION_VERIFIER_VERSION,
           },
@@ -111,17 +124,19 @@ export async function runOkfRelationVerificationJob(
     }
     const sourceFile = decision.direction === "reverse" ? candidate.targetFile : candidate.sourceFile;
     const targetFile = decision.direction === "reverse" ? candidate.sourceFile : candidate.targetFile;
-    const preflight = preflightOkfRelationCandidate({
-      ...context,
-      candidate: {
-        reason: decision.rationale,
-        relation: decision.relation!,
-        sourceFile,
-        targetFile,
-        targetType: context.activeFiles.find((file) => file.filePath === targetFile)?.type ?? null,
-      },
-    });
-    if (!preflight.accepted) throw new Error(preflight.issues.find((issue) => issue.severity === "error")?.code ?? "relation_preflight_failed");
+    if (!publishedReview) {
+      const preflight = preflightOkfRelationCandidate({
+        ...context,
+        candidate: {
+          reason: decision.rationale,
+          relation: decision.relation!,
+          sourceFile,
+          targetFile,
+          targetType: context.activeFiles.find((file) => file.filePath === targetFile)?.type ?? null,
+        },
+      });
+      if (!preflight.accepted) throw new Error(preflight.issues.find((issue) => issue.severity === "error")?.code ?? "relation_preflight_failed");
+    }
     await prisma.$transaction([
       prisma.okfRelationCandidate.update({
         data: {
@@ -136,6 +151,7 @@ export async function runOkfRelationVerificationJob(
           verificationRationale: decision.rationale,
           verificationRelation: decision.relation,
           verificationStatus: "confirmed",
+          publishedReviewStatus: publishedReview ? "ready" : candidate.publishedReviewStatus,
           verifiedAt: new Date(),
           verifierVersion: OKF_RELATION_VERIFIER_VERSION,
         },
@@ -167,6 +183,9 @@ export async function runOkfRelationVerificationJob(
           verificationModel: verifierError?.audit.model,
           verificationProvider: verifierError?.audit.provider,
           verificationStatus: filtered ? "filtered" : terminal ? "failed" : "queued",
+          publishedReviewStatus: publishedReview
+            ? filtered ? "ready" : terminal ? "failed" : "queued"
+            : candidate.publishedReviewStatus,
         },
         where: { id: candidate.id },
       }),
@@ -194,12 +213,20 @@ export async function retryOkfRelationVerification(input: {
   workspaceId: string;
 }) {
   const candidate = await getPrisma().okfRelationCandidate.findFirst({
-    where: { id: input.candidateId, status: "pending", workspaceId: input.workspaceId },
+    where: {
+      id: input.candidateId,
+      OR: [
+        { status: "pending" },
+        { publishedReviewStatus: { not: null }, status: "approved" },
+      ],
+      workspaceId: input.workspaceId,
+    },
   });
   if (!candidate) throw new Error("relation_candidate_not_found");
   await getPrisma().okfRelationCandidate.update({
     data: {
       requestedDirection: input.requestedDirection ?? candidate.requestedDirection,
+      publishedReviewStatus: candidate.status === "approved" ? "queued" : candidate.publishedReviewStatus,
       verificationConfidence: null,
       verificationDirection: null,
       verificationError: null,
@@ -224,11 +251,23 @@ export async function reconcileOkfRelationVerificationJobs(
 ) {
   const candidates = await getPrisma().okfRelationCandidate.findMany({
     orderBy: { createdAt: "asc" },
-    where: { status: "pending", verificationStatus: { in: ["queued", "running"] } },
+    where: {
+      OR: [
+        { status: "pending" },
+        { publishedReviewStatus: { in: ["queued", "running"] }, status: "approved" },
+      ],
+      verificationStatus: { in: ["queued", "running"] },
+    },
   });
   for (const candidate of candidates) {
     if (candidate.verificationStatus === "running") {
-      await getPrisma().okfRelationCandidate.update({ data: { verificationStatus: "queued" }, where: { id: candidate.id } });
+      await getPrisma().okfRelationCandidate.update({
+        data: {
+          publishedReviewStatus: candidate.status === "approved" ? "queued" : candidate.publishedReviewStatus,
+          verificationStatus: "queued",
+        },
+        where: { id: candidate.id },
+      });
     }
     await queue.enqueue({ candidateId: candidate.id, knowledgeBundleId: candidate.knowledgeBundleId, workspaceId: candidate.workspaceId });
   }

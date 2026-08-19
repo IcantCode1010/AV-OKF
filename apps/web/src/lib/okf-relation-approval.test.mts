@@ -17,35 +17,36 @@ const confirmedCandidate = {
 };
 
 test("automatic relation approval requires an explicit request and confirmed verifier output", () => {
-  assert.equal(getAutomaticRelationApprovalBlocker(confirmedCandidate), null);
+  assert.equal(getAutomaticRelationApprovalBlocker(confirmedCandidate), "automatic_relation_publishing_suspended");
+  assert.equal(getAutomaticRelationApprovalBlocker(confirmedCandidate, { publishingEnabled: true }), null);
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     automaticApprovalRequested: false,
-  }), "automatic_relation_not_requested");
+  }, { publishingEnabled: true }), "automatic_relation_not_requested");
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationStatus: "running",
-  }), "automatic_relation_not_confirmed");
+  }, { publishingEnabled: true }), "automatic_relation_not_confirmed");
 });
 
 test("automatic relation approval rejects confidence below the publication threshold and incomplete evidence", () => {
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationConfidence: AUTOMATIC_RELATION_MIN_CONFIDENCE - 0.001,
-  }), "automatic_relation_confidence_below_threshold");
+  }, { publishingEnabled: true }), "automatic_relation_confidence_below_threshold");
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationEvidenceQuote: null,
-  }), "relation_verification_required");
+  }, { publishingEnabled: true }), "relation_verification_required");
 });
 
 test("automatic relation approval is limited to low-risk structural relations", () => {
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationRelation: "part_of",
-  }), null);
+  }, { publishingEnabled: true }), null);
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationRelation: "depends_on",
-  }), "automatic_relation_requires_human_review");
+  }, { publishingEnabled: true }), "automatic_relation_requires_human_review");
 });

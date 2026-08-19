@@ -9,15 +9,16 @@ import { RELATION_DEFINITIONS } from "./okf-relation-definitions.ts";
 
 export { RELATION_DEFINITIONS } from "./okf-relation-definitions.ts";
 
-export const OKF_RELATION_VERIFIER_VERSION = "evidence-v1";
+export const OKF_RELATION_VERIFIER_VERSION = "evidence-v2-rationale";
 
 const ZERO_WIDTH_AND_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200D\u2060\uFEFF]/g;
+const SUBJECT_STOPWORDS = new Set(["and", "for", "from", "of", "or", "procedure", "system", "the", "to"]);
 
 const verifierSchema = z.object({
   confidence: z.number().min(0).max(1),
   direction: z.enum(["proposed", "reverse"]).nullable(),
   evidenceQuote: z.string().nullable(),
-  rationale: z.string(),
+  rationale: z.string().trim().min(40),
   related: z.boolean(),
   relation: z.string().nullable(),
 });
@@ -32,6 +33,10 @@ const VERIFIER_SYSTEM_PROMPT = [
   "For supports, depends_on, covered_by, supersedes, or conflicts_with, the quote must state the corresponding evidentiary, dependency, governance, replacement, or contradiction link.",
   "If the quote does not establish that link, return related=false even when the concepts are topically similar.",
   "For related=true, choose one supplied relation and direction, then copy an exact quote from the concept that will be the relation source.",
+  "For related=true, write one or two complete sentences explaining how the quote establishes the selected relationship type; do not merely restate the relation name.",
+  "For related=true, name the actual subject matter of both supplied concepts. A rationale that could apply unchanged to another pair is invalid.",
+  "For related=false, explain why the supplied deterministic signals do not establish a direct relationship between these concepts.",
+  "Do not write a rationale shorter than 40 characters.",
   "Use related=false when direct source evidence is absent. Return only the required structured result.",
 ].join(" ");
 
@@ -128,7 +133,39 @@ export function validateRelationVerifierDecision(input: {
   if (!source.canonicalText.includes(decision.evidenceQuote)) {
     throw new Error("relation_verification_evidence_not_in_source");
   }
+  const target = decision.direction === "reverse" ? input.proposedSource : input.proposedTarget;
+  if (["references", "routes_to"].includes(decision.relation) && !quoteIdentifiesTarget(decision.evidenceQuote, target.title)) {
+    throw new Error("relation_verification_target_not_identified");
+  }
+  if (
+    !rationaleIdentifiesConcept(decision.rationale, input.proposedSource.title) ||
+    !rationaleIdentifiesConcept(decision.rationale, input.proposedTarget.title)
+  ) {
+    throw new Error("relation_verification_rationale_not_pair_specific");
+  }
   return decision;
+}
+
+function quoteIdentifiesTarget(quote: string, targetTitle: string) {
+  const quoteTerms = new Set(tokenizeSubject(quote));
+  const targetTerms = tokenizeSubject(targetTitle);
+  const required = Math.min(2, targetTerms.length);
+  return required > 0 && targetTerms.filter((term) => quoteTerms.has(term)).length >= required;
+}
+
+function rationaleIdentifiesConcept(rationale: string, title: string) {
+  const rationaleTerms = new Set(tokenizeSubject(rationale));
+  return tokenizeSubject(title).some((term) => rationaleTerms.has(term));
+}
+
+function tokenizeSubject(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((term) => term.length >= 3 && !SUBJECT_STOPWORDS.has(term));
 }
 
 export async function verifyOkfRelationCandidate(

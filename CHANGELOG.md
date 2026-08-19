@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Stabilized relation discovery around reviewable deterministic batches. Production graph expansion now ranks deterministic candidates and queues at most 50 per run; semantic-neighbor expansion and automatic relation publishing are suspended until measured precision meets the release gate.
+- Strengthened one-pair relation verification with 40-character pair-specific rationales, exact target identification for `references` and `routes_to`, and the existing exact source-quote, vocabulary, direction, hash, and graph checks.
+- Added dry-run-first all-bundle relation cleanup and a separate published-relation revalidation lifecycle. Pending candidates can be cleared without touching OKF files, while weak published explanations remain live until a reviewer re-approves their new evidence or explicitly rejects and removes the edge.
+- Fixed durable knowledge-bundle deletion on Docker volumes by assigning the shared knowledge root to the application user instead of a stale numeric UID/GID, and by explicitly reviving exhausted deterministic BullMQ jobs when a user retries a failed deletion.
 - Added the large-PDF grounded processing pipeline: direct presigned MinIO uploads, streamed inspection and SHA-256, selective local OCR, resumable 20-page extraction, durable overlapping discovery, batched full-document RAG, one-pass grounded crawling, flat consolidation, and portable `av_okf_citations`.
 - Raised the bounded processing envelope to 250 MB or 5,000 pages, with the final production limit still gated on real and mechanical upper-bound verification.
 - Fixed PDF inspection so recoverable qpdf warning exits, including legacy linearization hint-table warnings, remain processable and cannot be mistaken for password protection merely because qpdf reports that the file is not encrypted.
