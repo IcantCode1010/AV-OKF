@@ -172,7 +172,7 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   }
   revalidatePath(`/knowledge/${result.bundleId}/relations`);
   if (result.status === "reverification_queued") {
-    redirect(`/knowledge/${result.bundleId}/relations?relationError=relation_verification_stale_content`);
+    redirect(`/knowledge/${result.bundleId}/relations?relationReverification=queued`);
   }
 }
 

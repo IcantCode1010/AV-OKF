@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Clarified stale relation approvals: when concept content changes after verification, the candidate is automatically reverified and the Relations page now reports that transition as an informational integrity check instead of a failed approval.
 - Stabilized relation discovery around reviewable deterministic batches. Production graph expansion now ranks deterministic candidates and queues at most 50 per run; semantic-neighbor expansion and automatic relation publishing are suspended until measured precision meets the release gate.
 - Strengthened one-pair relation verification with 40-character pair-specific rationales, exact target identification for `references` and `routes_to`, and the existing exact source-quote, vocabulary, direction, hash, and graph checks.
 - Added dry-run-first all-bundle relation cleanup and a separate published-relation revalidation lifecycle. Pending candidates can be cleared without touching OKF files, while weak published explanations remain live until a reviewer re-approves their new evidence or explicitly rejects and removes the edge.

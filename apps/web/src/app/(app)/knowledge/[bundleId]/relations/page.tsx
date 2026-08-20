@@ -29,6 +29,7 @@ export default async function BundleRelationsPage({
   params: Promise<{ bundleId: string }>;
   searchParams: Promise<{
     relationError?: string;
+    relationReverification?: string;
     relationWarnings?: string;
     relationsDiscovered?: string;
     relationsProposed?: string;
@@ -122,7 +123,11 @@ export default async function BundleRelationsPage({
         </form>
       </header>
 
-      {query.relationError ? <Notice tone="error">Relation approval was blocked: {query.relationError.replaceAll("_", " ")}.</Notice> : null}
+      {query.relationReverification === "queued" || query.relationError === "relation_verification_stale_content" ? (
+        <Notice tone="info">
+          The source or target concept changed after this relation was verified. It was automatically sent through verification again and will return to review only if the current evidence still supports it.
+        </Notice>
+      ) : query.relationError ? <Notice tone="error">Relation approval was blocked: {query.relationError.replaceAll("_", " ")}.</Notice> : null}
       {query.relationsDiscovered ? <Notice tone="success">Proposed {query.relationsProposed ?? query.relationsDiscovered}, skipped {query.relationsSkipped ?? "0"} already known, suppressed {query.relationsSuppressed ?? "0"}, and queued {query.relationsDiscovered} for verification. Retained {query.relationWarnings ?? "0"} warnings.</Notice> : null}
 
       {run ? (
@@ -152,6 +157,11 @@ export default async function BundleRelationsPage({
   );
 }
 
-function Notice({ children, tone }: { children: ReactNode; tone: "error" | "success" }) {
-  return <div className={tone === "error" ? "border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" : "border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-200"}>{children}</div>;
+function Notice({ children, tone }: { children: ReactNode; tone: "error" | "info" | "success" }) {
+  const className = tone === "error"
+    ? "border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+    : tone === "info"
+      ? "border border-sky-500/30 bg-sky-500/10 p-3 text-sm text-sky-900 dark:text-sky-100"
+      : "border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-200";
+  return <div className={className}>{children}</div>;
 }
