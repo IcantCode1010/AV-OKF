@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AUTHORING_STAGES,
   AUTHORING_CONCEPT_CONFIRMATION_THRESHOLD,
   AUTHORING_INPUT_TOKEN_CONFIRMATION_THRESHOLD,
   KNOWLEDGE_AUTHORING_OPERATIONS,
   normalizeMetadataProposal,
   normalizeAuthoringRelationSuggestions,
   parseTopicReference,
+  planAuthoringTopicDiscovery,
   requiresAuthoringCostConfirmation,
   validateAuthoringTopics,
 } from "./knowledge-authoring.ts";
@@ -17,6 +19,17 @@ test("cost confirmation is required only above either threshold", () => {
   assert.equal(requiresAuthoringCostConfirmation({ conceptCount: 25, estimatedInputTokens: 250_000 }), false);
   assert.equal(requiresAuthoringCostConfirmation({ conceptCount: AUTHORING_CONCEPT_CONFIRMATION_THRESHOLD + 1, estimatedInputTokens: 1 }), true);
   assert.equal(requiresAuthoringCostConfirmation({ conceptCount: 1, estimatedInputTokens: AUTHORING_INPUT_TOKEN_CONFIRMATION_THRESHOLD + 1 }), true);
+});
+
+test("document authoring does not include the separate knowledge-wide crawl", () => {
+  assert.deepEqual(AUTHORING_STAGES, [
+    "metadata_discovery",
+    "concept_discovery",
+    "full_rag_index",
+    "enrichment",
+    "relation_classification",
+    "validation",
+  ]);
 });
 
 test("metadata proposals are trimmed, deduplicated, and preserve unknown values as null", () => {
@@ -65,6 +78,24 @@ test("authoring queue job identity is stable per durable run", () => {
   const payload = { documentId: "doc-a", runId: "run-a", workspaceId: "workspace-a" };
   assert.equal(buildKnowledgeAuthoringJobId(payload), "knowledge-authoring-run-a");
   assert.equal(buildKnowledgeAuthoringJobId(payload), buildKnowledgeAuthoringJobId(payload));
+});
+
+test("authoring retains one discovery owner and supersedes concurrent duplicates", () => {
+  const first = { id: "job-a", queuedAt: new Date("2026-01-01T00:00:00Z"), status: "consolidating" };
+  const second = { id: "job-b", queuedAt: new Date("2026-01-01T00:01:00Z"), status: "analyzing" };
+  assert.deepEqual(planAuthoringTopicDiscovery([second, first]), {
+    job: first,
+    supersededIds: ["job-b"],
+  });
+});
+
+test("authoring prefers a completed discovery result over an active duplicate", () => {
+  const active = { id: "job-a", queuedAt: new Date("2026-01-01T00:00:00Z"), status: "consolidating" };
+  const completed = { id: "job-b", queuedAt: new Date("2026-01-01T00:01:00Z"), status: "completed" };
+  assert.deepEqual(planAuthoringTopicDiscovery([active, completed]), {
+    job: completed,
+    supersededIds: ["job-a"],
+  });
 });
 
 test("authoring relation suggestions remain topic references until review promotion", () => {

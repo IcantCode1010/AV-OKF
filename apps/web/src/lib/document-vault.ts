@@ -39,6 +39,7 @@ export type User = {
 
 export type DocumentStatus =
   | "ready"
+  | "pending"
   | "processing"
   | "needs_review"
   | "indexed"

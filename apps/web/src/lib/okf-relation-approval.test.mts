@@ -40,7 +40,7 @@ test("automatic relation approval rejects confidence below the publication thres
   }, { publishingEnabled: true }), "relation_verification_required");
 });
 
-test("automatic relation approval is limited to low-risk structural relations", () => {
+test("automatic relation approval accepts every profile-vocabulary relation after verification", () => {
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationRelation: "part_of",
@@ -48,5 +48,5 @@ test("automatic relation approval is limited to low-risk structural relations", 
   assert.equal(getAutomaticRelationApprovalBlocker({
     ...confirmedCandidate,
     verificationRelation: "depends_on",
-  }, { publishingEnabled: true }), "automatic_relation_requires_human_review");
+  }, { publishingEnabled: true }), null);
 });

@@ -18,7 +18,7 @@ import {
 } from "@/lib/okf-relation-discovery";
 import { buildOkfRelationReviewItems } from "@/lib/okf-relation-review";
 import { isProductionBackend } from "@/lib/production-document-service";
-import { discoverRelationsAction } from "../../actions";
+import { discoverRelationsAction, expandEntityGraphAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,7 @@ export default async function BundleRelationsPage({
     relationsProposed?: string;
     relationsSkipped?: string;
     relationsSuppressed?: string;
+    entityExpansion?: string;
   }>;
 }) {
   const [{ bundleId }, query, context] = await Promise.all([
@@ -114,13 +115,19 @@ export default async function BundleRelationsPage({
           </div>
           <h1 className="mt-3 text-2xl font-semibold">Relation discovery</h1>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Expand graph ranks deterministic candidates and verifies at most 50 connections against exact source evidence. A reviewer must approve every verified relation before it is written. Semantic expansion and automatic publishing are suspended while precision is evaluated.
+            Expand graph ranks deterministic candidates and verifies at most 50 connections against exact source evidence. Entity expansion reconciles grounded assertions from processed documents. Human review remains available; automatic publication requires both the bundle opt-in and the global safety switch, plus exact evidence, 95% confidence, and graph preflight.
           </p>
         </div>
-        <form action={discoverRelationsAction}>
-          <input name="knowledgeBundleId" type="hidden" value={bundle.id} />
-          <PendingSubmitButton pendingLabel="Starting expansion...">Expand graph</PendingSubmitButton>
-        </form>
+        <div className="flex flex-wrap gap-2">
+          <form action={expandEntityGraphAction}>
+            <input name="knowledgeBundleId" type="hidden" value={bundle.id} />
+            <PendingSubmitButton pendingLabel="Queueing entity expansion..." variant="outline">Reconcile entity connections</PendingSubmitButton>
+          </form>
+          <form action={discoverRelationsAction}>
+            <input name="knowledgeBundleId" type="hidden" value={bundle.id} />
+            <PendingSubmitButton pendingLabel="Starting expansion...">Expand concept graph</PendingSubmitButton>
+          </form>
+        </div>
       </header>
 
       {query.relationReverification === "queued" || query.relationError === "relation_verification_stale_content" ? (
@@ -129,6 +136,7 @@ export default async function BundleRelationsPage({
         </Notice>
       ) : query.relationError ? <Notice tone="error">Relation approval was blocked: {query.relationError.replaceAll("_", " ")}.</Notice> : null}
       {query.relationsDiscovered ? <Notice tone="success">Proposed {query.relationsProposed ?? query.relationsDiscovered}, skipped {query.relationsSkipped ?? "0"} already known, suppressed {query.relationsSuppressed ?? "0"}, and queued {query.relationsDiscovered} for verification. Retained {query.relationWarnings ?? "0"} warnings.</Notice> : null}
+      {query.entityExpansion === "queued" ? <Notice tone="info">Entity connection reconciliation is queued. It will stop after the finite candidate set and send at most 50 resolved relations to verification.</Notice> : null}
 
       {run ? (
         <div className="grid grid-cols-2 divide-x divide-y border border-border text-sm sm:grid-cols-3 xl:grid-cols-7 xl:divide-y-0">

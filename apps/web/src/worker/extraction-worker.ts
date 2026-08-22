@@ -70,6 +70,16 @@ import {
   type OkfRelationVerificationJobPayload,
 } from "../lib/okf-relation-verification-queue.ts";
 import { cleanupExpiredDocumentUploadSessions } from "../lib/document-upload-session.ts";
+import {
+  ENTITY_GRAPH_QUEUE_NAME,
+  createEntityGraphQueue,
+  type EntityGraphJobPayload,
+} from "../lib/entity-graph-queue.ts";
+import {
+  reconcileEntityGraphJobs,
+  runEntityExpansion,
+  runEntityExtractionJob,
+} from "../lib/entity-graph.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
@@ -81,6 +91,7 @@ let bulkTopicApprovalWorker: Worker<BulkTopicApprovalJobPayload> | null = null;
 let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
 let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | null = null;
 let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null = null;
+let entityGraphWorker: Worker<EntityGraphJobPayload> | null = null;
 let uploadCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let ragBudgetResumeTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -104,6 +115,7 @@ async function main() {
   const okfEmbeddingQueue = getOkfConceptEmbeddingQueue();
   const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
   const relationVerificationQueue = createOkfRelationVerificationQueue(redisUrl);
+  const entityGraphQueue = createEntityGraphQueue(redisUrl);
 
   const expiredUploads = await cleanupExpiredDocumentUploadSessions();
   if (expiredUploads > 0) console.log(`Cleaned ${expiredUploads} expired document uploads.`);
@@ -126,6 +138,7 @@ async function main() {
   await reconcileKnowledgeBundleDeletionJobs(enqueueKnowledgeBundleDeletionJob);
   await reconcileOkfRelationVerificationJobs(relationVerificationQueue);
   await reconcileAutomaticRelationApprovals();
+  await reconcileEntityGraphJobs(entityGraphQueue);
 
   uploadCleanupTimer = setInterval(() => {
     void cleanupExpiredDocumentUploadSessions()
@@ -179,7 +192,36 @@ async function main() {
 
   topicDiscoveryWorker = new Worker<TopicDiscoveryJobPayload>(
     "topic-discovery",
-    async (job) => runTopicDiscoveryJob(job.data),
+    async (job) => {
+      const result = await runTopicDiscoveryJob(job.data);
+      const waitingRuns = await getPrisma().knowledgeAuthoringRun.findMany({
+        select: { documentId: true, id: true, workspaceId: true },
+        where: {
+          currentStage: "concept_discovery",
+          documentId: job.data.documentId,
+          status: { in: ["queued", "running"] },
+        },
+      });
+      if (result.status === "completed") {
+        for (const run of waitingRuns) {
+          await knowledgeAuthoringQueue.enqueue({
+            documentId: run.documentId,
+            runId: run.id,
+            workspaceId: run.workspaceId,
+          }, { waitForActive: true });
+        }
+      } else if (["failed", "awaiting_provider"].includes(result.status)) {
+        await getPrisma().knowledgeAuthoringRun.updateMany({
+          data: {
+            errorCode: `topic_discovery_${result.status}`,
+            errorMessage: `Topic discovery ${result.status.replaceAll("_", " ")}.`,
+            status: result.status,
+          },
+          where: { id: { in: waitingRuns.map(({ id }) => id) } },
+        });
+      }
+      return result;
+    },
     {
       concurrency: Number(process.env.TOPIC_DISCOVERY_WORKER_CONCURRENCY ?? "1"),
       connection: { url: redisUrl },
@@ -240,11 +282,31 @@ async function main() {
       const result = await runOkfRelationVerificationJob(job.data, {
         attemptNumber: job.attemptsMade + 1,
       });
+      if (result?.status) {
+        await getPrisma().entityRelationCandidate.updateMany({
+          data: { status: result.status },
+          where: { projectedCandidateId: job.data.candidateId },
+        });
+      }
       if (result?.status === "confirmed") {
-        await attemptAutomaticRelationApproval(job.data.candidateId);
+        const approval = await attemptAutomaticRelationApproval(job.data.candidateId);
+        if (approval?.status === "approved") {
+          await getPrisma().entityRelationCandidate.updateMany({
+            data: { status: "published" },
+            where: { projectedCandidateId: job.data.candidateId },
+          });
+        }
       }
       return result;
     },
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
+  entityGraphWorker = new Worker<EntityGraphJobPayload>(
+    ENTITY_GRAPH_QUEUE_NAME,
+    async (job) => job.data.kind === "extract"
+      ? runEntityExtractionJob(job.data.jobId)
+      : runEntityExpansion(job.data.runId),
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
@@ -270,7 +332,7 @@ async function main() {
     console.log(`Topic discovery job completed: ${job.id}`);
   });
   topicDiscoveryWorker.on("failed", (job, error) => {
-    console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error);
+    console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error.message);
   });
   topicContinuationWorker.on("completed", (job, result) => {
     console.log(
@@ -297,6 +359,9 @@ async function main() {
   });
   relationVerificationWorker.on("failed", (job, error) => {
     console.error(`OKF relation verification failed: ${job?.id ?? "unknown"}`, error);
+  });
+  entityGraphWorker.on("failed", (job, error) => {
+    console.error(`Entity graph job failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -388,5 +453,6 @@ async function shutdown() {
   await bulkTopicApprovalWorker?.close();
   await documentDeletionWorker?.close();
   await relationVerificationWorker?.close();
+  await entityGraphWorker?.close();
   process.exit(0);
 }

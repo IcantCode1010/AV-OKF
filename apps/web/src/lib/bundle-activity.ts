@@ -48,7 +48,7 @@ export async function getBundleActivitySnapshot({
   if (!isProductionBackend()) return buildBundleActivitySnapshot([]);
 
   const prisma = getPrisma();
-  const [documents, authoringRuns, bulkRuns, relationRuns] = await Promise.all([
+  const [documents, authoringRuns, bulkRuns, relationRuns, entityJobs, entityRuns] = await Promise.all([
     prisma.document.findMany({
       orderBy: { updatedAt: "desc" },
       select: {
@@ -61,7 +61,16 @@ export async function getBundleActivitySnapshot({
           select: { updatedAt: true },
           where: { reviewStatus: "needs_review" },
         },
-        topicDiscoveryJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
+        topicDiscoveryJobs: {
+          orderBy: { queuedAt: "desc" },
+          take: 1,
+          where: {
+            OR: [
+              { errorCode: null },
+              { errorCode: { not: "topic_discovery_superseded_by_active_job" } },
+            ],
+          },
+        },
       },
       where: { deletedAt: null, knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
     }),
@@ -80,6 +89,17 @@ export async function getBundleActivitySnapshot({
     prisma.okfRelationDiscoveryRun.findMany({
       orderBy: { updatedAt: "desc" },
       take: 20,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.entityExtractionJob.findMany({
+      include: { topic: { select: { title: true, enrichedTitle: true } } },
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.entityExpansionRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 30,
       where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
     }),
   ]);
@@ -175,6 +195,33 @@ export async function getBundleActivitySnapshot({
       detail: `${run.confirmedCount} confirmed, ${run.filteredCount} filtered, ${run.failedCount} failed`,
       resultCount: run.confirmedCount,
       actionHref: `/knowledge/${encodeURIComponent(bundleId)}/relations`,
+    });
+  }
+
+  for (const job of entityJobs) {
+    items.push({
+      id: `entity-extraction:${job.id}`,
+      documentId: job.documentId,
+      occurredAt: job.updatedAt.toISOString(),
+      stage: "Entities and connections",
+      status: normalizeJobStatus(job.status),
+      title: job.topic.enrichedTitle ?? job.topic.title,
+      detail: job.errorMessage ?? `${job.entityCount} entities and ${job.relationCount} grounded relation assertions`,
+      resultCount: job.entityCount + job.relationCount,
+      actionHref: `/documents/${encodeURIComponent(job.documentId)}?panel=processing`,
+    });
+  }
+
+  for (const run of entityRuns) {
+    items.push({
+      id: `entity-expansion:${run.id}`,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: "Entity connection expansion",
+      status: normalizeJobStatus(run.status),
+      title: run.mode === "full" ? "Full entity reconciliation" : "Incremental entity reconciliation",
+      detail: run.errorMessage ?? `${run.resolvedCount} resolved, ${run.queuedCount} queued for verification, ${run.filteredCount} filtered`,
+      resultCount: run.resolvedCount,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/graph?mode=entities`,
     });
   }
 

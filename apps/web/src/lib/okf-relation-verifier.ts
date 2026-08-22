@@ -115,6 +115,8 @@ export function validateRelationVerifierDecision(input: {
   forcedDirection?: "proposed" | "reverse" | null;
   proposedSource: OkfRelationVerifierConcept;
   proposedTarget: OkfRelationVerifierConcept;
+  requireTargetIdentification?: boolean;
+  targetAnchors?: string[];
 }) {
   const parsed = verifierSchema.safeParse(input.decision);
   if (!parsed.success) throw new Error("relation_verification_malformed_response");
@@ -134,7 +136,13 @@ export function validateRelationVerifierDecision(input: {
     throw new Error("relation_verification_evidence_not_in_source");
   }
   const target = decision.direction === "reverse" ? input.proposedSource : input.proposedTarget;
-  if (["references", "routes_to"].includes(decision.relation) && !quoteIdentifiesTarget(decision.evidenceQuote, target.title)) {
+  const targetIdentified = quoteIdentifiesTarget(decision.evidenceQuote, target.title) ||
+    (input.targetAnchors ?? []).some((anchor) =>
+      canonicalizeRelationEvidenceText(decision.evidenceQuote!).includes(
+        canonicalizeRelationEvidenceText(anchor),
+      )
+    );
+  if ((input.requireTargetIdentification || ["references", "routes_to"].includes(decision.relation)) && !targetIdentified) {
     throw new Error("relation_verification_target_not_identified");
   }
   if (
@@ -175,7 +183,9 @@ export async function verifyOkfRelationCandidate(
     proposedRelation: string;
     proposedSource: OkfRelationVerifierConcept;
     proposedTarget: OkfRelationVerifierConcept;
+    requireTargetIdentification?: boolean;
     signals: string[];
+    targetAnchors?: string[];
     workspaceId: string;
   },
   options: {
@@ -219,6 +229,7 @@ export async function verifyOkfRelationCandidate(
       filePath: input.proposedTarget.filePath,
       title: input.proposedTarget.title,
     },
+    targetAnchors: input.targetAnchors ?? [],
   });
   const promptSent = `SYSTEM:\n${VERIFIER_SYSTEM_PROMPT}\n\nUSER DATA:\n${prompt}`;
   let raw: unknown;
@@ -244,6 +255,8 @@ export async function verifyOkfRelationCandidate(
       forcedDirection: input.forcedDirection,
       proposedSource: input.proposedSource,
       proposedTarget: input.proposedTarget,
+      requireTargetIdentification: input.requireTargetIdentification,
+      targetAnchors: input.targetAnchors,
     });
   } catch (error) {
     throw new OkfRelationVerifierError(

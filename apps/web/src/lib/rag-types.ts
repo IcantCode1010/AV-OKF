@@ -45,6 +45,7 @@ export type RagChunkRecord = {
 };
 
 export type RagChunkInput = {
+  chunkingStrategyId?: string;
   documentTitle?: string;
   documentId: string;
   indexJobId: string;

@@ -36,6 +36,7 @@ export async function runBatchedRagIndexJob(payload: RagIndexJobPayload) {
       where: { documentId: payload.documentId, pageNumber: { gte: pageStart, lt: pageStart + PAGE_BATCH_SIZE } },
     });
     const pageChunks = chunkExtractedPages({
+      chunkingStrategyId: payload.chunkingStrategyId ?? "section-context-v3",
       documentId: payload.documentId,
       documentTitle: document.title,
       indexJobId: payload.indexJobId,
@@ -92,7 +93,7 @@ export async function runBatchedRagIndexJob(payload: RagIndexJobPayload) {
         if (!embedding) throw new Error("missing_embedding_for_chunk");
         await tx.ragChunk.upsert({
           create: toChunkCreate(chunk),
-          update: { contentHash: chunk.contentHash, headingPath: chunk.headingPath, pageEnd: chunk.pageEnd, pageStart: chunk.pageStart, sourcePageNumbers: chunk.sourcePageNumbers, text: chunk.text, tokenCount: chunk.tokenCount },
+          update: { chunkingStrategyId: chunk.chunkingStrategyId, contentHash: chunk.contentHash, headingPath: chunk.headingPath, pageEnd: chunk.pageEnd, pageStart: chunk.pageStart, sourcePageNumbers: chunk.sourcePageNumbers, text: chunk.text, tokenCount: chunk.tokenCount },
           where: { id: chunk.id },
         });
         await tx.$executeRaw`
@@ -130,7 +131,7 @@ export function packEmbeddingBatches(chunks: RagChunkRecord[]) {
 
 function toChunkCreate(chunk: RagChunkRecord): Prisma.RagChunkUncheckedCreateInput {
   return {
-    chunkOrdinal: chunk.chunkOrdinal, chunkingStrategyId: chunk.chunkingStrategyId ?? "paragraph-context-v2",
+    chunkOrdinal: chunk.chunkOrdinal, chunkingStrategyId: chunk.chunkingStrategyId ?? "section-context-v3",
     contentHash: chunk.contentHash, documentId: chunk.documentId, headingPath: chunk.headingPath,
     id: chunk.id, indexJobId: chunk.indexJobId, indexVersion: chunk.indexVersion, isActive: false,
     pageEnd: chunk.pageEnd, pageStart: chunk.pageStart, reviewStatus: chunk.reviewStatus,

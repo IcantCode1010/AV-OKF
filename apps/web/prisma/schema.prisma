@@ -78,7 +78,14 @@ model Workspace {
   bulkTopicApprovalRuns       BulkTopicApprovalRun[]
   documentDeletionJobs        DocumentDeletionJob[]
   knowledgeBundleDeletionJobs KnowledgeBundleDeletionJob[]
+  documentUploadBatches       DocumentUploadBatch[]
   documentUploadSessions      DocumentUploadSession[]
+  canonicalEntities           CanonicalEntity[]
+  entityCandidates            EntityCandidate[]
+  entityOccurrences           EntityOccurrence[]
+  entityExtractionJobs        EntityExtractionJob[]
+  entityExpansionRuns         EntityExpansionRun[]
+  entityRelationCandidates    EntityRelationCandidate[]
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
 }
@@ -166,6 +173,10 @@ model Document {
   processingCheckpoints  DocumentProcessingCheckpoint[]
   topicDiscoveryWindows  TopicDiscoveryWindow[]
   crawlerCandidates      GroundedCrawlerCandidate[]
+  entityCandidates       EntityCandidate[]
+  entityOccurrences      EntityOccurrence[]
+  entityExtractionJobs   EntityExtractionJob[]
+  entityRelationCandidates EntityRelationCandidate[]
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
 
@@ -204,7 +215,15 @@ model KnowledgeBundle {
   retrievalTriggerProposals OkfRetrievalTriggerProposal[]
   bulkTopicApprovalRuns  BulkTopicApprovalRun[]
   documentDeletionJobs   DocumentDeletionJob[]
+  uploadBatches          DocumentUploadBatch[]
   uploadSessions         DocumentUploadSession[]
+  entityCandidates       EntityCandidate[]
+  entityOccurrences      EntityOccurrence[]
+  entityExtractionJobs   EntityExtractionJob[]
+  entityClassifications  EntityBundleClassification[]
+  entityTopicLinks       EntityTopicLink[]
+  entityExpansionRuns    EntityExpansionRun[]
+  entityRelationCandidates EntityRelationCandidate[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -252,6 +271,11 @@ model OkfRelationCandidate {
   verifierVersion            String?
   sourceContentHash          String?
   targetContentHash          String?
+  evidenceChunkIds           String[]                         @default([])
+  evidencePageNumbers        Int[]                            @default([])
+  evidenceSourceQuote        String?                          @db.Text
+  targetAnchor               String?
+  targetResolution           String?
   requestedDirection         String?
   authoringRunId             String?
   automaticApprovalRequested Boolean                          @default(false)
@@ -272,6 +296,7 @@ model OkfRelationCandidate {
   discoveryRun               OkfRelationDiscoveryRun?         @relation(fields: [discoveryRunId], references: [id], onDelete: SetNull)
   authoringRun               KnowledgeAuthoringRun?           @relation(fields: [authoringRunId], references: [id], onDelete: SetNull)
   verificationAttempts       OkfRelationVerificationAttempt[]
+  entityRelationCandidate    EntityRelationCandidate?
 
   @@unique([knowledgeBundleId, sourceFile, targetFile, relation])
   @@index([workspaceId, knowledgeBundleId, status])
@@ -477,8 +502,27 @@ model DocumentObject {
   @@index([workspaceId, documentId, kind])
 }
 
+model DocumentUploadBatch {
+  id                String                  @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  requestedBy       String
+  status            String                  @default("initiated")
+  totalFiles        Int
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  workspace         Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle         @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  sessions          DocumentUploadSession[]
+
+  @@index([workspaceId, status, createdAt])
+  @@index([knowledgeBundleId, status, createdAt])
+}
+
 model DocumentUploadSession {
   id                String          @id @default(cuid())
+  batchId           String?
+  batchOrdinal      Int?
   workspaceId       String
   knowledgeBundleId String
   requestedBy       String
@@ -494,11 +538,14 @@ model DocumentUploadSession {
   finalizedAt       DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
+  batch             DocumentUploadBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
   workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, status, expiresAt])
   @@index([knowledgeBundleId, status])
+  @@index([batchId, status])
+  @@unique([batchId, batchOrdinal])
 }
 
 model ExtractionJob {
@@ -727,6 +774,7 @@ model RagChunk {
   indexJob           RagIndexJob           @relation(fields: [indexJobId], references: [id], onDelete: Cascade)
   embedding          RagEmbedding?
   okfConceptLinks    OkfConceptChunkLink[]
+  entityOccurrences  EntityOccurrence[]
 
   @@unique([documentId, indexVersion, chunkOrdinal])
   @@index([workspaceId, documentId, isActive])
@@ -865,12 +913,264 @@ model TopicRecord {
   document                  Document                @relation(fields: [documentId], references: [id], onDelete: Cascade)
   enrichmentAudits          TopicEnrichmentAudit[]
   bulkApprovalItems         BulkTopicApprovalItem[]
+  entityCandidates          EntityCandidate[]
+  entityOccurrences         EntityOccurrence[]
+  entityExtractionJobs      EntityExtractionJob[]
+  entityTopicLinks          EntityTopicLink[]
+  sourceEntityRelations     EntityRelationCandidate[] @relation("EntityRelationSourceTopic")
+  targetEntityRelations     EntityRelationCandidate[] @relation("EntityRelationTargetTopic")
   createdAt                 DateTime                @default(now())
   updatedAt                 DateTime                @updatedAt
 
   @@index([workspaceId, documentId])
   @@index([knowledgeBundleId, documentId])
   @@index([bulkApprovalRunId])
+}
+
+model CanonicalEntity {
+  id              String                       @id @default(cuid())
+  workspaceId     String
+  canonicalName   String
+  normalizedName  String
+  entityType      String
+  identityKey     String                       @default("")
+  status          String                       @default("provisional")
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+  workspace       Workspace                    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  aliases         EntityAlias[]
+  candidates      EntityCandidate[]
+  occurrences     EntityOccurrence[]
+  classifications EntityBundleClassification[]
+  topicLinks      EntityTopicLink[]
+  sourceRelations EntityRelationCandidate[]    @relation("EntityRelationSourceEntity")
+  targetRelations EntityRelationCandidate[]    @relation("EntityRelationTargetEntity")
+
+  @@unique([workspaceId, normalizedName, entityType, identityKey])
+  @@index([workspaceId, status, normalizedName])
+}
+
+model EntityAlias {
+  id              String          @id @default(cuid())
+  entityId        String
+  value           String
+  normalizedValue String
+  status          String          @default("needs_review")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  entity          CanonicalEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, normalizedValue])
+  @@index([normalizedValue, status])
+}
+
+model EntityCandidate {
+  id                String           @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  documentId        String
+  topicId           String
+  canonicalEntityId String?
+  name              String
+  normalizedName    String
+  entityType        String
+  identityKey       String           @default("")
+  confidence        Float
+  evidenceQuote     String           @db.Text
+  pageNumbers       Int[]
+  chunkIds          String[]
+  aliases           Json             @default("[]")
+  status            String           @default("validated")
+  contentHash       String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  workspace         Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle  @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document          Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  topic             TopicRecord      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  canonicalEntity   CanonicalEntity? @relation(fields: [canonicalEntityId], references: [id], onDelete: SetNull)
+
+  @@unique([topicId, normalizedName, entityType, evidenceQuote])
+  @@index([workspaceId, normalizedName, entityType, status])
+  @@index([knowledgeBundleId, status])
+}
+
+model EntityOccurrence {
+  id                String                   @id @default(cuid())
+  entityId          String
+  workspaceId       String
+  knowledgeBundleId String
+  documentId        String
+  topicId           String
+  chunkId           String
+  pageNumbers       Int[]
+  evidenceQuote     String                   @db.Text
+  contentHash       String
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  entity            CanonicalEntity          @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  workspace         Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle          @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document          Document                 @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  topic             TopicRecord              @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  chunk             RagChunk                 @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  relationEvidence  EntityRelationEvidence[]
+
+  @@unique([entityId, topicId, chunkId, evidenceQuote])
+  @@index([workspaceId, entityId])
+  @@index([knowledgeBundleId, documentId])
+}
+
+model EntityBundleClassification {
+  id                 String          @id @default(cuid())
+  entityId           String
+  knowledgeBundleId  String
+  subjectFamily      String?
+  ataChapter         String?
+  systemFamily       String?
+  classificationCode String?
+  status             String          @default("needs_review")
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  entity             CanonicalEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  knowledgeBundle    KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, knowledgeBundleId])
+  @@index([knowledgeBundleId, status])
+}
+
+model EntityTopicLink {
+  id                String          @id @default(cuid())
+  entityId          String
+  knowledgeBundleId String
+  topicId           String
+  status            String          @default("active")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  entity            CanonicalEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  topic             TopicRecord     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([entityId, knowledgeBundleId])
+  @@unique([topicId, entityId])
+  @@index([knowledgeBundleId, status])
+}
+
+model EntityExtractionJob {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  documentId        String
+  topicId           String
+  revisionHash      String
+  promptVersion     String          @default("entity-grounding-v1")
+  provider          String?
+  model             String?
+  status            String          @default("queued")
+  attempts          Int             @default(0)
+  entityCount       Int             @default(0)
+  relationCount     Int             @default(0)
+  warningCodes      String[]        @default([])
+  errorCode         String?
+  errorMessage      String?         @db.Text
+  queuedAt          DateTime        @default(now())
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document          Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  topic             TopicRecord     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, revisionHash])
+  @@index([workspaceId, status, queuedAt])
+  @@index([documentId, status])
+}
+
+model EntityExpansionRun {
+  id                 String                    @id @default(cuid())
+  workspaceId        String
+  knowledgeBundleId  String
+  triggerTopicId     String?
+  triggerFingerprint String
+  mode               String                    @default("incremental")
+  status             String                    @default("queued")
+  proposedCount      Int                       @default(0)
+  resolvedCount      Int                       @default(0)
+  queuedCount        Int                       @default(0)
+  filteredCount      Int                       @default(0)
+  failedCount        Int                       @default(0)
+  warningCodes       String[]                  @default([])
+  errorCode          String?
+  errorMessage       String?                   @db.Text
+  queuedAt           DateTime                  @default(now())
+  startedAt          DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  workspace          Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle    KnowledgeBundle           @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  candidates         EntityRelationCandidate[]
+
+  @@unique([knowledgeBundleId, triggerFingerprint])
+  @@index([workspaceId, knowledgeBundleId, status])
+}
+
+model EntityRelationCandidate {
+  id                    String                     @id @default(cuid())
+  workspaceId           String
+  knowledgeBundleId     String
+  documentId            String
+  expansionRunId        String?
+  sourceTopicId         String
+  targetTopicId         String?
+  sourceEntityId        String?
+  targetEntityId        String?
+  relation              String
+  evidenceQuote         String                     @db.Text
+  evidenceChunkIds      String[]
+  evidencePageNumbers   Int[]
+  targetAnchor          String?
+  targetResolution      String?
+  targetResolutionValue String?
+  confidence            Float                      @default(0)
+  rationale             String?                    @db.Text
+  status                String                     @default("unresolved")
+  contentHash           String
+  projectedCandidateId  String?                    @unique
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  workspace             Workspace                  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle       KnowledgeBundle            @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document              Document                   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  expansionRun          EntityExpansionRun?         @relation(fields: [expansionRunId], references: [id], onDelete: SetNull)
+  sourceTopic           TopicRecord                 @relation("EntityRelationSourceTopic", fields: [sourceTopicId], references: [id], onDelete: Cascade)
+  targetTopic           TopicRecord?                @relation("EntityRelationTargetTopic", fields: [targetTopicId], references: [id], onDelete: SetNull)
+  sourceEntity          CanonicalEntity?            @relation("EntityRelationSourceEntity", fields: [sourceEntityId], references: [id], onDelete: SetNull)
+  targetEntity          CanonicalEntity?            @relation("EntityRelationTargetEntity", fields: [targetEntityId], references: [id], onDelete: SetNull)
+  projectedCandidate    OkfRelationCandidate?       @relation(fields: [projectedCandidateId], references: [id], onDelete: SetNull)
+  evidence              EntityRelationEvidence[]
+
+  @@unique([knowledgeBundleId, sourceTopicId, relation, targetResolutionValue, contentHash])
+  @@index([workspaceId, knowledgeBundleId, status])
+  @@index([sourceTopicId, targetTopicId])
+}
+
+model EntityRelationEvidence {
+  id                  String                  @id @default(cuid())
+  relationCandidateId String
+  occurrenceId        String?
+  chunkId             String
+  pageNumbers         Int[]
+  evidenceQuote       String                  @db.Text
+  contentHash         String
+  createdAt           DateTime                @default(now())
+  relationCandidate   EntityRelationCandidate @relation(fields: [relationCandidateId], references: [id], onDelete: Cascade)
+  occurrence          EntityOccurrence?       @relation(fields: [occurrenceId], references: [id], onDelete: SetNull)
+
+  @@unique([relationCandidateId, chunkId, evidenceQuote])
+  @@index([chunkId])
 }
 
 model BulkTopicApprovalRun {

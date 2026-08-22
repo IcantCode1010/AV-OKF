@@ -8,8 +8,6 @@ Presigned MinIO upload
 -> 20-page extraction and selective OCR
 -> overlapping topic windows
 -> complete inactive RAG index
--> bounded grounded crawl
--> flat consolidation
 -> existing review/automation
 -> portable OKF v0.2 export
 ```
@@ -20,8 +18,13 @@ Presigned MinIO upload
 - The processing worker streams the authoritative object to temporary storage while calculating SHA-256. It rejects encrypted, corrupt, oversized, and over-page-limit PDFs.
 - OCR is local and English-only. Sparse raster pages are rendered at 300 DPI and retried once after deterministic preprocessing. Unreadable pages require action and block claims of complete indexing.
 - Extraction, topic windows, and embedding batches use durable checkpoints. Completed work is not rewritten after a worker restart.
-- The crawler is one bounded pass over active raw-RAG chunks. Every proposal needs known chunk IDs, valid pages, and an exact source quote. It cannot approve, export, mutate relations, or widen bundle scope.
 - The normal human-review and bundle-automation trust policy remains authoritative.
+
+## Knowledge-Wide Discovery Boundary
+
+Document ingestion does not crawl the raw document again after the full RAG index is built. It proceeds directly to enrichment so an optional knowledge-wide analysis cannot block document completion.
+
+Knowledge-wide connection discovery is a separate bundle operation under **Relations -> Expand graph**. It reads active, approved, exported OKF concepts after enrichment and publication, proposes deterministic bundle-local connections, verifies each pair against exact evidence, and keeps every result pending until review. Adding documents expands the published concept corpus available to later runs without coupling those runs to ingestion.
 
 ## Resumability
 

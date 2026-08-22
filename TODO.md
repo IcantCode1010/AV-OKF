@@ -3,7 +3,7 @@
 ## Large-PDF Follow-Up
 
 - [ ] Add live Metadata discovery visibility to the Processing timeline: show queued/running state, current metadata task, completed fields versus total fields, completion summary, and actionable failure/retry status using persisted backend records rather than simulated progress.
-- [ ] Fix end-to-end live Processing progression so extraction, metadata discovery, concept discovery, RAG indexing, grounded crawling, enrichment, validation, and approval transitions appear without a manual page refresh. Audit polling fingerprints and terminal-state rules, then add a browser test that observes multiple backend stage changes on the same open page.
+- [ ] Fix end-to-end live Processing progression so extraction, metadata discovery, concept discovery, RAG indexing, enrichment, validation, and approval transitions appear without a manual page refresh. Audit polling fingerprints and terminal-state rules, then add a browser test that observes multiple backend stage changes on the same open page.
 - [ ] Run and record the required mixed text/scanned PDF test above 100 MB and 1,000 pages.
 - [ ] Run the mechanical 250 MB/5,000-page upper-bound fixture before enabling the full limit operationally.
 - [ ] Add multipart resumable uploads if restart-on-failure is inadequate in field use.
@@ -101,10 +101,14 @@
 
 ## Reviewed Relation Discovery
 
+- [x] Add bounded document-grounded entity and relationship extraction as separate non-blocking post-enrichment jobs.
+- [x] Add automatic bundle-local incremental expansion after topic export and a manual full entity reconciliation action, capped at 50 candidates per run.
+- [x] Require exact chunk/page/quote evidence, deterministic name/alias/anchor resolution, one-pair verification, 95% confidence, and graph preflight before automatic publication.
+- [x] Keep bundle automation default-off and add the global `AV_OKF_RELATION_AUTO_PUBLISH_ENABLED` kill switch.
 - [x] Separate automatic document-local relation discovery from an explicitly triggered bundle-level graph expansion.
 - [x] Add bounded cross-document semantic-neighbor candidates using the existing live OKF embedding index; embeddings propose pairs but never create edges.
 - [x] Normalize common model-generated topic-type variants into the active profile vocabulary.
-- [x] Restrict automatic relation publication to high-confidence low-risk structural types while keeping operational and lifecycle relations review-required.
+- [x] Allow the active profile vocabulary through one uniform strict publication gate; no relation type bypasses evidence, 95% confidence, lifecycle, or graph-integrity checks.
 
 - [x] Add a design for workspace-scoped relation candidates with `pending`, `approved`, and `rejected` states.
 - [x] Discover bundle candidate pairs deterministically; keep assisted-authoring LLM classification limited to the separately staged suggestion path.
@@ -278,7 +282,10 @@
 
 - [x] Surface exact-source-quoted entity candidates from validated chat answers.
 - [x] Promote a selected candidate into the existing review and enrichment workflow without auto-approval.
-- [ ] Add bundle-level entity aliases and deterministic duplicate detection across alternate names.
-- [ ] Add reviewed multi-document provenance and entity consolidation.
+- [x] Add workspace canonical identities with bundle-scoped grounded occurrences, classifications, aliases, and relation assertions.
+- [x] Auto-register only matching normalized names and types supported by two independent documents; keep homonyms and conflicts review-required.
+- [x] Add exact accepted-alias reconciliation and deterministic target resolution while keeping acronym and fuzzy aliases review-required.
+- [x] Add reviewed multi-document provenance and entity consolidation persistence.
 - [ ] Suppress already-known entity suggestions before rendering the chat response.
-- [ ] Add entity-focused explorer filtering and graph presentation.
+- [x] Add Published knowledge, Entity map, and Needs attention graph presentation with evidence details.
+- [ ] Run the configured-provider multi-document entity/relation evaluation; keep global publication disabled until precision is approximately 90% with no negative-control regression.

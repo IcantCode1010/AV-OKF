@@ -48,6 +48,7 @@ import {
 } from "@/lib/knowledge-authoring";
 import { createBullMqKnowledgeAuthoringQueue } from "@/lib/knowledge-authoring-queue";
 import { getDocumentProcessingHref } from "@/lib/document-row-navigation";
+import { getEntityGraphQueue } from "@/lib/entity-graph-queue";
 
 const RECOVERABLE_UPLOAD_ERRORS = new Set([
   "missing_pdf_file",
@@ -184,6 +185,28 @@ export async function retryKnowledgeAuthoringAction(formData: FormData) {
   await enqueueKnowledgeAuthoringRun(queued);
   revalidatePath(`/documents/${documentId}`);
   redirect(getAuthoringReturnHref(documentId, formData));
+}
+
+export async function retryEntityExtractionAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const context = await requireAuthWorkspaceContext();
+  const jobs = await getPrisma().entityExtractionJob.findMany({
+    where: {
+      documentId,
+      status: { in: ["failed", "completed_with_warnings"] },
+      workspaceId: context.workspaceId,
+    },
+  });
+  const queue = getEntityGraphQueue();
+  for (const job of jobs) {
+    await getPrisma().entityExtractionJob.update({
+      data: { completedAt: null, errorCode: null, errorMessage: null, status: "queued", warningCodes: [] },
+      where: { id: job.id },
+    });
+    await queue.enqueue({ jobId: job.id, kind: "extract", workspaceId: job.workspaceId });
+  }
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=processing`);
 }
 
 export async function undoAuthoringMetadataAction(formData: FormData) {

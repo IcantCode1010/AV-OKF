@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildDocumentProcessingFingerprint,
   buildDocumentProcessingState,
+  resolveDocumentProcessingFingerprint,
   resolveDocumentPanel,
   serializeDocumentProcessingFingerprint,
   shouldPollDocumentProcessing,
@@ -52,6 +53,18 @@ test("authoring stages and real discovery window progress are derived from recor
   assert.equal(stageStatus(state, "metadata_discovery"), "completed");
   assert.equal(stageStatus(state, "concept_discovery"), "running");
   assert.match(stageDetail(state, "concept_discovery"), /3 of 7/);
+});
+
+test("document processing excludes the separate knowledge-wide crawl", () => {
+  const state = buildDocumentProcessingState({
+    authoringRun: authoringFixture({ currentStage: "enrichment", completedStages: ["metadata_discovery", "concept_discovery", "full_rag_index"] }),
+    bundleName: "General Knowledge",
+    document: documentFixture("completed"),
+    topicCount: 3,
+  });
+  assert.equal(state.stages.some((stage) => stage.id === "grounded_crawler"), false);
+  assert.equal(stageStatus(state, "full_rag_index"), "completed");
+  assert.equal(stageStatus(state, "enrichment"), "running");
 });
 
 test("provider, cost, and failure states require attention and stop active polling", () => {
@@ -256,6 +269,17 @@ test("page and lightweight API snapshots produce the same processing fingerprint
         totalWindows: 0,
       },
     }),
+  );
+});
+
+test("production pages use the polling API fingerprint as their source of truth", () => {
+  assert.equal(
+    resolveDocumentProcessingFingerprint({
+      authoringRun: authoringFixture(),
+      document: documentFixture("completed"),
+      productionSnapshot: { fingerprint: "production-complete" },
+    }),
+    "production-complete",
   );
 });
 

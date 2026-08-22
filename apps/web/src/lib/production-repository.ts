@@ -35,6 +35,7 @@ import {
   normalizeTopicRelations,
   type TopicRelation,
 } from "./okf-relation-types.ts";
+import { deriveDocumentLibraryStatus } from "./document-library-status.ts";
 
 type UploadRecordInput = {
   contentSha256: string;
@@ -129,6 +130,11 @@ type DbTopicDiscoveryJob = {
   totalWindows: number;
 };
 
+type DbKnowledgeAuthoringRun = {
+  automaticApprovalRun?: { status: string } | null;
+  status: string;
+};
+
 type DbDocumentRecord = {
   contentSha256: string | null;
   subjectFamily: string | null;
@@ -139,7 +145,9 @@ type DbDocumentRecord = {
   extractedPages?: DbExtractedPage[];
   extractionJobs?: DbExtractionJob[];
   extractionLogs?: DbExtractionLog[];
+  knowledgeAuthoringRuns?: DbKnowledgeAuthoringRun[];
   topicDiscoveryJobs?: DbTopicDiscoveryJob[];
+  topicRecords?: Array<{ id: string }>;
   fileType: string;
   id: string;
   knowledgeBundleId: string | null;
@@ -149,6 +157,7 @@ type DbDocumentRecord = {
   originalFilename: string | null;
   owner: string;
   pages: number;
+  ragStatus: string;
   revision: string | null;
   size: string;
   sizeBytes: number;
@@ -245,7 +254,28 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         extractedPages: { orderBy: { pageNumber: "asc" } },
         extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
         extractionLogs: { orderBy: { timestamp: "asc" } },
-        topicDiscoveryJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
+        knowledgeAuthoringRuns: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            automaticApprovalRun: { select: { status: true } },
+            status: true,
+          },
+          take: 1,
+        },
+        topicDiscoveryJobs: {
+          orderBy: { queuedAt: "desc" },
+          take: 1,
+          where: {
+            OR: [
+              { errorCode: null },
+              { errorCode: { not: "topic_discovery_superseded_by_active_job" } },
+            ],
+          },
+        },
+        topicRecords: {
+          select: { id: true },
+          where: { reviewStatus: { in: ["needs_review", "needs_cleanup"] } },
+        },
         objects: { orderBy: { createdAt: "asc" } },
       },
       where: { deletedAt: null, id: documentId, workspaceId },
@@ -603,19 +633,52 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async getDocumentMetrics(context: AuthWorkspaceContext) {
       const documents = await db.document.findMany({
+        select: {
+          extractionJobs: {
+            orderBy: { queuedAt: "desc" },
+            select: { status: true },
+            take: 1,
+          },
+          knowledgeAuthoringRuns: {
+            orderBy: { createdAt: "desc" },
+            select: {
+              automaticApprovalRun: { select: { status: true } },
+              status: true,
+            },
+            take: 1,
+          },
+          knowledgeBundleId: true,
+          pages: true,
+          ragStatus: true,
+          status: true,
+          topicRecords: {
+            select: { id: true },
+            where: { reviewStatus: { in: ["needs_review", "needs_cleanup"] } },
+          },
+        },
         where: { deletedAt: null, workspaceId: context.workspaceId },
       });
+      const statuses = documents.map((document) => {
+        const latestAuthoringRun = document.knowledgeAuthoringRuns[0];
+        return deriveDocumentLibraryStatus({
+          assignedToBundle: Boolean(document.knowledgeBundleId),
+          authoringStatus: latestAuthoringRun?.status,
+          automaticApprovalStatus: latestAuthoringRun?.automaticApprovalRun?.status,
+          extractionStatus: resolveProductionExtractionStatus({
+            pageCount: document.pages,
+            status: document.extractionJobs[0]?.status,
+          }),
+          persistedStatus: normalizeDocumentStatus(document.status),
+          ragStatus: document.ragStatus,
+          unresolvedTopicCount: document.topicRecords.length,
+        });
+      });
       return {
-        processing: documents.filter(
-          (document: { status: string }) => document.status === "processing",
+        processing: statuses.filter((status) => status === "processing").length,
+        ready: statuses.filter(
+          (status) => status === "ready" || status === "indexed",
         ).length,
-        ready: documents.filter(
-          (document: { status: string }) =>
-            document.status === "ready" || document.status === "indexed",
-        ).length,
-        review: documents.filter(
-          (document: { status: string }) => document.status === "needs_review",
-        ).length,
+        review: statuses.filter((status) => status === "needs_review").length,
         total: documents.length,
       };
     },
@@ -626,7 +689,19 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           extractedPages: { orderBy: { pageNumber: "asc" } },
           extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
           extractionLogs: { orderBy: { timestamp: "asc" } },
+          knowledgeAuthoringRuns: {
+            orderBy: { createdAt: "desc" },
+            select: {
+              automaticApprovalRun: { select: { status: true } },
+              status: true,
+            },
+            take: 1,
+          },
           objects: { orderBy: { createdAt: "asc" } },
+          topicRecords: {
+            select: { id: true },
+            where: { reviewStatus: { in: ["needs_review", "needs_cleanup"] } },
+          },
         },
         orderBy: { updatedAt: "desc" },
         where: { deletedAt: null, workspaceId: context.workspaceId },
@@ -839,6 +914,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           where: { id: input.topicId },
         });
       });
+      if (topic.enrichmentStatus === "completed") {
+        const { scheduleEntityExtractionForTopic } = await import("./entity-graph.ts");
+        await scheduleEntityExtractionForTopic(topic.id).catch(() => undefined);
+      }
       return mapTopicRecord(topic);
     },
     async failTopicEnrichment(input: {
@@ -1088,6 +1167,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         data: { exportedFilePath: input.exportedFilePath },
         where: { id: input.topicId },
       });
+      if (topic.reviewStatus === "approved") {
+        const { scheduleEntityExpansionForTopic } = await import("./entity-graph.ts");
+        await scheduleEntityExpansionForTopic(topic.id).catch(() => undefined);
+      }
       return mapTopicRecord(topic);
     },
     async updateTopicContent(input: {
@@ -1204,6 +1287,16 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         take: limit,
         where: {
           document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
+          NOT: {
+            document: {
+              knowledgeAuthoringRuns: {
+                some: {
+                  currentStage: "concept_discovery",
+                  status: { in: ["queued", "running"] },
+                },
+              },
+            },
+          },
           status: { in: ["queued", "analyzing", "consolidating"] },
         },
       });
@@ -1301,6 +1394,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
 function mapDocument(record: DbDocumentRecord): Document {
   const latestJob = record.extractionJobs?.[0];
   const latestDiscoveryJob = record.topicDiscoveryJobs?.[0];
+  const latestAuthoringRun = record.knowledgeAuthoringRuns?.[0];
   const pageRecords: ExtractedPageRecord[] = (record.extractedPages ?? []).map(
     (page) => ({
       charCount: page.charCount,
@@ -1319,6 +1413,19 @@ function mapDocument(record: DbDocumentRecord): Document {
   const primaryObject = record.objects?.find(
     (object) => object.kind === "original_pdf",
   );
+  const extractionStatus = resolveProductionExtractionStatus({
+    pageCount: pageRecords.length,
+    status: latestJob?.status,
+  });
+  const status = deriveDocumentLibraryStatus({
+    assignedToBundle: Boolean(record.knowledgeBundleId),
+    authoringStatus: latestAuthoringRun?.status,
+    automaticApprovalStatus: latestAuthoringRun?.automaticApprovalRun?.status,
+    extractionStatus,
+    persistedStatus: normalizeDocumentStatus(record.status),
+    ragStatus: record.ragStatus,
+    unresolvedTopicCount: record.topicRecords?.length ?? 0,
+  });
 
   return {
     subjectFamily: record.subjectFamily,
@@ -1340,10 +1447,7 @@ function mapDocument(record: DbDocumentRecord): Document {
       logs,
       pageRecords,
       startedAt: latestJob?.startedAt ? formatTimestamp(latestJob.startedAt) : null,
-      status: resolveProductionExtractionStatus({
-        pageCount: pageRecords.length,
-        status: latestJob?.status,
-      }),
+      status: extractionStatus,
     },
     fileType: record.fileType,
     id: record.id,
@@ -1360,7 +1464,7 @@ function mapDocument(record: DbDocumentRecord): Document {
     sizeBytes: record.sizeBytes,
     sourceType: normalizeSourceType(record.sourceType),
     sourceAuthority: record.sourceAuthority,
-    status: normalizeDocumentStatus(record.status),
+    status,
     storageKey: primaryObject?.objectKey ?? null,
     tags: record.tags ?? [],
     title: record.title,
@@ -1531,6 +1635,7 @@ function pagesOverlap(left: number[], right: number[]) {
 function normalizeDocumentStatus(value: string): DocumentStatus {
   if (
     value === "ready" ||
+    value === "pending" ||
     value === "processing" ||
     value === "needs_review" ||
     value === "indexed" ||

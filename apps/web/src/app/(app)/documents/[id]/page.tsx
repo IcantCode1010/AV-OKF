@@ -40,11 +40,14 @@ import {
 } from "@/lib/knowledge-bundles";
 import { getLatestKnowledgeAuthoringRun } from "@/lib/knowledge-authoring";
 import {
-  buildDocumentProcessingFingerprint,
   buildDocumentProcessingState,
+  resolveDocumentProcessingFingerprint,
   resolveDocumentPanel,
 } from "@/lib/document-processing-state";
 import { getDocumentBatchProgress } from "@/lib/document-batch-progress";
+import { isProductionBackend } from "@/lib/production-document-service";
+import { getProductionDocumentProcessingStatusSnapshot } from "@/lib/production-document-processing-status";
+import { getDocumentEntityConnectionStatus } from "@/lib/entity-graph";
 
 export const dynamic = "force-dynamic";
 
@@ -100,11 +103,24 @@ export default async function DocumentDetailPage({
   const knowledgeRoot = currentBundle
     ? resolveKnowledgeBundleRoot({ bundleId: currentBundle.id, workspaceId: context.workspaceId })
     : null;
-  const [relationTargets, authoringRun, availableBundles, extractionProgress] = await Promise.all([
+  const [
+    relationTargets,
+    authoringRun,
+    availableBundles,
+    extractionProgress,
+    processingStatusSnapshot,
+    entityConnections,
+  ] = await Promise.all([
     knowledgeRoot ? getRelationTargets(knowledgeRoot) : Promise.resolve([]),
     assigned ? getLatestKnowledgeAuthoringRun({ context, documentId: id }) : Promise.resolve(null),
     assigned ? Promise.resolve([]) : listKnowledgeBundles(context),
     getDocumentBatchProgress(id, context.workspaceId),
+    assigned && isProductionBackend()
+      ? getProductionDocumentProcessingStatusSnapshot({ context, documentId: id })
+      : Promise.resolve(null),
+    assigned && isProductionBackend()
+      ? getDocumentEntityConnectionStatus({ documentId: id, workspaceId: context.workspaceId })
+      : Promise.resolve(null),
   ]);
   const visibleTopics = assigned ? topicRecords : [];
   const reviewTopicCount = visibleTopics.filter(
@@ -116,6 +132,7 @@ export default async function DocumentDetailPage({
     bundleName: currentBundle?.name ?? "Unassigned",
     document: currentDocument,
     extractionProgress,
+    entityConnections,
     reviewTopicCount,
     topicCount: visibleTopics.length,
   });
@@ -135,9 +152,10 @@ export default async function DocumentDetailPage({
         topicCount: visibleTopics.length,
       })
     : (["summary", "metadata", "extraction", "logs"].includes(panel ?? "") ? panel! : "summary");
-  const processingFingerprint = buildDocumentProcessingFingerprint({
+  const processingFingerprint = resolveDocumentProcessingFingerprint({
     authoringRun,
     document: currentDocument,
+    productionSnapshot: processingStatusSnapshot,
   });
   const selectedTopic =
     activePanel === "topics"

@@ -6,9 +6,34 @@ import test from "node:test";
 
 import { buildOkfExplorerSnapshot } from "./okf-explorer.ts";
 import {
+  buildOkfGraphFocus,
   buildOkfGraphView,
   getDefaultOkfGraphViewMode,
 } from "./okf-graph-view.ts";
+
+test("graph focus keeps the selected node and direct neighbors highlighted", () => {
+  const nodes = [
+    graphNode("a.md", "A", 1),
+    graphNode("b.md", "B", 2),
+    graphNode("c.md", "C", 1),
+    graphNode("d.md", "D", 0),
+  ];
+  const edges = [
+    graphEdge("a-to-b", "a.md", "b.md"),
+    graphEdge("b-to-c", "b.md", "c.md"),
+  ];
+
+  assert.deepEqual(buildOkfGraphFocus({ edges, nodes, selectedFile: "b.md" }), {
+    highlightedLinkIndices: [0, 1],
+    highlightedPointIndices: [0, 1, 2],
+    selectedIndex: 1,
+  });
+  assert.deepEqual(buildOkfGraphFocus({ edges, nodes, selectedFile: null }), {
+    highlightedLinkIndices: [],
+    highlightedPointIndices: [],
+    selectedIndex: -1,
+  });
+});
 import { listOkfBundleFiles } from "./okf-bundle.ts";
 
 test("graph view defaults to the selected concept and its direct neighborhood", () => {

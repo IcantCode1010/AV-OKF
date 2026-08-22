@@ -16,6 +16,7 @@ import {
 import {
   confirmKnowledgeAuthoringCostAction,
   retryKnowledgeAuthoringAction,
+  retryEntityExtractionAction,
   runExtractionAction,
   startKnowledgeAuthoringAction,
 } from "@/app/(app)/documents/actions";
@@ -107,6 +108,7 @@ export function DocumentProcessingPanel({
             stage.id === "metadata_discovery" &&
             stage.status === "action_required" &&
             run?.status === "awaiting_cost_confirmation";
+          const isEntityRetryAction = stage.id === "entity_connections" && stage.status === "action_required";
 
           return (
             <li className="relative pb-5 last:pb-0" key={stage.id}>
@@ -132,6 +134,12 @@ export function DocumentProcessingPanel({
                     Confirm {run.estimatedInputTokens.toLocaleString()} tokens and continue
                     <ArrowRight className="h-4 w-4" />
                   </PendingSubmitButton>
+                </form>
+              ) : isEntityRetryAction ? (
+                <form action={retryEntityExtractionAction} className="flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center">
+                  <input name="documentId" type="hidden" value={documentId} />
+                  <div className="flex min-w-0 flex-1 gap-3"><StageIcon stage={stage} /><StageContent stage={stage} /></div>
+                  <PendingSubmitButton className="self-start sm:self-center" pendingLabel="Queueing retries..." variant="outline"><RotateCcw className="h-4 w-4" /> Retry entity extraction</PendingSubmitButton>
                 </form>
               ) : isManualReviewAction ? (
                 <Link

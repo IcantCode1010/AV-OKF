@@ -34,7 +34,9 @@ import {
 } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import type { EntityGraphSnapshot } from "@/lib/entity-graph-view";
 import {
+  buildOkfGraphFocus,
   buildOkfGraphView,
   getDefaultOkfGraphViewMode,
   type OkfGraphViewMode,
@@ -198,6 +200,61 @@ export function KnowledgeGraphExplorer({
         isolatedNodes={graphView.isolatedNodes}
         onSelect={selectFile}
       />
+    </div>
+  );
+}
+
+export function EntityGraphExplorer({
+  mode,
+  snapshot,
+}: {
+  mode: "attention" | "entities";
+  snapshot: EntityGraphSnapshot;
+}) {
+  const [selectedId, setSelectedId] = useState(snapshot.nodes[0]?.id ?? null);
+  const selectedNode = snapshot.nodes.find((node) => node.id === selectedId) ?? null;
+  const relatedEdges = snapshot.edges.filter((edge) => edge.source === selectedId || edge.target === selectedId);
+  const graphNodes: OkfExplorerNode[] = snapshot.nodes.map((node) => ({
+    degree: node.degree,
+    id: node.id,
+    reviewStatus: node.status,
+    sourceFile: null,
+    sourcePages: [],
+    title: node.title,
+    type: node.type,
+  }));
+  const graphEdges: OkfExplorerEdge[] = snapshot.edges.map((edge) => ({
+    id: edge.id,
+    reason: edge.reason,
+    relation: edge.relation,
+    source: edge.source,
+    target: edge.target,
+  }));
+  return (
+    <div className="grid min-h-0 flex-1 grid-rows-[560px_minmax(360px,auto)] overflow-y-auto border-y border-border lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-1 lg:overflow-hidden">
+      <section className="relative min-h-[560px] bg-background" aria-label={mode === "attention" ? "Entity graph attention queue" : "Entity map"}>
+        <div className="absolute inset-x-0 top-0 z-10 border-b border-border bg-background/90 px-4 py-3 backdrop-blur">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">{mode === "attention" ? "Needs attention" : "Entity map"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{snapshot.summary.entities} entities / {snapshot.summary.occurrences} occurrences / {snapshot.edges.length} connections</p>
+        </div>
+        {graphNodes.length > 0 ? (
+          <KnowledgeGraph autoFocusSelected={false} edges={graphEdges} nodes={graphNodes} onSelect={setSelectedId} selectedFile={selectedId} />
+        ) : <EmptyPane label={mode === "attention" ? "No entity connections currently need attention." : "Entity extraction has not produced a map yet."} />}
+      </section>
+      <aside className="min-h-0 overflow-auto border-l border-border bg-muted/10 p-4">
+        {selectedNode ? <div className="space-y-4">
+          <div><Badge variant="outline">{selectedNode.kind}</Badge><h2 className="mt-2 text-lg font-semibold">{selectedNode.title}</h2><p className="text-xs text-muted-foreground">{selectedNode.status} / {selectedNode.type}</p></div>
+          <div className="space-y-3">
+            {relatedEdges.map((edge) => <div className="border border-border bg-background p-3" key={edge.id}>
+              <div className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{edge.relation}</Badge><Badge variant="outline">{edge.status}</Badge>{typeof edge.confidence === "number" ? <span className="text-xs text-muted-foreground">{Math.round(edge.confidence * 100)}%</span> : null}</div>
+              <p className="mt-2 text-sm">{edge.reason}</p>
+              {edge.evidenceQuote ? <blockquote className="mt-2 border-l-2 border-primary pl-3 text-xs text-muted-foreground">{edge.evidenceQuote}</blockquote> : null}
+              {edge.pages.length > 0 ? <p className="mt-2 text-xs text-muted-foreground">Pages {edge.pages.join(", ")}</p> : null}
+              {edge.targetResolution ? <p className="mt-1 text-xs text-muted-foreground">Resolved by {edge.targetResolution.replaceAll("_", " ")}</p> : null}
+            </div>)}
+          </div>
+        </div> : <EmptyPane label="Select a node to inspect its grounded connections." />}
+      </aside>
     </div>
   );
 }
@@ -386,7 +443,7 @@ function ExplorerGraphPane({
 
 type GraphInstance = import("@cosmos.gl/graph").Graph;
 
-function KnowledgeGraph({
+export function KnowledgeGraph({
   autoFocusSelected,
   edges,
   nodes,
@@ -458,7 +515,8 @@ function KnowledgeGraph({
           linkDefaultArrows: true,
           linkDefaultColor: resolvedTheme === "light" ? "#a1a1aa" : "#586171",
           linkDefaultWidth: 1.1,
-          pointGreyoutOpacity: 0.18,
+          linkGreyoutOpacity: resolvedTheme === "light" ? 0.32 : 0.4,
+          pointGreyoutOpacity: resolvedTheme === "light" ? 0.48 : 0.58,
           pointDefaultSize: 7,
           renderHoveredPointRing: true,
           simulationCollision: 1,
@@ -560,22 +618,18 @@ function KnowledgeGraph({
   useEffect(() => {
     const graph = graphRef.current;
     if (!graph) return;
-    const connectedLinks = selectedIndex >= 0
-      ? edges
-          .map((edge, index) => edge.source === selectedFile || edge.target === selectedFile ? index : -1)
-          .filter((index) => index >= 0)
-      : [];
+    const focus = buildOkfGraphFocus({ edges, nodes, selectedFile });
     graph.setConfigPartial({
       focusedPointIndex: selectedIndex >= 0 ? selectedIndex : undefined,
-      highlightedLinkIndices: connectedLinks,
-      highlightedPointIndices: selectedIndex >= 0 ? [selectedIndex] : [],
+      highlightedLinkIndices: selectedIndex >= 0 ? focus.highlightedLinkIndices : undefined,
+      highlightedPointIndices: selectedIndex >= 0 ? focus.highlightedPointIndices : undefined,
       outlinedPointIndices: selectedIndex >= 0 ? [selectedIndex] : [],
     });
     if (autoFocusSelected && selectedIndex >= 0) {
       graph.zoomToPointByIndex(selectedIndex, 350, 2.2, false, false);
     }
     refreshLabels();
-  }, [autoFocusSelected, edges, refreshLabels, selectedFile, selectedIndex]);
+  }, [autoFocusSelected, edges, nodes, refreshLabels, selectedFile, selectedIndex]);
 
   useEffect(() => refreshLabels(), [refreshLabels]);
 

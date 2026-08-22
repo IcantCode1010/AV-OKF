@@ -8,7 +8,7 @@ The first usable product should be a clean document vault. Chat comes later, aft
 
 ## Current Implementation Status
 
-Large-PDF grounded processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, bounded crawling, flat consolidation, and portable citations. Production rollout at the 250 MB/5,000-page ceiling remains gated on the documented real and mechanical tests.
+Large-PDF processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, and portable citations. A bounded non-blocking entity stage now follows enrichment, and topic publication schedules bundle-local incremental relation expansion. Structural entity projections remain separate from trusted exported OKF relations. Production rollout at the 250 MB/5,000-page ceiling and automatic relation publication remain gated on their documented evaluations.
 
 As of 2026-07-26:
 
@@ -27,7 +27,7 @@ As of 2026-07-26:
 | 6.6 | Complete for permanent document and bundle deletion; restore is intentionally unsupported |
 | 7A | Complete: deterministic post-answer evidence validation |
 | 7B | Core implemented: bounded OKF graph traversal and coverage-linked RAG support |
-| 7B.5 | Complete: deterministic bundle-local candidates, reviewer approval/rejection, and re-exported graph edges |
+| 7B.5 | Core implemented: deterministic and entity-grounded candidates, one-pair verification, entity-map projections, strict opt-in publication gate, and re-exported graph edges |
 | 7C | Complete: chat-quality closeout and bounded Vercel AI SDK tool contracts |
 | 7D | Complete: user-controlled dynamic multi-bundle chat scope |
 | 8 | Deferred optional domain pack; the core platform remains generic |
@@ -47,8 +47,9 @@ Work in this order:
 3. Run production-stack failure injection for provider outage, malformed
    output, budget exhaustion, partial retrieval failure, and an in-flight chat
    scope change.
-4. Run Relation Discovery V3 with the configured provider and meet the 80%
-   internal precision checkpoint before considering semantic expansion.
+4. Run the configured multi-document entity/relation evaluation. Keep verified
+   proposals review-first below 90% precision and leave the global automatic
+   publication switch disabled until that gate passes without negative-control regressions.
 5. Reconcile every live bundle with its active profile and add the explicit
    coverage-link reconciliation action.
 6. Design and execute the OKF v0.2-only hard cutover across the parser,
@@ -59,8 +60,8 @@ Work in this order:
    evaluations before treating multi-column technical manuals as reliably
    high-confidence input.
 
-Free model-directed tool choice, semantic relation expansion, cross-bundle
-typed relations, and mutating agent tools remain deferred.
+Free model-directed tool choice, free-form corpus-wide relation generation,
+cross-bundle typed relations, and mutating agent tools remain deferred.
 
 ## Stage 0: Product Shell
 
@@ -547,7 +548,7 @@ Deferred from Stage 7B:
 
 Purpose: populate the typed OKF graph with useful relationships without allowing inferred links to become trusted agent evidence automatically.
 
-Implementation status: Relation Discovery V3 is stabilized around the V2 deterministic candidate generator. Each run ranks existing deterministic signals and queues at most 50 previously unseen, preflight-accepted candidates. New candidates are verified asynchronously one pair per configured-provider call, require an exact canonical source quote, pair-specific rationale, target identity for references/routing, and an allowed typed relation, and are bound to source/target content hashes. Only confirmed results reach human review; filtered, failed, queued, and running candidates cannot influence frontmatter, the explorer graph, or agent traversal. Semantic candidate generation and automatic publication are suspended. Human approval and re-export remain mandatory, and changing direction requires re-verification against the new source. The next checkpoint is a configured-provider Docker sample at 80% precision; approximately 90% is required before considering any reduction in review or expansion of LLM authority.
+Implementation status: Relation Discovery V3 retains deterministic candidate generation and adds a bounded document-grounded entity path. Entity extraction runs after enrichment in separate retryable jobs, workspace identities reconcile across documents, and approved topic export schedules a finite bundle-local expansion capped at 50 candidates. Every semantic candidate still requires exact chunk/page evidence, deterministic target resolution, one-pair configured-provider verification, current content hashes, and graph preflight. Structural entity-map links never affect OKF retrieval. Automatic publication is bundle opt-in, globally kill-switchable, requires 95% verifier confidence, and remains globally disabled until a representative multi-document evaluation reaches approximately 90% precision without negative-control regression. Human review remains available throughout.
 
 Policy checkpoint: stay with deterministic candidate generation plus one-pair LLM verification. Do not add semantic expansion, embedding-neighbor relation discovery, free-form relation generation, or broader LLM graph construction until the Phase 3 evaluation proves recall is the limiting problem. If precision remains the limiting problem, improve filtering, verifier prompts, quote requirements, profile stopwords, and review UX instead.
 

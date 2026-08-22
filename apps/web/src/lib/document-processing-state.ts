@@ -12,8 +12,8 @@ export type DocumentProcessingStageId =
   | "metadata_discovery"
   | "concept_discovery"
   | "full_rag_index"
-  | "grounded_crawler"
   | "enrichment"
+  | "entity_connections"
   | "relation_classification"
   | "validation"
   | "review_export";
@@ -74,6 +74,12 @@ export type DocumentProcessingFingerprintSnapshot = {
     itemStatuses: string[];
     status: string;
   } | null;
+  entityConnections?: {
+    completed: number;
+    failed: number;
+    queued: number;
+    running: number;
+  } | null;
   extraction: {
     completedBatches?: number;
     errorCode: string | null;
@@ -96,7 +102,6 @@ const authoringStageIds: DocumentProcessingStageId[] = [
   "metadata_discovery",
   "concept_discovery",
   "full_rag_index",
-  "grounded_crawler",
   "enrichment",
   "relation_classification",
   "validation",
@@ -142,13 +147,13 @@ const stageCopy: Record<
     detail: "Building a complete, inactive search index across every readable nonblank page.",
     label: "Full-document search index",
   },
-  grounded_crawler: {
-    detail: "Checking document-wide evidence for diffuse topics and explicit relationships missed by local windows.",
-    label: "Grounded document crawl",
-  },
   enrichment: {
     detail: "Preparing grounded titles, summaries, and article content for review.",
     label: "Topic enrichment",
+  },
+  entity_connections: {
+    detail: "Extracting grounded entities and explicit connection evidence in bounded background jobs.",
+    label: "Entities and connections",
   },
   relation_classification: {
     detail: "Finding explicit relationships between this document's concepts and verifying them against source evidence.",
@@ -169,6 +174,7 @@ export function buildDocumentProcessingState(input: {
   bundleName: string;
   document: Pick<Document, "extraction" | "storageKey" | "topicDiscovery">;
   extractionProgress?: DocumentBatchProgress | null;
+  entityConnections?: { completed: number; failed: number; queued: number; running: number } | null;
   reviewTopicCount?: number;
   topicCount: number;
 }): DocumentProcessingState {
@@ -197,6 +203,7 @@ export function buildDocumentProcessingState(input: {
   for (const id of authoringStageIds) {
     stages[stageIndex(id)] = deriveAuthoringStage(id, run, input.document.topicDiscovery);
   }
+  stages[stageIndex("entity_connections")] = deriveEntityConnectionStage(run, input.entityConnections, input.topicCount);
   stages[stageIndex("review_export")] = deriveReviewStage(run, input.reviewTopicCount ?? input.topicCount);
 
   return finish(stages, run.automaticTopicApprovalEnabled, true, input.bundleName);
@@ -225,10 +232,12 @@ export function shouldPollDocumentProcessing(input: {
   automaticApprovalStatus?: string;
   derivedProcessingActive?: boolean;
   extractionStatus: ExtractionStatus;
+  entityConnectionsActive?: boolean;
   topicDiscoveryStatus?: TopicDiscoveryStatus;
 }) {
   return (
     input.derivedProcessingActive === true ||
+    input.entityConnectionsActive === true ||
     isActiveExtractionStatus(input.extractionStatus) ||
     isActiveDiscoveryStatus(input.topicDiscoveryStatus ?? "not_started") ||
     ["queued", "running"].includes(input.authoringStatus ?? "") ||
@@ -239,6 +248,7 @@ export function shouldPollDocumentProcessing(input: {
 export function buildDocumentProcessingFingerprint(input: {
   authoringRun: ProcessingAuthoringRun | null;
   document: Pick<Document, "extraction" | "topicDiscovery">;
+  entityConnections?: { completed: number; failed: number; queued: number; running: number } | null;
 }) {
   const automaticRun = input.authoringRun?.automaticApprovalRun;
   return serializeDocumentProcessingFingerprint({
@@ -258,6 +268,7 @@ export function buildDocumentProcessingFingerprint(input: {
           status: automaticRun.status,
         }
       : null,
+    ...(input.entityConnections ? { entityConnections: input.entityConnections } : {}),
     extraction: {
       errorCode: input.document.extraction.error?.code ?? null,
       pageCount: input.document.extraction.pageRecords.length,
@@ -272,6 +283,32 @@ export function buildDocumentProcessingFingerprint(input: {
         }
       : null,
   });
+}
+
+function deriveEntityConnectionStage(
+  run: ProcessingAuthoringRun,
+  status: { completed: number; failed: number; queued: number; running: number } | null | undefined,
+  topicCount: number,
+) {
+  if (!run.completedStages.includes("enrichment")) return stage("entity_connections", "waiting");
+  if (!status) {
+    return topicCount > 0 && !["ready_for_review", "completed"].includes(run.status)
+      ? stage("entity_connections", "queued", "Grounded entity extraction will continue in the background.")
+      : stage("entity_connections", "skipped", topicCount > 0 ? "No entity extraction job was recorded for this run." : "No enriched topics are available for entity extraction.");
+  }
+  if (status.running > 0) return stage("entity_connections", "running", `${status.running} topic extraction ${status.running === 1 ? "job is" : "jobs are"} running.`);
+  if (status.queued > 0) return stage("entity_connections", "queued", `${status.queued} topic extraction ${status.queued === 1 ? "job is" : "jobs are"} queued.`);
+  if (status.failed > 0) return stage("entity_connections", "action_required", `${status.completed} completed; ${status.failed} require retry. Topic review and export remain available.`);
+  return stage("entity_connections", "completed", `${status.completed} grounded entity extraction ${status.completed === 1 ? "job is" : "jobs are"} complete.`);
+}
+
+export function resolveDocumentProcessingFingerprint(input: {
+  authoringRun: ProcessingAuthoringRun | null;
+  document: Pick<Document, "extraction" | "topicDiscovery">;
+  productionSnapshot?: { fingerprint: string } | null;
+}) {
+  return input.productionSnapshot?.fingerprint
+    ?? buildDocumentProcessingFingerprint(input);
 }
 
 export function serializeDocumentProcessingFingerprint(

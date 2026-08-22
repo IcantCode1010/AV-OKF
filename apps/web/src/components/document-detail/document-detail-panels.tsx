@@ -308,6 +308,7 @@ export function DocumentMetadataPanel({
                   className={selectClassName}
                   defaultValue={document.status}
                 >
+                  <option value="pending">Pending</option>
                   <option value="processing">Processing</option>
                   <option value="needs_review">Needs review</option>
                   <option value="ready">Ready</option>

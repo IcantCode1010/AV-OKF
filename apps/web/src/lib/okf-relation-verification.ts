@@ -1,9 +1,7 @@
-import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
-import { getKnowledgeBundleByIdentity, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
-import { readOkfBundleFile } from "./okf-bundle.ts";
+import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
 import { loadOkfRelationPreflightContext, preflightOkfRelationCandidate } from "./okf-relation-preflight.ts";
+import { loadOkfRelationVerifierContext } from "./okf-relation-evidence-context.ts";
 import {
-  buildRelationVerifierConcept,
   OKF_RELATION_VERIFIER_VERSION,
   OkfRelationVerifierError,
   verifyOkfRelationCandidate,
@@ -68,11 +66,8 @@ export async function runOkfRelationVerificationJob(
     const sourceType = context.activeFiles.find((file) => file.filePath === candidate.sourceFile)?.type;
     const targetType = context.activeFiles.find((file) => file.filePath === candidate.targetFile)?.type;
     if (!sourceType || !targetType) throw new Error("relation_verification_concept_inactive");
-    const root = resolveKnowledgeBundleRoot({ bundleId: bundle.id, workspaceId: candidate.workspaceId });
-    const [source, target] = await Promise.all([
-      loadVerifierConcept(root, candidate.sourceFile),
-      loadVerifierConcept(root, candidate.targetFile),
-    ]);
+    const verifierContext = await loadOkfRelationVerifierContext({ candidate });
+    const { source, target } = verifierContext;
     const result = await (options.verify ?? verifyOkfRelationCandidate)({
       allowedRelations: publishedReview && candidate.publishedRelation
         ? [candidate.publishedRelation]
@@ -81,7 +76,9 @@ export async function runOkfRelationVerificationJob(
       proposedRelation: candidate.relation,
       proposedSource: source,
       proposedTarget: target,
+      requireTargetIdentification: candidate.evidenceChunkIds.length > 0,
       signals: normalizeSignals(candidate.signals),
+      targetAnchors: verifierContext.targetAnchors,
       workspaceId: candidate.workspaceId,
     });
     promptSent = result.promptSent;
@@ -296,17 +293,6 @@ export async function refreshRelationDiscoveryRun(runId: string | null) {
     },
     where: { id: runId },
   }).catch(() => undefined);
-}
-
-async function loadVerifierConcept(root: string, filePath: string) {
-  const file = await readOkfBundleFile(root, filePath);
-  const parsed = parseOkfMarkdown(file.content);
-  return buildRelationVerifierConcept({
-    body: parsed.body,
-    description: getFrontmatterScalar(parsed.frontmatter, "description"),
-    filePath,
-    title: getFrontmatterScalar(parsed.frontmatter, "title"),
-  });
 }
 
 function normalizeSignals(value: unknown): string[] {

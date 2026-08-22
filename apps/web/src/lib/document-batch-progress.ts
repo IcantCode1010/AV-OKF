@@ -11,32 +11,54 @@ export type DocumentBatchProgress = {
   unreadablePages: number;
 };
 
+type ExtractionMethodCount = {
+  _count: { _all: number };
+  extractionMethod: string;
+};
+
 export async function getDocumentBatchProgress(documentId: string, workspaceId: string): Promise<DocumentBatchProgress | null> {
   if (!isProductionBackend()) return null;
-  const document = await getPrisma().document.findFirst({
+  const db = getPrisma();
+  const document = await db.document.findFirst({
     select: {
-      _count: { select: { extractedPages: true } },
       extractionJobs: {
         orderBy: { queuedAt: "desc" },
         select: { checkpoints: { select: { status: true }, where: { stage: "extraction" } } },
         take: 1,
       },
       inspectionStatus: true,
-      ocrPageCount: true,
       pages: true,
-      unreadablePageNumbers: true,
     },
     where: { deletedAt: null, id: documentId, workspaceId },
   });
   if (!document) return null;
+  const extractionMethodCounts = await db.extractedPage.groupBy({
+    _count: { _all: true },
+    by: ["extractionMethod"],
+    where: { documentId },
+  });
+  const methodCounts = summarizeExtractionMethodCounts(extractionMethodCounts);
   const checkpoints = document.extractionJobs[0]?.checkpoints ?? [];
   return {
     completedBatches: checkpoints.filter((item) => item.status === "completed").length,
-    completedPages: document._count.extractedPages,
+    completedPages: methodCounts.total,
     inspectionStatus: document.inspectionStatus,
-    ocrPages: document.ocrPageCount,
+    ocrPages: methodCounts.ocr,
     totalBatches: checkpoints.length,
     totalPages: document.pages,
-    unreadablePages: document.unreadablePageNumbers.length,
+    unreadablePages: methodCounts.unreadable,
   };
+}
+
+export function summarizeExtractionMethodCounts(rows: ExtractionMethodCount[]) {
+  return rows.reduce(
+    (summary, row) => ({
+      ocr: summary.ocr + (row.extractionMethod === "ocr" ? row._count._all : 0),
+      total: summary.total + row._count._all,
+      unreadable:
+        summary.unreadable
+        + (row.extractionMethod === "unreadable" ? row._count._all : 0),
+    }),
+    { ocr: 0, total: 0, unreadable: 0 },
+  );
 }

@@ -1,4 +1,5 @@
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import { summarizeExtractionMethodCounts } from "./document-batch-progress.ts";
 import { serializeDocumentProcessingFingerprint } from "./document-processing-state.ts";
 import { getPrisma } from "./prisma.ts";
 
@@ -8,7 +9,6 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
 }): Promise<{ active: boolean; fingerprint: string } | null> {
   const document = await getPrisma().document.findFirst({
     select: {
-      _count: { select: { extractedPages: true } },
       extractionJobs: {
         orderBy: { queuedAt: "desc" },
         select: {
@@ -19,7 +19,9 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
         take: 1,
       },
       inspectionStatus: true,
-      ocrPageCount: true,
+      entityExtractionJobs: {
+        select: { status: true },
+      },
       knowledgeAuthoringRuns: {
         orderBy: { createdAt: "desc" },
         select: {
@@ -52,6 +54,12 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
           totalWindows: true,
         },
         take: 1,
+        where: {
+          OR: [
+            { errorCode: null },
+            { errorCode: { not: "topic_discovery_superseded_by_active_job" } },
+          ],
+        },
       },
     },
     where: {
@@ -62,11 +70,24 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
   });
   if (!document) return null;
 
+  const extractionMethodCounts = await getPrisma().extractedPage.groupBy({
+    _count: { _all: true },
+    by: ["extractionMethod"],
+    where: { documentId: input.documentId },
+  });
+  const methodCounts = summarizeExtractionMethodCounts(extractionMethodCounts);
+
   const extraction = document.extractionJobs[0];
   const authoring = document.knowledgeAuthoringRuns[0];
   const automaticApproval = authoring?.automaticApprovalRun;
   const topicDiscovery = document.topicDiscoveryJobs[0];
   const ragIndex = document.ragIndexJobs[0];
+  const entityConnections = {
+    completed: document.entityExtractionJobs.filter((job) => job.status === "completed").length,
+    failed: document.entityExtractionJobs.filter((job) => ["completed_with_warnings", "failed"].includes(job.status)).length,
+    queued: document.entityExtractionJobs.filter((job) => job.status === "queued").length,
+    running: document.entityExtractionJobs.filter((job) => job.status === "running").length,
+  };
 
   const fingerprint = serializeDocumentProcessingFingerprint({
     authoring: authoring
@@ -85,12 +106,13 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
           status: automaticApproval.status,
         }
       : null,
+    entityConnections,
     extraction: {
       completedBatches: extraction?.checkpoints.filter((item) => item.status === "completed").length ?? 0,
       errorCode: extraction?.errorCode ?? null,
       inspectionStatus: document.inspectionStatus,
-      ocrPageCount: document.ocrPageCount,
-      pageCount: document._count.extractedPages,
+      ocrPageCount: methodCounts.ocr,
+      pageCount: methodCounts.total,
       status: extraction?.status ?? "queued",
       totalBatches: extraction?.checkpoints.length ?? 0,
     },
@@ -115,7 +137,8 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
       ) ||
       ["queued", "running", "waiting_for_rag"].includes(authoring?.status ?? "") ||
       ["queued", "running", "awaiting_budget"].includes(ragIndex?.status ?? "") ||
-      ["queued", "running"].includes(automaticApproval?.status ?? ""),
+      ["queued", "running"].includes(automaticApproval?.status ?? "") ||
+      entityConnections.queued > 0 || entityConnections.running > 0,
     fingerprint,
   };
 }

@@ -32,6 +32,7 @@ import {
   approveVerifiedRelationCandidate,
   reviewPublishedRelationCandidate,
 } from "@/lib/okf-relation-approval";
+import { scheduleFullEntityExpansion } from "@/lib/entity-graph";
 
 export async function createKnowledgeBundleAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
@@ -145,6 +146,20 @@ export async function discoverRelationsAction(formData: FormData) {
   redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&relationsProposed=${result.proposed}&relationsSkipped=${result.skippedExisting}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
 }
 
+export async function expandEntityGraphAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const bundleId = getFormString(formData, "knowledgeBundleId");
+  const bundle = await getKnowledgeBundle({ bundleId, context });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  await scheduleFullEntityExpansion({
+    knowledgeBundleId: bundle.id,
+    workspaceId: context.workspaceId,
+  });
+  revalidatePath(`/knowledge/${bundle.id}/relations`);
+  revalidatePath(`/knowledge/${bundle.id}/graph`);
+  redirect(`/knowledge/${bundle.id}/relations?entityExpansion=queued`);
+}
+
 export async function reviewRelationCandidateAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
   const candidateId = getFormString(formData, "candidateId");
@@ -155,6 +170,10 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   if (!candidate) throw new Error("relation_candidate_not_found");
   if (decision === "reject") {
     await getPrisma().okfRelationCandidate.update({ data: { reviewedAt: new Date(), reviewedBy: context.userId, status: "rejected" }, where: { id: candidate.id } });
+    await getPrisma().entityRelationCandidate.updateMany({
+      data: { status: "rejected" },
+      where: { projectedCandidateId: candidate.id },
+    });
     revalidatePath(`/knowledge/${candidate.knowledgeBundleId}/relations`);
     return;
   }

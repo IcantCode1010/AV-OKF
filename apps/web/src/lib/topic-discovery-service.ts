@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import { getLlmProvider } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
@@ -29,6 +31,9 @@ export async function runTopicDiscoveryJob(
     },
   });
   if (!job) throw new Error("topic_discovery_job_not_found");
+  if (!["queued", "analyzing", "consolidating"].includes(job.status)) {
+    return { status: job.status as "completed" | "failed", topicsCreated: 0 };
+  }
 
   const document = await db.document.findFirst({
     include: { extractedPages: { orderBy: { pageNumber: "asc" } } },
@@ -94,13 +99,72 @@ export async function runTopicDiscoveryJob(
     const result = await discoverDocumentTopics({
       allowedTopicTypes: Object.keys(bundle.profile.types),
       documentTitle: document.title,
+      loadConsolidationResult: async ({ prompt }) => {
+        const cached = await db.topicDiscoveryAudit.findFirst({
+          orderBy: { createdAt: "desc" },
+          select: { rawResponse: true },
+          where: {
+            job: { documentId: document.id },
+            promptSent: prompt,
+            stage: "consolidation",
+            succeeded: true,
+          },
+        });
+        if (!cached) return null;
+        try {
+          return JSON.parse(cached.rawResponse) as unknown;
+        } catch {
+          return null;
+        }
+      },
       loadWindowResult: async ({ contentHash, ordinal }) => {
-        const window = await db.topicDiscoveryWindow.findUnique({
+        const currentWindow = await db.topicDiscoveryWindow.findUnique({
           where: { jobId_ordinal: { jobId: job.id, ordinal } },
         });
-        return window?.status === "completed" && window.contentHash === contentHash
-          ? { topics: window.candidates }
-          : null;
+        if (
+          currentWindow?.status === "completed" &&
+          currentWindow.contentHash === contentHash
+        ) {
+          return { topics: currentWindow.candidates };
+        }
+
+        const reusableWindow = await db.topicDiscoveryWindow.findFirst({
+          orderBy: { updatedAt: "desc" },
+          where: {
+            contentHash,
+            documentId: document.id,
+            jobId: { not: job.id },
+            ordinal,
+            status: "completed",
+          },
+        });
+        if (!reusableWindow) return null;
+
+        await db.topicDiscoveryWindow.upsert({
+          create: {
+            attempts: 0,
+            candidates: reusableWindow.candidates as Prisma.InputJsonValue,
+            contentHash,
+            documentId: document.id,
+            inputTokens: reusableWindow.inputTokens,
+            jobId: job.id,
+            ordinal,
+            pageEnd: reusableWindow.pageEnd,
+            pageStart: reusableWindow.pageStart,
+            status: "completed",
+          },
+          update: {
+            candidates: reusableWindow.candidates as Prisma.InputJsonValue,
+            contentHash,
+            errorCode: null,
+            inputTokens: reusableWindow.inputTokens,
+            pageEnd: reusableWindow.pageEnd,
+            pageStart: reusableWindow.pageStart,
+            status: "completed",
+          },
+          where: { jobId_ordinal: { jobId: job.id, ordinal } },
+        });
+        return { topics: reusableWindow.candidates };
       },
       onWindowComplete: async (completed, total) => {
         await db.topicDiscoveryJob.update({
@@ -232,7 +296,9 @@ export async function runTopicDiscoveryJob(
       await tx.topicDiscoveryJob.update({
         data: {
           errorCode: error instanceof Error ? error.message : "topic_discovery_failed",
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorMessage: error instanceof TopicDiscoveryError
+            ? error.causeMessage
+            : error instanceof Error ? error.message : String(error),
           status: "failed",
         },
         where: { id: job.id },
@@ -245,8 +311,10 @@ export async function runTopicDiscoveryJob(
 function auditData(jobId: string, provider: TopicDiscoveryProvider, audit: TopicDiscoveryAuditEntry) {
   return {
     errorMessage: audit.errorMessage,
+    inputTokens: audit.inputTokens,
     jobId,
     model: provider.model,
+    outputTokens: audit.outputTokens,
     promptSent: audit.promptSent,
     provider: provider.provider,
     rawResponse: audit.rawResponse,
