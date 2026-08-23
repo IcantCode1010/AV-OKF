@@ -8,7 +8,9 @@ export type BundleWorkspaceSection =
   | "knowledge"
   | "relations"
   | "review"
-  | "settings";
+  | "settings"
+  | "topic-expansion"
+  | "workflow";
 
 export function selectActiveKnowledgeBundle<T extends { id: string }>(
   bundles: T[],
@@ -50,8 +52,10 @@ export function sectionForPathname(pathname: string): BundleWorkspaceSection {
   if (pathname === "/settings") return "settings";
   if (/\/knowledge\/[^/]+\/graph(?:\/|$)/.test(pathname)) return "graph";
   if (/\/knowledge\/[^/]+\/review(?:\/|$)/.test(pathname)) return "review";
+  if (/\/knowledge\/[^/]+\/topic-expansion(?:\/|$)/.test(pathname)) return "topic-expansion";
   if (/\/knowledge\/[^/]+\/relations(?:\/|$)/.test(pathname)) return "relations";
   if (/\/knowledge\/[^/]+\/activity(?:\/|$)/.test(pathname)) return "activity";
+  if (/\/knowledge\/[^/]+\/workflow(?:\/|$)/.test(pathname)) return "workflow";
   if (/\/knowledge\/[^/]+\/settings(?:\/|$)/.test(pathname)) return "bundle-settings";
   return "browse";
 }

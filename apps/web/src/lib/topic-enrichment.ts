@@ -110,6 +110,7 @@ type EnrichTopicOptions = {
   provider?: TopicEnrichmentProvider;
   providerFactory?: (providerId: LlmProviderId) => TopicEnrichmentProvider;
   repository?: TopicEnrichmentRepository;
+  sourcePagesOverride?: ExtractedPageRecord[];
   sourcePageMode?: "expanded" | "exact";
 };
 
@@ -147,9 +148,9 @@ export async function enrichTopic(
   const baselineFingerprint = topicEnrichmentSnapshotFingerprint(
     buildAcceptedTopicEnrichmentSnapshot(topic),
   );
-  const sourcePages = options.sourcePageMode === "exact"
+  const sourcePages = options.sourcePagesOverride ?? (options.sourcePageMode === "exact"
     ? enrichmentInput.sourcePages.filter((page) => topic.sourcePageNumbers.includes(page.pageNumber))
-    : enrichmentInput.sourcePages;
+    : enrichmentInput.sourcePages);
 
   if (topic.reviewStatus === "approved") {
     throw new Error("topic_enrichment_requires_unapproved_topic");

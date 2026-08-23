@@ -12,8 +12,16 @@
 
 ## Bundle-Centered Experience
 
+- [ ] Replace full-page polling refreshes with one smooth operation-progress architecture across document processing, bulk approval, workflow, activity, relation verification, topic expansion, and deletion:
+  - define a shared structured `OperationProgress` snapshot with stage, status, completed/total work, current item, attention state, actions, and fingerprint;
+  - return the changed snapshot from authenticated status endpoints instead of using the fingerprint only to call `window.location.reload()` or refresh the full Server Component tree;
+  - update progress strips, steppers, counts, and affected rows through client state/SWR while preserving scroll position, selections, open panels, forms, and URL state;
+  - reserve `router.refresh()` for terminal transitions that genuinely require new server-rendered content, then stop polling;
+  - add accessible live announcements, reduced-motion-safe transitions, reconnect/backoff handling, and desktop/mobile browser tests that observe several stage changes without a page flash or context loss.
 - [x] Add a workspace-validated active-bundle cookie and searchable persistent selector.
 - [x] Group navigation into Use, Manage, and Workspace workflows.
+- [x] Add a bundle Workflow page that derives the full document-to-chat journey, exposes one prominent next action, and polls only while real work is active.
+- [x] Add a separate bounded Topic expansion workspace that proposes at most 20 grounded additions from approved bundle concepts and returns selected drafts to normal enrichment and review.
 - [x] Split the explorer into resizable Browse and full-workspace Graph views with shared file selection.
 - [x] Add dedicated Review, Relations, Activity, and Bundle settings destinations.
 - [x] Default Documents and uploads to the active bundle while preserving Unassigned and All workspace filters.
@@ -229,6 +237,11 @@
 - [x] Persist tool calls and outcomes in the existing chat trace.
 - [x] Add an evaluation-only model-directed runner with discovered-evidence capabilities and a mandatory reserved validation call.
 - [ ] Run the evaluation-only model runner against the configured-provider Docker route-coverage baseline before any production promotion decision.
+- [ ] Consolidate production agent orchestration on the existing Vercel AI SDK tool layer instead of introducing a second production agent framework.
+- [ ] Add one explicit bounded workflow for conversational query resolution: carry forward the prior subject, search approved OKF, classify evidence sufficiency, retry one protected rewrite when weak, search raw RAG only for a named gap, follow approved relations when useful, and run mandatory evidence validation.
+- [ ] Extend the paraphrase and follow-up evaluation corpus to prove that the bounded workflow improves retrieval recall without route changes, bundle-scope leaks, trust upgrades, or citation regressions.
+- [ ] Keep free model-directed tool selection evaluation-only; do not replace deterministic production authority based on subjective answer quality.
+- [ ] Evaluate LangGraph separately only for an optional user-triggered research mode that demonstrably requires durable multi-step execution, resumability, or human interrupts. Do not introduce it into ingestion, authoring, or ordinary chat retrieval.
 
 ## Dynamic Multi-Bundle Chat Scope
 

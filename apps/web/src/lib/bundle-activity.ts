@@ -48,7 +48,16 @@ export async function getBundleActivitySnapshot({
   if (!isProductionBackend()) return buildBundleActivitySnapshot([]);
 
   const prisma = getPrisma();
-  const [documents, authoringRuns, bulkRuns, relationRuns, entityJobs, entityRuns] = await Promise.all([
+  const [
+    documents,
+    authoringRuns,
+    bulkRuns,
+    relationRuns,
+    entityJobs,
+    entityRuns,
+    topicExpansionRuns,
+    topicExpansionBatches,
+  ] = await Promise.all([
     prisma.document.findMany({
       orderBy: { updatedAt: "desc" },
       select: {
@@ -100,6 +109,17 @@ export async function getBundleActivitySnapshot({
     prisma.entityExpansionRun.findMany({
       orderBy: { updatedAt: "desc" },
       take: 30,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.topicExpansionRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.topicExpansionEnrichmentBatch.findMany({
+      include: { items: { select: { status: true } } },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
       where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
     }),
   ]);
@@ -225,6 +245,37 @@ export async function getBundleActivitySnapshot({
     });
   }
 
+  for (const run of topicExpansionRuns) {
+    items.push({
+      id: `topic-expansion:${run.id}`,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: "Topic expansion",
+      status: normalizeTopicExpansionStatus(run.status),
+      title: "Approved knowledge crawl",
+      detail: run.errorMessage ?? describeTopicExpansionRun(run),
+      resultCount: run.proposedCount,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/topic-expansion`,
+    });
+  }
+
+  for (const batch of topicExpansionBatches) {
+    const succeeded = batch.items.filter((item) => item.status === "succeeded").length;
+    const failed = batch.items.filter((item) => item.status === "failed").length;
+    const active = batch.items.filter((item) => ["pending", "queued", "running"].includes(item.status)).length;
+    items.push({
+      id: `topic-expansion-enrichment:${batch.id}`,
+      occurredAt: batch.updatedAt.toISOString(),
+      stage: "Expanded topic enrichment",
+      status: normalizeTopicExpansionStatus(batch.status),
+      title: "Topic expansion enrichment",
+      detail: batch.status === "awaiting_confirmation"
+        ? `${batch.items.length} selected topics are awaiting cost confirmation`
+        : `${succeeded} enriched, ${active} processing${failed > 0 ? `, ${failed} failed` : ""}`,
+      resultCount: succeeded,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/topic-expansion?batch=${encodeURIComponent(batch.id)}`,
+    });
+  }
+
   return buildBundleActivitySnapshot(items);
 }
 
@@ -297,6 +348,30 @@ function normalizeRelationStatus(status: string, failedCount: number): BundleAct
   if (["queued", "running"].includes(status)) return status as "queued" | "running";
   if (failedCount > 0 || status === "failed") return "failed";
   return "completed";
+}
+
+function normalizeTopicExpansionStatus(status: string): BundleActivityStatus {
+  if (status === "queued") return "queued";
+  if (["running", "cancellation_requested"].includes(status)) return "running";
+  if (["awaiting_confirmation", "awaiting_provider"].includes(status)) return "action_required";
+  if (["failed", "completed_with_failures"].includes(status)) return "failed";
+  return "completed";
+}
+
+function describeTopicExpansionRun(run: {
+  analyzedConceptCount: number;
+  approvedConceptCount: number;
+  filteredCount: number;
+  proposedCount: number;
+  status: string;
+}) {
+  if (run.status === "awaiting_confirmation") {
+    return `${run.approvedConceptCount} approved concepts are ready for analysis confirmation`;
+  }
+  if (["queued", "running"].includes(run.status)) {
+    return `${run.analyzedConceptCount} of ${run.approvedConceptCount} approved concepts analyzed`;
+  }
+  return `${run.proposedCount} proposed, ${run.filteredCount} filtered`;
 }
 
 export function normalizeBundleActivityEventStatus(status: string): BundleActivityStatus {

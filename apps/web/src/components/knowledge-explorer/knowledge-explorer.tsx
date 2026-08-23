@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { filterEntityGraphByEntityIds } from "@/lib/entity-graph-filter";
 import type { EntityGraphSnapshot } from "@/lib/entity-graph-view";
 import {
   buildOkfGraphFocus,
@@ -212,9 +213,45 @@ export function EntityGraphExplorer({
   snapshot: EntityGraphSnapshot;
 }) {
   const [selectedId, setSelectedId] = useState(snapshot.nodes[0]?.id ?? null);
-  const selectedNode = snapshot.nodes.find((node) => node.id === selectedId) ?? null;
-  const relatedEdges = snapshot.edges.filter((edge) => edge.source === selectedId || edge.target === selectedId);
-  const graphNodes: OkfExplorerNode[] = snapshot.nodes.map((node) => ({
+  const [entityFilter, setEntityFilter] = useState("");
+  const entityNodes = useMemo(
+    () => snapshot.nodes.filter((node) => node.kind === "entity"),
+    [snapshot.nodes],
+  );
+  const entityTypes = useMemo(
+    () => [...new Set(entityNodes.map((node) => node.type))].sort((left, right) => left.localeCompare(right)),
+    [entityNodes],
+  );
+  const [selectedEntityTypes, setSelectedEntityTypes] = useState<Set<string>>(
+    () => new Set(entityTypes),
+  );
+  const [selectedEntityIds, setSelectedEntityIds] = useState<Set<string>>(
+    () => new Set(entityNodes.map((node) => node.id)),
+  );
+  const filteredEntityNodes = useMemo(() => {
+    const query = entityFilter.trim().toLocaleLowerCase();
+    return entityNodes.filter((node) =>
+      selectedEntityTypes.has(node.type) &&
+      (!query || `${node.title} ${node.type} ${node.status}`.toLocaleLowerCase().includes(query)),
+    );
+  }, [entityFilter, entityNodes, selectedEntityTypes]);
+  const visibleSnapshot = useMemo(
+    () => mode === "entities"
+      ? filterEntityGraphByEntityIds({
+          edges: snapshot.edges,
+          nodes: snapshot.nodes,
+          selectedEntityIds,
+        })
+      : { edges: snapshot.edges, nodes: snapshot.nodes },
+    [mode, selectedEntityIds, snapshot.edges, snapshot.nodes],
+  );
+  const visibleNodeIds = new Set(visibleSnapshot.nodes.map((node) => node.id));
+  const effectiveSelectedId = selectedId && visibleNodeIds.has(selectedId)
+    ? selectedId
+    : visibleSnapshot.nodes[0]?.id ?? null;
+  const selectedNode = visibleSnapshot.nodes.find((node) => node.id === effectiveSelectedId) ?? null;
+  const relatedEdges = visibleSnapshot.edges.filter((edge) => edge.source === effectiveSelectedId || edge.target === effectiveSelectedId);
+  const graphNodes: OkfExplorerNode[] = visibleSnapshot.nodes.map((node) => ({
     degree: node.degree,
     id: node.id,
     reviewStatus: node.status,
@@ -223,23 +260,115 @@ export function EntityGraphExplorer({
     title: node.title,
     type: node.type,
   }));
-  const graphEdges: OkfExplorerEdge[] = snapshot.edges.map((edge) => ({
+  const graphEdges: OkfExplorerEdge[] = visibleSnapshot.edges.map((edge) => ({
     id: edge.id,
     reason: edge.reason,
     relation: edge.relation,
     source: edge.source,
     target: edge.target,
   }));
+  const toggleEntity = (entityId: string) => {
+    setSelectedEntityIds((current) => {
+      const next = new Set(current);
+      if (next.has(entityId)) next.delete(entityId);
+      else next.add(entityId);
+      return next;
+    });
+  };
+  const toggleEntityType = (entityType: string) => {
+    const enabling = !selectedEntityTypes.has(entityType);
+    setSelectedEntityTypes((current) => {
+      const next = new Set(current);
+      if (enabling) next.add(entityType);
+      else next.delete(entityType);
+      return next;
+    });
+    setSelectedEntityIds((current) => {
+      const next = new Set(current);
+      for (const node of entityNodes) {
+        if (node.type !== entityType) continue;
+        if (enabling) next.add(node.id);
+        else next.delete(node.id);
+      }
+      return next;
+    });
+  };
   return (
-    <div className="grid min-h-0 flex-1 grid-rows-[560px_minmax(360px,auto)] overflow-y-auto border-y border-border lg:grid-cols-[minmax(0,1fr)_380px] lg:grid-rows-1 lg:overflow-hidden">
+    <div className={cn(
+      "grid min-h-0 flex-1 overflow-y-auto border-y border-border lg:grid-rows-1 lg:overflow-hidden",
+      mode === "entities"
+        ? "grid-rows-[minmax(280px,auto)_560px_minmax(360px,auto)] lg:grid-cols-[280px_minmax(0,1fr)_380px]"
+        : "grid-rows-[560px_minmax(360px,auto)] lg:grid-cols-[minmax(0,1fr)_380px]",
+    )}>
+      {mode === "entities" ? (
+        <aside className="flex min-h-0 flex-col border-b border-border bg-muted/10 lg:border-b-0 lg:border-r" aria-label="Entity graph filters">
+          <div className="border-b border-border px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Entities</p>
+                <p className="mt-1 text-xs text-muted-foreground">{selectedEntityIds.size} of {entityNodes.length} selected</p>
+              </div>
+              <div className="flex gap-1">
+                <Button className="h-7 px-2 text-xs" onClick={() => setSelectedEntityIds(new Set(entityNodes.filter((node) => selectedEntityTypes.has(node.type)).map((node) => node.id)))} type="button" variant="ghost">All entities</Button>
+                <Button className="h-7 px-2 text-xs" onClick={() => setSelectedEntityIds(new Set())} type="button" variant="ghost">Clear entities</Button>
+              </div>
+            </div>
+            <fieldset className="mt-3 border-y border-border py-2">
+              <legend className="sr-only">Entity types</legend>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase text-muted-foreground">Entity types</p>
+                <div className="flex gap-1">
+                  <Button className="h-6 px-1.5 text-[11px]" onClick={() => { setSelectedEntityTypes(new Set(entityTypes)); setSelectedEntityIds(new Set(entityNodes.map((node) => node.id))); }} type="button" variant="ghost">All types</Button>
+                  <Button className="h-6 px-1.5 text-[11px]" onClick={() => { setSelectedEntityTypes(new Set()); setSelectedEntityIds(new Set()); }} type="button" variant="ghost">Clear types</Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                {entityTypes.map((entityType) => {
+                  const [red, green, blue] = colorForType(entityType);
+                  return (
+                    <label className="flex min-w-0 cursor-pointer items-center gap-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground" key={entityType}>
+                      <input aria-label={`Show ${entityType} entities`} checked={selectedEntityTypes.has(entityType)} className="size-3.5 accent-primary" onChange={() => toggleEntityType(entityType)} type="checkbox" />
+                      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: `rgb(${Math.round(red * 255)} ${Math.round(green * 255)} ${Math.round(blue * 255)})` }} />
+                      <span className="truncate capitalize">{entityType.replaceAll("_", " ")}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <div className="relative mt-3">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input aria-label="Filter available entities" className="h-8 bg-background pl-8 text-xs" onChange={(event) => setEntityFilter(event.target.value)} placeholder="Find an entity" value={entityFilter} />
+            </div>
+            {entityFilter ? (
+              <Button className="mt-2 h-7 w-full text-xs" onClick={() => setSelectedEntityIds(new Set(filteredEntityNodes.map((node) => node.id)))} type="button" variant="outline">
+                Select matching entities
+              </Button>
+            ) : null}
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-2">
+            {filteredEntityNodes.length > 0 ? filteredEntityNodes.map((node) => (
+              <label className={cn(
+                "flex min-h-10 cursor-pointer items-start gap-2 border-l-2 px-2 py-2 text-xs transition-colors hover:bg-muted",
+                selectedEntityIds.has(node.id) ? "border-primary bg-primary/5 text-foreground" : "border-transparent text-muted-foreground",
+              )} key={node.id}>
+                <input aria-label={`Show ${node.title}`} checked={selectedEntityIds.has(node.id)} className="mt-0.5 size-3.5 accent-primary" onChange={() => toggleEntity(node.id)} type="checkbox" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{node.title}</span>
+                  <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{node.type} · {node.degree} connections</span>
+                </span>
+              </label>
+            )) : <EmptyPane label="No entities match this filter." />}
+          </div>
+        </aside>
+      ) : null}
       <section className="relative min-h-[560px] bg-background" aria-label={mode === "attention" ? "Entity graph attention queue" : "Entity map"}>
         <div className="absolute inset-x-0 top-0 z-10 border-b border-border bg-background/90 px-4 py-3 backdrop-blur">
           <p className="text-xs font-semibold uppercase text-muted-foreground">{mode === "attention" ? "Needs attention" : "Entity map"}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{snapshot.summary.entities} entities / {snapshot.summary.occurrences} occurrences / {snapshot.edges.length} connections</p>
+          <p className="mt-1 text-xs text-muted-foreground">{mode === "entities" ? `Showing ${visibleSnapshot.nodes.length} of ${snapshot.nodes.length} nodes / ${visibleSnapshot.edges.length} connections` : `${snapshot.summary.entities} entities / ${snapshot.summary.occurrences} occurrences / ${snapshot.edges.length} connections`}</p>
         </div>
         {graphNodes.length > 0 ? (
-          <KnowledgeGraph autoFocusSelected={false} edges={graphEdges} nodes={graphNodes} onSelect={setSelectedId} selectedFile={selectedId} />
-        ) : <EmptyPane label={mode === "attention" ? "No entity connections currently need attention." : "Entity extraction has not produced a map yet."} />}
+          <KnowledgeGraph autoFocusSelected={false} edges={graphEdges} nodes={graphNodes} onSelect={setSelectedId} selectedFile={effectiveSelectedId} />
+        ) : <EmptyPane label={mode === "attention" ? "No entity connections currently need attention." : entityNodes.length > 0 ? "Select one or more entities to display their connections." : "Entity extraction has not produced a map yet."} />}
       </section>
       <aside className="min-h-0 overflow-auto border-l border-border bg-muted/10 p-4">
         {selectedNode ? <div className="space-y-4">

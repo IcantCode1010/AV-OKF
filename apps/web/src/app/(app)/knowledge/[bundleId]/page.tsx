@@ -17,6 +17,8 @@ export default async function LegacyKnowledgeBundlePage({ params, searchParams }
     }
     redirect(`/knowledge/${encoded}/settings${params.size ? `?${params}` : ""}`);
   }
-  const file = typeof query.file === "string" ? `?file=${encodeURIComponent(query.file)}` : "";
-  redirect(`/knowledge/${encoded}/browse${file}`);
+  if (typeof query.file === "string") {
+    redirect(`/knowledge/${encoded}/browse?file=${encodeURIComponent(query.file)}`);
+  }
+  redirect(`/knowledge/${encoded}/workflow`);
 }

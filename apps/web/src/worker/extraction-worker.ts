@@ -80,6 +80,16 @@ import {
   runEntityExpansion,
   runEntityExtractionJob,
 } from "../lib/entity-graph.ts";
+import {
+  TOPIC_EXPANSION_QUEUE_NAME,
+  createTopicExpansionQueue,
+  type TopicExpansionJobPayload,
+} from "../lib/topic-expansion-queue.ts";
+import {
+  reconcileTopicExpansionJobs,
+  runTopicExpansion,
+  runTopicExpansionEnrichmentJob,
+} from "../lib/topic-expansion.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
@@ -92,6 +102,7 @@ let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
 let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | null = null;
 let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null = null;
 let entityGraphWorker: Worker<EntityGraphJobPayload> | null = null;
+let topicExpansionWorker: Worker<TopicExpansionJobPayload> | null = null;
 let uploadCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let ragBudgetResumeTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -116,6 +127,7 @@ async function main() {
   const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
   const relationVerificationQueue = createOkfRelationVerificationQueue(redisUrl);
   const entityGraphQueue = createEntityGraphQueue(redisUrl);
+  const topicExpansionQueue = createTopicExpansionQueue(redisUrl);
 
   const expiredUploads = await cleanupExpiredDocumentUploadSessions();
   if (expiredUploads > 0) console.log(`Cleaned ${expiredUploads} expired document uploads.`);
@@ -139,6 +151,7 @@ async function main() {
   await reconcileOkfRelationVerificationJobs(relationVerificationQueue);
   await reconcileAutomaticRelationApprovals();
   await reconcileEntityGraphJobs(entityGraphQueue);
+  await reconcileTopicExpansionJobs(topicExpansionQueue.enqueue);
 
   uploadCleanupTimer = setInterval(() => {
     void cleanupExpiredDocumentUploadSessions()
@@ -310,6 +323,14 @@ async function main() {
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
+  topicExpansionWorker = new Worker<TopicExpansionJobPayload>(
+    TOPIC_EXPANSION_QUEUE_NAME,
+    async (job) => job.data.kind === "crawl"
+      ? runTopicExpansion(job.data.runId)
+      : runTopicExpansionEnrichmentJob(job.data.jobId),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
   extractionWorker.on("completed", (job) => {
     console.log(`Extraction job completed: ${job.id}`);
   });
@@ -362,6 +383,9 @@ async function main() {
   });
   entityGraphWorker.on("failed", (job, error) => {
     console.error(`Entity graph job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  topicExpansionWorker.on("failed", (job, error) => {
+    console.error(`Topic expansion job failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -454,5 +478,6 @@ async function shutdown() {
   await documentDeletionWorker?.close();
   await relationVerificationWorker?.close();
   await entityGraphWorker?.close();
+  await topicExpansionWorker?.close();
   process.exit(0);
 }

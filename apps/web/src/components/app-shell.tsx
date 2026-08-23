@@ -11,11 +11,13 @@ import {
   FileCheck2,
   Files,
   GitBranch,
+  ListChecks,
   Menu,
   MessageSquare,
   Network,
   Plus,
   Settings,
+  Sparkles,
 } from "lucide-react";
 
 import {
@@ -60,8 +62,10 @@ const useNavigation: NavigationItem[] = [
 ];
 
 const manageNavigation: NavigationItem[] = [
+  { active: (path) => /^\/knowledge\/[^/]+\/workflow/.test(path), href: (id) => `/knowledge/${id}/workflow`, icon: ListChecks, label: "Workflow", requiresBundle: true },
   { active: (path) => path.startsWith("/documents"), href: (id) => `/documents?scope=bundle&knowledgeBundleId=${id}`, icon: Files, label: "Documents", requiresBundle: true },
   { active: (path) => /^\/knowledge\/[^/]+\/review/.test(path), href: (id) => `/knowledge/${id}/review`, icon: FileCheck2, label: "Review", requiresBundle: true },
+  { active: (path) => /^\/knowledge\/[^/]+\/topic-expansion/.test(path), href: (id) => `/knowledge/${id}/topic-expansion`, icon: Sparkles, label: "Topic expansion", requiresBundle: true },
   { active: (path) => /^\/knowledge\/[^/]+\/relations/.test(path), href: (id) => `/knowledge/${id}/relations`, icon: GitBranch, label: "Relations", requiresBundle: true },
   { active: (path) => /^\/knowledge\/[^/]+\/activity/.test(path), href: (id) => `/knowledge/${id}/activity`, icon: Activity, label: "Activity", requiresBundle: true },
 ];
@@ -208,9 +212,11 @@ function titleForPathname(pathname: string) {
   if (/\/browse/.test(pathname)) return "Browse";
   if (/\/graph/.test(pathname)) return "Graph";
   if (/\/review/.test(pathname)) return "Review";
+  if (/\/topic-expansion/.test(pathname)) return "Topic expansion";
   if (/\/relations/.test(pathname)) return "Relations";
   if (/\/activity/.test(pathname)) return "Activity";
-  if (/\/knowledge\/[^/]+\/topic/.test(pathname)) return "Approved concept";
+  if (/\/workflow/.test(pathname)) return "Workflow";
+  if (/\/knowledge\/[^/]+\/topic(?:$|\/|\?)/.test(pathname)) return "Approved concept";
   if (/\/knowledge\/[^/]+\/settings/.test(pathname)) return "Bundle settings";
   if (pathname === "/knowledge") return "Knowledge bundles";
   if (pathname === "/settings") return "Settings";

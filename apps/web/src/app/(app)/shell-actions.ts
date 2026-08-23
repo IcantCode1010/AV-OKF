@@ -19,6 +19,8 @@ const ALLOWED_SECTIONS = new Set<BundleWorkspaceSection>([
   "relations",
   "review",
   "settings",
+  "topic-expansion",
+  "workflow",
 ]);
 
 export async function setActiveKnowledgeBundleAction(formData: FormData) {

@@ -10,7 +10,7 @@ The workspace is organized by intent:
 
 ```text
 Use:       Chat, Browse, Graph
-Manage:    Documents, Review, Relations, Activity
+Manage:    Workflow, Documents, Review, Topic expansion, Relations, Activity
 Workspace: Knowledge bundles, Settings
 ```
 
@@ -34,12 +34,38 @@ bundle-scoped navigation.
 - Legacy bundle URLs redirect to the corresponding Browse, Relations, or
   Settings workspace without weakening path or workspace validation.
 
+## Workflow Projection
+
+Workflow is the default landing page for a bundle. It derives a seven-step
+journey from existing document, topic, entity, expansion, relation, and chat
+records rather than storing a second workflow state:
+
+```text
+Add documents -> Process documents -> Review and publish topics
+-> Extract entities -> Expand relationships -> Review connection results
+-> Test knowledge in Chat
+```
+
+The page presents one prominent next action and links every stage to its
+owning workspace. It polls an authenticated bundle fingerprint only while
+work is active. Completed stages remain visible as history; failures, warnings,
+and human-review states remain actionable until resolved.
+
+After topics have been published, **Topic expansion** is available as an
+optional branch. It crawls the current approved bundle corpus for grounded
+subjects that deserve dedicated concepts and presents no more than 20
+proposals. It is not part of document ingestion and never blocks entity
+extraction, relation expansion, or Chat. Selected proposals return to the
+normal enrichment and human-review workflow before they can become trusted
+knowledge.
+
 ## Activity Projection
 
 Bundle Activity is derived from existing extraction, discovery, authoring,
-bulk-approval, relation-verification, and document-event records. It does not
-create a parallel job state. The page polls an authenticated fingerprint only
-while queued or running work exists and reloads when the projection changes.
+bulk-approval, topic-expansion, relation-verification, and document-event
+records. It does not create a parallel job state. The page polls an
+authenticated fingerprint only while queued or running work exists and
+reloads when the projection changes.
 
 Activity exposes stage, status, result counts, safe error summaries, and links
 to the owning workflow. It never exposes prompts, provider raw responses,

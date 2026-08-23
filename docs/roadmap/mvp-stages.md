@@ -8,7 +8,7 @@ The first usable product should be a clean document vault. Chat comes later, aft
 
 ## Current Implementation Status
 
-Large-PDF processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, and portable citations. A bounded non-blocking entity stage now follows enrichment, and topic publication schedules bundle-local incremental relation expansion. Structural entity projections remain separate from trusted exported OKF relations. Production rollout at the 250 MB/5,000-page ceiling and automatic relation publication remain gated on their documented evaluations.
+Large-PDF processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, and portable citations. A bounded non-blocking entity stage now follows enrichment, and topic publication schedules bundle-local incremental relation expansion. A separate manually initiated Topic expansion workflow can inspect approved bundle knowledge and return up to 20 grounded missing-topic proposals to normal enrichment and review. Structural entity projections remain separate from trusted exported OKF relations. Production rollout at the 250 MB/5,000-page ceiling and automatic relation publication remain gated on their documented evaluations.
 
 As of 2026-07-26:
 

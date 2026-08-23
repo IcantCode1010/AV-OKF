@@ -32,6 +32,8 @@ test("bundle routes use their own bundle for shell context without trusting unkn
 
 test("bundle workspace destinations are fixed and bundle scoped", () => {
   assert.equal(resolveBundleWorkspaceHref("bundle-a", "graph"), "/knowledge/bundle-a/graph");
+  assert.equal(resolveBundleWorkspaceHref("bundle-a", "workflow"), "/knowledge/bundle-a/workflow");
+  assert.equal(resolveBundleWorkspaceHref("bundle-a", "topic-expansion"), "/knowledge/bundle-a/topic-expansion");
   assert.equal(resolveBundleWorkspaceHref("bundle-a", "chat"), "/chat");
   assert.equal(
     resolveBundleWorkspaceHref("bundle/a", "documents"),
@@ -43,5 +45,7 @@ test("pathname mapping preserves the current workspace section", () => {
   assert.equal(sectionForPathname("/chat/session-1"), "chat");
   assert.equal(sectionForPathname("/documents/doc-1"), "documents");
   assert.equal(sectionForPathname("/knowledge/bundle-a/review/run-1"), "review");
+  assert.equal(sectionForPathname("/knowledge/bundle-a/workflow"), "workflow");
+  assert.equal(sectionForPathname("/knowledge/bundle-a/topic-expansion"), "topic-expansion");
   assert.equal(sectionForPathname("/knowledge/bundle-a/topic"), "browse");
 });

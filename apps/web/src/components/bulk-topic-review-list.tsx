@@ -26,6 +26,7 @@ export type BulkReviewTopic = {
   id: string;
   okfType: string;
   overlapWarnings: string[];
+  origin?: "document_discovery" | "topic_expansion";
   pageEnd: number;
   pageStart: number;
   proposedSourcePageNumbers: number[];
@@ -195,6 +196,7 @@ export function BulkTopicReviewList({
                       <div className="flex flex-wrap gap-2">
                         <TopicReviewStatus category={category} />
                         <Badge variant="secondary">{topic.okfType}</Badge>
+                        {topic.origin === "topic_expansion" ? <Badge className="border-sky-500/40 text-sky-700 dark:text-sky-300" variant="outline">Topic expansion</Badge> : null}
                         <Badge variant="outline">{topic.confidence} confidence</Badge>
                         <Badge variant="outline">
                           Enrichment completeness {topic.enrichmentScore}% · {formatEnrichmentLevel(topic.enrichmentLevel)}

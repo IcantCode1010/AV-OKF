@@ -26,6 +26,7 @@ type ReviewTopic = {
   id: string;
   okfType: string;
   overlapWarnings: string[];
+  origin: "document_discovery" | "topic_expansion";
   pageEnd: number;
   pageStart: number;
   proposedSourcePageNumbers: number[];
@@ -220,6 +221,7 @@ export async function listBulkReviewTopics(input: {
       id: topic.id,
       okfType: getOkfType(topic.okfMetadata),
       overlapWarnings: [],
+      origin: isTopicExpansionMetadata(topic.discoveryMetadata) ? "topic_expansion" : "document_discovery",
       pageEnd: topic.pageEnd,
       pageStart: topic.pageStart,
       proposedSourcePageNumbers: topic.proposedSourcePageNumbers,
@@ -246,6 +248,10 @@ export async function listBulkReviewTopics(input: {
     topic.overlapWarnings.sort((left, right) => left.localeCompare(right));
   }
   return reviewTopics;
+}
+
+function isTopicExpansionMetadata(value: unknown) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value) && "origin" in value && value.origin === "topic_expansion");
 }
 
 export async function createBulkTopicApprovalPreflight(input: {
