@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export async function GET(_request: Request, { params }: { params: Promise<{ bundleId: string }> }) {
   const [{ bundleId }, context] = await Promise.all([params, requireAuthWorkspaceContext()]);
   const state = await listTopicExpansionState({ context, knowledgeBundleId: bundleId });
-  return NextResponse.json({ active: state.active, fingerprint: state.fingerprint }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json(state.progressSnapshot, { headers: { "Cache-Control": "private, no-store" } });
 }

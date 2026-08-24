@@ -1,6 +1,6 @@
 import { DocumentLibrary } from "@/components/document-library";
 import Link from "next/link";
-import { DocumentDeletionPoller } from "@/components/document-deletion-poller";
+import { DocumentDeletionLiveStatus } from "@/components/document-deletion-live-status";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,10 @@ import { Label } from "@/components/ui/label";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { PdfUploadInput } from "@/components/pdf-upload-input";
 import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-backend";
-import { retryPermanentDocumentDeletionAction, uploadDocumentAction } from "./actions";
+import { uploadDocumentAction } from "./actions";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
-import { getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
+import { buildDocumentDeletionProgressSnapshot, getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
 import { resolveDocumentUploadBundleSelection } from "@/lib/document-upload-bundle-selection";
 import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
 import { Button } from "@/components/ui/button";
@@ -38,9 +38,7 @@ export default async function DocumentsPage({
     getDocumentDeletionStatusSnapshot(context),
   ]);
   const { activeBundle } = await resolveActiveKnowledgeBundle(context, bundles);
-  const deletionJobs = deletionSnapshot.jobs;
   const uploadErrorMessage = formatUploadError(uploadError);
-  const selectedDeletion = deletionJobs.find((job) => job.id === deletionJob);
   const selectedBundleId = resolveDocumentUploadBundleSelection(
     bundles,
     knowledgeBundleId ?? activeBundle?.id,
@@ -54,10 +52,12 @@ export default async function DocumentsPage({
 
   return (
     <>
-      <DocumentDeletionPoller
-        active={deletionSnapshot.active}
-        fingerprint={deletionSnapshot.fingerprint}
-      />
+      {context.role === "admin" ? (
+        <DocumentDeletionLiveStatus
+          initialSnapshot={buildDocumentDeletionProgressSnapshot(deletionSnapshot)}
+          selectedJobId={deletionJob}
+        />
+      ) : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <Badge variant="secondary">Document library</Badge>
@@ -77,49 +77,6 @@ export default async function DocumentsPage({
         <Button asChild size="sm" variant={documentScope === "unassigned" ? "secondary" : "ghost"}><Link href="/documents?scope=unassigned">Unassigned</Link></Button>
         <Button asChild size="sm" variant={documentScope === "all" ? "secondary" : "ghost"}><Link href="/documents?scope=all">All workspace</Link></Button>
       </div>
-
-      {context.role === "admin" && (deletionJobs.length > 0 || deletionJob) ? (
-        <Card className="border-red-400/20">
-          <CardHeader>
-            <CardTitle>Document deletion</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {deletionJob && !selectedDeletion ? (
-              <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">
-                Permanent deletion completed. The bundle log contains the removal summary.
-              </div>
-            ) : null}
-            {deletionJobs.map((job) => (
-              <div
-                className="flex flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-                key={job.id}
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{job.documentTitle}</p>
-                    <Badge variant={job.status === "failed" ? "destructive" : "outline"}>
-                      {job.status}
-                    </Badge>
-                  </div>
-                  {job.errorMessage ? (
-                    <p className="mt-1 text-xs text-red-200">{job.errorMessage}</p>
-                  ) : (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Source and derived products are being removed.
-                    </p>
-                  )}
-                </div>
-                {job.status === "failed" ? (
-                  <form action={retryPermanentDocumentDeletionAction}>
-                    <input type="hidden" name="jobId" value={job.id} />
-                    <PendingSubmitButton pendingLabel="Retrying...">Retry deletion</PendingSubmitButton>
-                  </form>
-                ) : null}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
 
       <Card>
         <CardHeader>

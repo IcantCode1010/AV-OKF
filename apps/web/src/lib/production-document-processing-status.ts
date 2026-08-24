@@ -1,12 +1,22 @@
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { summarizeExtractionMethodCounts } from "./document-batch-progress.ts";
+import type { OperationProgress, OperationProgressSnapshot } from "./operation-progress.ts";
 import { serializeDocumentProcessingFingerprint } from "./document-processing-state.ts";
 import { getPrisma } from "./prisma.ts";
+
+export type DocumentProcessingProgressData = {
+  extraction: { completed: number; ocrPages: number; status: string; total: number };
+  topicDiscovery: { completed: number; status: string; total: number };
+  ragIndex: { completed: number; status: string; total: number } | null;
+  authoring: { completedStages: string[]; currentStage: string | null; status: string } | null;
+  automaticApproval: { completed: number; failed: number; status: string; total: number } | null;
+  entities: { completed: number; failed: number; queued: number; running: number };
+};
 
 export async function getProductionDocumentProcessingStatusSnapshot(input: {
   context: AuthWorkspaceContext;
   documentId: string;
-}): Promise<{ active: boolean; fingerprint: string } | null> {
+}): Promise<OperationProgressSnapshot<DocumentProcessingProgressData> | null> {
   const document = await getPrisma().document.findFirst({
     select: {
       extractionJobs: {
@@ -129,8 +139,7 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
     },
   });
 
-  return {
-    active:
+  const active =
       ["queued", "running"].includes(extraction?.status ?? "") ||
       ["queued", "analyzing", "consolidating"].includes(
         topicDiscovery?.status ?? "",
@@ -138,7 +147,105 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
       ["queued", "running", "waiting_for_rag"].includes(authoring?.status ?? "") ||
       ["queued", "running", "awaiting_budget"].includes(ragIndex?.status ?? "") ||
       ["queued", "running"].includes(automaticApproval?.status ?? "") ||
-      entityConnections.queued > 0 || entityConnections.running > 0,
-    fingerprint,
+      entityConnections.queued > 0 || entityConnections.running > 0;
+  const data: DocumentProcessingProgressData = {
+    authoring: authoring ? {
+      completedStages: authoring.completedStages,
+      currentStage: authoring.currentStage,
+      status: authoring.status,
+    } : null,
+    automaticApproval: automaticApproval ? {
+      completed: automaticApproval.items.filter((item) => item.status === "succeeded").length,
+      failed: automaticApproval.items.filter((item) => item.status === "failed").length,
+      status: automaticApproval.status,
+      total: automaticApproval.items.length,
+    } : null,
+    entities: entityConnections,
+    extraction: {
+      completed: extraction?.checkpoints.filter((item) => item.status === "completed").length ?? 0,
+      ocrPages: methodCounts.ocr,
+      status: extraction?.status ?? "queued",
+      total: extraction?.checkpoints.length ?? 0,
+    },
+    ragIndex: ragIndex ? {
+      completed: ragIndex.batchCheckpoints.filter((item) => item.status === "completed").length,
+      status: ragIndex.status,
+      total: ragIndex.batchCheckpoints.length,
+    } : null,
+    topicDiscovery: {
+      completed: topicDiscovery?.completedWindows ?? 0,
+      status: topicDiscovery?.status ?? "not_started",
+      total: topicDiscovery?.totalWindows ?? 0,
+    },
   };
+  const operations = buildOperations(input.documentId, data);
+  return {
+    active,
+    data,
+    fingerprint,
+    generatedAt: new Date().toISOString(),
+    operations,
+  };
+}
+
+function buildOperations(documentId: string, data: DocumentProcessingProgressData): OperationProgress[] {
+  const now = new Date().toISOString();
+  const operations: OperationProgress[] = [];
+  operations.push({
+    completed: data.extraction.completed,
+    detail: data.extraction.total > 0
+      ? `${data.extraction.completed} of ${data.extraction.total} extraction batches complete; ${data.extraction.ocrPages} OCR pages.`
+      : "Inspecting the PDF and preparing extraction batches.",
+    id: `${documentId}:extraction`, kind: "document_processing", label: "Text extraction",
+    stage: data.extraction.status, status: normalizeStatus(data.extraction.status), total: data.extraction.total, updatedAt: now,
+  });
+  operations.push({
+    completed: data.topicDiscovery.completed,
+    detail: data.topicDiscovery.total > 0
+      ? `${data.topicDiscovery.completed} of ${data.topicDiscovery.total} discovery windows complete.`
+      : "Waiting for extracted pages.",
+    id: `${documentId}:discovery`, kind: "document_processing", label: "Topic discovery",
+    stage: data.topicDiscovery.status, status: normalizeStatus(data.topicDiscovery.status), total: data.topicDiscovery.total, updatedAt: now,
+  });
+  if (data.ragIndex) operations.push({
+    completed: data.ragIndex.completed,
+    detail: `${data.ragIndex.completed} of ${data.ragIndex.total} indexing batches complete.`,
+    id: `${documentId}:rag`, kind: "document_processing", label: "Search indexing",
+    stage: data.ragIndex.status, status: normalizeStatus(data.ragIndex.status), total: data.ragIndex.total, updatedAt: now,
+  });
+  if (data.authoring) operations.push({
+    completed: data.authoring.completedStages.length,
+    currentItem: data.authoring.currentStage ?? undefined,
+    detail: data.authoring.currentStage ? `Current stage: ${humanize(data.authoring.currentStage)}.` : "Preparing authoring.",
+    id: `${documentId}:authoring`, kind: "document_processing", label: "Knowledge authoring",
+    stage: data.authoring.currentStage ?? data.authoring.status, status: normalizeStatus(data.authoring.status), updatedAt: now,
+  });
+  if (data.entities.queued + data.entities.running + data.entities.completed + data.entities.failed > 0) operations.push({
+    completed: data.entities.completed,
+    detail: `${data.entities.completed} complete, ${data.entities.running} running, ${data.entities.queued} queued, ${data.entities.failed} failed.`,
+    id: `${documentId}:entities`, kind: "document_processing", label: "Entities and connections",
+    stage: data.entities.running > 0 ? "running" : data.entities.queued > 0 ? "queued" : data.entities.failed > 0 ? "completed_with_warnings" : "completed",
+    status: data.entities.running > 0 ? "running" : data.entities.queued > 0 ? "queued" : data.entities.failed > 0 ? "completed_with_warnings" : "completed",
+    total: data.entities.completed + data.entities.running + data.entities.queued + data.entities.failed, updatedAt: now,
+  });
+  if (data.automaticApproval) operations.push({
+    completed: data.automaticApproval.completed + data.automaticApproval.failed,
+    detail: `${data.automaticApproval.completed} exported, ${data.automaticApproval.failed} failed.`,
+    id: `${documentId}:approval`, kind: "document_processing", label: "Automatic approval and export",
+    stage: data.automaticApproval.status, status: normalizeStatus(data.automaticApproval.status), total: data.automaticApproval.total, updatedAt: now,
+  });
+  return operations;
+}
+
+function normalizeStatus(status: string): OperationProgress["status"] {
+  if (["failed", "cancelled", "completed", "completed_with_warnings", "queued", "running"].includes(status)) {
+    return status as OperationProgress["status"];
+  }
+  if (["awaiting_budget", "awaiting_confirmation", "needs_review", "action_required"].includes(status)) return "action_required";
+  if (["analyzing", "consolidating", "waiting_for_rag"].includes(status)) return "running";
+  return status === "not_started" ? "queued" : "completed";
+}
+
+function humanize(value: string) {
+  return value.replaceAll("_", " ");
 }

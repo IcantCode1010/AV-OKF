@@ -1,5 +1,5 @@
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
-import { getBundleActivitySnapshot } from "@/lib/bundle-activity";
+import { buildBundleActivityProgressSnapshot, getBundleActivitySnapshot } from "@/lib/bundle-activity";
 import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ bun
   }
   const snapshot = await getBundleActivitySnapshot({ bundleId, context });
   return Response.json(
-    { active: snapshot.active, fingerprint: snapshot.fingerprint },
+    buildBundleActivityProgressSnapshot(snapshot),
     { headers: { "Cache-Control": "private, no-store, max-age=0" } },
   );
 }

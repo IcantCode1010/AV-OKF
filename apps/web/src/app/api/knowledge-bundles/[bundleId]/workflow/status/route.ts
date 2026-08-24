@@ -1,5 +1,5 @@
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
-import { getBundleWorkflowSnapshot } from "@/lib/bundle-workflow";
+import { buildBundleWorkflowProgressSnapshot, getBundleWorkflowSnapshot } from "@/lib/bundle-workflow";
 import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function GET(
   if (!bundle) return Response.json({ error: "not_found" }, { status: 404 });
   const snapshot = await getBundleWorkflowSnapshot({ bundleId: bundle.id, context });
   return Response.json(
-    { active: snapshot.active, fingerprint: snapshot.fingerprint },
+    buildBundleWorkflowProgressSnapshot(snapshot),
     { headers: { "Cache-Control": "private, no-store, max-age=0" } },
   );
 }

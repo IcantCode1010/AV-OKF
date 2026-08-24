@@ -89,6 +89,7 @@ import {
   reconcileTopicExpansionJobs,
   runTopicExpansion,
   runTopicExpansionEnrichmentJob,
+  runTopicExpansionResearchJob,
 } from "../lib/topic-expansion.ts";
 
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
@@ -326,8 +327,10 @@ async function main() {
   topicExpansionWorker = new Worker<TopicExpansionJobPayload>(
     TOPIC_EXPANSION_QUEUE_NAME,
     async (job) => job.data.kind === "crawl"
-      ? runTopicExpansion(job.data.runId)
-      : runTopicExpansionEnrichmentJob(job.data.jobId),
+      ? runTopicExpansion(job.data.runId, { enqueue: topicExpansionQueue.enqueue })
+      : job.data.kind === "research"
+        ? runTopicExpansionResearchJob(job.data.jobId)
+        : runTopicExpansionEnrichmentJob(job.data.jobId),
     { concurrency: 1, connection: { url: redisUrl } },
   );
 

@@ -13,9 +13,10 @@
 7. Follow each document's Processing panel through extraction, discovery,
    enrichment, validation, and its review or automatic-publication handoff.
 8. Use **Review** for actionable topics and captured knowledge gaps.
-9. After publishing, optionally use **Topic expansion** to analyze the approved
-   bundle, inspect up to 20 grounded missing-topic proposals, and send selected
-   proposals through normal enrichment and Review.
+9. After publishing, optionally use **Topic expansion** to research every
+   approved topic with bounded hybrid RAG, inspect up to 10 grounded missing-
+   topic proposals, and send selected proposals through normal enrichment and
+   Review.
 10. Use **Relations** for deterministic discovery, LLM verification, and the
    required human approval step.
 11. Use **Activity** to monitor current processing and attention-required work

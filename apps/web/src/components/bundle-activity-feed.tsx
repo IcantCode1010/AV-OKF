@@ -1,45 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowUpRight, CheckCircle2, Clock3, LoaderCircle } from "lucide-react";
 
 import type { BundleActivityItem, BundleActivitySnapshot } from "@/lib/bundle-activity";
+import type { OperationProgressSnapshot } from "@/lib/operation-progress";
+import { useOperationProgress } from "@/components/use-operation-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 type ActivityFilter = "active" | "attention" | "completed" | "all";
 
-export function BundleActivityFeed({ bundleId, snapshot }: { bundleId: string; snapshot: BundleActivitySnapshot }) {
+export function BundleActivityFeed({ bundleId, initialSnapshot }: { bundleId: string; initialSnapshot: OperationProgressSnapshot<BundleActivitySnapshot> }) {
+  const { connected, snapshot: progressSnapshot } = useOperationProgress({ initialSnapshot, url: `/api/knowledge-bundles/${encodeURIComponent(bundleId)}/activity/status` });
+  const snapshot = progressSnapshot.data;
   const [filter, setFilter] = useState<ActivityFilter>(snapshot.active ? "active" : "all");
-
-  useEffect(() => {
-    if (!snapshot.active) return;
-    let cancelled = false;
-    const interval = window.setInterval(async () => {
-      try {
-        const response = await fetch(`/api/knowledge-bundles/${encodeURIComponent(bundleId)}/activity/status`, {
-          cache: "no-store",
-          credentials: "same-origin",
-        });
-        if (!response.ok) return;
-        const next = await response.json() as { active?: unknown; fingerprint?: unknown };
-        if (cancelled || typeof next.active !== "boolean" || typeof next.fingerprint !== "string") return;
-        if (next.fingerprint !== snapshot.fingerprint) window.location.reload();
-      } catch {
-        // Transient polling failures leave the current truthful snapshot visible.
-      }
-    }, 2_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [bundleId, snapshot.active, snapshot.fingerprint]);
 
   const items = useMemo(() => snapshot.items.filter((item) => matchesFilter(item, filter)), [filter, snapshot.items]);
 
   return (
     <div className="space-y-5">
+      {!connected ? <p className="text-xs text-amber-600" role="status">Activity updates are reconnecting.</p> : null}
       <div className="grid gap-px overflow-hidden rounded-md border bg-border sm:grid-cols-4">
         <Summary label="Processing" value={snapshot.summary.processing} tone="active" />
         <Summary label="Awaiting review" value={snapshot.summary.awaitingReview} tone="attention" />

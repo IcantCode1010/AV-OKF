@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 
 import { Prisma } from "@prisma/client";
 import { Queue } from "bullmq";
+import type { OperationProgressSnapshot } from "./operation-progress.ts";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
@@ -40,6 +41,10 @@ export type KnowledgeBundleDeletionStatusSnapshot = {
   fingerprint: string;
   jobs: KnowledgeBundleDeletionStatus[];
 };
+
+export function buildKnowledgeBundleDeletionProgressSnapshot(snapshot: KnowledgeBundleDeletionStatusSnapshot): OperationProgressSnapshot<KnowledgeBundleDeletionStatusSnapshot> {
+  return { active: snapshot.active, data: snapshot, fingerprint: snapshot.fingerprint, generatedAt: new Date().toISOString(), operations: snapshot.jobs.filter((job) => job.status !== "completed").map((job) => ({ detail: job.errorMessage ?? `${job.documentCount} source documents will remain unassigned.`, id: job.id, kind: "knowledge_bundle_deletion", label: job.bundleName, stage: job.status, status: job.status === "failed" ? "failed" : job.status === "queued" ? "queued" : job.status === "completed" ? "completed" : "running", updatedAt: new Date().toISOString() })) };
+}
 
 type EnqueueDeletion = (payload: KnowledgeBundleDeletionJobPayload) => Promise<void>;
 

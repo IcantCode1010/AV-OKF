@@ -4,6 +4,7 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { getKnowledgeBundle } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
 import { isProductionBackend } from "./production-document-service.ts";
+import type { OperationProgress, OperationProgressSnapshot } from "./operation-progress.ts";
 
 export type BundleActivityStatus =
   | "queued"
@@ -35,6 +36,20 @@ export type BundleActivitySnapshot = {
     completed: number;
   };
 };
+
+export function buildBundleActivityProgressSnapshot(snapshot: BundleActivitySnapshot): OperationProgressSnapshot<BundleActivitySnapshot> {
+  const operations: OperationProgress[] = snapshot.items.filter((item) => item.status === "queued" || item.status === "running").map((item) => ({
+    ...(item.actionHref ? { action: { href: item.actionHref, label: "Open" } } : {}),
+    detail: item.detail,
+    id: item.id,
+    kind: "bundle_activity",
+    label: item.title,
+    stage: item.stage,
+    status: item.status,
+    updatedAt: item.occurredAt,
+  }));
+  return { active: snapshot.active, data: snapshot, fingerprint: snapshot.fingerprint, generatedAt: new Date().toISOString(), operations };
+}
 
 export async function getBundleActivitySnapshot({
   bundleId,

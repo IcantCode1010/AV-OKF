@@ -50,8 +50,11 @@ export async function retryTopicExpansionRunAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
   const run = await getPrisma().topicExpansionRun.findFirst({ where: { id: runId, knowledgeBundleId, workspaceId: context.workspaceId } });
   if (!run) throw new Error("topic_expansion_run_not_found");
-  if (!["awaiting_provider", "failed"].includes(run.status)) throw new Error("topic_expansion_run_not_retryable");
-  await getPrisma().topicExpansionRun.update({ data: { errorCode: null, errorMessage: null, status: "queued" }, where: { id: run.id } });
+  if (!["awaiting_provider", "failed", "completed_with_warnings"].includes(run.status)) throw new Error("topic_expansion_run_not_retryable");
+  await getPrisma().$transaction([
+    getPrisma().topicExpansionRun.update({ data: { completedAt: null, errorCode: null, errorMessage: null, status: "queued" }, where: { id: run.id } }),
+    getPrisma().topicExpansionResearchJob.updateMany({ data: { completedAt: null, errorCode: null, errorMessage: null, status: "queued" }, where: { runId: run.id, status: "failed" } }),
+  ]);
   await getTopicExpansionQueue().enqueue({ kind: "crawl", runId: run.id, workspaceId: run.workspaceId });
   revalidatePath(`/knowledge/${knowledgeBundleId}/topic-expansion`);
   redirect(`/knowledge/${knowledgeBundleId}/topic-expansion`);

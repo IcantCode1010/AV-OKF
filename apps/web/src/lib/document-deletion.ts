@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { OperationProgressSnapshot } from "./operation-progress.ts";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -57,6 +58,10 @@ export type DocumentDeletionStatusSnapshot = {
   fingerprint: string;
   jobs: DocumentDeletionStatus[];
 };
+
+export function buildDocumentDeletionProgressSnapshot(snapshot: DocumentDeletionStatusSnapshot): OperationProgressSnapshot<DocumentDeletionStatusSnapshot> {
+  return { active: snapshot.active, data: snapshot, fingerprint: snapshot.fingerprint, generatedAt: new Date().toISOString(), operations: snapshot.jobs.map((job) => ({ detail: job.errorMessage ?? "Source and derived products are being removed.", id: job.id, kind: "document_deletion", label: job.documentTitle, stage: job.status, status: job.status === "failed" ? "failed" : job.status === "queued" ? "queued" : "running", updatedAt: new Date().toISOString() })) };
+}
 
 type EnqueueDeletion = (payload: DocumentDeletionJobPayload) => Promise<void>;
 

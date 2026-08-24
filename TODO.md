@@ -3,7 +3,7 @@
 ## Large-PDF Follow-Up
 
 - [ ] Add live Metadata discovery visibility to the Processing timeline: show queued/running state, current metadata task, completed fields versus total fields, completion summary, and actionable failure/retry status using persisted backend records rather than simulated progress.
-- [ ] Fix end-to-end live Processing progression so extraction, metadata discovery, concept discovery, RAG indexing, enrichment, validation, and approval transitions appear without a manual page refresh. Audit polling fingerprints and terminal-state rules, then add a browser test that observes multiple backend stage changes on the same open page.
+- [x] Fix end-to-end live Processing progression so persisted extraction, concept discovery, RAG indexing, enrichment, entity, validation, and approval transitions appear without a manual page refresh. Metadata discovery field-level progress remains a separate follow-up because it does not yet persist granular checkpoints.
 - [ ] Run and record the required mixed text/scanned PDF test above 100 MB and 1,000 pages.
 - [ ] Run the mechanical 250 MB/5,000-page upper-bound fixture before enabling the full limit operationally.
 - [ ] Add multipart resumable uploads if restart-on-failure is inadequate in field use.
@@ -12,7 +12,7 @@
 
 ## Bundle-Centered Experience
 
-- [ ] Replace full-page polling refreshes with one smooth operation-progress architecture across document processing, bulk approval, workflow, activity, relation verification, topic expansion, and deletion:
+- [x] Replace full-page polling refreshes with one smooth operation-progress architecture across document processing, bulk approval, workflow, activity, relation verification, topic expansion, and deletion:
   - define a shared structured `OperationProgress` snapshot with stage, status, completed/total work, current item, attention state, actions, and fingerprint;
   - return the changed snapshot from authenticated status endpoints instead of using the fingerprint only to call `window.location.reload()` or refresh the full Server Component tree;
   - update progress strips, steppers, counts, and affected rows through client state/SWR while preserving scroll position, selections, open panels, forms, and URL state;
@@ -21,7 +21,7 @@
 - [x] Add a workspace-validated active-bundle cookie and searchable persistent selector.
 - [x] Group navigation into Use, Manage, and Workspace workflows.
 - [x] Add a bundle Workflow page that derives the full document-to-chat journey, exposes one prominent next action, and polls only while real work is active.
-- [x] Add a separate bounded Topic expansion workspace that proposes at most 20 grounded additions from approved bundle concepts and returns selected drafts to normal enrichment and review.
+- [x] Add a separate bounded Topic expansion workspace that proposes at most 10 grounded additions from approved bundle concepts and returns selected drafts to normal enrichment and review.
 - [x] Split the explorer into resizable Browse and full-workspace Graph views with shared file selection.
 - [x] Add dedicated Review, Relations, Activity, and Bundle settings destinations.
 - [x] Default Documents and uploads to the active bundle while preserving Unassigned and All workspace filters.

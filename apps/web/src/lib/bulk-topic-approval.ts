@@ -9,6 +9,7 @@ import { getTokenCounter } from "./rag-tokenizer.ts";
 import { normalizeKnowledgeProfile, type KnowledgeProfileSchema } from "./knowledge-profile.ts";
 import type { BulkTopicApprovalJobPayload } from "./bulk-topic-approval-queue.ts";
 import { approveTopicContentSource } from "./topic-enrichment.ts";
+import type { OperationProgressSnapshot } from "./operation-progress.ts";
 
 type ReviewTopic = {
   confidence: string;
@@ -75,14 +76,13 @@ type BulkRunStatusLike = {
     id: string;
     retryCount: number;
     status: string;
+    topic?: { enrichedTitle: string | null; title: string };
   }>;
   status: string;
 };
 
-export type BulkTopicApprovalStatusSnapshot = {
-  active: boolean;
-  fingerprint: string;
-};
+export type BulkTopicApprovalProgressData = { errorCode: string | null; errorMessage: string | null; items: Array<{ exportedFilePath: string | null; failureCode: string | null; failureMessage: string | null; id: string; status: string; title: string }>; runId: string; status: string };
+export type BulkTopicApprovalStatusSnapshot = OperationProgressSnapshot<BulkTopicApprovalProgressData>;
 
 export function bulkTopicSelectionFingerprint(input: {
   bundleId: string;
@@ -384,6 +384,7 @@ export async function getBulkTopicApprovalStatusSnapshot(input: {
           id: true,
           retryCount: true,
           status: true,
+          topic: { select: { enrichedTitle: true, title: true } },
         },
       },
       status: true,
@@ -420,7 +421,10 @@ export function buildBulkTopicApprovalStatusSnapshot(
 
   return {
     active: ["queued", "running"].includes(run.status),
+    data: { errorCode: run.errorCode, errorMessage: run.errorMessage, items: run.items.map((item) => ({ exportedFilePath: item.exportedFilePath, failureCode: item.failureCode, failureMessage: item.failureMessage, id: item.id, status: item.status, title: item.topic?.enrichedTitle ?? item.topic?.title ?? "Topic" })), runId: run.id, status: run.status },
     fingerprint,
+    generatedAt: new Date().toISOString(),
+    operations: [{ completed: run.items.filter((item) => ["succeeded", "failed"].includes(item.status)).length, currentItem: run.items.find((item) => ["approving", "exporting"].includes(item.status))?.topic?.enrichedTitle ?? run.items.find((item) => ["approving", "exporting"].includes(item.status))?.topic?.title, detail: `${run.items.filter((item) => ["succeeded", "failed"].includes(item.status)).length} of ${run.items.length} topics finished`, id: run.id, kind: "bulk_topic_approval", label: "Approval and export", stage: run.items.find((item) => ["approving", "exporting"].includes(item.status))?.status ?? run.status, status: run.status === "completed_with_failures" ? "completed_with_warnings" : run.status === "failed" ? "failed" : run.status === "completed" ? "completed" : run.status === "awaiting_confirmation" ? "action_required" : run.status === "queued" ? "queued" : "running", total: run.items.length, updatedAt: new Date().toISOString() }],
   };
 }
 

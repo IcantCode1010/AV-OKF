@@ -4,6 +4,7 @@ import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { getKnowledgeBundle } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
 import { isProductionBackend } from "./production-document-service.ts";
+import type { OperationProgress, OperationProgressSnapshot } from "./operation-progress.ts";
 
 export type BundleWorkflowStatus =
   | "waiting"
@@ -53,6 +54,7 @@ export type BundleWorkflowSnapshot = {
   active: boolean;
   fingerprint: string;
   nextAction: { detail: string; href: string; label: string } | null;
+  optionalOperations: OperationProgress[];
   stages: BundleWorkflowStage[];
 };
 
@@ -70,7 +72,7 @@ export async function getBundleWorkflowSnapshot(input: {
   }
 
   const db = getPrisma();
-  const [documents, topics, bulkRuns, entityJobs, entityCount, expansionRuns, relationCandidates, assistantAnswerCount] = await Promise.all([
+  const [documents, topics, bulkRuns, entityJobs, entityCount, expansionRuns, relationCandidates, assistantAnswerCount, topicExpansionRun] = await Promise.all([
     db.document.findMany({
       select: {
         extractionJobs: { orderBy: { queuedAt: "desc" }, select: { status: true }, take: 1 },
@@ -115,6 +117,11 @@ export async function getBundleWorkflowSnapshot(input: {
         workspaceId: input.context.workspaceId,
       },
     }),
+    db.topicExpansionRun.findFirst({
+      include: { researchJobs: { orderBy: { createdAt: "asc" }, select: { heartbeatAt: true, sourceTopic: { select: { title: true } }, stage: true, status: true, updatedAt: true } } },
+      orderBy: { createdAt: "desc" },
+      where: { knowledgeBundleId: bundle.id, workspaceId: input.context.workspaceId },
+    }),
   ]);
 
   const processedDocumentIds = new Set(topics.map((topic) => topic.documentId));
@@ -150,12 +157,13 @@ export async function getBundleWorkflowSnapshot(input: {
     relationVerificationFailed: relationCandidates.filter((candidate) => candidate.status === "pending" && candidate.verificationStatus === "failed").length,
     topicCount: topics.length,
   };
-  return buildBundleWorkflowSnapshot({ bundleId: bundle.id, facts });
+  return buildBundleWorkflowSnapshot({ bundleId: bundle.id, facts, topicExpansionRun });
 }
 
 export function buildBundleWorkflowSnapshot(input: {
   bundleId: string;
   facts: BundleWorkflowFacts;
+  topicExpansionRun?: { id: string; researchJobs: Array<{ heartbeatAt: Date | null; sourceTopic: { title: string }; stage: string; status: string; updatedAt: Date }>; status: string; updatedAt: Date } | null;
 }): BundleWorkflowSnapshot {
   const { facts } = input;
   const encodedBundleId = encodeURIComponent(input.bundleId);
@@ -199,15 +207,29 @@ export function buildBundleWorkflowSnapshot(input: {
   const nextAction = nextStage?.actionHref && nextStage.actionLabel
     ? { detail: nextStage.detail, href: nextStage.actionHref, label: nextStage.actionLabel }
     : null;
+  const optionalOperations = input.topicExpansionRun ? [buildTopicExpansionWorkflowOperation(input.bundleId, input.topicExpansionRun)] : [];
   const fingerprint = createHash("sha256")
-    .update(JSON.stringify({ facts, stages: stages.map(({ id, status, detail }) => ({ id, status, detail })) }))
+    .update(JSON.stringify({ facts, optionalOperations, stages: stages.map(({ id, status, detail }) => ({ id, status, detail })) }))
     .digest("hex");
   return {
-    active: stages.some((stage) => stage.status === "running"),
+    active: stages.some((stage) => stage.status === "running") || optionalOperations.some((operation) => operation.status === "running" || operation.status === "queued"),
     fingerprint,
     nextAction,
+    optionalOperations,
     stages,
   };
+}
+
+export function buildBundleWorkflowProgressSnapshot(snapshot: BundleWorkflowSnapshot): OperationProgressSnapshot<BundleWorkflowSnapshot> {
+  const stageOperations: OperationProgress[] = snapshot.stages.filter((stage) => stage.status === "running").map((stage) => ({ detail: stage.detail, id: stage.id, kind: "bundle_workflow", label: stage.title, stage: stage.id, status: "running", updatedAt: new Date().toISOString(), ...(stage.actionHref && stage.actionLabel ? { action: { href: stage.actionHref, label: stage.actionLabel } } : {}) }));
+  return { active: snapshot.active, data: snapshot, fingerprint: snapshot.fingerprint, generatedAt: new Date().toISOString(), operations: [...stageOperations, ...snapshot.optionalOperations] };
+}
+
+function buildTopicExpansionWorkflowOperation(bundleId: string, run: { id: string; researchJobs: Array<{ heartbeatAt: Date | null; sourceTopic: { title: string }; stage: string; status: string; updatedAt: Date }>; status: string; updatedAt: Date }): OperationProgress {
+  const terminal = run.researchJobs.filter((job) => ["completed", "failed", "cancelled"].includes(job.status)).length;
+  const current = run.researchJobs.find((job) => job.status === "running");
+  const status = ["completed"].includes(run.status) ? "completed" : run.status === "completed_with_warnings" ? "completed_with_warnings" : run.status === "failed" ? "failed" : ["awaiting_confirmation", "awaiting_provider"].includes(run.status) ? "action_required" : run.status === "cancelled" ? "cancelled" : run.status === "queued" ? "queued" : "running";
+  return { action: { href: `/knowledge/${encodeURIComponent(bundleId)}/topic-expansion`, label: "Open topic expansion" }, completed: terminal, currentItem: current?.sourceTopic.title, detail: `${terminal} of ${run.researchJobs.length} approved topics researched`, heartbeatAt: current?.heartbeatAt?.toISOString(), id: run.id, kind: "topic_expansion", label: "Topic expansion", stage: current?.stage ?? run.status, status, total: run.researchJobs.length, updatedAt: run.updatedAt.toISOString() };
 }
 
 function buildProcessingStage(facts: BundleWorkflowFacts, href: string): BundleWorkflowStage {

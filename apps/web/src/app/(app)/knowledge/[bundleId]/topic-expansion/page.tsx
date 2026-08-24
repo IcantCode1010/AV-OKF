@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { CheckCircle2, CircleAlert, LoaderCircle, Search, Sparkles } from "lucide-react";
+import { CheckCircle2, CircleAlert, Search, Sparkles } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { TopicExpansionPoller } from "@/components/topic-expansion-poller";
+import { TopicExpansionLiveProgress } from "@/components/topic-expansion-live-progress";
 import { TopicExpansionSelectionSubmit } from "@/components/topic-expansion-selection-submit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,14 +42,13 @@ export default async function TopicExpansionPage({ params, searchParams }: {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
-      <TopicExpansionPoller active={state.active} bundleId={bundle.id} fingerprint={state.fingerprint} />
       <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2"><Sparkles className="size-5 text-primary" /><Badge variant="outline">{bundle.name}</Badge></div>
           <h1 className="mt-3 text-2xl font-semibold">Topic expansion</h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">Analyze approved knowledge for grounded subjects that deserve their own topic. Every proposal remains unapproved until it completes normal enrichment and review.</p>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">Research each approved topic through bounded hybrid search, follow grounded terminology, and propose supported subjects that deserve their own topic. Every proposal remains unapproved until it completes normal enrichment and review.</p>
         </div>
-        <Badge variant="secondary">Maximum 20 proposals per run</Badge>
+        <Badge variant="secondary">Maximum 10 proposals per run</Badge>
       </header>
 
       <section className="grid gap-3 border-y border-border py-4 sm:grid-cols-3">
@@ -58,7 +57,7 @@ export default async function TopicExpansionPage({ params, searchParams }: {
         <Metric label="Enriched additions" value={state.proposals.filter(({ status }) => status === "enriched").length} />
       </section>
 
-      <RunPanel bundleId={bundle.id} run={state.latestRun} />
+      <RunPanel bundleId={bundle.id} progressSnapshot={state.progressSnapshot} run={state.latestRun} />
       {selectedBatch?.status === "awaiting_confirmation" ? <EnrichmentConfirmation batch={selectedBatch} bundleId={bundle.id} /> : null}
 
       <nav aria-label="Topic expansion views" className="flex flex-wrap gap-1 border border-border bg-muted/30 p-1">
@@ -87,13 +86,15 @@ export default async function TopicExpansionPage({ params, searchParams }: {
   );
 }
 
-function RunPanel({ bundleId, run }: { bundleId: string; run: Awaited<ReturnType<typeof listTopicExpansionState>>["latestRun"] }) {
-  if (!run) return <section className="flex flex-col gap-4 border border-border p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-medium">Analyze approved knowledge</h2><p className="mt-1 text-sm text-muted-foreground">Prepare a bounded estimate from the current approved corpus. No LLM call occurs yet.</p></div><form action={prepareTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><PendingSubmitButton pendingLabel="Preparing estimate...">Prepare expansion</PendingSubmitButton></form></section>;
-  if (run.status === "awaiting_confirmation") return <section className="border border-primary/30 bg-primary/5 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase text-primary">Ready to run</p><h2 className="mt-1 font-medium">{run.approvedConceptCount} approved concepts</h2><p className="mt-1 text-sm text-muted-foreground">Estimated {run.estimatedCalls} bounded model calls and {run.estimatedInputTokens.toLocaleString()} input tokens. The run stops after the finite corpus and exposes at most 20 proposals.</p></div><div className="flex gap-2"><form action={cancelTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Cancelling..." variant="outline">Cancel</PendingSubmitButton></form><form action={confirmTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Queuing expansion...">Confirm and run</PendingSubmitButton></form></div></div></section>;
-  if (["queued", "running", "cancellation_requested"].includes(run.status)) return <section aria-live="polite" className="flex flex-col gap-3 border border-sky-500/30 bg-sky-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><LoaderCircle className="size-5 animate-spin motion-reduce:animate-none text-sky-600" /><div><h2 className="font-medium">Topic expansion is {formatStatus(run.status)}</h2><p className="text-sm text-muted-foreground">Analyzed {run.analyzedConceptCount} of {run.approvedConceptCount} approved concepts. This page updates automatically.</p></div></div>{run.status !== "cancellation_requested" ? <form action={cancelTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Stopping..." size="sm" variant="outline">Cancel run</PendingSubmitButton></form> : null}</section>;
+function RunPanel({ bundleId, progressSnapshot, run }: { bundleId: string; progressSnapshot: Awaited<ReturnType<typeof listTopicExpansionState>>["progressSnapshot"]; run: Awaited<ReturnType<typeof listTopicExpansionState>>["latestRun"] }) {
+  if (!run) return <section className="flex flex-col gap-4 border border-border p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-medium">Research approved knowledge</h2><p className="mt-1 text-sm text-muted-foreground">Prepare one bounded research job per approved topic. No model or retrieval call occurs yet.</p></div><form action={prepareTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><PendingSubmitButton pendingLabel="Preparing estimate...">Prepare expansion</PendingSubmitButton></form></section>;
+  if (run.status === "awaiting_confirmation") return <section className="border border-primary/30 bg-primary/5 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase text-primary">Ready to run</p><h2 className="mt-1 font-medium">{run.approvedConceptCount} topic research jobs</h2><p className="mt-1 text-sm text-muted-foreground">Estimated up to {run.estimatedCalls} bounded model calls and {run.estimatedInputTokens.toLocaleString()} input tokens. Each topic stops after three rounds or when another search finds no meaningful new evidence.</p></div><div className="flex gap-2"><form action={cancelTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Cancelling..." variant="outline">Cancel</PendingSubmitButton></form><form action={confirmTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Queuing research...">Confirm and run</PendingSubmitButton></form></div></div></section>;
+  if (["queued", "running", "consolidating", "cancellation_requested"].includes(run.status)) {
+    return <TopicExpansionLiveProgress bundleId={bundleId} initialSnapshot={progressSnapshot} />;
+  }
   if (["awaiting_provider", "failed"].includes(run.status)) return <section className="flex flex-col gap-4 border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><CircleAlert className="size-4 text-destructive" /><h2 className="font-medium">Expansion needs attention</h2></div><p className="mt-1 text-sm text-muted-foreground">{safeError(run.errorCode)}</p></div><div className="flex gap-2">{run.status === "awaiting_provider" ? <Button asChild variant="outline"><Link href="/settings">Configure AI provider</Link></Button> : null}<form action={retryTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Retrying...">Retry expansion</PendingSubmitButton></form></div></section>;
   if (run.status === "cancelled") return <section className="flex flex-col gap-3 border border-border bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-medium">Expansion cancelled</h2><p className="mt-1 text-sm text-muted-foreground">No additional concepts were proposed after cancellation. Prepare expansion to restart against the current corpus.</p></div><form action={prepareTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><PendingSubmitButton pendingLabel="Preparing estimate...">Prepare expansion</PendingSubmitButton></form></section>;
-  return <section className="flex items-center gap-3 border border-emerald-500/30 bg-emerald-500/5 p-4"><CheckCircle2 className="size-5 text-emerald-600" /><div><h2 className="font-medium">Expansion complete</h2><p className="text-sm text-muted-foreground">Analyzed {run.analyzedConceptCount} concepts, validated {run.candidateCount} candidates, presented {run.proposedCount}, and filtered {run.filteredCount}.</p></div></section>;
+  return <section className="flex flex-col gap-4 border border-emerald-500/30 bg-emerald-500/5 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><CheckCircle2 className="mt-0.5 size-5 text-emerald-600" /><div><h2 className="font-medium">{run.status === "completed_with_warnings" ? "Expansion completed with warnings" : "Expansion complete"}</h2><p className="text-sm text-muted-foreground">Researched {run.analyzedConceptCount} topics, validated {run.candidateCount} candidates, presented {run.proposedCount}, and filtered {run.filteredCount}.{run.status === "completed_with_warnings" ? " Failed topic jobs can be retried without repeating successful research." : ""}</p></div></div><div className="flex flex-wrap gap-2">{run.status === "completed_with_warnings" ? <form action={retryTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><input name="runId" type="hidden" value={run.id} /><PendingSubmitButton pendingLabel="Retrying failed topics..." size="sm" variant="outline">Retry failed topics</PendingSubmitButton></form> : null}<form action={prepareTopicExpansionRunAction}><input name="knowledgeBundleId" type="hidden" value={bundleId} /><PendingSubmitButton pendingLabel="Checking approved topics..." size="sm" variant="outline">Prepare new research</PendingSubmitButton></form></div></section>;
 }
 
 function EnrichmentConfirmation({ batch, bundleId }: { batch: Awaited<ReturnType<typeof listTopicExpansionState>>["batches"][number]; bundleId: string }) {

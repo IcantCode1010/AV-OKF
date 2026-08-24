@@ -4,6 +4,8 @@ import type { LanguageModel } from "ai";
 
 export type LlmProviderId = "anthropic" | "openai";
 
+export const DEFAULT_OPENAI_MODEL = "gpt-5.6-terra";
+
 export const LLM_PROVIDERS: {
   id: LlmProviderId;
   label: string;
@@ -17,7 +19,7 @@ export const LLM_PROVIDERS: {
   {
     id: "openai",
     label: "OpenAI (GPT)",
-    model: "gpt-4o-mini",
+    model: DEFAULT_OPENAI_MODEL,
   },
 ];
 
@@ -45,5 +47,5 @@ export function getSdkModel(
     return createAnthropic({ apiKey }).languageModel(provider.model);
   }
 
-  return createOpenAI({ apiKey }).chat(provider.model);
+  return createOpenAI({ apiKey }).responses(provider.model);
 }

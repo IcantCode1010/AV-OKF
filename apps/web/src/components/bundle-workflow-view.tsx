@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -18,41 +17,23 @@ import type {
   BundleWorkflowStage,
   BundleWorkflowStatus,
 } from "@/lib/bundle-workflow";
+import type { OperationProgressSnapshot } from "@/lib/operation-progress";
+import { useOperationProgress } from "@/components/use-operation-progress";
 import { cn } from "@/lib/utils";
 
 export function BundleWorkflowView({
   bundleId,
-  snapshot,
+  initialSnapshot,
 }: {
   bundleId: string;
-  snapshot: BundleWorkflowSnapshot;
+  initialSnapshot: OperationProgressSnapshot<BundleWorkflowSnapshot>;
 }) {
-  useEffect(() => {
-    if (!snapshot.active) return;
-    let cancelled = false;
-    const interval = window.setInterval(async () => {
-      try {
-        const response = await fetch(`/api/knowledge-bundles/${encodeURIComponent(bundleId)}/workflow/status`, {
-          cache: "no-store",
-          credentials: "same-origin",
-        });
-        if (!response.ok) return;
-        const next = await response.json() as { active?: unknown; fingerprint?: unknown };
-        if (!cancelled && typeof next.fingerprint === "string" && next.fingerprint !== snapshot.fingerprint) {
-          window.location.reload();
-        }
-      } catch {
-        // The current server-derived workflow remains truthful during transient polling failures.
-      }
-    }, 2_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [bundleId, snapshot.active, snapshot.fingerprint]);
+  const { connected, snapshot: progressSnapshot } = useOperationProgress({ initialSnapshot, url: `/api/knowledge-bundles/${encodeURIComponent(bundleId)}/workflow/status` });
+  const snapshot = progressSnapshot.data;
 
   return (
     <div className="space-y-8">
+      {!connected ? <p className="text-xs text-amber-600" role="status">Live progress is reconnecting. The last confirmed state remains visible.</p> : null}
       {snapshot.nextAction ? (
         <section className="flex flex-col gap-4 border-y border-primary/30 bg-primary/5 px-4 py-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -74,6 +55,10 @@ export function BundleWorkflowView({
           <WorkflowStageRow index={index + 1} key={stage.id} stage={stage} />
         ))}
       </ol>
+      <section className="border-y border-border py-5">
+        <p className="text-xs font-semibold uppercase text-muted-foreground">Optional knowledge expansion</p>
+        {snapshot.optionalOperations.length > 0 ? <div className="mt-3 space-y-3">{snapshot.optionalOperations.map((operation) => <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" key={operation.id}><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-medium">{operation.label}</h2><Badge variant="outline">{formatStatus(operation.status)}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{operation.detail}{operation.currentItem ? ` · ${operation.stage.replaceAll("_", " ")} ${operation.currentItem}` : ""}</p></div>{operation.action ? <Button asChild size="sm" variant="outline"><Link href={operation.action.href}>{operation.action.label}<ArrowRight /></Link></Button> : null}</div>)}</div> : <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm text-muted-foreground">Research approved concepts to discover additional grounded topics.</p><Button asChild size="sm" variant="outline"><Link href={`/knowledge/${bundleId}/topic-expansion`}>Open topic expansion<ArrowRight /></Link></Button></div>}
+      </section>
     </div>
   );
 }
@@ -122,6 +107,6 @@ function toneForStatus(status: BundleWorkflowStatus) {
   return "text-muted-foreground";
 }
 
-function formatStatus(status: BundleWorkflowStatus) {
+function formatStatus(status: string) {
   return status.replaceAll("_", " ");
 }

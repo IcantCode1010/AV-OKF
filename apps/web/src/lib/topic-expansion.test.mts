@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildTopicExpansionJobId, ensureTopicExpansionJobQueued } from "./topic-expansion-queue.ts";
-import { isTopicExpansionRunExecutable, MAX_TOPIC_EXPANSION_PROPOSALS, rankExpansionCandidates, validateExpansionCandidate, type ExpansionConcept, type ValidatedTopicExpansionCandidate } from "./topic-expansion.ts";
+import { isTopicExpansionRunExecutable, MAX_TOPIC_EXPANSION_PROPOSALS, mergeExpansionCandidates, rankExpansionCandidates, validateExpansionCandidate, type ExpansionConcept, type ValidatedTopicExpansionCandidate } from "./topic-expansion.ts";
 
 function concept(overrides: Partial<ExpansionConcept> = {}): ExpansionConcept {
   return {
@@ -84,12 +84,33 @@ test("ranking favors independent concepts, documents, and human trust", () => {
     candidate("multi", [evidence("a", "doc-a", "automated"), evidence("b", "doc-b", "automated")]),
   ]);
   assert.equal(ranked[0]?.title, "multi");
-  assert.equal(MAX_TOPIC_EXPANSION_PROPOSALS, 20);
+  assert.equal(MAX_TOPIC_EXPANSION_PROPOSALS, 10);
 });
 
 test("topic expansion queue IDs are deterministic and reject unsafe identities", () => {
   assert.equal(buildTopicExpansionJobId({ kind: "crawl", runId: "run_1", workspaceId: "ws" }), "topic-expansion-crawl-run_1");
+  assert.equal(buildTopicExpansionJobId({ kind: "research", jobId: "research_1", workspaceId: "ws" }), "topic-expansion-research-research_1");
   assert.throws(() => buildTopicExpansionJobId({ kind: "enrich", jobId: "bad:id", workspaceId: "ws" }), /identity_invalid/);
+});
+
+test("per-topic discoveries merge evidence before the 10-topic critic cap", () => {
+  const base = validateExpansionCandidate({
+    allowedTypes: ["system_topic"],
+    concepts: [concept()],
+    proposal: {
+      confidence: 0.8,
+      evidence: [{ chunkId: "chunk-a", evidenceQuote: "The hydraulic power transfer unit supplies alternate pressure.", sourceTopicId: "topic-a" }],
+      rationale: "The Hydraulic Power Transfer Unit is a distinct subject explicitly discussed by the approved hydraulic concept.",
+      summary: "A dedicated explanation of hydraulic power transfer unit operation.",
+      title: "Hydraulic Power Transfer Unit",
+      topicType: "system_topic",
+    },
+  });
+  assert.ok(base);
+  const merged = mergeExpansionCandidates([base, { ...base, confidence: 0.95, rationale: `${base.rationale} Additional support was found.` }]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.confidence, 0.95);
+  assert.equal(merged[0]?.evidence.length, 1);
 });
 
 test("stale queue jobs cannot bypass topic expansion confirmation", () => {

@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { RelationReviewWorkspace } from "@/components/relation-review-workspace";
-import { RelationVerificationPoller } from "@/components/relation-verification-poller";
 import { Badge } from "@/components/ui/badge";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import {
@@ -18,6 +17,7 @@ import {
 } from "@/lib/okf-relation-discovery";
 import { buildOkfRelationReviewItems } from "@/lib/okf-relation-review";
 import { isProductionBackend } from "@/lib/production-document-service";
+import { getRelationProgressSnapshot } from "@/lib/relation-progress";
 import { discoverRelationsAction, expandEntityGraphAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
@@ -101,12 +101,10 @@ export default async function BundleRelationsPage({
     ...published,
   ];
   const failed = actionable.filter((candidate) => candidate.verificationStatus === "failed");
-  const active = actionable.some((candidate) => ["queued", "running"].includes(candidate.verificationStatus)) ||
-    publishedReview.some((candidate) => ["queued", "running"].includes(candidate.publishedReviewStatus ?? ""));
+  const relationProgress = await getRelationProgressSnapshot({ bundleId: bundle.id, context });
 
   return (
     <div className="space-y-5">
-      <RelationVerificationPoller active={active} />
       <header className="flex flex-col gap-3 border-b border-border pb-5 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -158,6 +156,7 @@ export default async function BundleRelationsPage({
         confirmed={confirmed}
         failed={failed}
         filtered={filtered}
+        initialProgress={relationProgress}
         processing={processing}
         publishedReview={publishedReview}
       />

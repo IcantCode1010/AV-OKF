@@ -23,6 +23,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { humanizeRelationFailure } from "@/lib/okf-relation-definitions";
 import type { OkfRelationReviewConcept, OkfRelationReviewItem } from "@/lib/okf-relation-review";
+import type { OperationProgressSnapshot } from "@/lib/operation-progress";
+import type { RelationProgressData } from "@/lib/relation-progress";
+import { useOperationProgress } from "@/components/use-operation-progress";
 
 type ReviewView = "review" | "published" | "processing" | "automatic" | "filtered" | "failed";
 const PAGE_SIZE = 25;
@@ -33,6 +36,7 @@ export function RelationReviewWorkspace({
   confirmed,
   failed,
   filtered,
+  initialProgress,
   processing,
   publishedReview = [],
 }: {
@@ -41,14 +45,31 @@ export function RelationReviewWorkspace({
   confirmed: OkfRelationReviewItem[];
   failed: OkfRelationReviewItem[];
   filtered: OkfRelationReviewItem[];
+  initialProgress?: OperationProgressSnapshot<RelationProgressData>;
   processing: OkfRelationReviewItem[];
   publishedReview?: OkfRelationReviewItem[];
 }) {
+  const fallbackProgress: OperationProgressSnapshot<RelationProgressData> = {
+    active: false,
+    data: { items: [] },
+    fingerprint: "static-relation-review",
+    generatedAt: "1970-01-01T00:00:00.000Z",
+    operations: [],
+  };
+  const { connected, snapshot: progressSnapshot } = useOperationProgress({ initialSnapshot: initialProgress ?? fallbackProgress, url: `/api/knowledge-bundles/${encodeURIComponent(bundleId)}/relations/status` });
   const [view, setView] = useState<ReviewView>(() => defaultView({ automatic, confirmed, failed, processing, publishedReview }));
   const [query, setQuery] = useState("");
   const [relation, setRelation] = useState("all");
   const [limit, setLimit] = useState(PAGE_SIZE);
-  const itemsByView = { automatic, failed, filtered, processing, published: publishedReview, review: confirmed };
+  const originalView = new Map<string, ReviewView>([...confirmed.map((item) => [item.id, "review"] as const), ...publishedReview.map((item) => [item.id, "published"] as const), ...processing.map((item) => [item.id, "processing"] as const), ...automatic.map((item) => [item.id, "automatic"] as const), ...filtered.map((item) => [item.id, "filtered"] as const), ...failed.map((item) => [item.id, "failed"] as const)]);
+  const progressById = new Map(progressSnapshot.data.items.map((item) => [item.id, item]));
+  const allItems = [...new Map([...confirmed, ...publishedReview, ...processing, ...automatic, ...filtered, ...failed].map((item) => [item.id, item])).values()];
+  const itemsByView = { automatic: [] as OkfRelationReviewItem[], failed: [] as OkfRelationReviewItem[], filtered: [] as OkfRelationReviewItem[], processing: [] as OkfRelationReviewItem[], published: [] as OkfRelationReviewItem[], review: [] as OkfRelationReviewItem[] };
+  for (const item of allItems) {
+    const progress = progressById.get(item.id);
+    const next = progress ? { ...item, automaticApprovalRequested: progress.automaticApprovalRequested, publishedReviewStatus: progress.publishedReviewStatus, status: progress.status, verificationStatus: progress.verificationStatus } : item;
+    itemsByView[progress?.view ?? originalView.get(item.id) ?? "filtered"].push(next);
+  }
   const currentItems = itemsByView[view];
   const relationTypes = useMemo(
     () => [...new Set(currentItems.map((item) => item.relation))].sort(),
@@ -69,13 +90,14 @@ export function RelationReviewWorkspace({
 
   return (
     <div className="space-y-5">
+      {!connected ? <p className="text-xs text-amber-600" role="status">Relation progress is reconnecting.</p> : null}
       <div aria-label="Relation status filters" className="flex flex-wrap gap-1 rounded-md border border-border bg-muted/30 p-1">
-        <ViewButton active={view === "review"} count={confirmed.length} icon={<ShieldCheck />} label="Needs review" onClick={() => changeView("review")} />
-        <ViewButton active={view === "published"} count={publishedReview.length} icon={<FileText />} label="Published review" onClick={() => changeView("published")} />
-        <ViewButton active={view === "processing"} count={processing.length} icon={<Clock3 />} label="Processing" onClick={() => changeView("processing")} />
-        <ViewButton active={view === "automatic"} count={automatic.length} icon={<CheckCircle2 />} label="Automatic" onClick={() => changeView("automatic")} />
-        <ViewButton active={view === "filtered"} count={filtered.length} icon={<XCircle />} label="Filtered" onClick={() => changeView("filtered")} />
-        <ViewButton active={view === "failed"} count={failed.length} icon={<CircleAlert />} label="Failed" onClick={() => changeView("failed")} />
+        <ViewButton active={view === "review"} count={itemsByView.review.length} icon={<ShieldCheck />} label="Needs review" onClick={() => changeView("review")} />
+        <ViewButton active={view === "published"} count={itemsByView.published.length} icon={<FileText />} label="Published review" onClick={() => changeView("published")} />
+        <ViewButton active={view === "processing"} count={itemsByView.processing.length} icon={<Clock3 />} label="Processing" onClick={() => changeView("processing")} />
+        <ViewButton active={view === "automatic"} count={itemsByView.automatic.length} icon={<CheckCircle2 />} label="Automatic" onClick={() => changeView("automatic")} />
+        <ViewButton active={view === "filtered"} count={itemsByView.filtered.length} icon={<XCircle />} label="Filtered" onClick={() => changeView("filtered")} />
+        <ViewButton active={view === "failed"} count={itemsByView.failed.length} icon={<CircleAlert />} label="Failed" onClick={() => changeView("failed")} />
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">

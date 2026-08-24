@@ -4,6 +4,7 @@ export const TOPIC_EXPANSION_QUEUE_NAME = "topic-expansion";
 
 export type TopicExpansionJobPayload =
   | { kind: "crawl"; runId: string; workspaceId: string }
+  | { jobId: string; kind: "research"; workspaceId: string }
   | { jobId: string; kind: "enrich"; workspaceId: string };
 
 export type TopicExpansionQueue = {
