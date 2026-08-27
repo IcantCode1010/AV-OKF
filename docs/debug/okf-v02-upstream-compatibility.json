@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "corpus": {
-    "commit": "fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f",
+    "commit": "ad30107c31c06aec8a7d5636e0d1058118604e6f",
     "license": "Apache-2.0",
-    "repository": "https://github.com/GoogleCloudPlatform/knowledge-catalog"
+    "repository": "https://github.com/GoogleCloudPlatform/open-knowledge-format"
   },
   "integrity": {
     "mismatches": [],
@@ -29,8 +29,8 @@
     "agentReadyConcepts": 0,
     "claimAttributionWarnings": 11,
     "claimFootnoteReferences": 45,
-    "conceptValidationFailures": 0,
-    "portableCompatibleBundles": 4,
+    "conceptValidationFailures": 8,
+    "portableCompatibleBundles": 3,
     "matchedClaimFootnotes": 33,
     "roundTripsPassed": 78,
     "runtimeReadyBundles": 0,
@@ -218,7 +218,56 @@
         "references": 12,
         "warnings": 11
       },
-      "conceptValidationIssues": [],
+      "conceptValidationIssues": [
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "datasets/stackoverflow.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_answers.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_moderator_nomination.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_questions.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_wiki_placeholder.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/stackoverflow_posts.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/users.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/votes.md"
+        }
+      ],
       "counts": {
         "bundleFiles": 32,
         "conceptFiles": 26,
@@ -246,11 +295,57 @@
         "type": 26
       },
       "name": "stackoverflow",
-      "portableCompatible": true,
-      "portableIssues": [],
+      "portableCompatible": false,
+      "portableIssues": [
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "datasets/stackoverflow.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_answers.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_moderator_nomination.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_questions.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_wiki_placeholder.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/stackoverflow_posts.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/users.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/votes.md",
+          "message": "okf_v02_tags_invalid"
+        }
+      ],
       "roundTripFailures": [],
       "roundTripsPassed": 32,
       "runtimeIssues": [
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "datasets/stackoverflow.md",
+          "message": "okf_v02_tags_invalid"
+        },
         {
           "code": "okf_v02_version_missing",
           "filePath": "index.md",
@@ -302,14 +397,49 @@
           "message": "Footnote definition does not match a sources[].id: 1"
         },
         {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_answers.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_moderator_nomination.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
           "code": "okf_v02_claim_source_missing",
           "filePath": "tables/posts_questions.md",
           "message": "Claim footnote does not match a sources[].id: 1"
         },
         {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_questions.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_wiki_placeholder.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/stackoverflow_posts.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/users.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
           "code": "okf_v02_claim_source_missing",
           "filePath": "tables/votes.md",
           "message": "Claim footnote does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/votes.md",
+          "message": "okf_v02_tags_invalid"
         }
       ],
       "runtimeReady": false,

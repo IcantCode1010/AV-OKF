@@ -2,7 +2,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
-import { getLlmProvider, getSdkModel } from "./llm-providers.ts";
+import { getLlmProvider, getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
 import type { RetrievalResult } from "./rag-types.ts";
 
@@ -34,7 +34,7 @@ const responseSchema = z.object({ scores: z.array(scoreSchema) });
 export async function rerankRawRagCandidates(
   input: { candidates: RetrievalResult[]; query: string; workspaceId: string },
   options: {
-    callProvider?: (input: { apiKey: string; candidates: Array<{ alias: string; excerpt: string }>; model: string; provider: "anthropic" | "openai"; query: string }) => Promise<unknown>;
+    callProvider?: (input: { apiKey: string; candidates: Array<{ alias: string; excerpt: string }>; model: string; provider: LlmProviderId; query: string }) => Promise<unknown>;
     getApiKey?: typeof getWorkspaceLlmApiKeyForEnrichment;
     reserveCall?: (workspaceId: string) => Promise<boolean>;
   } = {},
@@ -114,7 +114,7 @@ export async function rerankRawRagCandidates(
   };
 }
 
-async function callRerankProvider(input: { apiKey: string; candidates: Array<{ alias: string; excerpt: string }>; model: string; provider: "anthropic" | "openai"; query: string }) {
+async function callRerankProvider(input: { apiKey: string; candidates: Array<{ alias: string; excerpt: string }>; model: string; provider: LlmProviderId; query: string }) {
   const result = await generateText({
     model: getSdkModel(input.provider, input.apiKey),
     output: Output.object({ schema: responseSchema }),

@@ -347,6 +347,7 @@ async function stageBundle(bundle: MigrationBundle) {
       autoApproveVerifiedRelations: false,
     },
     clarificationFields: [], fields: { type: { required: true, type: "string" } },
+    media: { autoApproveHighConfidenceEnabled: false, autoApproveThreshold: 0.95, topicFiguresEnabled: false },
     id: "generic", name: "Generic", okfVersion: "0.2", relationDiscovery: { stopwords: [] }, relations: [], types: {},
   });
   profile.okfVersion = "0.2";

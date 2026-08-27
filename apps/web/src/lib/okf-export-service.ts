@@ -1,4 +1,6 @@
 import type { Document, TopicRecord } from "./document-vault.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 import {
   resolveOkfCoverage,
@@ -13,6 +15,8 @@ import {
 } from "./knowledge-bundles.ts";
 import { getKnowledgeProfileTemplate, getTypeDirectory } from "./knowledge-profile.ts";
 import { assertOkfV02Bundle } from "./okf-version.ts";
+import { getPrisma } from "./prisma.ts";
+import { getObjectStorage } from "./production-storage.ts";
 
 type ExportApprovedTopicInput = {
   coverageRepository?: OkfCoverageRepository;
@@ -79,6 +83,14 @@ export async function exportApprovedTopicForDocument(
         sourcePages: topic.sourcePageNumbers,
       })
     : [];
+  const media = isProductionBackend() && !input.knowledgeRoot && input.document.workspaceId
+    ? await exportApprovedTopicMedia({
+        contentSha256: input.document.contentSha256 ?? null,
+        knowledgeRoot,
+        topicId: topic.id,
+        workspaceId: input.document.workspaceId,
+      })
+    : [];
 
   const exported = await exportTopicToKnowledge({
     directory,
@@ -95,8 +107,9 @@ export async function exportApprovedTopicForDocument(
           coverageType: coverage.coverageType,
           coveredRagChunkIds: coverage.chunkIds,
           portableCitations,
+          media,
         }
-      : topic,
+      : { ...topic, media },
   });
 
   if (coverage && input.document.workspaceId) {
@@ -139,6 +152,46 @@ export async function exportApprovedTopicForDocument(
   }
 
   return exported;
+}
+
+async function exportApprovedTopicMedia(input: {
+  contentSha256: string | null;
+  knowledgeRoot: string;
+  topicId: string;
+  workspaceId: string;
+}) {
+  const db = getPrisma();
+  const references = await db.topicMediaReference.findMany({
+    include: { mediaAsset: true },
+    orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
+    where: {
+      status: { in: ["approved", "auto_approved"] },
+      topicId: input.topicId,
+      workspaceId: input.workspaceId,
+    },
+  });
+  const storage = getObjectStorage();
+  const media = [];
+  for (const reference of references) {
+    if (!input.contentSha256 || reference.mediaAsset.sourceDocumentSha256 !== input.contentSha256) {
+      await db.topicMediaReference.update({ data: { status: "stale" }, where: { id: reference.id } });
+      continue;
+    }
+    const filename = `${reference.mediaAsset.id}-${reference.mediaAsset.contentSha256.slice(0, 12)}.png`;
+    const resourcePath = path.posix.join("resources", "media", filename);
+    const destination = path.join(input.knowledgeRoot, ...resourcePath.split("/"));
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, await storage.getObject(reference.mediaAsset.objectKey));
+    media.push({
+      altText: reference.mediaAsset.altText,
+      kind: reference.mediaAsset.kind === "diagram" ? "diagram" as const : "figure" as const,
+      pageNumber: reference.mediaAsset.pageNumber,
+      resourcePath,
+      sourceCaption: reference.mediaAsset.sourceCaption,
+      visualContext: reference.mediaAsset.visualContext,
+    });
+  }
+  return media;
 }
 
 function buildPortableCitations(input: { chunks: Array<{ contentHash: string; sourcePageNumbers: number[] }>; sourceDigest: string; sourcePages: number[] }) {

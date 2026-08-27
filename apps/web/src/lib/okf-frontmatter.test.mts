@@ -6,9 +6,19 @@ import {
   getFrontmatterRelations,
   getFrontmatterScalar,
   getFrontmatterStringArray,
+  isOkfV02Current,
   parseOkfMarkdown,
   serializeOkfMarkdown,
 } from "./okf-frontmatter.ts";
+
+test("current lifecycle treats absent status as stable and compares exact instants", () => {
+  const staleAfter = "2026-08-24T12:00:00-04:00";
+  assert.equal(isOkfV02Current({}, new Date("2026-08-24T15:59:59Z")), true);
+  assert.equal(isOkfV02Current({ stale_after: staleAfter }, new Date("2026-08-24T15:59:59Z")), true);
+  assert.equal(isOkfV02Current({ stale_after: staleAfter }, new Date("2026-08-24T16:00:00Z")), false);
+  assert.equal(isOkfV02Current({ status: "draft" }), false);
+  assert.equal(isOkfV02Current({ stale_after: "2026-08-25" }), false);
+});
 
 test("parseOkfMarkdown parses scalar fields written by the OKF exporter", () => {
   const parsed = parseOkfMarkdown(

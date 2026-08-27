@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { FileText, Layers, Tags } from "lucide-react";
 
@@ -30,6 +31,8 @@ import {
   exportTopicToOkfAction,
   markOkfConceptLifecycleAction,
   updateTopicRelationsAction,
+  reviewTopicMediaAction,
+  updateTopicMediaAction,
 } from "@/app/(app)/documents/okf-actions";
 import {
   customPropertiesToText,
@@ -53,6 +56,7 @@ type TopicPanelProps = {
   relationTargets: OkfBundleFile[];
   topic: TopicRecord | null;
   topicsGeneratedCount: number | "queued" | null;
+  topicOptions: Array<{ id: string; title: string }>;
 };
 
 export function DocumentSummaryPanel({
@@ -483,6 +487,7 @@ export function TopicWorkflowPanel({
   lifecycleUpdated,
   topic,
   topicsGeneratedCount,
+  topicOptions,
 }: TopicPanelProps) {
   return (
     <Card>
@@ -558,6 +563,7 @@ export function TopicWorkflowPanel({
             relationError={relationError}
             relationTargets={relationTargets}
             topic={topic}
+            topicOptions={topicOptions}
           />
         ) : (
           <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
@@ -582,6 +588,7 @@ function SelectedTopicPanel({
   relationError,
   relationTargets,
   topic,
+  topicOptions,
 }: {
   allowedRelations: string[];
   documentId: string;
@@ -593,6 +600,7 @@ function SelectedTopicPanel({
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord;
+  topicOptions: Array<{ id: string; title: string }>;
 }) {
   return (
     <div className="space-y-4">
@@ -676,6 +684,62 @@ function SelectedTopicPanel({
         </div>
       </div>
 
+      {(topic.mediaReferences ?? []).length > 0 ? (
+        <section className="space-y-3 rounded-md border border-border p-4">
+          <div>
+            <h4 className="text-sm font-medium">Discovered figures</h4>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Review source-linked figure crops before they are exported or reused during enrichment.
+            </p>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            {(topic.mediaReferences ?? []).map((reference) => (
+              <article className="space-y-3 border border-border p-3" key={reference.id}>
+                <Image
+                  alt={reference.mediaAsset.altText}
+                  className="h-auto max-h-80 w-full object-contain"
+                  height={reference.mediaAsset.height}
+                  src={`/api/documents/${documentId}/media/${reference.mediaAsset.id}`}
+                  unoptimized
+                  width={reference.mediaAsset.width}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">Page {reference.mediaAsset.pageNumber}</Badge>
+                  <Badge variant="secondary">{reference.mediaAsset.kind}</Badge>
+                  <Badge variant="outline">{Math.round(reference.confidence * 100)}%</Badge>
+                  <Badge variant="outline" className="capitalize">{reference.status.replaceAll("_", " ")}</Badge>
+                </div>
+                <p className="text-sm">{reference.mediaAsset.visualContext}</p>
+                <p className="text-xs text-muted-foreground">{reference.rationale}</p>
+                {reference.status === "pending_review" || reference.status === "auto_approved" ? (
+                  <form action={reviewTopicMediaAction} className="flex gap-2">
+                    <input name="documentId" type="hidden" value={documentId} />
+                    <input name="topicId" type="hidden" value={topic.id} />
+                    <input name="referenceId" type="hidden" value={reference.id} />
+                    <PendingSubmitButton name="decision" pendingLabel="Approving..." value="approve">Approve</PendingSubmitButton>
+                    <PendingSubmitButton name="decision" pendingLabel="Rejecting..." value="reject" variant="outline">Reject</PendingSubmitButton>
+                  </form>
+                ) : null}
+                <details>
+                  <summary className="cursor-pointer text-xs font-medium">Edit or reassign</summary>
+                  <form action={updateTopicMediaAction} className="mt-3 grid gap-3">
+                    <input name="documentId" type="hidden" value={documentId} />
+                    <input name="topicId" type="hidden" value={topic.id} />
+                    <input name="referenceId" type="hidden" value={reference.id} />
+                    <label className="grid gap-1 text-xs">Topic<select className={selectClassName} defaultValue={topic.id} name="targetTopicId">{topicOptions.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}</select></label>
+                    <label className="grid gap-1 text-xs">Source page<Input defaultValue={reference.mediaAsset.pageNumber} min="1" name="pageNumber" type="number" /></label>
+                    <label className="grid gap-1 text-xs">Caption<Input defaultValue={reference.mediaAsset.sourceCaption ?? ""} name="sourceCaption" /></label>
+                    <label className="grid gap-1 text-xs">Alt text<Input defaultValue={reference.mediaAsset.altText} name="altText" required /></label>
+                    <label className="grid gap-1 text-xs">Topic context<textarea className={textareaClassName} defaultValue={reference.mediaAsset.visualContext} name="visualContext" required rows={3} /></label>
+                    <PendingSubmitButton pendingLabel="Saving figure...">Save figure</PendingSubmitButton>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {topic.reviewStatus !== "approved" ? (
         <>
           <details className="rounded-md border border-border p-3">
@@ -684,7 +748,7 @@ function SelectedTopicPanel({
               <input name="documentId" type="hidden" value={documentId} />
               <input name="topicId" type="hidden" value={topic.id} />
               <label className="grid gap-2 text-sm">Concept type<select className={selectClassName} defaultValue={String(topic.okfMetadata.type ?? "system_topic")} name="okfField__type">{Object.entries(profile.types).map(([id, definition]) => <option key={id} value={id}>{definition.label}</option>)}</select></label>
-              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "resource", "tags", "sources", "generated", "verified", "status", "stale_after", "source_pages", "knowledge_version", "relations", "av_okf_approval_mode", "av_okf_lifecycle", "av_okf_role"].includes(field)).map(([field, definition]) => (
+              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "resource", "tags", "sources", "generated", "verified", "status", "stale_after", "source_pages", "knowledge_version", "relations", "av_okf_approval_mode", "av_okf_lifecycle", "av_okf_role", "av_okf_media"].includes(field)).map(([field, definition]) => (
                 <label className="grid gap-2 text-sm" key={field}>{field.replaceAll("_", " ")}{definition.required ? " (required)" : ""}<Input defaultValue={Array.isArray(topic.okfMetadata[field]) ? (topic.okfMetadata[field] as unknown[]).join(", ") : String(topic.okfMetadata[field] ?? "")} name={`okfField__${field}`} required={Boolean(definition.required)} /></label>
               ))}
               <div className="md:col-span-2"><PendingSubmitButton pendingLabel="Saving metadata...">Save OKF metadata</PendingSubmitButton></div>

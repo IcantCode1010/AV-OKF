@@ -21,6 +21,11 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.equal(aviation.automation.autoApproveVerifiedRelations, false);
   assert.equal(generic.agent.boundedAdaptiveRetryEnabled, false);
   assert.equal(aviation.agent.boundedAdaptiveRetryEnabled, false);
+  assert.deepEqual(generic.media, {
+    autoApproveHighConfidenceEnabled: false,
+    autoApproveThreshold: 0.95,
+    topicFiguresEnabled: false,
+  });
   assert.equal(generic.fields.aircraft_family, undefined);
   assert.equal(generic.fields.covered_rag_chunk_ids?.type, "string_array");
   assert.equal(generic.fields.classification_code?.type, "string");

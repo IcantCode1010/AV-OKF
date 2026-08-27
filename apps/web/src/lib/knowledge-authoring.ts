@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import { enrichTopic } from "./topic-enrichment.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
-import { getLlmProvider, getSdkModel } from "./llm-providers.ts";
+import { getLlmProvider, getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 import {
   buildDeterministicRelationCandidates,
   tokenizeRelationTerms,
@@ -31,10 +31,15 @@ import { discoverDocumentRelationCandidates } from "./okf-document-relation-cand
 import { createRagRepository } from "./rag-repository.ts";
 import { createBullMqRagIndexQueue } from "./rag-queue.ts";
 import { getDefaultChunkingStrategyId } from "./rag-reindex.ts";
+import {
+  loadApprovedTopicMediaForEnrichment,
+  runDocumentMediaDiscovery,
+} from "./topic-media-discovery.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
   "concept_discovery",
+  "media_discovery",
   "full_rag_index",
   "enrichment",
   "relation_classification",
@@ -44,6 +49,7 @@ export const AUTHORING_STAGES = [
 export const KNOWLEDGE_AUTHORING_OPERATIONS = [
   "propose_metadata",
   "discover_concepts",
+  "discover_topic_media",
   "enrich_concepts",
   "classify_relations",
   "validate_review_package",
@@ -246,7 +252,41 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
         });
       }
       await stageAudit(run.id, activeStage, "completed", undefined, key.provider, provider.model);
-      await completeStage(run.id, "concept_discovery", "enrichment");
+      await completeStage(run.id, "concept_discovery", "media_discovery");
+    }
+
+    if (!run.completedStages.includes("media_discovery")) {
+      activeStage = "media_discovery";
+      await beginStage(run.id, activeStage);
+      await stageAudit(run.id, activeStage, "running", undefined, key.provider, provider.model);
+      try {
+        const mediaResult = await runDocumentMediaDiscovery({
+          documentId: document.id,
+          runId: run.id,
+          workspaceId: run.workspaceId,
+        });
+        await stageAudit(
+          run.id,
+          activeStage,
+          "completed",
+          mediaResult.warnings.length ? mediaResult.warnings.join("; ") : undefined,
+          key.provider,
+          provider.model,
+          undefined,
+          JSON.stringify(mediaResult),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await stageAudit(
+          run.id,
+          activeStage,
+          "completed",
+          `non_blocking_media_warning:${message}`,
+          key.provider,
+          provider.model,
+        );
+      }
+      await completeStage(run.id, "media_discovery", "full_rag_index");
     }
 
     if (!run.completedStages.includes("full_rag_index")) {
@@ -303,8 +343,15 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       await beginStage(run.id, activeStage);
       await stageAudit(run.id, "enrichment", "running", undefined, key.provider, provider.model);
       for (const topic of enrichmentTopics) {
+        const media = activeBundle.profile.media.topicFiguresEnabled
+          ? await loadApprovedTopicMediaForEnrichment({
+              topicId: topic.id,
+              workspaceId: run.workspaceId,
+            })
+          : [];
         await enrichTopic(topic.id, {
           context,
+          media,
           sourcePageMode: run.automaticTopicApprovalEnabled ? "exact" : "expanded",
           repository: {
             approveTopicContent: topicRepository.approveTopicContent,
@@ -379,7 +426,7 @@ async function runMetadataDiscovery(input: {
   apiKey: string;
   document: { classificationCode: string | null; description: string; documentType: string | null; effectivity: string | null; extractedPages: Array<{ pageNumber: number; text: string }>; id: string; revision: string | null; sourceAuthority: string | null; subjectFamily: string | null; tags: string[]; title: string; workspaceId: string };
   model: string;
-  provider: "anthropic" | "openai";
+  provider: LlmProviderId;
   runId: string;
 }) {
   const prompt = [
@@ -419,7 +466,7 @@ async function runMetadataDiscovery(input: {
   await stageAudit(input.runId, "metadata_discovery", "completed", undefined, input.provider, input.model, prompt, JSON.stringify(proposal));
 }
 
-async function classifyDraftRelations(input: { apiKey: string; documentId: string; knowledgeBundleId: string; model: string; provider: "anthropic" | "openai"; runId: string; workspaceId: string }) {
+async function classifyDraftRelations(input: { apiKey: string; documentId: string; knowledgeBundleId: string; model: string; provider: LlmProviderId; runId: string; workspaceId: string }) {
   const db = getPrisma();
   const bundle = await getKnowledgeBundleByIdentity({
     bundleId: input.knowledgeBundleId,

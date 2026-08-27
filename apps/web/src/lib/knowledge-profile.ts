@@ -24,6 +24,11 @@ export type KnowledgeProfileSchema = {
     autoApproveEnrichedTopics: boolean;
     autoApproveVerifiedRelations: boolean;
   };
+  media: {
+    autoApproveHighConfidenceEnabled: boolean;
+    autoApproveThreshold: number;
+    topicFiguresEnabled: boolean;
+  };
   clarificationFields: string[];
   fields: Record<string, { required?: boolean; type: KnowledgeFieldType }>;
   id: string;
@@ -122,6 +127,7 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   av_okf_approval_mode: { type: "string" },
   av_okf_lifecycle: { type: "string" },
   av_okf_role: { type: "string" },
+  av_okf_media: { type: "object_array" },
   relations: { type: "relations" },
   classification_code: { type: "string" },
   coverage_type: { type: "string" },
@@ -139,6 +145,11 @@ export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   automation: {
     autoApproveEnrichedTopics: false,
     autoApproveVerifiedRelations: false,
+  },
+  media: {
+    autoApproveHighConfidenceEnabled: false,
+    autoApproveThreshold: 0.95,
+    topicFiguresEnabled: false,
   },
   clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: BASE_FIELDS,
@@ -225,6 +236,16 @@ export function normalizeKnowledgeProfile(
     autoApproveVerifiedRelations:
       normalized.automation?.autoApproveVerifiedRelations === true,
   };
+  normalized.media = {
+    autoApproveHighConfidenceEnabled:
+      normalized.media?.autoApproveHighConfidenceEnabled === true,
+    autoApproveThreshold:
+      typeof normalized.media?.autoApproveThreshold === "number" &&
+        Number.isFinite(normalized.media.autoApproveThreshold)
+        ? Math.max(0.95, Math.min(1, normalized.media.autoApproveThreshold))
+        : 0.95,
+    topicFiguresEnabled: normalized.media?.topicFiguresEnabled === true,
+  };
   if (!Array.isArray(normalized.clarificationFields)) {
     normalized.clarificationFields = ["generic", "aviation"].includes(normalized.id)
       ? DEFAULT_CLARIFICATION_FIELDS.filter((field) => Boolean(normalized.fields[field]))
@@ -264,6 +285,16 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
     typeof profile.automation?.autoApproveVerifiedRelations !== "boolean"
   ) {
     errors.push("knowledge_profile_automation_invalid");
+  }
+  if (
+    typeof profile.media?.topicFiguresEnabled !== "boolean" ||
+    typeof profile.media?.autoApproveHighConfidenceEnabled !== "boolean" ||
+    typeof profile.media?.autoApproveThreshold !== "number" ||
+    !Number.isFinite(profile.media.autoApproveThreshold) ||
+    profile.media.autoApproveThreshold < 0.95 ||
+    profile.media.autoApproveThreshold > 1
+  ) {
+    errors.push("knowledge_profile_media_invalid");
   }
   if (profile.fields.type?.required !== true || profile.fields.type.type !== "string") {
     errors.push("knowledge_profile_type_field_required");

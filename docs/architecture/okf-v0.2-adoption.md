@@ -2,8 +2,8 @@
 
 ## Decision
 
-The Google Cloud Platform Knowledge Catalog
-[Open Knowledge Format v0.2 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f/okf/SPEC.md)
+The Google Cloud Platform
+[Open Knowledge Format v0.2 specification](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107c31c06aec8a7d5636e0d1058118604e6f/SPEC.md)
 is the normative portability contract for AV-OKF bundles.
 
 AV-OKF runs a v0.2-only runtime. The backed-up production migration completed
@@ -34,8 +34,9 @@ metadata, and broken links as required by the specification.
 
 ## Compatibility Corpus And Validation Layers
 
-Phase 2 pins all four upstream sample bundles at commit
-`fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f` as an offline, Apache-2.0 test
+Phase 2 pins all four upstream sample bundles from the canonical
+`open-knowledge-format` repository at commit
+`ad30107c31c06aec8a7d5636e0d1058118604e6f` as an offline, Apache-2.0 test
 corpus. The corpus contains 79 bundle files: 78 Markdown files and one inert
 attester resource. Generated viewers are excluded, every included file is
 SHA-256 fingerprinted, and fixture line endings are fixed to LF.
@@ -50,11 +51,21 @@ Compatibility is reported as three separate states:
 3. **Agent-ready:** the concept also has active AV-OKF lifecycle, approval,
    content, source-page, and workspace mappings.
 
-The pinned upstream bundles pass portable validation and deterministic semantic
-round trips. They are intentionally not runtime-ready because their root
-indexes omit the optional version declaration, and none is agent-ready because
-the fixtures have no AV-OKF database or source-page projection. The committed
-result is [the upstream compatibility report](../debug/okf-v02-upstream-compatibility.json).
+All 78 pinned Markdown files pass deterministic semantic round trips. Three
+bundles pass portable validation. The canonical Stack Overflow sample currently
+contains eight scalar `tags` values where v0.2 requires YAML lists; AV-OKF keeps
+those files untouched and reports the violations instead of normalizing them.
+The samples are intentionally not runtime-ready because their root indexes omit
+the optional version declaration, and none is agent-ready because the fixtures
+have no AV-OKF database or source-page projection. The committed result is
+[the upstream compatibility report](../debug/okf-v02-upstream-compatibility.json).
+
+The canonical timestamp contract is an ISO 8601 datetime with an explicit UTC
+offset for `generated.at`, `verified[].at`, `stale_after`,
+`sources[].last_modified`, and `usage_window` boundaries. A concept becomes
+stale at the exact instant `now >= stale_after`; an absent `status` means
+`stable`. Reader navigation accepts both recommended bundle-root links such as
+`/tables/customers.md` and ordinary relative Markdown links.
 
 ## Claim-Level Attribution
 
@@ -79,9 +90,9 @@ with broken source identity.
 The pinned upstream corpus contains 45 claim-footnote references. Thirty-three
 join exactly. Twelve Stack Overflow references across eleven concepts use the
 generic label `1` instead of their declared source IDs, producing eleven
-deterministic warnings. The four bundles remain portable-compatible, the
-fixtures remain byte-identical, and those concepts are not AV runtime-ready or
-agent-ready.
+deterministic warnings. Those attribution findings do not add further portable
+failures. Included fixture files remain byte-identical to the pinned canonical
+source, and those concepts are not AV runtime-ready or agent-ready.
 
 `validatePortableOkfV02BundleRoot` implements generic bundle conformance.
 `validateOkfV02BundleRoot` builds on it and retains the production-only gates.

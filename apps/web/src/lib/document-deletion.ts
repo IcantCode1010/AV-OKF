@@ -117,6 +117,7 @@ export async function requestPermanentDocumentDeletion(input: {
 
   const document = await db.document.findFirst({
     include: {
+      mediaAssets: { select: { objectKey: true } },
       objects: { select: { objectKey: true } },
       topicRecords: { select: { exportedFilePath: true, id: true } },
     },
@@ -143,7 +144,10 @@ export async function requestPermanentDocumentDeletion(input: {
     documentTitle: document.title,
     exportedFilePaths,
     knowledgeBundleId: document.knowledgeBundleId,
-    objectKeys: document.objects.map((object) => object.objectKey),
+    objectKeys: [...new Set([
+      ...document.objects.map((object) => object.objectKey),
+      ...document.mediaAssets.map((asset) => asset.objectKey),
+    ])],
     requestedAt: new Date().toISOString(),
     topicIds: document.topicRecords.map((topic) => topic.id),
     workspaceId: document.workspaceId,
@@ -458,6 +462,7 @@ async function cleanDocumentFromKnowledgeBundle(manifest: DocumentDeletionManife
   });
   const deleted = new Set(manifest.exportedFilePaths.map(normalizeBundlePath));
   const sourceReferences = new Set<string>();
+  const mediaResources = new Set<string>();
   let deletedFiles = 0;
   for (const filePath of deleted) {
     const target = await resolveKnowledgePath({ knowledgeRoot, relativePath: filePath });
@@ -472,6 +477,18 @@ async function cleanDocumentFromKnowledgeBundle(manifest: DocumentDeletionManife
         const sourcePath = normalizeBundleResourcePath(source.resource);
         if (sourcePath.startsWith("references/sources/") && sourcePath.endsWith(".md")) {
           sourceReferences.add(sourcePath);
+        }
+      }
+      const media = (parsed.frontmatter as Record<string, unknown>).av_okf_media;
+      if (Array.isArray(media)) {
+        for (const entry of media) {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+          const resource = (entry as Record<string, unknown>).resource;
+          if (typeof resource !== "string") continue;
+          const mediaPath = normalizeBundleResourcePath(resource);
+          if (mediaPath.startsWith("resources/media/") && mediaPath.endsWith(".png")) {
+            mediaResources.add(mediaPath);
+          }
         }
       }
     }
@@ -511,6 +528,11 @@ async function cleanDocumentFromKnowledgeBundle(manifest: DocumentDeletionManife
     const stillReferenced = await sourceReferenceIsUsed(knowledgeRoot, sourcePath, deleted);
     if (stillReferenced) continue;
     const target = await resolveKnowledgePath({ knowledgeRoot, relativePath: sourcePath });
+    if (!target) throw new Error("document_deletion_unsafe_knowledge_path");
+    await rm(target, { force: true });
+  }
+  for (const mediaPath of mediaResources) {
+    const target = await resolveKnowledgePath({ knowledgeRoot, relativePath: mediaPath });
     if (!target) throw new Error("document_deletion_unsafe_knowledge_path");
     await rm(target, { force: true });
   }

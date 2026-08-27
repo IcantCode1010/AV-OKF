@@ -19,7 +19,6 @@ import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import {
   getLlmProvider,
   getSdkModel,
-  LLM_PROVIDERS,
   type LlmProviderId,
 } from "./llm-providers.ts";
 import { normalizeOkfArticleBody } from "./okf-article-content.ts";
@@ -34,6 +33,15 @@ export type TopicEnrichmentProviderInput = {
   sourcePages: ExtractedPageRecord[];
   summary: string;
   title: string;
+  media?: TopicEnrichmentMedia[];
+};
+
+export type TopicEnrichmentMedia = {
+  altText: string;
+  image: Buffer;
+  pageNumber: number;
+  sourceCaption: string | null;
+  visualContext: string;
 };
 
 export type TopicEnrichmentProviderOutput = {
@@ -57,6 +65,7 @@ type TopicEnrichmentOutputGenerator = (input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
+  media?: TopicEnrichmentMedia[];
 }) => Promise<unknown>;
 
 export type TopicEnrichmentRepository = {
@@ -112,6 +121,7 @@ type EnrichTopicOptions = {
   repository?: TopicEnrichmentRepository;
   sourcePagesOverride?: ExtractedPageRecord[];
   sourcePageMode?: "expanded" | "exact";
+  media?: TopicEnrichmentMedia[];
 };
 
 type ApproveTopicOptions = {
@@ -122,8 +132,9 @@ type ApproveTopicOptions = {
   repository?: Pick<TopicEnrichmentRepository, "approveTopicContent">;
 };
 
-const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
-const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
+const ANTHROPIC_PROVIDER = getLlmProvider("anthropic");
+const KIMI_PROVIDER = getLlmProvider("kimi");
+const OPENAI_PROVIDER = getLlmProvider("openai");
 const COMPACT_RETRY_SOURCE_CHAR_LIMIT = 12_000;
 const COMPACT_SOURCE_MARKER = "\n[...source excerpt shortened...]\n";
 export const TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS = 3_000;
@@ -172,6 +183,7 @@ export async function enrichTopic(
     allowSourcePageProposals: options.sourcePageMode !== "exact",
     sourcePages,
     topic,
+    media: options.media,
   });
   let activePrompt = prompt;
   let attempts = 1;
@@ -184,6 +196,7 @@ export async function enrichTopic(
         sourcePages,
         summary: topic.summary,
         title: topic.title,
+        media: options.media,
       });
     } catch (error) {
       if (!isMissingStructuredOutput(error) && !isContextLengthError(error)) throw error;
@@ -193,6 +206,7 @@ export async function enrichTopic(
         compactRetry: true,
         sourcePages,
         topic,
+        media: options.media,
       });
       result = await provider.enrich({
         apiKey: key.apiKey,
@@ -200,6 +214,7 @@ export async function enrichTopic(
         sourcePages,
         summary: topic.summary,
         title: topic.title,
+        media: options.media,
       });
     }
     const enrichedTitle = result.title.trim();
@@ -287,6 +302,7 @@ export function buildTopicEnrichmentPrompt(input: {
   compactRetry?: boolean;
   sourcePages: ExtractedPageRecord[];
   topic: TopicRecord;
+  media?: TopicEnrichmentMedia[];
 }) {
   const sourcePages = input.compactRetry
     ? compactSourcePages(input.sourcePages, COMPACT_RETRY_SOURCE_CHAR_LIMIT)
@@ -312,6 +328,10 @@ export function buildTopicEnrichmentPrompt(input: {
     "",
     `Current title: ${input.topic.title}`,
     `Current summary: ${input.topic.summary}`,
+    input.media?.length ? "Approved figure context:" : null,
+    ...(input.media ?? []).map((media) =>
+      `Page ${media.pageNumber}: ${media.sourceCaption ?? media.altText} — ${media.visualContext}`
+    ),
     "",
     "Source text:",
     sourceText || "No source text was available for this topic.",
@@ -329,6 +349,10 @@ export function createTopicEnrichmentProvider(
 
   if (provider.id === OPENAI_PROVIDER.id) {
     return createOpenAiTopicEnrichmentProvider();
+  }
+
+  if (provider.id === KIMI_PROVIDER.id) {
+    return createKimiTopicEnrichmentProvider();
   }
 
   throw new Error("unsupported_llm_provider");
@@ -389,6 +413,7 @@ function createAnthropicTopicEnrichmentProvider(
         model: ANTHROPIC_PROVIDER.model,
         prompt: input.prompt,
         provider: ANTHROPIC_PROVIDER.id,
+        media: input.media,
       });
       const parsed = topicEnrichmentSchema.safeParse(output);
 
@@ -419,6 +444,7 @@ export function createOpenAiTopicEnrichmentProvider(
         model: OPENAI_PROVIDER.model,
         prompt: input.prompt,
         provider: OPENAI_PROVIDER.id,
+        media: input.media,
       });
       const parsed = topicEnrichmentSchema.safeParse(output);
 
@@ -437,21 +463,67 @@ export function createOpenAiTopicEnrichmentProvider(
   };
 }
 
+export function createKimiTopicEnrichmentProvider(
+  generateOutput: TopicEnrichmentOutputGenerator = generateTopicEnrichmentOutput,
+): TopicEnrichmentProvider {
+  return {
+    model: KIMI_PROVIDER.model,
+    provider: KIMI_PROVIDER.id,
+    async enrich(input) {
+      const output = await generateOutput({
+        apiKey: input.apiKey,
+        media: input.media,
+        model: KIMI_PROVIDER.model,
+        prompt: input.prompt,
+        provider: KIMI_PROVIDER.id,
+      });
+      const parsed = topicEnrichmentSchema.safeParse(output);
+      if (!parsed.success) throw new Error("llm_enrichment_malformed_response");
+      return {
+        rawResponse: JSON.stringify(output),
+        body: parsed.data.body,
+        proposedSourcePageNumbers: parsed.data.proposedSourcePageNumbers,
+        summary: parsed.data.summary,
+        title: parsed.data.title,
+      };
+    },
+  };
+}
+
 async function generateTopicEnrichmentOutput(input: {
   apiKey: string;
   model: string;
   prompt: string;
   provider: LlmProviderId;
+  media?: TopicEnrichmentMedia[];
 }): Promise<unknown> {
-  const result = await generateText({
+  const settings = {
     model: getSdkModel(input.provider, input.apiKey),
     output: Output.object({ schema: topicEnrichmentSchema }),
-    prompt: input.prompt,
+    providerOptions: input.provider === "kimi"
+      ? { openai: { reasoningEffort: "high" } }
+      : undefined,
     system:
       "You enrich topic records for a technical knowledge base. Return only the requested structured object.",
     maxOutputTokens: TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS,
     temperature: 0,
-  });
+  };
+  const result = input.media?.length
+    ? await generateText({
+        ...settings,
+        messages: [{
+          content: [
+            { type: "text", text: input.prompt },
+            ...input.media.slice(0, 5).map((media) => ({
+              image: media.image,
+              mediaType: "image/png" as const,
+              type: "image" as const,
+            })),
+          ],
+          role: "user",
+        }],
+      })
+    : await generateText({ ...settings, prompt: input.prompt });
 
   return result.output;
 }

@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added opt-in multimodal figure and diagram discovery during document
+  authoring. Candidate pages are rendered temporarily, analyzed against only
+  exact-page topic IDs, cropped into durable PNG assets, checked with local
+  OCR, and routed through strict pending-review or 95%+ auto-approval gates.
+  Reviewers can approve, reject, edit, or reassign figure links; approved
+  figures can enrich topics and export portably under `resources/media` with
+  `av_okf_media` metadata. Added Moonshot AI Kimi K3 provider support, durable
+  media audits, stale-source protection, cleanup, feature flags, and tests.
+- Added distinct, accessible colors for the eight generic entity types in Entity map mode. The filter legend and entity list use the same stable palette, while concepts, documents, aliases, and unresolved support nodes remain neutral so color does not conflict with trust or review status.
+- Aligned OKF v0.2 compatibility with the canonical `open-knowledge-format`
+  repository at commit `ad30107c`. Lifecycle and provenance timestamps now
+  require valid ISO 8601 datetimes with explicit UTC offsets, staleness uses an
+  exact instant comparison, absent `status` follows the standard's `stable`
+  default, and the knowledge reader resolves canonical bundle-root Markdown
+  links. Refreshed byte-pinned sample fixtures keep generated viewers separate
+  and surface eight upstream scalar `tags` violations without rewriting them.
 - Added one structured operation-progress architecture across Topic expansion, Workflow, Activity, document processing, bulk approval, relation verification, and document/bundle deletion. Authenticated two-second polling now updates stages, counts, current items, rows, and failures in place with bounded backoff and reconnect handling; terminal transitions refresh server data once without full-page reload loops.
 - Reworked **Topic expansion** into durable per-approved-topic research. Each topic now generates synonyms and direct questions, runs bundle-scoped hybrid RAG with metadata filtering and reranking, extracts exact-quote-grounded claims and terminology, and searches again until no meaningful new evidence remains or the three-round cap is reached. Per-topic jobs persist stage, round, search, evidence, candidate, and heartbeat checkpoints during work, resume independently, merge grounded discoveries deterministically, and retain the 10-proposal enrichment and human-review boundary.
 - Upgraded the default OpenAI generation model from `gpt-4o-mini` to `gpt-5.6-terra` and routed OpenAI generation through the Responses API. New chat, discovery, enrichment, relation-verification, and topic-expansion calls now use the stronger research model while embeddings remain unchanged.

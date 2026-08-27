@@ -33,6 +33,8 @@ export type ExtractedLargePdfPage = {
   tables: never[];
   text: string;
   warningCodes: string[];
+  figureCaptionHints: string[];
+  visualCandidate: boolean;
 };
 
 export async function runLargePdfExtraction(input: {
@@ -245,15 +247,29 @@ async function extractBatch(batchPath: string, absoluteStart: number, absoluteEn
       ocrConfidence = result.confidence;
     }
     const classified = classifyExtractedPage({ digitalText, hasRaster: rasterPages.has(localPage), ocrConfidence, ocrText });
+    const figureCaptionHints = findFigureCaptionHints(classified.text);
     pages.push({
       ...classified,
       charCount: classified.text.length,
       imageCount: rasterPages.has(localPage) ? 1 : 0,
+      figureCaptionHints,
       pageNumber: absoluteStart + localPage - 1,
       tables: [],
+      visualCandidate: rasterPages.has(localPage) || figureCaptionHints.length > 0,
     });
   }
   return pages;
+}
+
+export function findFigureCaptionHints(text: string) {
+  const hints: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const normalized = line.replace(/\s+/g, " ").trim();
+    if (/^(?:fig(?:ure)?|diagram|illustration)\s*[.:#-]?\s*[A-Za-z0-9]/i.test(normalized)) {
+      hints.push(normalized.slice(0, 240));
+    }
+  }
+  return [...new Set(hints)].slice(0, 10);
 }
 
 async function tesseractTsv(imagePath: string, psm: string) {

@@ -35,6 +35,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { filterEntityGraphByEntityIds } from "@/lib/entity-graph-filter";
+import { entityGraphColorCss, getEntityGraphTypeColor } from "@/lib/entity-graph-palette";
 import type { EntityGraphSnapshot } from "@/lib/entity-graph-view";
 import {
   buildOkfGraphFocus,
@@ -50,6 +51,7 @@ import {
   type OkfExplorerSnapshot,
   type OkfTreeNode,
 } from "@/lib/okf-explorer";
+import { resolveOkfReaderLink } from "@/lib/okf-reader-link";
 
 function useExplorerSelection() {
   const pathname = usePathname();
@@ -324,11 +326,10 @@ export function EntityGraphExplorer({
               </div>
               <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                 {entityTypes.map((entityType) => {
-                  const [red, green, blue] = colorForType(entityType);
                   return (
                     <label className="flex min-w-0 cursor-pointer items-center gap-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground" key={entityType}>
                       <input aria-label={`Show ${entityType} entities`} checked={selectedEntityTypes.has(entityType)} className="size-3.5 accent-primary" onChange={() => toggleEntityType(entityType)} type="checkbox" />
-                      <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: `rgb(${Math.round(red * 255)} ${Math.round(green * 255)} ${Math.round(blue * 255)})` }} />
+                      <span className="size-2.5 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/20" style={{ backgroundColor: entityGraphColorCss(entityType) }} />
                       <span className="truncate capitalize">{entityType.replaceAll("_", " ")}</span>
                     </label>
                   );
@@ -352,6 +353,7 @@ export function EntityGraphExplorer({
                 selectedEntityIds.has(node.id) ? "border-primary bg-primary/5 text-foreground" : "border-transparent text-muted-foreground",
               )} key={node.id}>
                 <input aria-label={`Show ${node.title}`} checked={selectedEntityIds.has(node.id)} className="mt-0.5 size-3.5 accent-primary" onChange={() => toggleEntity(node.id)} type="checkbox" />
+                <span aria-hidden="true" className="mt-1 size-2.5 shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/20" style={{ backgroundColor: entityGraphColorCss(node.type) }} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{node.title}</span>
                   <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{node.type} · {node.degree} connections</span>
@@ -367,7 +369,7 @@ export function EntityGraphExplorer({
           <p className="mt-1 text-xs text-muted-foreground">{mode === "entities" ? `Showing ${visibleSnapshot.nodes.length} of ${snapshot.nodes.length} nodes / ${visibleSnapshot.edges.length} connections` : `${snapshot.summary.entities} entities / ${snapshot.summary.occurrences} occurrences / ${snapshot.edges.length} connections`}</p>
         </div>
         {graphNodes.length > 0 ? (
-          <KnowledgeGraph autoFocusSelected={false} edges={graphEdges} nodes={graphNodes} onSelect={setSelectedId} selectedFile={effectiveSelectedId} />
+          <KnowledgeGraph autoFocusSelected={false} colorMode={mode === "entities" ? "entity" : "concept"} edges={graphEdges} nodes={graphNodes} onSelect={setSelectedId} selectedFile={effectiveSelectedId} />
         ) : <EmptyPane label={mode === "attention" ? "No entity connections currently need attention." : entityNodes.length > 0 ? "Select one or more entities to display their connections." : "Entity extraction has not produced a map yet."} />}
       </section>
       <aside className="min-h-0 overflow-auto border-l border-border bg-muted/10 p-4">
@@ -574,12 +576,14 @@ type GraphInstance = import("@cosmos.gl/graph").Graph;
 
 export function KnowledgeGraph({
   autoFocusSelected,
+  colorMode = "concept",
   edges,
   nodes,
   onSelect,
   selectedFile,
 }: {
   autoFocusSelected: boolean;
+  colorMode?: "concept" | "entity";
   edges: OkfExplorerEdge[];
   nodes: OkfExplorerNode[];
   onSelect: (filename: string) => void;
@@ -690,7 +694,9 @@ export function KnowledgeGraph({
           indexById.get(edge.target)!,
         ]);
         graph.setPointPositions(positions);
-        graph.setPointColors(new Float32Array(nodes.flatMap((node) => colorForType(node.type))));
+        graph.setPointColors(new Float32Array(nodes.flatMap((node) =>
+          colorMode === "entity" ? getEntityGraphTypeColor(node.type) : colorForType(node.type)
+        )));
         graph.setPointSizes(new Float32Array(nodes.map((node) => 8 + Math.min(node.degree, 8) * 1.5)));
         graph.setLinks(new Float32Array(links));
         graph.setLinkArrows(edges.map(() => true));
@@ -742,7 +748,7 @@ export function KnowledgeGraph({
     };
   // Topology changes rebuild the simulation; selection changes do not.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFocusSelected, topologyKey, resolvedTheme]);
+  }, [autoFocusSelected, colorMode, topologyKey, resolvedTheme]);
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -978,7 +984,7 @@ function ExplorerReaderPane({
             remarkPlugins={[remarkGfm]}
             components={{
               a: ({ href, children, ...props }) => {
-                const target = resolveReaderLink(document.filename, href, files.map((file) => file.filename));
+                const target = resolveOkfReaderLink(document.filename, href, files.map((file) => file.filename));
                 if (target.kind === "internal") {
                   return <button className="font-medium text-primary underline underline-offset-4" onClick={() => onSelect(target.filename)} type="button">{children}</button>;
                 }
@@ -1091,29 +1097,6 @@ function filterTree(tree: OkfTreeNode[], query: string): OkfTreeNode[] {
     const children = filterTree(node.children, query);
     return children.length ? [{ ...node, children }] : [];
   });
-}
-
-function resolveReaderLink(sourceFile: string, href: string | undefined, files: string[]) {
-  if (!href) return { kind: "broken" as const };
-  if (/^https?:\/\//i.test(href)) return { kind: "external" as const };
-  if (href.includes("\\") || href.includes("?") || href.startsWith("/")) return { kind: "broken" as const };
-  const [rawPath] = href.split("#");
-  if (!rawPath?.endsWith(".md")) return { kind: "broken" as const };
-  let decoded: string;
-  try { decoded = decodeURIComponent(rawPath); } catch { return { kind: "broken" as const }; }
-  const parts = [...sourceFile.split("/").slice(0, -1), ...decoded.split("/")];
-  const normalized: string[] = [];
-  for (const part of parts) {
-    if (!part || part === ".") continue;
-    if (part === "..") {
-      if (normalized.length === 0) return { kind: "broken" as const };
-      normalized.pop();
-    } else normalized.push(part);
-  }
-  const filename = normalized.join("/");
-  return files.includes(filename)
-    ? { filename, kind: "internal" as const }
-    : { kind: "broken" as const };
 }
 
 function colorForType(type: string): number[] {

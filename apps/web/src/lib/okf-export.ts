@@ -37,6 +37,16 @@ type ExportTopic = {
   approvedBy?: string | null;
   approvedAt?: string | null;
   enrichedBody?: string | null;
+  media?: ExportTopicMedia[];
+};
+
+export type ExportTopicMedia = {
+  altText: string;
+  kind: "diagram" | "figure";
+  pageNumber: number;
+  resourcePath: string;
+  sourceCaption: string | null;
+  visualContext: string;
 };
 
 type ExportDocument = {
@@ -58,6 +68,7 @@ type BuildOkfSystemTopicInput = {
   exportedAt?: Date;
   knowledgeVersion: string;
   topic: ExportTopic;
+  topicFilePath?: string;
 };
 
 type BuildOkfSourceReferenceInput = {
@@ -129,6 +140,16 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   addOptionalField(frontmatterFields, "effectivity", input.document.effectivity);
   addOptionalField(frontmatterFields, "revision", input.document.revision);
   addCustomMetadata(frontmatterFields, input.topic.okfMetadata);
+  if (input.topic.media?.length) {
+    frontmatterFields.av_okf_media = input.topic.media.map((media) => ({
+      alt: media.altText,
+      av_okf_kind: media.kind,
+      context: media.visualContext,
+      page: media.pageNumber,
+      resource: `/${media.resourcePath}`,
+      ...(media.sourceCaption ? { caption: media.sourceCaption } : {}),
+    }));
+  }
 
   if (relations.length > 0) {
     frontmatterFields.relations = relations.map((relation) => ({
@@ -168,7 +189,17 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
         `- [${relation.relation}](${relation.target}) - ${relation.reason}`,
       ).join("\n")}`
     : "";
-  const articleBody = `# ${input.topic.title}\n\n${body}${relationBody}\n\n## Source\n\n- ${input.document.title}, ${pageRange}`;
+  const figureBody = input.topic.media?.length
+    ? `\n\n## Figures\n\n${input.topic.media.map((media) => {
+        const relativePath = path.posix.relative(
+          path.posix.dirname(input.topicFilePath ?? filename),
+          media.resourcePath,
+        );
+        const caption = media.sourceCaption ?? media.visualContext;
+        return `![${media.altText}](${relativePath})\n\n*${caption} (source page ${media.pageNumber})*`;
+      }).join("\n\n")}`
+    : "";
+  const articleBody = `# ${input.topic.title}\n\n${body}${figureBody}${relationBody}\n\n## Source\n\n- ${input.document.title}, ${pageRange}`;
 
   return {
     content: serializeOkfMarkdown({ body: articleBody, frontmatter: frontmatterFields }),
@@ -230,17 +261,16 @@ export async function exportTopicToKnowledge(
       ? path.posix.join(input.directory, initial.filename)
       : initial.filename,
   };
-  if (relations.length > 0) {
-    const sourceDirectory = path.posix.dirname(exported.filename);
-    const emittedRelations = relations.map((relation) => ({
-      ...relation,
-      target: toSourceRelativeTarget(sourceDirectory, relation.target),
-    }));
-    exported.content = buildOkfSystemTopic({
-      ...input,
-      topic: { ...input.topic, relations: emittedRelations },
-    }).content;
-  }
+  const sourceDirectory = path.posix.dirname(exported.filename);
+  const emittedRelations = relations.map((relation) => ({
+    ...relation,
+    target: toSourceRelativeTarget(sourceDirectory, relation.target),
+  }));
+  exported.content = buildOkfSystemTopic({
+    ...input,
+    topic: { ...input.topic, relations: emittedRelations },
+    topicFilePath: exported.filename,
+  }).content;
   const topicPath = path.join(knowledgeRoot, exported.filename);
   const sourceReference = buildOkfSourceReference(input);
   const sourcePath = path.join(knowledgeRoot, sourceReference.filename);

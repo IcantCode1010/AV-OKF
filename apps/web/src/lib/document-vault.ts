@@ -72,6 +72,8 @@ export type ExtractedPageRecord = {
   tables: ExtractedTable[];
   imageCount: number;
   charCount: number;
+  figureCaptionHints?: string[];
+  visualCandidate?: boolean;
 };
 
 export type ExtractionError = {
@@ -196,6 +198,29 @@ export type TopicRecord = {
   okfMetadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  mediaReferences?: TopicMediaReference[];
+};
+
+export type TopicMediaReference = {
+  anchorTerms: string[];
+  confidence: number;
+  id: string;
+  mediaAsset: {
+    altText: string;
+    height: number;
+    id: string;
+    kind: "diagram" | "figure";
+    pageNumber: number;
+    sourceCaption: string | null;
+    visibleLabels: string[];
+    visualContext: string;
+    width: number;
+  };
+  rationale: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  role: "primary_evidence" | "reference_diagram" | "supporting_detail";
+  status: "approved" | "auto_approved" | "pending_review" | "rejected" | "stale";
 };
 
 export type Document = {
@@ -1523,6 +1548,7 @@ function normalizeTopicRecord(
   topic.approvedBy ??= null;
   topic.approvedAt ??= null;
   topic.exportedFilePath ??= null;
+  topic.mediaReferences ??= [];
   const topicAudits = audits
     .filter((audit) => audit.topicId === topic.id)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));

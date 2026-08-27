@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "source": {
-    "repository": "https://github.com/GoogleCloudPlatform/knowledge-catalog",
-    "commit": "fe3268a70e8ca5110a43a8f1dfdf6d1a458cf79f",
+    "repository": "https://github.com/GoogleCloudPlatform/open-knowledge-format",
+    "commit": "ad30107c31c06aec8a7d5636e0d1058118604e6f",
     "license": {
       "name": "Apache-2.0",
       "path": "okf/LICENSE.md",
-      "sha256": "f2ffa5942b316849be283deaeb2912e2e5b5b17e91012bede8210210ff3e91e7"
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
     }
   },
   "expected": {
@@ -74,11 +74,11 @@
     },
     {
       "path": "okf/bundles/acme_retail/attesters/sql_equality.py",
-      "sha256": "81f26dda0f57e25561aeb49bc9827d53353985ea626dfa2c50297e2ddb47e543"
+      "sha256": "ef41f8497de5ea3a4415bebc9222424576bfb56e114b2eacab53256aa86c1955"
     },
     {
       "path": "okf/bundles/acme_retail/computations/gross-margin-period.md",
-      "sha256": "6d120cdc426712d484767bebe9b3fccd6a608bb5deaab67b2c94fd6f4ed9ba00"
+      "sha256": "5e96ae11835ad328ccc94d29ae4bc7cc40176758cbcbad63231d0461c1f8f0e7"
     },
     {
       "path": "okf/bundles/acme_retail/computations/index.md",
@@ -86,7 +86,7 @@
     },
     {
       "path": "okf/bundles/acme_retail/computations/revenue-ytd.md",
-      "sha256": "58a1ede7270ef41727b12e4f27cac05cf9f3f26f756bb6ba88126a1bf8d1c0be"
+      "sha256": "d4584e831dff9f6a284b1f9116ca41a16cfc5c26ca377fa6faa46ea0e9b5c5e7"
     },
     {
       "path": "okf/bundles/acme_retail/index.md",
@@ -94,7 +94,7 @@
     },
     {
       "path": "okf/bundles/acme_retail/log.md",
-      "sha256": "3f90393dd91535c1fbcc7553f96ea3e07be4be5a78800aec12f9a0ca77d8ce4e"
+      "sha256": "def518ddaa234f4a6533b9ca530622d39816d1a767de77ae489f43a538354005"
     },
     {
       "path": "okf/bundles/acme_retail/metrics/gross-margin-legacy.md",
@@ -102,7 +102,7 @@
     },
     {
       "path": "okf/bundles/acme_retail/metrics/gross-margin.md",
-      "sha256": "badff7d5d63a054b26983d3c61c0125a0d618aab28bc0e6b30a995d53d997751"
+      "sha256": "912be604fe7f681322b2ba6414b5791e9eb91b73aad1cae7afa666cedfe7d3c9"
     },
     {
       "path": "okf/bundles/acme_retail/metrics/index.md",
@@ -110,7 +110,7 @@
     },
     {
       "path": "okf/bundles/acme_retail/metrics/revenue.md",
-      "sha256": "0377d56b3a89fa1e40a6c8477faa75dea0a975b81fd7746a9484bb3c22c4c798"
+      "sha256": "1b9c033d2c715fa8beecfa0f371fafa1e70f64f1eeeac2a873ef5389389376b2"
     },
     {
       "path": "okf/bundles/acme_retail/policies/index.md",
@@ -118,11 +118,11 @@
     },
     {
       "path": "okf/bundles/acme_retail/policies/margin-standard.md",
-      "sha256": "e3a3294be58212277131561f1209a653309631c2337911727ba3029012022dad"
+      "sha256": "fad81a5eabc286913a4d9436c2d36d31bcfb1494659c4110900ec2569bc6e42c"
     },
     {
       "path": "okf/bundles/acme_retail/policies/revenue-recognition.md",
-      "sha256": "f2cf0c509459ccd6bbb72330aa0beef9d8afc06b604902ac7b1197d48bb39c5d"
+      "sha256": "7660f72336e41c8af22a5910934d4903e502c9e2c1248409249e5dc5393107f3"
     },
     {
       "path": "okf/bundles/acme_retail/skills/index.md",
@@ -138,7 +138,7 @@
     },
     {
       "path": "okf/bundles/acme_retail/tables/orders.md",
-      "sha256": "e58529ba426bfc4dd4bc83816a2287a439bd084f93dcb47d2bee43ae130c9254"
+      "sha256": "bfeecd29df0033a3fa441e42412ac7c5b64457e2b1b07c214318f91618058476"
     },
     {
       "path": "okf/bundles/crypto_bitcoin/datasets/crypto_bitcoin.md",
@@ -262,7 +262,7 @@
     },
     {
       "path": "okf/bundles/stackoverflow/datasets/stackoverflow.md",
-      "sha256": "327952a30cadb88b2ecae7526f3b1ad36a5813cbbb8cfe11e1c6aeabe3acd351"
+      "sha256": "652dc378975cd87e553aabf5669ef20edbad6c6c2f1120ee5543b57aca4e963c"
     },
     {
       "path": "okf/bundles/stackoverflow/index.md",
@@ -338,11 +338,11 @@
     },
     {
       "path": "okf/bundles/stackoverflow/tables/posts_answers.md",
-      "sha256": "76509ee6e87c1126b566dc7c1d2825f15b1e3554cd0cb88bc38ee0b1470ca1d0"
+      "sha256": "f7815477c909e2fa232da6b1c78cee54128c545885743d19783b44144ce20dfa"
     },
     {
       "path": "okf/bundles/stackoverflow/tables/posts_moderator_nomination.md",
-      "sha256": "e536122a28e20c3c429108047815e87919d96d063c44ecaeafb1a0374476977b"
+      "sha256": "4ad34227093939a030e7198566abdf880d43b5d951c7fcc3540d0ab227dd6868"
     },
     {
       "path": "okf/bundles/stackoverflow/tables/posts_orphaned_tag_wiki.md",
@@ -354,7 +354,7 @@
     },
     {
       "path": "okf/bundles/stackoverflow/tables/posts_questions.md",
-      "sha256": "0a57bc1fd4c4d44ec7681465d91e4e3fa6574a3a596f50db1576eda5a6fd6d94"
+      "sha256": "6cdc47a540c341a82b3d80f643e2c06bdc87aada7097e8c5383d6ee0ae8ff46f"
     },
     {
       "path": "okf/bundles/stackoverflow/tables/posts_tag_wiki_excerpt.md",
@@ -366,11 +366,11 @@
     },
     {
       "path": "okf/bundles/stackoverflow/tables/posts_wiki_placeholder.md",
-      "sha256": "feb56eaa69ae4ab56ced119aa7c01fd012c3c2d9dd7f5415e51606c0be2e9553"
+      "sha256": "8a20e10b4da3cf33f4cc53863cf0289183c7f1add652778d1c0c9feabc6928a8"
     },
     {
       "path": "okf/bundles/stackoverflow/tables/stackoverflow_posts.md",
-      "sha256": "2597dfe02eb9c41034dc7496930ca06c9e9047196615238804ecd0598007b695"
+      "sha256": "8e4d32024966f2403dca801ac5b5fd1e41b21fde1c972b2088f3a69a92478662"
     },
     {
       "path": "okf/bundles/stackoverflow/tables/tags.md",
@@ -378,11 +378,11 @@
     },
     {
       "path": "okf/bundles/stackoverflow/tables/users.md",
-      "sha256": "e1b9119d7065b372f7cec3971ee30794d41fb876756c971e541904ff75d85d46"
+      "sha256": "cb81d762fe3a3a4468563536ccf5378090c35896a5378cb8a1f408e8958265fc"
     },
     {
       "path": "okf/bundles/stackoverflow/tables/votes.md",
-      "sha256": "4d37ee93e910c3411ee096df924f21b07c944859fce24427e136152140abf5d5"
+      "sha256": "4179725997f711d913ae8eee321dbc43d64e3dfc3fe71fbef98bf2e757041565"
     }
   ]
 }

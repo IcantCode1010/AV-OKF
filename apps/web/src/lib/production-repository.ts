@@ -105,6 +105,8 @@ type DbExtractedPage = {
   pageNumber: number;
   tables: unknown;
   text: string;
+  figureCaptionHints?: string[];
+  visualCandidate?: boolean;
 };
 
 type DbExtractionJob = {
@@ -210,6 +212,29 @@ type DbTopicRecord = {
   title: string;
   topicType: string;
   updatedAt: Date;
+  mediaReferences?: DbTopicMediaReference[];
+};
+
+type DbTopicMediaReference = {
+  anchorTerms: string[];
+  confidence: number;
+  id: string;
+  mediaAsset: {
+    altText: string;
+    height: number;
+    id: string;
+    kind: string;
+    pageNumber: number;
+    sourceCaption: string | null;
+    visibleLabels: string[];
+    visualContext: string;
+    width: number;
+  };
+  rationale: string;
+  reviewedAt: Date | null;
+  reviewedBy: string | null;
+  role: string;
+  status: string;
 };
 
 type DbTopicEnrichmentAudit = {
@@ -324,9 +349,11 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             charCount: page.charCount,
             documentId: input.documentId,
             imageCount: page.imageCount,
+            figureCaptionHints: page.figureCaptionHints ?? [],
             pageNumber: page.pageNumber,
             tables: page.tables,
             text: page.text,
+            visualCandidate: page.visualCandidate ?? false,
             workspaceId: input.workspaceId,
           })),
         });
@@ -597,6 +624,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const topics = await db.topicRecord.findMany({
         include: {
           enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          mediaReferences: {
+            include: { mediaAsset: true },
+            orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
+          },
         },
         orderBy: [{ pageStart: "asc" }, { createdAt: "asc" }],
         where: {
@@ -828,6 +859,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const topic = await db.topicRecord.findUniqueOrThrow({
         include: {
           enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          mediaReferences: {
+            include: { mediaAsset: true },
+            orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
+          },
         },
         where: { id: input.topicId },
       });
@@ -1399,9 +1434,11 @@ function mapDocument(record: DbDocumentRecord): Document {
     (page) => ({
       charCount: page.charCount,
       imageCount: page.imageCount,
+      figureCaptionHints: page.figureCaptionHints ?? [],
       pageNumber: page.pageNumber,
       tables: normalizeExtractedTables(page.tables),
       text: page.text,
+      visualCandidate: page.visualCandidate ?? false,
     }),
   );
   const logs = (record.extractionLogs ?? []).map((log) => ({
@@ -1491,9 +1528,11 @@ function mapExtractedPage(page: DbExtractedPage): ExtractedPageRecord {
   return {
     charCount: page.charCount,
     imageCount: page.imageCount,
+    figureCaptionHints: page.figureCaptionHints ?? [],
     pageNumber: page.pageNumber,
     tables: normalizeExtractedTables(page.tables),
     text: page.text,
+    visualCandidate: page.visualCandidate ?? false,
   };
 }
 
@@ -1581,7 +1620,36 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     title: record.title,
     topicType: record.topicType,
     updatedAt: formatTimestamp(record.updatedAt),
+    mediaReferences: (record.mediaReferences ?? []).map((reference) => ({
+      anchorTerms: reference.anchorTerms,
+      confidence: reference.confidence,
+      id: reference.id,
+      mediaAsset: {
+        altText: reference.mediaAsset.altText,
+        height: reference.mediaAsset.height,
+        id: reference.mediaAsset.id,
+        kind: reference.mediaAsset.kind === "diagram" ? "diagram" : "figure",
+        pageNumber: reference.mediaAsset.pageNumber,
+        sourceCaption: reference.mediaAsset.sourceCaption,
+        visibleLabels: reference.mediaAsset.visibleLabels,
+        visualContext: reference.mediaAsset.visualContext,
+        width: reference.mediaAsset.width,
+      },
+      rationale: reference.rationale,
+      reviewedAt: reference.reviewedAt ? formatTimestamp(reference.reviewedAt) : null,
+      reviewedBy: reference.reviewedBy,
+      role: reference.role === "primary_evidence" || reference.role === "reference_diagram"
+        ? reference.role
+        : "supporting_detail",
+      status: normalizeTopicMediaStatus(reference.status),
+    })),
   };
+}
+
+function normalizeTopicMediaStatus(value: string) {
+  return ["approved", "auto_approved", "pending_review", "rejected", "stale"].includes(value)
+    ? value as "approved" | "auto_approved" | "pending_review" | "rejected" | "stale"
+    : "pending_review";
 }
 
 function normalizeTopicApprovalMode(value: string | null): TopicApprovalMode | null {

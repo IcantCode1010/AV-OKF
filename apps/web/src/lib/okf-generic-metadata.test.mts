@@ -62,6 +62,44 @@ test("generic OKF rejects missing type, invalid tags, and stale date", () => {
   }
 });
 
+test("OKF lifecycle timestamps require valid datetimes with explicit offsets", () => {
+  for (const staleAfter of [
+    "2026-12-31",
+    "2026-02-31T00:00:00Z",
+    "2026-12-31T00:00:00",
+  ]) {
+    const result = validateGenericOkfMetadata({ type: "policy", stale_after: staleAfter });
+    assert.equal(result.valid, false, staleAfter);
+    if (!result.valid) {
+      assert.ok(result.errors.includes("okf_v02_stale_after_invalid"), staleAfter);
+    }
+  }
+
+  assert.equal(
+    validateGenericOkfMetadata({
+      stale_after: "2026-12-31T00:00:00-05:00",
+      type: "policy",
+    }).valid,
+    true,
+  );
+});
+
+test("OKF source and usage-window timestamps use the same datetime contract", () => {
+  const result = validateGenericOkfMetadata({
+    sources: [{ last_modified: "2026-08-24", resource: "manual.md" }],
+    type: "policy",
+    usage_window: {
+      from: "2026-08-01T00:00:00Z",
+      to: "2026-08-24",
+    },
+  });
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.includes("okf_v02_sources_invalid"));
+    assert.ok(result.errors.includes("okf_v02_usage_window_invalid"));
+  }
+});
+
 test("generic validity does not imply trusted agent evidence", () => {
   assert.equal(isAgentReadyOkfMetadata({ type: "policy" }, "Policy text"), false);
   assert.equal(

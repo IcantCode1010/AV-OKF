@@ -25,6 +25,7 @@ test("document authoring does not include the separate knowledge-wide crawl", ()
   assert.deepEqual(AUTHORING_STAGES, [
     "metadata_discovery",
     "concept_discovery",
+    "media_discovery",
     "full_rag_index",
     "enrichment",
     "relation_classification",

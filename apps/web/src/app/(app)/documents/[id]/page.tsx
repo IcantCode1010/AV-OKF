@@ -326,6 +326,7 @@ export default async function DocumentDetailPage({
           relationTargets={relationTargets}
           topic={selectedTopic}
           topicsGeneratedCount={parseTopicsGeneratedCount(topicsGenerated)}
+          topicOptions={visibleTopics.map((candidate) => ({ id: candidate.id, title: candidate.title }))}
         />
       );
     }

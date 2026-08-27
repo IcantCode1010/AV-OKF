@@ -25,9 +25,9 @@ test("pinned upstream corpus has exact integrity and deterministic round trips",
   });
   assert.equal(report.integrity.valid, true);
   assert.deepEqual(report.integrity.mismatches, []);
-  assert.equal(report.summary.portableCompatibleBundles, 4);
+  assert.equal(report.summary.portableCompatibleBundles, 3);
   assert.equal(report.summary.roundTripsPassed, 78);
-  assert.equal(report.summary.conceptValidationFailures, 0);
+  assert.equal(report.summary.conceptValidationFailures, 8);
   assert.equal(report.summary.agentReadyConcepts, 0);
   assert.equal(report.summary.claimFootnoteReferences, 45);
   assert.equal(report.summary.matchedClaimFootnotes, 33);
@@ -40,10 +40,18 @@ test("portable compatibility remains separate from AV runtime readiness", async 
   const report = await buildOkfV02CompatibilityReport({ corpusRoot });
 
   for (const bundle of report.bundles) {
-    assert.equal(bundle.portableCompatible, true, bundle.name);
+    assert.equal(
+      bundle.portableCompatible,
+      bundle.name !== "stackoverflow",
+      bundle.name,
+    );
     assert.equal(bundle.runtimeReady, false, bundle.name);
     const expectedCodes = bundle.name === "stackoverflow"
-      ? ["okf_v02_claim_source_missing", "okf_v02_version_missing"]
+      ? [
+          "okf_v02_claim_source_missing",
+          "okf_v02_tags_invalid",
+          "okf_v02_version_missing",
+        ]
       : ["okf_v02_version_missing"];
     assert.deepEqual(
       [...new Set(bundle.runtimeIssues.map((issue) => issue.code))].sort(),
@@ -65,7 +73,7 @@ test("claim-level footnotes are reported without changing portable conformance",
     references: 12,
     warnings: 11,
   });
-  assert.equal(stackoverflow.portableCompatible, true);
+  assert.equal(stackoverflow.portableCompatible, false);
   assert.equal(
     stackoverflow.warnings.every((warning) =>
       warning.code === "okf_v02_claim_source_missing" && warning.target === "1"
@@ -81,6 +89,19 @@ test("claim-level footnotes are reported without changing portable conformance",
       bundle.name,
     );
   }
+});
+
+test("canonical sample defects remain visible instead of being normalized", async () => {
+  const report = await buildOkfV02CompatibilityReport({ corpusRoot });
+  const stackoverflow = report.bundles.find((bundle) => bundle.name === "stackoverflow");
+  assert.ok(stackoverflow);
+  assert.equal(stackoverflow.conceptValidationIssues.length, 8);
+  assert.equal(
+    stackoverflow.conceptValidationIssues.every((issue) =>
+      issue.codes.length === 1 && issue.codes[0] === "okf_v02_tags_invalid"
+    ),
+    true,
+  );
 });
 
 test("corpus exercises multiword types and nested producer extensions", async () => {

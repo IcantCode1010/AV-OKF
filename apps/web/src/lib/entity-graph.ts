@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { getEntityGraphQueue, type EntityGraphQueue } from "./entity-graph-queue.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
-import { getLlmProvider, getSdkModel } from "./llm-providers.ts";
+import { getLlmProvider, getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
 import { canonicalizeRelationEvidenceText } from "./okf-relation-verifier.ts";
 import { getOkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
@@ -177,7 +177,7 @@ export async function scheduleEntityExtractionForTopic(
 export async function runEntityExtractionJob(
   jobId: string,
   options: {
-    callProvider?: (input: { apiKey: string; prompt: string; provider: "anthropic" | "openai" }) => Promise<unknown>;
+    callProvider?: (input: { apiKey: string; prompt: string; provider: LlmProviderId }) => Promise<unknown>;
   } = {},
 ) {
   const db = getPrisma();
@@ -670,7 +670,7 @@ function buildEntityExtractionPrompt(input: {
   });
 }
 
-async function callEntityExtractionProvider(input: { apiKey: string; prompt: string; provider: "anthropic" | "openai" }) {
+async function callEntityExtractionProvider(input: { apiKey: string; prompt: string; provider: LlmProviderId }) {
   const result = await generateText({
     model: getSdkModel(input.provider, input.apiKey),
     output: Output.object({ schema: entityExtractionSchema }),

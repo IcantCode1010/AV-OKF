@@ -11,6 +11,7 @@ export type DocumentProcessingStageId =
   | "extraction"
   | "metadata_discovery"
   | "concept_discovery"
+  | "media_discovery"
   | "full_rag_index"
   | "enrichment"
   | "entity_connections"
@@ -101,6 +102,7 @@ export type DocumentProcessingFingerprintSnapshot = {
 const authoringStageIds: DocumentProcessingStageId[] = [
   "metadata_discovery",
   "concept_discovery",
+  "media_discovery",
   "full_rag_index",
   "enrichment",
   "relation_classification",
@@ -142,6 +144,10 @@ const stageCopy: Record<
   concept_discovery: {
     detail: "Finding and consolidating the concepts discussed in the document.",
     label: "Concept discovery",
+  },
+  media_discovery: {
+    detail: "Extracting source-grounded figure crops and associating them with exact-page topics for review.",
+    label: "Figure discovery",
   },
   full_rag_index: {
     detail: "Building a complete, inactive search index across every readable nonblank page.",

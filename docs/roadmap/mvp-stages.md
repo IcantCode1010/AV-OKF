@@ -829,7 +829,7 @@ Import safety requirements:
 Reference:
 
 - [OKF v0.2 Adoption Decision](../architecture/okf-v0.2-adoption.md)
-- [Published OKF v0.2 Specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
+- [Published OKF v0.2 Specification](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md)
 - [Document-to-OKF Bundle Walkthrough](../user-guides/file-processing-walkthrough.md)
 
 Exit criteria:

@@ -69,6 +69,16 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
     getFormString(formData, "autoApproveEnrichedTopics") === "true";
   profile.automation.autoApproveVerifiedRelations =
     getFormString(formData, "autoApproveVerifiedRelations") === "true";
+  profile.media.topicFiguresEnabled =
+    getFormString(formData, "topicFiguresEnabled") === "true";
+  profile.media.autoApproveHighConfidenceEnabled =
+    getFormString(formData, "autoApproveHighConfidenceEnabled") === "true";
+  const mediaThreshold = Number.parseFloat(
+    getFormString(formData, "autoApproveThreshold"),
+  );
+  profile.media.autoApproveThreshold = Number.isFinite(mediaThreshold)
+    ? Math.max(0.95, Math.min(1, mediaThreshold))
+    : 0.95;
   profile.clarificationFields = getFormString(formData, "clarificationFields")
     .split(",")
     .map((value) => normalizeProfileIdentifier(value))

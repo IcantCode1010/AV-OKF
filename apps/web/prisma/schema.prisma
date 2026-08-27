@@ -91,6 +91,9 @@ model Workspace {
   topicExpansionProposals     TopicExpansionProposal[]
   topicExpansionBatches       TopicExpansionEnrichmentBatch[]
   topicEnrichmentJobs         TopicEnrichmentJob[]
+  documentMediaAssets         DocumentMediaAsset[]
+  topicMediaReferences        TopicMediaReference[]
+  mediaAnalysisAudits         MediaAnalysisAudit[]
   createdAt                   DateTime                        @default(now())
   updatedAt                   DateTime                        @updatedAt
 }
@@ -183,6 +186,9 @@ model Document {
   entityExtractionJobs     EntityExtractionJob[]
   entityRelationCandidates EntityRelationCandidate[]
   topicExpansionEvidence   TopicExpansionEvidence[]
+  mediaAssets              DocumentMediaAsset[]
+  topicMediaReferences     TopicMediaReference[]
+  mediaAnalysisAudits      MediaAnalysisAudit[]
   createdAt                DateTime                       @default(now())
   updatedAt                DateTime                       @updatedAt
   topicExpansionProposals  TopicExpansionProposal[]
@@ -229,6 +235,8 @@ model KnowledgeBundle {
   entityExtractionJobs       EntityExtractionJob[]
   entityClassifications      EntityBundleClassification[]
   entityTopicLinks           EntityTopicLink[]
+  mediaAssets                DocumentMediaAsset[]
+  topicMediaReferences       TopicMediaReference[]
   entityExpansionRuns        EntityExpansionRun[]
   entityRelationCandidates   EntityRelationCandidate[]
   topicExpansionRuns         TopicExpansionRun[]
@@ -689,18 +697,22 @@ model TopicDiscoveryAudit {
 }
 
 model ExtractedPage {
-  id               String   @id @default(cuid())
-  workspaceId      String
-  documentId       String
-  pageNumber       Int
-  text             String   @db.Text
-  tables           Json
-  imageCount       Int
-  charCount        Int
-  extractionMethod String   @default("digital")
-  ocrConfidence    Float?
-  warningCodes     String[] @default([])
-  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  documentId          String
+  pageNumber          Int
+  text                String               @db.Text
+  tables              Json
+  imageCount          Int
+  charCount           Int
+  extractionMethod    String               @default("digital")
+  ocrConfidence       Float?
+  warningCodes        String[]             @default([])
+  visualCandidate     Boolean              @default(false)
+  figureCaptionHints  String[]             @default([])
+  document            Document             @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  mediaAssets         DocumentMediaAsset[]
+  mediaAnalysisAudits MediaAnalysisAudit[]
 
   @@unique([documentId, pageNumber])
   @@index([workspaceId, documentId])
@@ -936,12 +948,100 @@ model TopicRecord {
   expansionEvidence         TopicExpansionEvidence[]    @relation("ExpansionSourceTopic")
   expansionResearchJobs     TopicExpansionResearchJob[]
   enrichmentJobs            TopicEnrichmentJob[]
+  mediaReferences           TopicMediaReference[]
   createdAt                 DateTime                    @default(now())
   updatedAt                 DateTime                    @updatedAt
 
   @@index([workspaceId, documentId])
   @@index([knowledgeBundleId, documentId])
   @@index([bulkApprovalRunId])
+}
+
+model DocumentMediaAsset {
+  id                   String                @id @default(cuid())
+  workspaceId          String
+  knowledgeBundleId    String?
+  documentId           String
+  extractedPageId      String?
+  pageNumber           Int
+  kind                 String
+  objectKey            String                @unique
+  mimeType             String                @default("image/png")
+  width                Int
+  height               Int
+  boundingBox          Json
+  sourceCaption        String?
+  altText              String
+  visualContext        String                @db.Text
+  visibleLabels        String[]              @default([])
+  ocrText              String?               @db.Text
+  contentSha256        String
+  sourceDocumentSha256 String?
+  analysisProvider     String?
+  analysisModel        String?
+  warningCodes         String[]              @default([])
+  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle      KnowledgeBundle?      @relation(fields: [knowledgeBundleId], references: [id], onDelete: SetNull)
+  document             Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extractedPage        ExtractedPage?        @relation(fields: [extractedPageId], references: [id], onDelete: SetNull)
+  topicReferences      TopicMediaReference[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([workspaceId, documentId, pageNumber])
+  @@index([knowledgeBundleId, createdAt])
+  @@index([contentSha256])
+}
+
+model TopicMediaReference {
+  id                String             @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  documentId        String
+  topicId           String
+  mediaAssetId      String
+  role              String
+  confidence        Float
+  rationale         String             @db.Text
+  anchorTerms       String[]           @default([])
+  status            String             @default("pending_review")
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle    @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document          Document           @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  topic             TopicRecord        @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  mediaAsset        DocumentMediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([topicId, mediaAssetId])
+  @@index([workspaceId, documentId, status])
+  @@index([knowledgeBundleId, topicId, status])
+  @@index([mediaAssetId, status])
+}
+
+model MediaAnalysisAudit {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  documentId       String
+  extractedPageId  String?
+  pageNumber       Int
+  provider         String
+  model            String
+  promptVersion    String
+  inputHash        String
+  structuredOutput Json?
+  warningCodes     String[]       @default([])
+  succeeded        Boolean
+  errorMessage     String?        @db.Text
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  document         Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extractedPage    ExtractedPage? @relation(fields: [extractedPageId], references: [id], onDelete: SetNull)
+  createdAt        DateTime       @default(now())
+
+  @@index([workspaceId, documentId, createdAt])
+  @@index([documentId, pageNumber])
 }
 
 model TopicExpansionRun {

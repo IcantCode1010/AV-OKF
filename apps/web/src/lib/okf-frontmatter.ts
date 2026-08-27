@@ -45,8 +45,8 @@ export type OkfTrustTier =
 
 export type OkfApprovalProvenance = "automated" | "human" | "legacy";
 
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const ISO_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:/;
+const ISO_DATE_TIME_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 
 export function parseOkfMarkdown(markdown: string): ParsedOkfMarkdown {
   const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(markdown);
@@ -246,10 +246,11 @@ export function isOkfV02Current(
   frontmatter: Record<string, unknown>,
   today = new Date(),
 ): boolean {
-  if (frontmatter.status !== "stable") return false;
+  if (frontmatter.status !== undefined && frontmatter.status !== "stable") return false;
   const staleAfter = asString(frontmatter.stale_after);
   if (!staleAfter) return true;
-  return today.toISOString().slice(0, 10) < staleAfter;
+  if (!isIsoDateTime(staleAfter)) return false;
+  return today.valueOf() < Date.parse(staleAfter);
 }
 
 export function validateOkfV02Frontmatter(
@@ -274,8 +275,12 @@ export function validateOkfV02Frontmatter(
     errors.push("okf_v02_status_invalid");
   }
   if (frontmatter.stale_after !== undefined &&
-      !isIsoDate(asString(frontmatter.stale_after))) {
+      !isIsoDateTime(asString(frontmatter.stale_after))) {
     errors.push("okf_v02_stale_after_invalid");
+  }
+  if (frontmatter.usage_window !== undefined &&
+      !isUsageWindow(frontmatter.usage_window)) {
+    errors.push("okf_v02_usage_window_invalid");
   }
   if (frontmatter.generated !== undefined) {
     if (!isPlainObject(frontmatter.generated) ||
@@ -299,7 +304,12 @@ export function validateOkfV02Frontmatter(
   if (frontmatter.sources !== undefined) {
     if (!Array.isArray(frontmatter.sources) ||
         frontmatter.sources.some((entry) =>
-          !isPlainObject(entry) || !asString(entry.resource))) {
+          !isPlainObject(entry) ||
+          !asString(entry.resource) ||
+          (entry.last_modified !== undefined &&
+            !isIsoDateTime(asString(entry.last_modified))) ||
+          (entry.usage_window !== undefined &&
+            !isUsageWindow(entry.usage_window)))) {
       errors.push("okf_v02_sources_invalid");
     }
   }
@@ -329,13 +339,27 @@ function asString(value: unknown): string | null {
     : null;
 }
 
-function isIsoDate(value: string | null): boolean {
-  if (!value || !ISO_DATE_PATTERN.test(value)) return false;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+function isIsoDateTime(value: string | null): boolean {
+  if (!value) return false;
+  const match = ISO_DATE_TIME_PATTERN.exec(value);
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] = match;
+  const calendarDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (
+    calendarDate.getUTCFullYear() !== Number(year) ||
+    calendarDate.getUTCMonth() !== Number(month) - 1 ||
+    calendarDate.getUTCDate() !== Number(day) ||
+    Number(hour) > 23 ||
+    Number(minute) > 59 ||
+    Number(second) > 59 ||
+    Number(offsetHour ?? 0) > 23 ||
+    Number(offsetMinute ?? 0) > 59
+  ) return false;
+  return !Number.isNaN(Date.parse(value));
 }
 
-function isIsoDateTime(value: string | null): boolean {
-  return Boolean(value && ISO_DATE_TIME_PATTERN.test(value) &&
-    !Number.isNaN(new Date(value).valueOf()));
+function isUsageWindow(value: unknown): boolean {
+  return isPlainObject(value) &&
+    isIsoDateTime(asString(value.from)) &&
+    isIsoDateTime(asString(value.to));
 }
