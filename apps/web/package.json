@@ -27,7 +27,9 @@
     "maintenance:stabilize-relations": "tsx scripts/stabilize-relations.mts",
     "test:okf-compatibility": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test src/lib/okf-v02-claim-attribution.test.mts src/lib/okf-v02-compatibility.test.mts src/lib/okf-v02-validation.test.mts src/lib/okf-generic-metadata.test.mts && tsx scripts/report-okf-v02-compatibility.mts --check",
     "validate:okf-v0.2": "tsx scripts/validate-okf-v02.mts",
-    "repair:okf-articles": "tsx scripts/repair-okf-article-format.mts"
+    "repair:okf-articles": "tsx scripts/repair-okf-article-format.mts",
+    "export:efb-release": "tsx scripts/export-efb-release.mts",
+    "prepare:efb-review": "tsx scripts/prepare-efb-review-packet.mts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.58",

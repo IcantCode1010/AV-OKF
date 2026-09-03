@@ -1,2 +1,5 @@
 # Local maintenance-window database and vault backups.
 backups/
+
+# Local review packets can contain extracted source text and must not be committed.
+work/efb-review/
