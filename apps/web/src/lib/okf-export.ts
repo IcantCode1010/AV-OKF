@@ -404,7 +404,7 @@ function toSourceRelativeTarget(sourceDirectory: string, bundleRelativeTarget: s
 function addOptionalField(
   fields: OkfV02Frontmatter,
   key: string,
-  value: string | null,
+  value: string | null | undefined,
 ) {
   if (value && value.trim().length > 0) fields[key] = value.trim();
 }
