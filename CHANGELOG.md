@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added an opt-in Project EFB release profile and deterministic
+  `export:efb-release` pipeline. Stable, human-reviewed OKF 0.2 articles can now
+  produce immutable display and agent artifacts, a structured-keyword index,
+  package manifest, and checksums from a clean commit. Publication fails closed
+  on missing audience, B738 applicability, placement, authority, license,
+  source, review, or relationship metadata; truncated bodies, ATA/effectivity
+  conflicts, and training sources falsely labeled as approved manuals are also
+  rejected. Every result validates with the consuming Project EFB contract
+  before succeeding.
+- Added a non-mutating EFB human-review packet generator. It collects exact
+  source pages and hashes for explicitly selected topics, reports ATA,
+  authority, revision, title, and aircraft metadata conflicts, and leaves all
+  technical and license approvals unresolved. Local packets are excluded from
+  Git because they can contain extracted source text.
+- Added mandatory Ed25519 signing to the release CLI. The command verifies the
+  supplied private/public key pair, signs a domain-separated package identity
+  and artifact checksum, and requires Project EFB to verify that signature and
+  trusted key ID before reporting a successful release build.
 - Added opt-in multimodal figure and diagram discovery during document
   authoring. Candidate pages are rendered temporarily, analyzed against only
   exact-page topic IDs, cropped into durable PNG assets, checked with local

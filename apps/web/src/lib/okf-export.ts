@@ -50,6 +50,8 @@ export type ExportTopicMedia = {
 };
 
 type ExportDocument = {
+  aircraftFamily?: string | null;
+  ata?: string | null;
   contentSha256: string | null;
   title: string;
   subjectFamily: string | null;
@@ -59,6 +61,7 @@ type ExportDocument = {
   sourceAuthority: string | null;
   revision: string | null;
   mimeType: string;
+  manualType?: string | null;
   originalFilename: string | null;
   sizeBytes: number;
 };
@@ -139,6 +142,10 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   );
   addOptionalField(frontmatterFields, "effectivity", input.document.effectivity);
   addOptionalField(frontmatterFields, "revision", input.document.revision);
+  addOptionalField(frontmatterFields, "aircraft_family", input.document.aircraftFamily);
+  addOptionalField(frontmatterFields, "ata", input.document.ata);
+  addOptionalField(frontmatterFields, "manual_type", input.document.manualType);
+  addOptionalField(frontmatterFields, "source_authority", input.document.sourceAuthority);
   addCustomMetadata(frontmatterFields, input.topic.okfMetadata);
   if (input.topic.media?.length) {
     frontmatterFields.av_okf_media = input.topic.media.map((media) => ({

@@ -32,6 +32,13 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.equal(generic.fields.entity_type?.type, "string");
   assert.equal(generic.types.entity?.category, "concepts");
   assert.equal(aviation.fields.aircraft_family?.required, undefined);
+  assert.equal(aviation.fields.efb_entry_id?.type, "string");
+  assert.equal(aviation.fields.efb_audiences?.type, "string_array");
+  assert.equal(aviation.fields.efb_aircraft_type_ids?.type, "string_array");
+  assert.equal(aviation.fields.efb_placements?.type, "string_array");
+  assert.equal(aviation.fields.efb_source_classification?.type, "string");
+  assert.equal(aviation.fields.efb_license_reviewed_at?.type, "date");
+  assert.equal(generic.fields.efb_entry_id, undefined);
   assert.deepEqual(aviation.clarificationFields, [
     "subject_family",
     "classification_code",

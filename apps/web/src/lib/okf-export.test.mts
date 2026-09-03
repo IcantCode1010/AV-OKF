@@ -27,11 +27,14 @@ const approvedTopic = {
 };
 
 const exportDocument = {
+  aircraftFamily: "Boeing 737NG",
+  ata: "32",
   classificationCode: "32",
   contentSha256: "a".repeat(64),
   documentType: "AMM",
   effectivity: "737-700/800/900",
   mimeType: "application/pdf",
+  manualType: "AMM",
   originalFilename: "737ng-amm-32.pdf",
   revision: "2026-06",
   sizeBytes: 123456,
@@ -65,6 +68,10 @@ test("buildOkfSystemTopic emits the v0.2 trust and provenance contract", () => {
     title: exportDocument.title,
   }]);
   assert.deepEqual(parsed.frontmatter.source_pages, [41, 42, 43]);
+  assert.equal(parsed.frontmatter.aircraft_family, "Boeing 737NG");
+  assert.equal(parsed.frontmatter.ata, "32");
+  assert.equal(parsed.frontmatter.manual_type, "AMM");
+  assert.equal(parsed.frontmatter.source_authority, "Boeing Aircraft Maintenance Manual");
   for (const removed of ["review_status", "approved_by", "approved_at", "updated", "source_file"]) {
     assert.equal(Object.hasOwn(parsed.frontmatter, removed), false, `${removed} must not be emitted`);
   }
