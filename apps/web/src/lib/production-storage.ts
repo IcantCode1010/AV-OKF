@@ -8,7 +8,9 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 type DocumentObjectKeyInput = {
   documentId: string;
@@ -36,6 +38,17 @@ export type ObjectStorage = {
     key: string;
   }): Promise<void>;
 };
+
+export async function streamObjectToFile(input: {
+  destination: string;
+  key: string;
+  storage: Pick<ObjectStorage, "getObjectStream">;
+}) {
+  await pipeline(
+    await input.storage.getObjectStream(input.key),
+    createWriteStream(input.destination),
+  );
+}
 
 type S3Config = {
   accessKeyId: string;

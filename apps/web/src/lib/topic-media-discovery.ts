@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
+import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -12,7 +12,11 @@ import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import { getLlmProvider, getSdkModel } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
-import { getObjectStorage, type ObjectStorage } from "./production-storage.ts";
+import {
+  getObjectStorage,
+  streamObjectToFile,
+  type ObjectStorage,
+} from "./production-storage.ts";
 
 const execFileAsync = promisify(execFile);
 const MEDIA_PROMPT_VERSION = "topic-figures-v1";
@@ -172,16 +176,19 @@ export async function runDocumentMediaDiscovery(input: {
     where: { documentId: document.id, workspaceId: input.workspaceId },
   });
   const storage = input.storage ?? getObjectStorage();
-  const pdfBytes = await storage.getObject(original.objectKey);
   const scratch = await mkdtemp(path.join(tmpdir(), "av-okf-media-"));
   const pdfPath = path.join(scratch, "source.pdf");
-  await writeFile(pdfPath, pdfBytes);
   let assets = 0;
   let autoApproved = 0;
   let pendingReview = 0;
   const warnings: string[] = [];
 
   try {
+    await streamObjectToFile({
+      destination: pdfPath,
+      key: original.objectKey,
+      storage,
+    });
     for (const page of pages) {
       const pageTopics = topics.filter((topic) => topic.sourcePageNumbers.includes(page.pageNumber));
       if (pageTopics.length === 0) continue;

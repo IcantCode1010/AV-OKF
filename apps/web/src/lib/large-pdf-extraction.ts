@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 
 import { MAX_LARGE_PDF_PAGES, MAX_LARGE_PDF_UPLOAD_BYTES } from "./document-upload-limits.ts";
 import { getPrisma } from "./prisma.ts";
-import type { ObjectStorage } from "./production-storage.ts";
+import { streamObjectToFile, type ObjectStorage } from "./production-storage.ts";
 
 const execFileAsync = promisify(execFile);
 const EXTRACTION_BATCH_PAGES = 20;
@@ -88,7 +88,11 @@ export async function runLargePdfExtraction(input: {
         where: { id: checkpoint.id },
       });
       const batchPath = path.join(scratch, `batch-${checkpoint.batchIndex}.pdf`);
-      await pipeline(await input.storage.getObjectStream(checkpoint.outputKey), createWriteStream(batchPath));
+      await streamObjectToFile({
+        destination: batchPath,
+        key: checkpoint.outputKey,
+        storage: input.storage,
+      });
       try {
         const pages = await extractBatch(batchPath, checkpoint.pageStart, checkpoint.pageEnd, scratch);
         const outputHash = createHash("sha256").update(JSON.stringify(pages)).digest("hex");

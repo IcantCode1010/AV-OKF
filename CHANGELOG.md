@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Fixed figure discovery so source PDFs are streamed from object storage into
+  bounded worker scratch space instead of being loaded into a single memory
+  buffer. Batched extraction now shares the same streaming boundary.
 - Added opt-in multimodal figure and diagram discovery during document
   authoring. Candidate pages are rendered temporarily, analyzed against only
   exact-page topic IDs, cropped into durable PNG assets, checked with local
