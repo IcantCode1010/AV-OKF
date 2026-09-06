@@ -1,8 +1,43 @@
 # EFB release export boundary
 
-AV-OKF remains the authoring and review authority. Project EFB remains the runtime authority for identity, authorization, active-release selection, article display, retrieval, and agent access. The projects exchange immutable release artifacts; they do not share a database or read each other's mutable working directories.
+AV-OKF remains the authoring authority. Project EFB remains the runtime authority for identity, authorization, active-release selection, article display, retrieval, and agent access. The projects exchange immutable release artifacts; they do not share a database or read each other's mutable working directories.
 
-## Included-entry profile
+The exporter has two explicit modes:
+
+- **PoC:** automatically packages every completed aviation article after document authoring. It does not require topic approval, license review, reviewer identity, or a digital signature. Every article is labeled `Unreviewed prototype knowledge — not approved instructions`, and `approved-for-inclusion` means only that the article is included in the prototype package.
+- **Production:** retains the strict human-review, license-review, clean-commit, and Ed25519-signing requirements documented below.
+
+PoC mode is enabled in the local Docker stack with `AV_OKF_EFB_EXPORT_MODE=poc`. Set the value to `disabled` to stop automatic package generation. Production publication remains an explicit signed CLI operation.
+
+## Automated PoC package
+
+When an aviation authoring run reaches `ready_for_review`, a deterministic durable job snapshots all completed aviation articles in that bundle. The job builds the existing Project EFB contract through the same exporter and writes one importable folder:
+
+```text
+dist/efb-releases/<package-id>@<version>/
+  manifest.json
+  display/<entry-id>.md
+  agent/<entry-id>.json
+  retrieval.jsonl
+  checksums.sha256
+  release.json
+```
+
+Article IDs are stable hashes of AV-OKF topic IDs. After enrichment, each aviation article receives a bounded evidence-backed classification stored under `extensions.projectEfb`. It contains aircraft family and variants, audience, supported ATA chapter, confidence, provider/model, status, and exact source evidence. The classifier checks explicit ATA references, section hierarchy, the validated document default, article content, and Project EFB's supported taxonomy in that order.
+
+The exporter uses the accepted article classification first and invokes the same classifier as a legacy fallback when it is missing. A valid document-level ATA remains the default while an accepted article classification can override it. Unsupported or ambiguous content is left unplaced. Source identifiers and publication codes remain provenance only; for example, `737SAR` may appear in a source-reference label but can never become an ATA placement.
+
+Titles, summaries, full enriched bodies, tags, source pages, classified aircraft applicability, audiences, and placement are projected into the package. Before checksums are calculated, AV-OKF compares the manifest, every agent artifact, and every retrieval row and fails the release if applicability, audience, or placement differs. Missing required content fails the complete job.
+
+The worker stages the package, invokes Project EFB's existing `validate-knowledge-package.mjs`, and only then atomically moves the directory into `dist/efb-releases`. A failed validation leaves no importable final directory. Job status and the final folder name appear in document-processing progress.
+
+Existing aviation topics can be classified again without re-ingesting their PDFs:
+
+```powershell
+pnpm --dir apps/web maintenance:classify-project-efb -- <document-id> --queue-release
+```
+
+## Production included-entry profile
 
 An OKF 0.2 article is eligible for an EFB release only when it is stable, human-reviewed, has at least one source, and carries all of these extension fields:
 

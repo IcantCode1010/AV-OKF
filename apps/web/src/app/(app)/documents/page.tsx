@@ -17,6 +17,7 @@ import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
 import { Button } from "@/components/ui/button";
 import { DirectPdfUploadForm } from "@/components/direct-pdf-upload-form";
 import { isProductionBackend } from "@/lib/production-document-service";
+import { AviationDocumentMetadataFields } from "@/components/aviation-document-metadata-fields";
 
 export const dynamic = "force-dynamic";
 
@@ -144,18 +145,7 @@ export default async function DocumentsPage({
                 <Label htmlFor="tags">Tags</Label>
                 <Input id="tags" name="tags" placeholder="operations, safety, handbook" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="sourceType">Source type</Label>
-                <select
-                  id="sourceType"
-                  name="sourceType"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-                  defaultValue="general"
-                >
-                  <option value="general">General</option>
-                  <option value="aviation">Aviation</option>
-                </select>
-              </div>
+              <AviationDocumentMetadataFields className="md:col-span-2" />
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="description">Description</Label>
                 <textarea
@@ -193,6 +183,16 @@ function formatUploadError(raw: string | undefined) {
   if (raw === "only_pdf_uploads_supported") {
     return "Only PDF uploads are supported.";
   }
+
+  const aviationErrors: Record<string, string> = {
+    invalid_aviation_ata: "Enter an ATA chapter or code such as 24 or 24-00-00.",
+    invalid_aviation_aircraft_type_id: "Aircraft type IDs must be 2-4 letters or numbers, such as B738.",
+    invalid_aviation_source_classification: "Choose a valid aviation source classification.",
+    invalid_aviation_intended_audience: "Choose Pilot, Maintenance, or both audiences.",
+    aviation_intended_audience_required: "Choose at least one intended audience.",
+    aviation_content_purpose_required: "Enter the aviation content purpose.",
+  };
+  if (aviationErrors[raw]) return aviationErrors[raw];
 
   if (raw === "upload_exceeds_250mb_limit") {
     return "File exceeds the 250 MB upload limit.";

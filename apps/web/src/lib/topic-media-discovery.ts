@@ -1,3 +1,4 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
@@ -145,7 +146,7 @@ export async function runDocumentMediaDiscovery(input: {
     bundleId: document.knowledgeBundleId,
     workspaceId: input.workspaceId,
   });
-  if (!bundle?.profile.media.topicFiguresEnabled) {
+  if (!bundle || (!bundle.profile.media.topicFiguresEnabled&&!knowledgeFeature("shared"))) {
     return { assets: 0, autoApproved: 0, pendingReview: 0, warnings: [] };
   }
   const key = await getWorkspaceLlmApiKeyForEnrichment(input.workspaceId);

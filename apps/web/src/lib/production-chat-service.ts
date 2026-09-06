@@ -1,3 +1,9 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
+import { buildChatAnswerConnections } from "./chat-answer-graph.ts";
+import {researchChatEvidence} from "./knowledge/chat-research.ts";
+import {conversationalReply} from "./knowledge/conversation.ts";
+import {validateResearchEvidence, validateResearchGraphConnections} from "./knowledge/research.ts";
+import {getPrisma} from "./prisma.ts";
 import { requireAuthWorkspaceContext } from "./auth-workspace.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
@@ -112,7 +118,10 @@ export function createProductionChatService(
   return {
     async createSession(knowledgeBundleId: string, title?: string) {
       const context = await getContext();
-      return repository.createSession({ context, knowledgeBundleId, title });
+      const session=await repository.createSession({ context, knowledgeBundleId, title });
+      if(!knowledgeFeature("shared"))return session;
+      const bundles=await getPrisma().knowledgeBundle.findMany({where:{workspaceId:context.workspaceId,status:"active"},select:{id:true}});
+      return repository.updateKnowledgeBundleScope({context,sessionId:session.id,knowledgeBundleIds:bundles.map(b=>b.id)});
     },
 
     async getSessionWorkspaceId(sessionId: string) {
@@ -126,6 +135,7 @@ export function createProductionChatService(
 
     async updateSessionKnowledgeBundles(sessionId, knowledgeBundleIds) {
       const context = await getContext();
+      if(knowledgeFeature("shared"))await getPrisma().knowledgeResearchRun.updateMany({where:{workspaceId:context.workspaceId,userId:context.userId,ownerId:sessionId,status:"running"},data:{cancelledAt:new Date()}});
       return repository.updateKnowledgeBundleScope({
         context,
         knowledgeBundleIds,
@@ -205,10 +215,14 @@ export function createProductionChatService(
         context,
         sessionId,
       });
-      const conversationContext = history.messages
+      const smallTalk=knowledgeFeature("chat")?conversationalReply(content):null;
+      if(smallTalk){const ids=history.session.knowledgeBundles.map(b=>b.id);return repository.appendUserMessageAndAssistantReply({context,sessionId,content,assistantContent:smallTalk,citations:[],knowledgeBundleIds:ids,scopeVersion:history.session.scopeVersion,primaryKnowledgeBundleId:history.session.primaryKnowledgeBundleId,assistantTrace:{...buildStage6aRouterTrace({route:"unsupported",queryCategory:"unsupported",confidence:"high",constraints:{approvedOnly:false,includeUnreviewed:false},requiredContext:[],rationale:"Conversational turn; no source claims or retrieval required."}),responseKind:"conversation",answerMode:"deterministic",answerOutcome:"answered",bundleScope:{bundleIds:ids,bundleNames:history.session.knowledgeBundles.map(b=>b.name),scopeVersion:history.session.scopeVersion}}});}
+      const scopedMessages=history.messages.filter(message=>message.scopeVersion===history.session.scopeVersion && message.knowledgeBundleIds.every(id=>history.session.knowledgeBundles.some(b=>b.id===id)));
+      const conversationContext = scopedMessages
+        .filter(message=>!knowledgeFeature("chat")||message.citations.length===0)
         .slice(-CONVERSATION_CONTEXT_TURNS)
         .map((message) => `${message.role}: ${message.content}`);
-      const clarification = getClarificationState(history.messages);
+      const clarification = getClarificationState(scopedMessages);
       const bundleScope = history.session.knowledgeBundles;
       const knowledgeBundleIds = bundleScope.map((bundle) => bundle.id);
       if (knowledgeBundleIds.length === 0) {
@@ -222,7 +236,7 @@ export function createProductionChatService(
         workspaceId: context.workspaceId,
       });
       const validatedMetadataSelection = validateMetadataClarificationSelection(
-        history.messages,
+        scopedMessages,
         metadataSelection,
       );
       const unresolvedVagueFollowUp =
@@ -247,7 +261,8 @@ export function createProductionChatService(
           })
         : buildSkippedQueryUnderstanding(content);
       const retrievalQuery = queryUnderstanding.retrievalQuery;
-      let retrieval = isRetrievalRoute(decision.route) && !unresolvedVagueFollowUp
+      const useSharedResearch = knowledgeFeature("chat") && !options.retrieve && isRetrievalRoute(decision.route) && (decision.route !== "okf_only" || decision.requiresGraphTraversal === true) && !unresolvedVagueFollowUp;
+      let retrieval = !useSharedResearch && isRetrievalRoute(decision.route) && !unresolvedVagueFollowUp
           ? await retrieve({
             clarificationAlreadyAsked: clarification.alreadyAsked,
             decision,
@@ -266,6 +281,11 @@ export function createProductionChatService(
             rerank: { applied: false, dropped: 0, status: "not_applicable" as const },
             sourcesRead: [],
           };
+      let graphResearch:Awaited<ReturnType<typeof researchChatEvidence>>|undefined;
+      if(useSharedResearch){
+        graphResearch=await researchChatEvidence(context,sessionId,retrievalQuery,knowledgeBundleIds,retrieval);
+        retrieval=graphResearch.result;
+      }
       let evidenceSufficiency = classifyEvidenceSufficiency(
         retrieval,
         decision,
@@ -276,6 +296,7 @@ export function createProductionChatService(
         .filter((bundle) => bundle.boundedAdaptiveRetryEnabled === true)
         .map((bundle) => bundle.id);
       if (
+        !graphResearch &&
         isRetrievalRoute(decision.route) &&
         !unresolvedVagueFollowUp &&
         !retrieval.metadataClarification
@@ -578,6 +599,8 @@ export function createProductionChatService(
           answerValidation = finalProjectionValidation;
         }
       }
+      if(graphResearch)await validateResearchEvidence(graphResearch.research.scope,graphResearch.research.result.evidence);
+      if(graphResearch)await validateResearchGraphConnections(graphResearch.research.scope,graphResearch.research.result);
       const agentExecution = isRetrievalRoute(decision.route)
         ? appendValidationToolTrace(
             persistedRetrieval.agentExecution,
@@ -602,6 +625,7 @@ export function createProductionChatService(
         : undefined;
       const finalTrace = {
         ...persistedAssistantTrace,
+        answerConnections: buildChatAnswerConnections(persistedRetrieval.evidence, finalizedTurn.citations, graphResearch?.research.result.graphConnections),
         citationProjection: finalizedTurn.citationProjection,
         evidenceSufficiency: retrieval.metadataClarification
           ? persistedEvidenceSufficiency
@@ -637,7 +661,7 @@ export function createProductionChatService(
           : undefined;
 
       return repository.appendUserMessageAndAssistantReply({
-        assistantContent: finalizedTurn.content,
+        assistantContent: graphResearch?.research.result.coverage==="partial"?`${finalizedTurn.content}\n\nResearch reached its limit. This answer reflects the evidence checked so far; additional applicable information may exist.`:finalizedTurn.content,
         assistantTrace: {
           ...finalTrace,
           ...(finalAdaptiveRetry ? { adaptiveRetry: finalAdaptiveRetry } : {}),

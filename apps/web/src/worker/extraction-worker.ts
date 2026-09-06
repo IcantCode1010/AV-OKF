@@ -1,4 +1,6 @@
+import {BULK_ENRICHMENT_QUEUE,runSelectedTopicEnrichment,type SelectedEnrichmentJob} from "../lib/bulk-topic-enrichment.ts";
 import { Worker } from "bullmq";
+import { TOPIC_BUILDER_QUEUE, runTopicBuilder, reconcileTopicBuilder } from "../lib/topic-builder.ts";
 
 import { createPostgresDocumentRepository } from "../lib/production-repository.ts";
 import { getPrisma } from "../lib/prisma.ts";
@@ -91,8 +93,20 @@ import {
   runTopicExpansionEnrichmentJob,
   runTopicExpansionResearchJob,
 } from "../lib/topic-expansion.ts";
+import {
+  createAutomaticPocEfbReleaseJob,
+  reconcilePocEfbReleaseJobs,
+  runPocEfbReleaseJob,
+} from "../lib/efb-release-automation.ts";
+import {
+  EFB_RELEASE_QUEUE_NAME,
+  createEfbReleaseQueue,
+  type EfbReleaseJobPayload,
+} from "../lib/efb-release-queue.ts";
 
+let selectedEnrichmentWorker:Worker<SelectedEnrichmentJob>|null=null;
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
+let topicBuilderWorker: Worker<{id:string}> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
 let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJobPayload> | null = null;
 let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
@@ -104,6 +118,7 @@ let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | nu
 let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null = null;
 let entityGraphWorker: Worker<EntityGraphJobPayload> | null = null;
 let topicExpansionWorker: Worker<TopicExpansionJobPayload> | null = null;
+let efbReleaseWorker: Worker<EfbReleaseJobPayload> | null = null;
 let uploadCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let ragBudgetResumeTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -116,7 +131,12 @@ async function main() {
     throw new Error("missing_env_REDIS_URL");
   }
 
+  selectedEnrichmentWorker=new Worker<SelectedEnrichmentJob>(BULK_ENRICHMENT_QUEUE,job=>runSelectedTopicEnrichment(job.data),{concurrency:1,connection:{url:redisUrl}});
+  selectedEnrichmentWorker.on("error",()=>console.error("Selected topic enrichment queue unavailable"));
   const repository = createPostgresDocumentRepository();
+  topicBuilderWorker = new Worker<{id:string}>(TOPIC_BUILDER_QUEUE, job => runTopicBuilder(job.data.id), {concurrency:1,connection:{url:redisUrl}});
+  topicBuilderWorker.on("error", () => console.error("Topic builder queue connection error; retrying."));
+  await reconcileTopicBuilder();
   const ragRepository = createRagRepository();
   const storage = getObjectStorage();
   const queue = createBullMqExtractionQueue(redisUrl);
@@ -129,6 +149,7 @@ async function main() {
   const relationVerificationQueue = createOkfRelationVerificationQueue(redisUrl);
   const entityGraphQueue = createEntityGraphQueue(redisUrl);
   const topicExpansionQueue = createTopicExpansionQueue(redisUrl);
+  const efbReleaseQueue = createEfbReleaseQueue(redisUrl);
 
   const expiredUploads = await cleanupExpiredDocumentUploadSessions();
   if (expiredUploads > 0) console.log(`Cleaned ${expiredUploads} expired document uploads.`);
@@ -153,6 +174,7 @@ async function main() {
   await reconcileAutomaticRelationApprovals();
   await reconcileEntityGraphJobs(entityGraphQueue);
   await reconcileTopicExpansionJobs(topicExpansionQueue.enqueue);
+  await reconcilePocEfbReleaseJobs(efbReleaseQueue);
 
   uploadCleanupTimer = setInterval(() => {
     void cleanupExpiredDocumentUploadSessions()
@@ -252,10 +274,14 @@ async function main() {
     "knowledge-authoring",
     async (job) => {
       const result = await runKnowledgeAuthoringJob(job.data);
-      if (result.status === "ready_for_review") {
+      if (result.status === "ready_for_review" && (result.validationResults as {mode?:string}|null)?.mode!=="proposals_only") {
         await createAutomaticBulkApprovalRun({
           authoringRunId: result.id,
           enqueue: bulkTopicApprovalQueue.enqueue,
+        });
+        await createAutomaticPocEfbReleaseJob({
+          authoringRunId: result.id,
+          queue: efbReleaseQueue,
         });
       }
       return result;
@@ -334,6 +360,12 @@ async function main() {
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
+  efbReleaseWorker = new Worker<EfbReleaseJobPayload>(
+    EFB_RELEASE_QUEUE_NAME,
+    async (job) => runPocEfbReleaseJob(job.data.jobId),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
   extractionWorker.on("completed", (job) => {
     console.log(`Extraction job completed: ${job.id}`);
   });
@@ -389,6 +421,9 @@ async function main() {
   });
   topicExpansionWorker.on("failed", (job, error) => {
     console.error(`Topic expansion job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  efbReleaseWorker.on("failed", (job, error) => {
+    console.error(`EFB release export failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -468,6 +503,8 @@ async function reconcileQueuedKnowledgeAuthoringRuns(
 }
 
 async function shutdown() {
+  await selectedEnrichmentWorker?.close();
+  await topicBuilderWorker?.close();
   if (uploadCleanupTimer) clearInterval(uploadCleanupTimer);
   if (ragBudgetResumeTimer) clearInterval(ragBudgetResumeTimer);
   await extractionWorker?.close();
@@ -482,5 +519,6 @@ async function shutdown() {
   await relationVerificationWorker?.close();
   await entityGraphWorker?.close();
   await topicExpansionWorker?.close();
+  await efbReleaseWorker?.close();
   process.exit(0);
 }

@@ -6,6 +6,10 @@ Build AV-OKF in stages, starting with a generic document management foundation a
 
 The first usable product should be a clean document vault. Chat comes later, after ingestion, citations, review status, and retrieval exist.
 
+## EFB aircraft-content direction — 2026-09-05
+
+The [aircraft article pipeline review and delivery plan](efb-content-platform-plan.md) pins shared agentic graph RAG for existing AV-OKF chat and Topic builder, a complete independent AV-OKF knowledge workflow, source figures and original diagrams, and hand-selected topic publication to EFB. This is planned work; existing stage completion labels do not imply that the new Topic builder or illustrated EFB delivery is integrated.
+
 ## Current Implementation Status
 
 Large-PDF processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, and portable citations. A bounded non-blocking entity stage now follows enrichment, and topic publication schedules bundle-local incremental relation expansion. A separate manually initiated Topic expansion workflow can inspect approved bundle knowledge and return up to 10 grounded missing-topic proposals to normal enrichment and review. Structural entity projections remain separate from trusted exported OKF relations. Production rollout at the 250 MB/5,000-page ceiling and automatic relation publication remain gated on their documented evaluations.
@@ -894,3 +898,8 @@ Demo flow:
 10. Ask a mixed question that uses Hybrid only when needed.
 11. Show citations, router decision, retrieval mode, evidence card, and trace.
 ```
+
+
+## Shared knowledge workflow checkpoint
+
+See [AV-OKF shared workflow delivery](efb-content-platform-plan.md#local-delivery-checkpoint--2026-09-06) for the local implementation, verified checks and remaining release gates. AV-OKF approval, EFB selection and artifact export are distinct steps.

@@ -55,8 +55,8 @@ export default async function BulkTopicReviewPage({ params, searchParams }: {
       <header className="flex flex-col gap-3 border-b border-border pb-5 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="flex items-center gap-2"><Layers3 className="size-5 text-primary" /><Badge variant="outline">{bundle.name}</Badge></div>
-          <h1 className="mt-3 text-2xl font-semibold">{document ? `Review and export ${document.title}` : "Bulk topic approval and export"}</h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{document ? `${topics.length} ${topics.length === 1 ? "topic" : "topics"} from this document. Review enriched content, select topics intentionally, then run one preflight before approval.` : "Review enriched content, select topics intentionally, then run one preflight before anything is approved."}</p>
+          <h1 className="mt-3 text-2xl font-semibold">{document ? `Topics · ${document.title}` : "Topic drafting and review"}</h1>
+          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{document ? `${topics.length} ${topics.length === 1 ? "topic" : "topics"} from this document. Select topics for enrichment first, then review and approve completed drafts.` : "Manage topics across this collection: enrich selected source topics, then review and approve completed drafts."}</p>
         </div>
       </header>
       {!document ? <div className="flex w-fit gap-1 rounded-md border border-border bg-muted/30 p-1"><Button asChild size="sm" variant={gapsView ? "ghost" : "secondary"}><Link href={`/knowledge/${bundle.id}/review`}>Topics <Badge variant="outline">{topics.length}</Badge></Link></Button><Button asChild size="sm" variant={gapsView ? "secondary" : "ghost"}><Link href={`/knowledge/${bundle.id}/review?view=gaps`}>Knowledge gaps <Badge variant="outline">{knowledgeGaps.length}</Badge></Link></Button></div> : null}

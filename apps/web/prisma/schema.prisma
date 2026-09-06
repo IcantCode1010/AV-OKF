@@ -6,6 +6,59 @@ datasource db {
   provider = "postgresql"
 }
 
+// Topic-first authoring is isolated from document-driven TopicRecords.
+// Revisions are immutable snapshots; publication only advances approvedRunId.
+model TopicBuilderRecipe {
+  id             String @id @default(cuid())
+  workspaceId    String
+  createdBy      String
+  topic          String
+  audience       String
+  applicability  String
+  instructions   String @db.Text
+  collectionIds  String[]
+  documentIds    String[] @default([])
+  maxWords       Int @default(180)
+  researchMode   String @default("exhaustive")
+  approvedRunId  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  runs           TopicBuilderRun[]
+  scans          TopicBuilderScan[]
+  @@index([workspaceId, updatedAt])
+}
+
+model TopicBuilderRun {
+  id            String @id @default(cuid())
+  recipeId      String
+  recipe        TopicBuilderRecipe @relation(fields:[recipeId], references:[id], onDelete:Cascade)
+  workspaceId   String
+  createdBy     String
+  status        String @default("queued")
+  progress      String @default("Queued")
+  fingerprint   String
+  sourceManifest Json
+  recipeSnapshot Json?
+  result        Json?
+  changes       Json?
+  error         String?
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([workspaceId, recipeId, createdAt])
+}
+
+model TopicBuilderScan {
+  id          String @id @default(cuid())
+  recipeId    String
+  recipe      TopicBuilderRecipe @relation(fields:[recipeId], references:[id], onDelete:Cascade)
+  fingerprint String
+  evidence    Json
+  createdAt   DateTime @default(now())
+  @@unique([recipeId, fingerprint])
+}
+
 model User {
   id            String            @id @default(cuid())
   name          String?
@@ -94,6 +147,7 @@ model Workspace {
   documentMediaAssets         DocumentMediaAsset[]
   topicMediaReferences        TopicMediaReference[]
   mediaAnalysisAudits         MediaAnalysisAudit[]
+  efbReleaseJobs              EfbReleaseJob[]
   createdAt                   DateTime                        @default(now())
   updatedAt                   DateTime                        @updatedAt
 }
@@ -146,11 +200,26 @@ model Document {
   pages                    Int                            @default(0)
   description              String                         @default("")
   subjectFamily            String?
+  aircraftFamilyIds        String[]                       @default([])
+  aircraftTypeIds          String[]                       @default([])
+  applicabilityScope       String?
+  applicabilityConfidence Float?
+  applicabilityEvidence    String[]                       @default([])
+  applicabilityStatus      String?
+  applicabilityProvider    String?
+  applicabilityModel       String?
+  applicabilityClassifiedAt DateTime?
+  applicabilityOverrideBy  String?
+  applicabilityOverriddenAt DateTime?
   documentType             String?
   classificationCode       String?
   effectivity              String?
   sourceAuthority          String?
   revision                 String?
+  sourceClassification     String?
+  licenseIdentifier        String?
+  intendedAudiences        String[]                       @default([])
+  contentPurpose           String?
   deletedAt                DateTime?
   deletedBy                String?
   deleteReason             String?                        @db.Text
@@ -192,6 +261,7 @@ model Document {
   createdAt                DateTime                       @default(now())
   updatedAt                DateTime                       @updatedAt
   topicExpansionProposals  TopicExpansionProposal[]
+  efbReleaseJobs           EfbReleaseJob[]
 
   @@index([workspaceId, updatedAt])
   @@index([knowledgeBundleId, updatedAt])
@@ -244,6 +314,7 @@ model KnowledgeBundle {
   topicExpansionProposals    TopicExpansionProposal[]
   topicExpansionBatches      TopicExpansionEnrichmentBatch[]
   topicEnrichmentJobs        TopicEnrichmentJob[]
+  efbReleaseJobs             EfbReleaseJob[]
 
   @@unique([workspaceId, slug])
   @@index([workspaceId, status])
@@ -400,6 +471,7 @@ model KnowledgeAuthoringRun {
   metadataProposals                DocumentMetadataProposal[]
   automaticApprovalRun             BulkTopicApprovalRun?
   relationCandidates               OkfRelationCandidate[]
+  efbReleaseJobs                   EfbReleaseJob[]
 
   @@index([workspaceId, status, createdAt])
   @@index([documentId, createdAt])
@@ -955,6 +1027,39 @@ model TopicRecord {
   @@index([workspaceId, documentId])
   @@index([knowledgeBundleId, documentId])
   @@index([bulkApprovalRunId])
+}
+
+model EfbReleaseJob {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  knowledgeBundleId String
+  documentId        String
+  authoringRunId    String
+  mode              String                @default("poc")
+  packageId         String
+  version           String
+  corpusHash        String
+  status            String                @default("queued")
+  articleCount      Int                   @default(0)
+  releaseDirectory  String?
+  manifestPath      String?
+  errorCode         String?
+  errorMessage      String?               @db.Text
+  attempts          Int                   @default(0)
+  queuedAt          DateTime              @default(now())
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  knowledgeBundle   KnowledgeBundle       @relation(fields: [knowledgeBundleId], references: [id], onDelete: Cascade)
+  document          Document              @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  authoringRun      KnowledgeAuthoringRun @relation(fields: [authoringRunId], references: [id], onDelete: Cascade)
+
+  @@unique([knowledgeBundleId, corpusHash, mode])
+  @@unique([packageId, version])
+  @@index([workspaceId, status, createdAt])
+  @@index([documentId, createdAt])
 }
 
 model DocumentMediaAsset {
@@ -1681,4 +1786,89 @@ model OkfRetrievalTriggerProposal {
   @@unique([workspaceId, knowledgeBundleId, fingerprint])
   @@index([workspaceId, knowledgeBundleId, status, createdAt])
   @@index([knowledgeGapId, status])
+}
+
+// Shared services use additive records; legacy identities remain resolvable.
+model KnowledgeResearchRun {
+ id String @id @default(cuid())
+ workspaceId String
+ userId String
+ consumer String
+ ownerId String?
+ status String @default("queued")
+ progress String @default("Queued")
+ scope Json
+ request Json
+ result Json?
+ diagnostics Json @default("{}")
+ policyVersion String
+ model String?
+ cancelledAt DateTime?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([workspaceId, userId, status])
+}
+model KnowledgeArticle {
+ id String @id
+ workspaceId String
+ collectionId String?
+ originKind String
+ originId String
+ approvedRevisionId String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ revisions KnowledgeArticleRevision[]
+ @@unique([workspaceId, originKind, originId])
+ @@index([workspaceId, collectionId])
+}
+model KnowledgeArticleRevision {
+ id String @id
+ articleId String
+ article KnowledgeArticle @relation(fields:[articleId], references:[id])
+ workspaceId String
+ body Json
+ evidence Json
+ sourceFingerprint String
+ policyVersion String
+ approval Json?
+ legacy Boolean @default(false)
+ createdAt DateTime @default(now())
+ @@index([workspaceId, articleId, createdAt])
+}
+model KnowledgeVisual {
+ id String @id @default(cuid())
+ workspaceId String
+ articleRevisionId String
+ kind String
+ spec Json
+ provenance Json
+ caption String
+ altText String
+ reviewedBy String?
+ reviewedAt DateTime?
+ createdAt DateTime @default(now())
+ @@index([workspaceId, articleRevisionId])
+}
+model KnowledgeEfbSelection {
+ id String @id @default(cuid())
+ workspaceId String
+ articleId String
+ revisionId String
+ metadata Json
+ createdBy String
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@unique([workspaceId, articleId])
+}
+model KnowledgeExportRelease {
+ id String @id @default(cuid())
+ workspaceId String
+ createdBy String
+ status String @default("draft")
+ selectionSnapshot Json
+ result Json?
+ error String?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([workspaceId, createdAt])
 }

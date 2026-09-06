@@ -3,3 +3,9 @@ backups/
 
 # Local review packets can contain extracted source text and must not be committed.
 work/efb-review/
+
+# Generated Project EFB import packages are local release artifacts.
+dist/efb-releases/
+
+# Local verification artifacts, source snapshots, screenshots, and build logs.
+/work/

@@ -65,6 +65,7 @@ export const PROHIBITED_CLARIFICATION_FIELDS = new Set([
   "status",
   "verified",
   "efb_aircraft_type_ids",
+  "efb_aircraft_family_ids",
   "efb_audiences",
   "efb_authority_label",
   "efb_content_purpose",
@@ -189,15 +190,27 @@ export const AVIATION_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   fields: {
     ...BASE_FIELDS,
     aircraft_family: { type: "string" },
+    aircraft_family_ids: { type: "string_array" },
+    aircraft_type_ids: { type: "string_array" },
+    applicability_scope: { type: "string" },
+    applicability_status: { type: "string" },
+    applicability_confidence: { type: "number" },
+    applicability_evidence: { type: "string_array" },
+    applicability_model: { type: "string" },
     aircraft_variant: { type: "string" },
     ata: { type: "string" },
     effectivity: { type: "string" },
     manual_type: { type: "string" },
+    source_classification: { type: "string" },
+    license_identifier: { type: "string" },
+    intended_audiences: { type: "string_array" },
+    content_purpose: { type: "string" },
     revision: { type: "string" },
     source_authority: { type: "string" },
     efb_entry_id: { type: "string" },
     efb_audiences: { type: "string_array" },
     efb_aircraft_type_ids: { type: "string_array" },
+    efb_aircraft_family_ids: { type: "string_array" },
     efb_placements: { type: "string_array" },
     efb_authority_label: { type: "string" },
     efb_license_identifier: { type: "string" },
@@ -245,6 +258,19 @@ export function normalizeKnowledgeProfile(
     !normalized.fields.entity_type
   ) {
     normalized.fields.entity_type = { type: "string" };
+  }
+  if (normalized.id === "aviation") {
+    normalized.fields.aircraft_family_ids ??= { type: "string_array" };
+    normalized.fields.aircraft_type_ids ??= { type: "string_array" };
+    normalized.fields.applicability_scope ??= { type: "string" };
+    normalized.fields.applicability_status ??= { type: "string" };
+    normalized.fields.applicability_confidence ??= { type: "number" };
+    normalized.fields.applicability_evidence ??= { type: "string_array" };
+    normalized.fields.applicability_model ??= { type: "string" };
+    normalized.fields.source_classification ??= { type: "string" };
+    normalized.fields.license_identifier ??= { type: "string" };
+    normalized.fields.intended_audiences ??= { type: "string_array" };
+    normalized.fields.content_purpose ??= { type: "string" };
   }
   if (["generic", "aviation"].includes(normalized.id)) {
     normalized.relations = [

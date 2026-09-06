@@ -1,3 +1,4 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
 import { generateText, Output } from "ai";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -35,13 +36,17 @@ import {
   loadApprovedTopicMediaForEnrichment,
   runDocumentMediaDiscovery,
 } from "./topic-media-discovery.ts";
+import { classifyAircraftApplicability } from "./aircraft-applicability.ts";
+import { classifyAndPersistProjectEfbArticle } from "./project-efb-article-classification.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
+  "applicability_classification",
   "concept_discovery",
   "media_discovery",
   "full_rag_index",
   "enrichment",
+  "efb_classification",
   "relation_classification",
   "validation",
 ] as const;
@@ -51,6 +56,7 @@ export const KNOWLEDGE_AUTHORING_OPERATIONS = [
   "discover_concepts",
   "discover_topic_media",
   "enrich_concepts",
+  "classify_efb_metadata",
   "classify_relations",
   "validate_review_package",
 ] as const;
@@ -60,15 +66,24 @@ export const AUTHORING_CONCEPT_CONFIRMATION_THRESHOLD = 25;
 
 const metadataSchema = z.object({
   classificationCode: z.string().nullable(),
+  contentPurpose: z.string().nullable(),
   description: z.string(),
   documentType: z.string().nullable(),
   effectivity: z.string().nullable(),
+  intendedAudiences: z.array(z.enum(["pilot", "maintenance"])),
+  licenseIdentifier: z.string().nullable(),
   rationale: z.array(z.object({
     field: z.string(),
     reason: z.string(),
   })),
   revision: z.string().nullable(),
   sourceAuthority: z.string().nullable(),
+  sourceClassification: z.enum([
+    "controlled-document",
+    "open-reference",
+    "training-reference",
+    "unknown",
+  ]),
   subjectFamily: z.string().nullable(),
   tags: z.array(z.string()),
   title: z.string(),
@@ -94,14 +109,69 @@ export function normalizeMetadataProposal(input: MetadataProposal) {
   const cleanNullable = (value: string | null) => value?.trim() || null;
   return {
     classificationCode: cleanNullable(input.classificationCode),
+    contentPurpose: cleanNullable(input.contentPurpose),
     description: input.description.trim(),
     documentType: cleanNullable(input.documentType),
     effectivity: cleanNullable(input.effectivity),
+    intendedAudiences: [...new Set(input.intendedAudiences)],
+    licenseIdentifier: cleanNullable(input.licenseIdentifier),
     revision: cleanNullable(input.revision),
     sourceAuthority: cleanNullable(input.sourceAuthority),
+    sourceClassification: input.sourceClassification,
     subjectFamily: cleanNullable(input.subjectFamily),
     tags: [...new Set(input.tags.map((tag) => tag.trim()).filter(Boolean))],
     title: input.title.trim(),
+  };
+}
+
+export function applyMetadataProposalWithoutOverwritingAviationInput(
+  proposal: ReturnType<typeof normalizeMetadataProposal>,
+  document: {
+    aircraftTypeIds: string[];
+    classificationCode: string | null;
+    contentPurpose: string | null;
+    description: string;
+    documentType: string | null;
+    effectivity: string | null;
+    intendedAudiences: string[];
+    licenseIdentifier: string | null;
+    revision: string | null;
+    sourceAuthority: string | null;
+    sourceClassification: string | null;
+    sourceType: string;
+    subjectFamily: string | null;
+    tags: string[];
+    title: string;
+  },
+) {
+  if (document.sourceType !== "aviation") return {
+    classificationCode: proposal.classificationCode,
+    description: proposal.description,
+    documentType: proposal.documentType,
+    effectivity: proposal.effectivity,
+    revision: proposal.revision,
+    sourceAuthority: proposal.sourceAuthority,
+    subjectFamily: proposal.subjectFamily,
+    tags: proposal.tags,
+    title: proposal.title,
+  };
+  return {
+    aircraftTypeIds: document.aircraftTypeIds,
+    classificationCode: document.classificationCode || proposal.classificationCode,
+    contentPurpose: document.contentPurpose || proposal.contentPurpose || "technical-reference",
+    description: document.description.trim() || proposal.description,
+    documentType: document.documentType || proposal.documentType,
+    effectivity: document.effectivity || proposal.effectivity,
+    intendedAudiences: document.intendedAudiences.length > 0
+      ? document.intendedAudiences
+      : proposal.intendedAudiences,
+    licenseIdentifier: document.licenseIdentifier || proposal.licenseIdentifier,
+    revision: document.revision || proposal.revision,
+    sourceAuthority: document.sourceAuthority || proposal.sourceAuthority,
+    sourceClassification: document.sourceClassification || proposal.sourceClassification || "unknown",
+    subjectFamily: document.subjectFamily || proposal.subjectFamily,
+    tags: document.tags.length > 0 ? document.tags : proposal.tags,
+    title: document.title.trim() || proposal.title,
   };
 }
 
@@ -130,13 +200,16 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
     where: { documentId: payload.documentId, id: payload.runId, workspaceId: payload.workspaceId },
   });
   if (!run) throw new Error("knowledge_authoring_run_not_found");
-  if (run.status === "ready_for_review" || run.status === "completed") return run;
 
   const document = await db.document.findFirst({
     include: { extractedPages: { orderBy: { pageNumber: "asc" } } },
     where: { deletedAt: null, id: payload.documentId, workspaceId: payload.workspaceId },
   });
   if (!document) throw new Error("document_not_found");
+  if (
+    (run.status === "ready_for_review" || run.status === "completed") &&
+    (document.sourceType !== "aviation" || document.applicabilityStatus)
+  ) return run;
   if (!document.knowledgeBundleId || document.knowledgeBundleId !== run.knowledgeBundleId) {
     return db.knowledgeAuthoringRun.update({
       data: { errorCode: "document_unassigned", errorMessage: "The document is no longer assigned to this knowledge bundle.", status: "failed" },
@@ -193,7 +266,39 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       activeStage = "metadata_discovery";
       await beginStage(run.id, activeStage);
       await runMetadataDiscovery({ apiKey: key.apiKey, document, model: provider.model, provider: key.provider, runId: run.id });
-      await completeStage(run.id, "metadata_discovery", "concept_discovery");
+      await completeStage(run.id, "metadata_discovery", "applicability_classification");
+    }
+
+    if (!run.completedStages.includes("applicability_classification")) {
+      activeStage = "applicability_classification";
+      await beginStage(run.id, activeStage);
+      if (document.sourceType === "aviation") {
+        const currentDocument = await db.document.findUniqueOrThrow({
+          include: { extractedPages: { orderBy: { pageNumber: "asc" } } },
+          where: { id: document.id },
+        });
+        await runAircraftApplicabilityClassification({
+          apiKey: key.apiKey,
+          document: currentDocument,
+          model: provider.model,
+          provider: key.provider,
+          runId: run.id,
+        });
+      } else {
+        await stageAudit(run.id, activeStage, "completed", "not_applicable_non_aviation");
+      }
+      await completeStage(run.id, "applicability_classification", "concept_discovery");
+      if (run.completedStages.includes("validation")) {
+        return db.knowledgeAuthoringRun.update({
+          data: {
+            currentStage: "review",
+            errorCode: null,
+            errorMessage: null,
+            status: run.status,
+          },
+          where: { id: run.id },
+        });
+      }
     }
 
     if (!run.completedStages.includes("concept_discovery")) {
@@ -255,6 +360,36 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       await completeStage(run.id, "concept_discovery", "media_discovery");
     }
 
+    if (!run.completedStages.includes("full_rag_index")) {
+      activeStage = "full_rag_index";
+      const currentDocument = await db.document.findUnique({ select: { ragStatus: true }, where: { id: document.id } });
+      if (currentDocument?.ragStatus !== "indexed") {
+        const existingJob = await db.ragIndexJob.findFirst({
+          orderBy: { queuedAt: "desc" },
+          where: { documentId: document.id, status: { in: ["queued", "running", "awaiting_budget"] } },
+        });
+        const indexJob = existingJob ?? await createRagRepository().createIndexJob({
+          documentId: document.id,
+          extractionJobId: (await db.extractionJob.findFirst({ orderBy: { queuedAt: "desc" }, select: { id: true }, where: { documentId: document.id } }))?.id,
+          workspaceId: run.workspaceId,
+        });
+        if (!existingJob) {
+          const redisUrl = process.env.REDIS_URL;
+          if (!redisUrl) throw new Error("missing_env_REDIS_URL");
+          await createBullMqRagIndexQueue(redisUrl).enqueueIndexJob({
+            chunkingStrategyId: getDefaultChunkingStrategyId(),
+            documentId: document.id,
+            indexJobId: indexJob.id,
+            indexVersion: indexJob.indexVersion,
+            mode: "initial",
+            workspaceId: run.workspaceId,
+          });
+        }
+        return db.knowledgeAuthoringRun.update({ data: { currentStage: "full_rag_index", status: "waiting_for_rag" }, where: { id: run.id } });
+      }
+      await completeStage(run.id, "full_rag_index", "media_discovery");
+    }
+
     if (!run.completedStages.includes("media_discovery")) {
       activeStage = "media_discovery";
       await beginStage(run.id, activeStage);
@@ -286,39 +421,15 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
           provider.model,
         );
       }
-      await completeStage(run.id, "media_discovery", "full_rag_index");
+      await completeStage(run.id, "media_discovery", "enrichment");
     }
 
-    if (!run.completedStages.includes("full_rag_index")) {
-      activeStage = "full_rag_index";
-      const currentDocument = await db.document.findUnique({ select: { ragStatus: true }, where: { id: document.id } });
-      if (currentDocument?.ragStatus !== "indexed") {
-        const existingJob = await db.ragIndexJob.findFirst({
-          orderBy: { queuedAt: "desc" },
-          where: { documentId: document.id, status: { in: ["queued", "running", "awaiting_budget"] } },
-        });
-        const indexJob = existingJob ?? await createRagRepository().createIndexJob({
-          documentId: document.id,
-          extractionJobId: (await db.extractionJob.findFirst({ orderBy: { queuedAt: "desc" }, select: { id: true }, where: { documentId: document.id } }))?.id,
-          workspaceId: run.workspaceId,
-        });
-        if (!existingJob) {
-          const redisUrl = process.env.REDIS_URL;
-          if (!redisUrl) throw new Error("missing_env_REDIS_URL");
-          await createBullMqRagIndexQueue(redisUrl).enqueueIndexJob({
-            chunkingStrategyId: getDefaultChunkingStrategyId(),
-            documentId: document.id,
-            indexJobId: indexJob.id,
-            indexVersion: indexJob.indexVersion,
-            mode: "initial",
-            workspaceId: run.workspaceId,
-          });
-        }
-        return db.knowledgeAuthoringRun.update({ data: { currentStage: "full_rag_index", status: "waiting_for_rag" }, where: { id: run.id } });
-      }
-      await completeStage(run.id, "full_rag_index", "enrichment");
+    if(knowledgeFeature("shared") && !run.completedStages.includes("enrichment")){
+      const {scheduleEntityExtractionForTopic}=await import("./entity-graph.ts");
+      for(const topic of await db.topicRecord.findMany({where:{workspaceId:run.workspaceId,documentId:document.id},select:{id:true}}))await scheduleEntityExtractionForTopic(topic.id);
+      await classifyDraftRelations({apiKey:key.apiKey,documentId:document.id,knowledgeBundleId:document.knowledgeBundleId,model:provider.model,provider:key.provider,runId:run.id,workspaceId:run.workspaceId});
+      return db.knowledgeAuthoringRun.update({where:{id:run.id},data:{status:"ready_for_review",currentStage:"topic_selection",readyAt:new Date(),validationResults:{mode:"proposals_only",message:"Sources indexed and topics proposed. Select topics to draft."}}});
     }
-
     const topics = await db.topicRecord.findMany({
       where: { documentId: document.id, reviewStatus: { in: ["needs_review", "needs_cleanup"] }, workspaceId: run.workspaceId },
     });
@@ -363,7 +474,39 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
         });
       }
       await stageAudit(run.id, "enrichment", "completed", undefined, key.provider, provider.model);
-      await completeStage(run.id, "enrichment", "relation_classification");
+      await completeStage(run.id, "enrichment", "efb_classification");
+    }
+
+    if (!run.completedStages.includes("efb_classification")) {
+      activeStage = "efb_classification";
+      await beginStage(run.id, activeStage);
+      const classificationWarnings: string[] = [];
+      if (document.sourceType === "aviation") {
+        for (const topic of enrichmentTopics) {
+          try {
+            await classifyAndPersistProjectEfbArticle({
+              apiKey: key.apiKey,
+              model: provider.model,
+              provider: key.provider,
+              topicId: topic.id,
+              workspaceId: run.workspaceId,
+            });
+          } catch (error) {
+            classificationWarnings.push(`${topic.id}:${error instanceof Error ? error.message : "efb_classification_failed"}`);
+          }
+        }
+      }
+      await stageAudit(
+        run.id,
+        activeStage,
+        "completed",
+        classificationWarnings.length > 0
+          ? `non_blocking_efb_classification_warning:${classificationWarnings.join(",")}`
+          : document.sourceType === "aviation" ? undefined : "not_applicable_non_aviation",
+        key.provider,
+        provider.model,
+      );
+      await completeStage(run.id, "efb_classification", "relation_classification");
     }
 
     if (!run.completedStages.includes("relation_classification")) {
@@ -424,7 +567,7 @@ export function planAuthoringTopicDiscovery<T extends {
 
 async function runMetadataDiscovery(input: {
   apiKey: string;
-  document: { classificationCode: string | null; description: string; documentType: string | null; effectivity: string | null; extractedPages: Array<{ pageNumber: number; text: string }>; id: string; revision: string | null; sourceAuthority: string | null; subjectFamily: string | null; tags: string[]; title: string; workspaceId: string };
+  document: { aircraftTypeIds: string[]; classificationCode: string | null; contentPurpose: string | null; description: string; documentType: string | null; effectivity: string | null; extractedPages: Array<{ pageNumber: number; text: string }>; id: string; intendedAudiences: string[]; licenseIdentifier: string | null; revision: string | null; sourceAuthority: string | null; sourceClassification: string | null; sourceType: string; subjectFamily: string | null; tags: string[]; title: string; workspaceId: string };
   model: string;
   provider: LlmProviderId;
   runId: string;
@@ -432,7 +575,8 @@ async function runMetadataDiscovery(input: {
   const prompt = [
     "Analyze this document and propose concise, general-purpose metadata.",
     "Use only the supplied text. Preserve exact identifiers and do not invent authority, revision, classification, or applicability.",
-    "Return title, description, tags, subjectFamily, documentType, classificationCode, effectivity, sourceAuthority, revision, and a rationale array of {field, reason} entries.",
+    "For aviation documents also return intendedAudiences, sourceClassification, licenseIdentifier, and contentPurpose. Aircraft applicability is classified once in a separate authoritative stage. Use unknown rather than guessing source classification or licensing. Never classify training material as controlled-document unless the supplied text explicitly says it is controlled.",
+    "Return title, description, tags, subjectFamily, documentType, classificationCode, effectivity, sourceAuthority, revision, intendedAudiences, sourceClassification, licenseIdentifier, contentPurpose, and a rationale array of {field, reason} entries.",
     `Current title: ${input.document.title}`,
     input.document.extractedPages.slice(0, 12).map((page) => `Page ${page.pageNumber}\n${page.text}`).join("\n\n"),
   ].join("\n\n");
@@ -443,15 +587,23 @@ async function runMetadataDiscovery(input: {
     prompt,
   });
   const proposal = metadataSchema.parse(result.output);
-  const applied = normalizeMetadataProposal(proposal);
+  const applied = applyMetadataProposalWithoutOverwritingAviationInput(
+    normalizeMetadataProposal(proposal),
+    input.document,
+  );
   if (!applied.title) throw new Error("metadata_discovery_invalid_title");
   const previous = {
+    aircraftTypeIds: input.document.aircraftTypeIds,
     classificationCode: input.document.classificationCode,
+    contentPurpose: input.document.contentPurpose,
     description: input.document.description,
     documentType: input.document.documentType,
     effectivity: input.document.effectivity,
+    intendedAudiences: input.document.intendedAudiences,
+    licenseIdentifier: input.document.licenseIdentifier,
     revision: input.document.revision,
     sourceAuthority: input.document.sourceAuthority,
+    sourceClassification: input.document.sourceClassification,
     subjectFamily: input.document.subjectFamily,
     tags: input.document.tags,
     title: input.document.title,
@@ -464,6 +616,55 @@ async function runMetadataDiscovery(input: {
     }),
   ]);
   await stageAudit(input.runId, "metadata_discovery", "completed", undefined, input.provider, input.model, prompt, JSON.stringify(proposal));
+}
+
+async function runAircraftApplicabilityClassification(input: {
+  apiKey: string;
+  document: Parameters<typeof classifyAircraftApplicability>[0]["document"] & {
+    aircraftTypeIds: string[];
+    id: string;
+    workspaceId: string;
+  };
+  model: string;
+  provider: LlmProviderId;
+  runId: string;
+}) {
+  await stageAudit(input.runId, "applicability_classification", "running", undefined, input.provider, input.model);
+  const result = await classifyAircraftApplicability(input);
+  const classifiedAt = new Date();
+  const enteredTypeIds = [...input.document.aircraftTypeIds].map((value) => value.toLowerCase()).sort();
+  const classifiedTypeIds = [...result.normalized.aircraftTypeIds].sort();
+  const enteredApplicabilityContradictsClassification = enteredTypeIds.length > 0 &&
+    JSON.stringify(enteredTypeIds) !== JSON.stringify(classifiedTypeIds);
+  const status = enteredApplicabilityContradictsClassification
+    ? "needs_review"
+    : result.normalized.status;
+  await getPrisma().document.update({
+    data: {
+      aircraftFamilyIds: result.normalized.aircraftFamilyIds,
+      aircraftTypeIds: enteredTypeIds.length > 0
+        ? input.document.aircraftTypeIds
+        : result.normalized.aircraftTypeIds.map((value) => value.toUpperCase()),
+      applicabilityClassifiedAt: classifiedAt,
+      applicabilityConfidence: result.normalized.confidence,
+      applicabilityEvidence: result.normalized.evidence,
+      applicabilityModel: input.model,
+      applicabilityProvider: input.provider,
+      applicabilityScope: result.normalized.scope,
+      applicabilityStatus: status,
+    },
+    where: { id: input.document.id },
+  });
+  await stageAudit(
+    input.runId,
+    "applicability_classification",
+    "completed",
+    [...result.normalized.issues, ...(enteredApplicabilityContradictsClassification ? ["entered_applicability_conflicts_with_classifier"] : [])].join(",") || undefined,
+    input.provider,
+    input.model,
+    undefined,
+    JSON.stringify({ ...result.raw, normalized: result.normalized, status }),
+  );
 }
 
 async function classifyDraftRelations(input: { apiKey: string; documentId: string; knowledgeBundleId: string; model: string; provider: LlmProviderId; runId: string; workspaceId: string }) {
@@ -656,9 +857,9 @@ export async function createKnowledgeAuthoringRun(input: { context: AuthWorkspac
   if (!bundle) throw new Error("knowledge_bundle_not_found");
   return db.knowledgeAuthoringRun.create({
     data: {
-      automaticTopicApprovalEnabled: bundle.profile.automation.autoApproveEnrichedTopics,
+      automaticTopicApprovalEnabled: knowledgeFeature("shared")?false:bundle.profile.automation.autoApproveEnrichedTopics,
       automaticRelationApprovalEnabled:
-        bundle.profile.automation.autoApproveVerifiedRelations,
+        knowledgeFeature("shared")?false:bundle.profile.automation.autoApproveVerifiedRelations,
       documentId: document.id,
       knowledgeBundleId: document.knowledgeBundleId,
       profileVersion: bundle.activeProfileVersion,

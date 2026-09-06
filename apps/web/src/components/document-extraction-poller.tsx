@@ -33,7 +33,7 @@ export function DocumentExtractionPoller({
   const initialSnapshot: OperationProgressSnapshot<DocumentProcessingProgressData> = {
     active,
     data: {
-      authoring: null, automaticApproval: null,
+      authoring: null, automaticApproval: null, efbRelease: null,
       entities: { completed: 0, failed: 0, queued: 0, running: 0 },
       extraction: { completed: 0, ocrPages: 0, status, total: 0 },
       ragIndex: null,

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import { Component, type ReactNode } from "react";
 import { useTheme } from "next-themes";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,6 +39,7 @@ import { cn } from "@/lib/utils";
 import { filterEntityGraphByEntityIds } from "@/lib/entity-graph-filter";
 import { entityGraphColorCss, getEntityGraphTypeColor } from "@/lib/entity-graph-palette";
 import type { EntityGraphSnapshot } from "@/lib/entity-graph-view";
+import { filterEntityGraphLayer, type EntityGraphLayer } from "@/lib/entity-graph-layers";
 import {
   buildOkfGraphFocus,
   buildOkfGraphView,
@@ -150,7 +153,7 @@ export function KnowledgeGraphExplorer({
   const selectFile = useExplorerSelection();
   const hasRelations = snapshot.edges.length > 0;
   const [viewMode, setViewMode] = useState<OkfGraphViewMode>(() =>
-    getDefaultOkfGraphViewMode(snapshot.edges),
+    getDefaultOkfGraphViewMode(),
   );
   const effectiveViewMode = hasRelations ? viewMode : "all";
   const graphView = useMemo(
@@ -216,6 +219,8 @@ export function EntityGraphExplorer({
 }) {
   const [selectedId, setSelectedId] = useState(snapshot.nodes[0]?.id ?? null);
   const [entityFilter, setEntityFilter] = useState("");
+  const [layer, setLayer] = useState<EntityGraphLayer>(() => mode === "attention" ? "review"
+    : snapshot.edges.some((edge) => edge.status === "published") ? "knowledge" : "evidence");
   const entityNodes = useMemo(
     () => snapshot.nodes.filter((node) => node.kind === "entity"),
     [snapshot.nodes],
@@ -237,7 +242,7 @@ export function EntityGraphExplorer({
       (!query || `${node.title} ${node.type} ${node.status}`.toLocaleLowerCase().includes(query)),
     );
   }, [entityFilter, entityNodes, selectedEntityTypes]);
-  const visibleSnapshot = useMemo(
+  const entityFilteredSnapshot = useMemo(
     () => mode === "entities"
       ? filterEntityGraphByEntityIds({
           edges: snapshot.edges,
@@ -247,13 +252,14 @@ export function EntityGraphExplorer({
       : { edges: snapshot.edges, nodes: snapshot.nodes },
     [mode, selectedEntityIds, snapshot.edges, snapshot.nodes],
   );
+  const visibleSnapshot = useMemo(() => filterEntityGraphLayer(entityFilteredSnapshot, layer), [entityFilteredSnapshot, layer]);
   const visibleNodeIds = new Set(visibleSnapshot.nodes.map((node) => node.id));
   const effectiveSelectedId = selectedId && visibleNodeIds.has(selectedId)
     ? selectedId
     : visibleSnapshot.nodes[0]?.id ?? null;
   const selectedNode = visibleSnapshot.nodes.find((node) => node.id === effectiveSelectedId) ?? null;
   const relatedEdges = visibleSnapshot.edges.filter((edge) => edge.source === effectiveSelectedId || edge.target === effectiveSelectedId);
-  const graphNodes: OkfExplorerNode[] = visibleSnapshot.nodes.map((node) => ({
+  const graphNodes: OkfExplorerNode[] = useMemo(() => visibleSnapshot.nodes.map((node) => ({
     degree: node.degree,
     id: node.id,
     reviewStatus: node.status,
@@ -261,14 +267,14 @@ export function EntityGraphExplorer({
     sourcePages: [],
     title: node.title,
     type: node.type,
-  }));
-  const graphEdges: OkfExplorerEdge[] = visibleSnapshot.edges.map((edge) => ({
+  })), [visibleSnapshot.nodes]);
+  const graphEdges: OkfExplorerEdge[] = useMemo(() => visibleSnapshot.edges.map((edge) => ({
     id: edge.id,
     reason: edge.reason,
     relation: edge.relation,
     source: edge.source,
     target: edge.target,
-  }));
+  })), [visibleSnapshot.edges]);
   const toggleEntity = (entityId: string) => {
     setSelectedEntityIds((current) => {
       const next = new Set(current);
@@ -364,13 +370,18 @@ export function EntityGraphExplorer({
         </aside>
       ) : null}
       <section className="relative min-h-[560px] bg-background" aria-label={mode === "attention" ? "Entity graph attention queue" : "Entity map"}>
-        <div className="absolute inset-x-0 top-0 z-10 border-b border-border bg-background/90 px-4 py-3 backdrop-blur">
+        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background/90 px-4 py-3 backdrop-blur">
+          <div>
           <p className="text-xs font-semibold uppercase text-muted-foreground">{mode === "attention" ? "Needs attention" : "Entity map"}</p>
           <p className="mt-1 text-xs text-muted-foreground">{mode === "entities" ? `Showing ${visibleSnapshot.nodes.length} of ${snapshot.nodes.length} nodes / ${visibleSnapshot.edges.length} connections` : `${snapshot.summary.entities} entities / ${snapshot.summary.occurrences} occurrences / ${snapshot.edges.length} connections`}</p>
+          </div>
+          <select aria-label="Connection layer" className="max-w-36 rounded border border-border bg-background p-1 text-xs" value={layer} onChange={(event) => setLayer(event.target.value as EntityGraphLayer)}>
+            <option value="knowledge">Published relationships</option><option value="evidence">Source evidence</option><option value="review">Review candidates</option><option value="all">All connections</option>
+          </select>
         </div>
         {graphNodes.length > 0 ? (
           <KnowledgeGraph autoFocusSelected={false} colorMode={mode === "entities" ? "entity" : "concept"} edges={graphEdges} nodes={graphNodes} onSelect={setSelectedId} selectedFile={effectiveSelectedId} />
-        ) : <EmptyPane label={mode === "attention" ? "No entity connections currently need attention." : entityNodes.length > 0 ? "Select one or more entities to display their connections." : "Entity extraction has not produced a map yet."} />}
+        ) : <EmptyPane label={snapshot.nodes.length ? "No connections match this layer and entity selection. Choose another layer or select more entities." : "Entity extraction has not produced a map yet."} />}
       </section>
       <aside className="min-h-0 overflow-auto border-l border-border bg-muted/10 p-4">
         {selectedNode ? <div className="space-y-4">
@@ -574,7 +585,42 @@ function ExplorerGraphPane({
 
 type GraphInstance = import("@cosmos.gl/graph").Graph;
 
-export function KnowledgeGraph({
+const SpatialKnowledgeGraph = dynamic(() => import("./knowledge-graph-3d"), {
+  ssr: false,
+  loading: () => <div className="absolute inset-0 top-16 grid place-items-center text-sm text-muted-foreground" role="status">Preparing 3D graph…</div>,
+});
+
+type KnowledgeGraphProps = {
+  autoFocusSelected: boolean;
+  colorMode?: "concept" | "entity";
+  edges: OkfExplorerEdge[];
+  nodes: OkfExplorerNode[];
+  onSelect: (filename: string) => void;
+  selectedFile: string | null;
+};
+
+class SpatialGraphBoundary extends Component<{ children: ReactNode; onFallback: () => void }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed
+      ? <div className="absolute inset-0 top-16 grid place-items-center"><div className="text-center"><p>3D rendering is unavailable on this device.</p><Button className="mt-3" onClick={this.props.onFallback}>Use 2D graph</Button></div></div>
+      : this.props.children;
+  }
+}
+
+export function KnowledgeGraph(props: KnowledgeGraphProps) {
+  const [dimension, setDimension] = useState<"2d" | "3d">("3d");
+  if (!props.nodes.length) return <EmptyPane label="No active concepts are available for the graph." />;
+  return <>
+    <div className="absolute right-3 top-[76px] z-20 flex rounded-md border border-border bg-background/95 p-1" aria-label="Graph dimensions">
+      {(["2d", "3d"] as const).map((value) => <Button key={value} size="sm" className="h-7 px-2" variant={dimension === value ? "secondary" : "ghost"} aria-pressed={dimension === value} onClick={() => setDimension(value)}>{value.toUpperCase()}</Button>)}
+    </div>
+    {dimension === "3d" ? <SpatialGraphBoundary onFallback={() => setDimension("2d")}><SpatialKnowledgeGraph {...props} /></SpatialGraphBoundary> : <KnowledgeGraph2D {...props} />}
+  </>;
+}
+
+function KnowledgeGraph2D({
   autoFocusSelected,
   colorMode = "concept",
   edges,

@@ -1,0 +1,1 @@
+ALTER TABLE "TopicBuilderRecipe" ADD COLUMN "documentIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

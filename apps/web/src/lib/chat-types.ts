@@ -9,6 +9,7 @@ export type ChatOkfApprovalProvenance = "automated" | "human" | "legacy";
 // text is a short excerpt sized for citation chips and stored trace JSON,
 // not the full retrieved chunk (see ChatRetrievalEvidence for that).
 export type ChatCitation = {
+  researchEvidenceId?: string;
   approvalProvenance?: ChatOkfApprovalProvenance;
   // Approved OKF concepts governing this chunk via coverage links; optional
   // because citations persisted before coverage threading lack it. Stage 7

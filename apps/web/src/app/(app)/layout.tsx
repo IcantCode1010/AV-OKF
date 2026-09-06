@@ -1,3 +1,5 @@
+import {ActivityProvider} from "@/components/activity-center";
+import {knowledgeFeature} from "@/lib/knowledge/contracts";
 import { AppShell } from "@/components/app-shell";
 import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
@@ -12,7 +14,10 @@ export default async function ProductLayout({
 }: {
   children: ReactNode;
 }) {
-  const context = await requireAuthWorkspaceContext();
+  const context = await requireAuthWorkspaceContext().catch((error: unknown) => {
+    if (error instanceof Error && error.message === "authentication_required") redirect("/api/auth/signin");
+    throw error;
+  });
   const bundles = await listKnowledgeBundles(context);
   const { activeBundle } = await resolveActiveKnowledgeBundle(context, bundles);
   const sessions = isChatAvailable() ? await getChatSessions() : [];
@@ -40,14 +45,14 @@ export default async function ProductLayout({
     }
 
     return (
-      <AppShell activeBundle={shellActiveBundle} bundles={shellBundles} recentChats={recentChats} user={shell.user} workspace={shell.workspace}>
+      <ActivityProvider><AppShell knowledgeFeatures={{shared:knowledgeFeature("shared"),export:knowledgeFeature("export")}} activeBundle={shellActiveBundle} bundles={shellBundles} recentChats={recentChats} user={shell.user} workspace={shell.workspace}>
         {children}
-      </AppShell>
+      </AppShell></ActivityProvider>
     );
   }
 
   return (
-    <AppShell activeBundle={shellActiveBundle} bundles={shellBundles} recentChats={recentChats} user={getCurrentUser()} workspace={getCurrentWorkspace()}>
+    <AppShell knowledgeFeatures={{shared:knowledgeFeature("shared"),export:knowledgeFeature("export")}} activeBundle={shellActiveBundle} bundles={shellBundles} recentChats={recentChats} user={getCurrentUser()} workspace={getCurrentWorkspace()}>
       {children}
     </AppShell>
   );

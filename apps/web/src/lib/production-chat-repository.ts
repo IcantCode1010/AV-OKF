@@ -1,3 +1,4 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
@@ -51,7 +52,7 @@ type DbChatMessageRecord = {
 const DEFAULT_CHAT_TITLE = "New chat";
 const MAX_CHAT_TITLE_LENGTH = 72;
 export const MAX_CHAT_SESSION_LIST_RESULTS = 50;
-export const MAX_CHAT_KNOWLEDGE_BUNDLES = 10;
+export const MAX_CHAT_KNOWLEDGE_BUNDLES = knowledgeFeature("shared")?Number.MAX_SAFE_INTEGER:10;
 
 const sessionBundleInclude = {
   knowledgeBundles: {
@@ -243,6 +244,12 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 
       const [userRecord, assistantRecord] = await db.$transaction(
         async (tx: Prisma.TransactionClient) => {
+          if(knowledgeFeature("shared")){
+            await tx.$queryRaw`SELECT id FROM "ChatSession" WHERE id = ${input.sessionId} FOR UPDATE`;
+            const scoped=await tx.chatSession.findFirst({where:{id:input.sessionId,workspaceId:input.context.workspaceId,scopeVersion:input.scopeVersion}});
+            if(!scoped)throw Error("chat_scope_changed");
+            if(!await tx.workspaceMember.findFirst({where:{workspaceId:input.context.workspaceId,userId:input.context.userId}}))throw Error("knowledge_access_denied");
+          }
           const userRecord = await tx.chatMessage.create({
             data: {
               content: input.content,

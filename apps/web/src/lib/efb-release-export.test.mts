@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, verify } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +10,11 @@ import {
   exportEfbRelease,
   type EfbReleaseConfig,
 } from "./efb-release-export.ts";
+import {
+  buildStableEfbEntryId,
+  resolvePocAircraftApplicability,
+  selectNextPocPackageVersion,
+} from "./efb-release-automation.ts";
 
 const sourceCommit = "a".repeat(40);
 const config: EfbReleaseConfig = {
@@ -28,6 +33,46 @@ const config: EfbReleaseConfig = {
     attribution: "Reviewed open reference source",
   },
 };
+
+test("PoC article identity is stable and does not expose a database topic id", () => {
+  const first = buildStableEfbEntryId("topic-canonical-identity");
+  assert.equal(first, buildStableEfbEntryId("topic-canonical-identity"));
+  assert.match(first, /^article-[a-f0-9]{20}$/);
+  assert.equal(first.includes("topic-canonical-identity"), false);
+});
+
+test("PoC package versions advance across retained immutable release folders", () => {
+  assert.equal(selectNextPocPackageVersion([]), "0.1.0");
+  assert.equal(selectNextPocPackageVersion(["0.1.0", "0.1.2", "production"]), "0.1.3");
+});
+
+test("manual document applicability overrides article aircraft fields only", () => {
+  const manual = resolvePocAircraftApplicability({
+    articleAircraftFamilyIds: ["737-ng"],
+    articleAircraftTypeIds: ["B738"],
+    documentAircraftFamilyIds: ["737-ng"],
+    documentAircraftTypeIds: [],
+    documentApplicabilityStatus: "manual_override",
+  });
+  assert.deepEqual(manual, {
+    aircraftFamilyIds: ["737-ng"],
+    aircraftTypeIds: [],
+    manualApplicability: true,
+  });
+
+  const classified = resolvePocAircraftApplicability({
+    articleAircraftFamilyIds: ["737-ng"],
+    articleAircraftTypeIds: ["B738"],
+    documentAircraftFamilyIds: ["737-ng"],
+    documentAircraftTypeIds: [],
+    documentApplicabilityStatus: "accepted",
+  });
+  assert.deepEqual(classified, {
+    aircraftFamilyIds: ["737-ng"],
+    aircraftTypeIds: ["B738"],
+    manualApplicability: false,
+  });
+});
 
 test("exports a deterministic immutable EFB package and keyword index", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-release-"));
@@ -72,6 +117,242 @@ test("exports a deterministic immutable EFB package and keyword index", async ()
     exportEfbRelease({ config, knowledgeRoot, outputRoot }),
     /efb_release_version_already_exists/,
   );
+});
+
+test("exports an unsigned PoC package in the Project EFB import layout", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-poc-"));
+  const outputRoot = path.join(root, "release");
+  let validatedStagingPath = "";
+  const result = await exportEfbRelease({
+    config: {
+      ...config,
+      curator: "av-okf-poc-export",
+      license: { attribution: "Prototype content", identifier: "POC-NOT-REVIEWED" },
+      mode: "poc",
+      packageId: "b738-poc",
+      source: "av-okf",
+      validationProfile: "poc-structural-only",
+      validator: "av-okf-poc-export",
+    },
+    outputRoot,
+    sourceEntries: [{
+      markdown: `---
+type: system_topic
+title: Electrical Power Overview
+description: Prototype reference covering the electrical-power system.
+status: stable
+tags: [electrical, ata-24]
+sources:
+  - id: source-1
+    resource: urn:sha256:${"b".repeat(64)}
+    title: AV-OKF source document
+source_pages: [1, 2, 3, 4, 5]
+aircraft_family_ids: [737-ng]
+aircraft_type_ids: []
+intended_audiences: [maintenance]
+ata: "24"
+manual_type: Training Manual
+efb_entry_id: b738-ata24-electrical-overview
+---
+
+Complete agent-readable article body with enough grounded technical detail to satisfy the structural package gate without claiming technical approval or operational authority.
+`,
+      relativePath: "topics/electrical-overview.md",
+    }],
+    validateStagedPackage: async (manifestPath) => {
+      validatedStagingPath = manifestPath;
+      assert.match(manifestPath, /\.efb-release-staging-/);
+      await access(manifestPath);
+    },
+  });
+
+  assert.equal(path.basename(result.releaseDirectory), "b738-poc@0.1.0");
+  assert.notEqual(validatedStagingPath, result.manifestPath);
+  assert.equal(result.manifest.signature, undefined);
+  assert.equal(result.manifest.entries[0]!.authorityLabel, "Unreviewed prototype knowledge — not approved instructions");
+  assert.deepEqual(result.manifest.entries[0]!.applicability, {
+    aircraftFamilyIds: ["737-ng"],
+    aircraftTypeIds: [],
+  });
+  assert.equal(result.manifest.entries[0]!.inclusionStatus, "approved-for-inclusion");
+  assert.deepEqual(result.manifest.placements.map(({ kind, targetId }) => ({ kind, targetId })), [
+    { kind: "ata", targetId: "24" },
+  ]);
+  assert.match(
+    await readFile(path.join(result.releaseDirectory, "display", "b738-ata24-electrical-overview.md"), "utf8"),
+    /Unreviewed prototype knowledge — not approved instructions/,
+  );
+  const agent = JSON.parse(await readFile(
+    path.join(result.releaseDirectory, "agent", "b738-ata24-electrical-overview.json"),
+    "utf8",
+  ));
+  assert.equal(agent.authorityLabel, "Unreviewed prototype knowledge — not approved instructions");
+  assert.deepEqual(agent.applicability, result.manifest.entries[0]!.applicability);
+  assert.deepEqual(agent.placements, [{ kind: "ata", targetId: "24" }]);
+  const retrieval = JSON.parse((await readFile(path.join(result.releaseDirectory, "retrieval.jsonl"), "utf8")).trim());
+  assert.deepEqual(retrieval.aircraftFamilyIds, ["737-ng"]);
+  assert.deepEqual(retrieval.aircraftTypeIds, []);
+  assert.deepEqual(retrieval.placements, [{ kind: "ata", targetId: "24" }]);
+  await access(path.join(result.releaseDirectory, "checksums.sha256"));
+  await access(path.join(result.releaseDirectory, "release.json"));
+});
+
+test("keeps 737SAR as provenance while exporting hydraulic placement as ATA 29", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-hydraulic-"));
+  const result = await exportEfbRelease({
+    config: {
+      ...config,
+      license: { identifier: "POC-NOT-REVIEWED" },
+      mode: "poc",
+      packageId: "737-ng-poc",
+    },
+    outputRoot: path.join(root, "release"),
+    sourceEntries: [{
+      markdown: `---
+type: system_topic
+title: Hydraulic Power System
+description: Grounded hydraulic power reference.
+status: stable
+sources: [{ id: source-737sar, resource: "urn:sha256:${"c".repeat(64)}", title: 737SAR }]
+source_identifier: 737SAR
+source_pages: [2, 3]
+aircraft_family_ids: [737-ng]
+aircraft_type_ids: []
+intended_audiences: [maintenance]
+ata: "29"
+efb_entry_id: hydraulic-power-system
+---
+
+# Hydraulic Power System
+
+This grounded prototype article describes hydraulic pumps, reservoirs, and system pressure with sufficient source-backed detail for structural validation.
+`,
+      relativePath: "topics/hydraulic-power.md",
+    }],
+  });
+
+  assert.deepEqual(result.manifest.placements.map(({ kind, targetId }) => ({ kind, targetId })), [
+    { kind: "ata", targetId: "29" },
+  ]);
+  const agent = JSON.parse(await readFile(
+    path.join(result.releaseDirectory, "agent", "hydraulic-power-system.json"),
+    "utf8",
+  ));
+  const retrieval = JSON.parse((await readFile(path.join(result.releaseDirectory, "retrieval.jsonl"), "utf8")).trim());
+  assert.deepEqual(agent.placements, [{ kind: "ata", targetId: "29" }]);
+  assert.deepEqual(retrieval.placements, [{ kind: "ata", targetId: "29" }]);
+  assert.equal(JSON.stringify(result.manifest).includes("737SAR"), true);
+  assert.equal(result.manifest.placements.some(({ targetId }) => targetId === "737SAR"), false);
+});
+
+test("exports every article in a hydraulic corpus to ATA 29 with identical EFB metadata", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-hydraulic-corpus-"));
+  const sourceEntries = Array.from({ length: 23 }, (_, index) => {
+    const number = index + 1;
+    return {
+      markdown: `---
+type: system_topic
+title: Hydraulic Article ${number}
+description: Grounded hydraulic article ${number}.
+status: stable
+sources: [{ id: source-737sar, resource: "urn:sha256:${"e".repeat(64)}", title: "11 Hydraulic Power (737SAR)" }]
+source_identifier: 737SAR
+source_pages: [${number}]
+aircraft_family_ids: [737-ng]
+aircraft_type_ids: []
+intended_audiences: [maintenance]
+ata: "29"
+efb_entry_id: hydraulic-article-${number}
+---
+
+# Hydraulic Article ${number}
+
+This source-grounded hydraulic reference article contains enough technical context for deterministic Project EFB package validation and parity checks.
+`,
+      relativePath: `topics/hydraulic-${number}.md`,
+    };
+  });
+  const result = await exportEfbRelease({
+    config: { ...config, license: { identifier: "POC-NOT-REVIEWED" }, mode: "poc" },
+    outputRoot: path.join(root, "release"),
+    sourceEntries,
+  });
+  assert.equal(result.manifest.entries.length, 23);
+  assert.equal(result.manifest.placements.length, 23);
+  assert(result.manifest.placements.every(({ kind, targetId }) => kind === "ata" && targetId === "29"));
+  assert(result.manifest.entries.every((entry) =>
+    JSON.stringify(entry.applicability) === JSON.stringify({ aircraftFamilyIds: ["737-ng"], aircraftTypeIds: [] }) &&
+    JSON.stringify(entry.audiences) === JSON.stringify(["maintenance"])
+  ));
+});
+
+test("rejects non-ATA placement targets", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-invalid-ata-"));
+  await assert.rejects(exportEfbRelease({
+    config: { ...config, license: { identifier: "POC-NOT-REVIEWED" }, mode: "poc" },
+    outputRoot: path.join(root, "release"),
+    sourceEntries: [{
+      markdown: `---
+type: system_topic
+title: Hydraulic Power System
+description: Grounded hydraulic power reference.
+status: stable
+sources: [{ id: source-1, resource: "urn:sha256:${"d".repeat(64)}" }]
+source_pages: [2]
+aircraft_family_ids: [737-ng]
+intended_audiences: [maintenance]
+efb_placements: ["ata:737SAR:10"]
+efb_entry_id: invalid-hydraulic-placement
+---
+
+# Hydraulic Power System
+
+This grounded prototype article is deliberately long enough to reach placement validation and prove source identifiers cannot become ATA targets.
+`,
+      relativePath: "topics/invalid-hydraulic.md",
+    }],
+  }), /efb_ata_target_invalid/);
+});
+
+test("does not activate a PoC package when staged Project EFB validation fails", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-poc-invalid-"));
+  const outputRoot = path.join(root, "release");
+  await assert.rejects(
+    exportEfbRelease({
+      config: {
+        ...config,
+        license: { identifier: "POC-NOT-REVIEWED" },
+        mode: "poc",
+        packageId: "b738-poc",
+      },
+      outputRoot,
+      sourceEntries: [{
+        markdown: `---
+type: system_topic
+title: Electrical Power Overview
+description: Prototype reference covering the electrical-power system.
+status: stable
+sources: [{ id: source-1, resource: "urn:sha256:${"b".repeat(64)}" }]
+source_pages: [1]
+aircraft_type_ids: [b738]
+intended_audiences: [maintenance]
+ata: "24"
+efb_entry_id: b738-ata24-electrical-overview
+---
+
+# Electrical Power Overview
+
+This complete source-grounded body is deliberately valid before the injected external validator rejects it.
+`,
+        relativePath: "topics/electrical-overview.md",
+      }],
+      validateStagedPackage: async () => {
+        throw new Error("project_efb_validator_rejected");
+      },
+    }),
+    /project_efb_validator_rejected/,
+  );
+  await assert.rejects(access(path.join(outputRoot, "b738-poc@0.1.0")));
 });
 
 test("fails closed when an included entry lacks human review", async () => {

@@ -1,4 +1,5 @@
 import { parseCitationMarkers } from "@/lib/chat-citation-markers";
+import { ChatAnswerGraph } from "@/components/chat/chat-answer-graph";
 import type { ChatMessage } from "@/lib/chat-types";
 import { ChatEvidenceCard } from "@/components/chat/chat-evidence-card";
 import { ChatEntityCandidates } from "@/components/chat/chat-entity-candidates";
@@ -73,7 +74,8 @@ export function ChatMessageBubble({
           onSubmit={onClarificationSubmit}
         />
       ) : null}
-      <ChatEvidenceCard message={message} />
+      {message.trace?.responseKind!=="conversation"&&<ChatEvidenceCard message={message} />}
+      <ChatAnswerGraph message={message} />
       {message.trace?.entityCandidates?.length ? (
         <ChatEntityCandidates
           candidates={message.trace.entityCandidates}

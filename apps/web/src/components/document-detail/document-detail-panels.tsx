@@ -42,6 +42,7 @@ import {
 import type { OkfBundleFile } from "@/lib/okf-bundle";
 import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
 import type { KnowledgeProfileSchema } from "@/lib/knowledge-profile";
+import { AviationDocumentMetadataFields } from "@/components/aviation-document-metadata-fields";
 
 type TopicPanelProps = {
   allowedRelations: string[];
@@ -154,15 +155,52 @@ export function DocumentMetadataPanel({
           <div className="space-y-2">
             <p className="text-muted-foreground">OKF source metadata</p>
             <MetadataRow
-              label="Subject family"
+              label={document.sourceType === "aviation" ? "Aircraft family" : "Subject family"}
               value={document.subjectFamily ?? "Missing"}
             />
+            {document.sourceType === "aviation" ? (
+              <>
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">Aircraft applicability</p>
+                    <Badge variant={document.applicabilityStatus === "needs_review" ? "destructive" : "secondary"}>
+                      {formatApplicabilityStatus(document.applicabilityStatus)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {document.applicabilityStatus === "manual_override"
+                      ? "A user correction controls aircraft family and variants in future EFB releases."
+                      : "The ingestion classifier determined the document-level aircraft scope from source evidence."}
+                  </p>
+                  <MetadataRow label="Family IDs" value={document.aircraftFamilyIds?.join(", ") || "Missing"} />
+                  <MetadataRow label="Variant IDs" value={document.aircraftTypeIds?.join(", ") || "Entire family / missing"} />
+                  <MetadataRow label="Scope" value={document.applicabilityScope ?? "Not classified"} />
+                  <MetadataRow label="Confidence" value={typeof document.applicabilityConfidence === "number" ? `${Math.round(document.applicabilityConfidence * 100)}%` : document.applicabilityStatus === "manual_override" ? "Manual decision" : "Not classified"} />
+                  <MetadataRow label="Model" value={document.applicabilityModel ?? (document.applicabilityStatus === "manual_override" ? "Manual override" : "Not classified")} />
+                </div>
+                {document.applicabilityStatus === "needs_review" ? (
+                  <p className="rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-amber-200">
+                    Applicability is uncertain or conflicts with entered metadata. Review the evidence and use the manual override below if needed.
+                  </p>
+                ) : null}
+                {document.applicabilityEvidence?.length ? (
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Classification evidence</p>
+                    {document.applicabilityEvidence.map((evidence) => (
+                      <p className="border-l-2 border-border pl-2" key={evidence}>{evidence}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             <MetadataRow
-              label="Document type"
+              label={document.sourceType === "aviation" ? "Manual type" : "Document type"}
               value={document.documentType ?? "Missing"}
             />
             <MetadataRow
-              label="Classification code"
+              label={document.sourceType === "aviation" && document.classificationCode && !/^\d{2}(?:-\d{2}){0,2}$/.test(document.classificationCode)
+                ? "Source identifier"
+                : document.sourceType === "aviation" ? "ATA" : "Classification code"}
               value={document.classificationCode ?? "Missing"}
             />
             <MetadataRow
@@ -174,6 +212,14 @@ export function DocumentMetadataPanel({
               value={document.sourceAuthority ?? "Missing"}
             />
             <MetadataRow label="Revision" value={document.revision ?? "Missing"} />
+            {document.sourceType === "aviation" ? (
+              <>
+                <MetadataRow label="Source classification" value={document.sourceClassification ?? "Missing"} />
+                <MetadataRow label="License identifier" value={document.licenseIdentifier ?? "Missing"} />
+                <MetadataRow label="Intended audiences" value={document.intendedAudiences?.join(", ") || "Missing"} />
+                <MetadataRow label="Content purpose" value={document.contentPurpose ?? "Missing"} />
+              </>
+            ) : null}
           </div>
           <Separator />
           <div>
@@ -235,54 +281,13 @@ export function DocumentMetadataPanel({
               <Label htmlFor="owner">Owner</Label>
               <Input id="owner" name="owner" defaultValue={document.owner} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="subjectFamily">Subject family</Label>
-              <Input
-                id="subjectFamily"
-                name="subjectFamily"
-                defaultValue={document.subjectFamily ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="documentType">Document type</Label>
-              <Input
-                id="documentType"
-                name="documentType"
-                defaultValue={document.documentType ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="classificationCode">Classification code</Label>
-              <Input
-                id="classificationCode"
-                name="classificationCode"
-                defaultValue={document.classificationCode ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="effectivity">Effectivity</Label>
-              <Input
-                id="effectivity"
-                name="effectivity"
-                defaultValue={document.effectivity ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sourceAuthority">Source authority</Label>
-              <Input
-                id="sourceAuthority"
-                name="sourceAuthority"
-                defaultValue={document.sourceAuthority ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="revision">Revision</Label>
-              <Input
-                id="revision"
-                name="revision"
-                defaultValue={document.revision ?? ""}
-              />
-            </div>
+            <AviationDocumentMetadataFields
+              className="lg:col-span-2"
+              initialSourceType={document.sourceType}
+              initialValues={document}
+              showMappedFieldsForGeneral
+              showApplicabilityOverride
+            />
             <div className="space-y-2">
               <Label htmlFor="tags">Tags</Label>
               <Input
@@ -291,20 +296,7 @@ export function DocumentMetadataPanel({
                 defaultValue={document.tags.join(", ")}
               />
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="sourceType">Source type</Label>
-                <select
-                  id="sourceType"
-                  name="sourceType"
-                  className={selectClassName}
-                  defaultValue={document.sourceType}
-                >
-                  <option value="general">General</option>
-                  <option value="aviation">Aviation</option>
-                </select>
-              </div>
-              <div className="space-y-2">
+            <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
                 <select
                   id="status"
@@ -319,7 +311,6 @@ export function DocumentMetadataPanel({
                   <option value="indexed">Indexed</option>
                   <option value="blocked">Blocked</option>
                 </select>
-              </div>
             </div>
             <div className="space-y-2 lg:col-span-2">
               <Label htmlFor="description">Description</Label>
@@ -1195,6 +1186,13 @@ function MetadataRow({ label, value }: { label: string; value: string }) {
 
 function hasEnrichedContent(topic: TopicRecord) {
   return Boolean(topic.enrichedTitle && topic.enrichedSummary);
+}
+
+function formatApplicabilityStatus(status: Document["applicabilityStatus"]) {
+  if (status === "manual_override") return "Manual override";
+  if (status === "needs_review") return "Review needed";
+  if (status === "accepted") return "Automatically accepted";
+  return "Not classified";
 }
 
 function TopicEnrichmentVersion({

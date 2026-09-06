@@ -15,13 +15,30 @@ import {
   UPLOAD_SESSION_TTL_SECONDS,
 } from "./document-upload-limits.ts";
 import type { DocumentUploadSessionDescriptor } from "./document-upload-types.ts";
+import {
+  emptyAviationDocumentMetadata,
+  normalizeAviationDocumentMetadata,
+  type AviationSourceClassification,
+  type IntendedAudience,
+} from "./aviation-document-metadata.ts";
 
 export { MAX_DOCUMENTS_PER_UPLOAD_BATCH, MAX_LARGE_PDF_PAGES, MAX_LARGE_PDF_UPLOAD_BYTES, UPLOAD_SESSION_TTL_SECONDS };
 
 export type DocumentUploadMetadata = {
+  aircraftTypeIds?: string[];
+  classificationCode?: string | null;
+  contentPurpose?: string | null;
   description: string;
+  documentType?: string | null;
+  effectivity?: string | null;
+  intendedAudiences?: IntendedAudience[];
+  licenseIdentifier?: string | null;
   owner: string;
+  revision?: string | null;
+  sourceAuthority?: string | null;
+  sourceClassification?: AviationSourceClassification | null;
   sourceType: SourceType;
+  subjectFamily?: string | null;
   tags: string[];
   title: string;
 };
@@ -227,16 +244,27 @@ export async function finalizeDocumentUploadSession(input: {
       data: {
         contentSha256: null,
         description: metadata.description.trim(),
+        aircraftTypeIds: metadata.aircraftTypeIds,
+        classificationCode: metadata.classificationCode,
+        contentPurpose: metadata.contentPurpose,
+        documentType: metadata.documentType,
+        effectivity: metadata.effectivity,
         fileType: "PDF",
         id: session.documentId,
         knowledgeBundleId: session.knowledgeBundleId,
         mimeType: "application/pdf",
         originalFilename: session.originalFilename,
         owner: metadata.owner.trim() || "Unassigned",
+        intendedAudiences: metadata.intendedAudiences,
+        licenseIdentifier: metadata.licenseIdentifier,
+        revision: metadata.revision,
         size: formatBytes(session.expectedSizeBytes),
         sizeBytes: session.expectedSizeBytes,
         sourceType: metadata.sourceType,
+        sourceAuthority: metadata.sourceAuthority,
+        sourceClassification: metadata.sourceClassification,
         status: "processing",
+        subjectFamily: metadata.subjectFamily,
         tags: metadata.tags,
         title,
         updatedLabel: "Just now",
@@ -426,6 +454,21 @@ export function validateDocumentUploadDeclaration(input: CreateDocumentUploadSes
   if (input.metadata.sourceType !== "aviation" && input.metadata.sourceType !== "general") {
     throw new Error("invalid_source_type");
   }
+  if (input.metadata.sourceType === "aviation") {
+    normalizeAviationDocumentMetadata({
+      aircraftFamily: input.metadata.subjectFamily,
+      aircraftTypeIds: input.metadata.aircraftTypeIds,
+      ata: input.metadata.classificationCode,
+      contentPurpose: input.metadata.contentPurpose,
+      effectivity: input.metadata.effectivity,
+      intendedAudiences: input.metadata.intendedAudiences,
+      licenseIdentifier: input.metadata.licenseIdentifier,
+      manualType: input.metadata.documentType,
+      revision: input.metadata.revision,
+      sourceAuthority: input.metadata.sourceAuthority,
+      sourceClassification: input.metadata.sourceClassification,
+    });
+  }
 }
 
 function normalizePdfFilename(filename: string) {
@@ -436,10 +479,35 @@ function normalizePdfFilename(filename: string) {
 
 function normalizeStoredMetadata(value: Prisma.JsonValue): DocumentUploadMetadata {
   const input = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const sourceType = input.sourceType === "aviation" ? "aviation" : "general";
+  const aviation = sourceType === "aviation"
+    ? normalizeAviationDocumentMetadata({
+        aircraftFamily: input.subjectFamily,
+        aircraftTypeIds: input.aircraftTypeIds,
+        ata: input.classificationCode,
+        contentPurpose: input.contentPurpose,
+        effectivity: input.effectivity,
+        intendedAudiences: input.intendedAudiences,
+        licenseIdentifier: input.licenseIdentifier,
+        manualType: input.documentType,
+        revision: input.revision,
+        sourceAuthority: input.sourceAuthority,
+        sourceClassification: input.sourceClassification,
+      })
+    : {
+        ...emptyAviationDocumentMetadata(),
+        classificationCode: null,
+        documentType: null,
+        effectivity: null,
+        revision: null,
+        sourceAuthority: null,
+        subjectFamily: null,
+      };
   return {
+    ...aviation,
     description: typeof input.description === "string" ? input.description : "",
     owner: typeof input.owner === "string" ? input.owner : "",
-    sourceType: input.sourceType === "aviation" ? "aviation" : "general",
+    sourceType,
     tags: parseTags(Array.isArray(input.tags) ? input.tags.join(",") : ""),
     title: typeof input.title === "string" ? input.title : "",
   };

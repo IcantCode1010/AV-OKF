@@ -62,17 +62,19 @@ const result = await exportEfbRelease({
     keyId: signingKeyId,
     value: sign(null, Buffer.from(payload, "utf8"), privateKey).toString("base64"),
   }),
+  validateStagedPackage: async (manifestPath) => {
+    const validator = path.join(efbRoot, "scripts", "validate-knowledge-package.mjs");
+    await execFileAsync(process.execPath, [
+      validator,
+      manifestPath,
+      "--require-signature",
+      "--public-key",
+      signingPublicKeyPath,
+      "--expected-key-id",
+      signingKeyId,
+    ], { cwd: efbRoot });
+  },
 });
-const validator = path.join(efbRoot, "scripts", "validate-knowledge-package.mjs");
-await execFileAsync(process.execPath, [
-  validator,
-  result.manifestPath,
-  "--require-signature",
-  "--public-key",
-  signingPublicKeyPath,
-  "--expected-key-id",
-  signingKeyId,
-], { cwd: efbRoot });
 console.log(`EFB release exported and contract-validated: ${result.releaseDirectory}`);
 
 function parseArgs(values: string[]): Map<string, string> {

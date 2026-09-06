@@ -81,12 +81,8 @@ test("all-concepts graph view preserves the complete topology", () => {
   assert.deepEqual(view.edges, edges);
 });
 
-test("a bundle without approved relations defaults to all concepts", () => {
-  assert.equal(getDefaultOkfGraphViewMode([]), "all");
-  assert.equal(
-    getDefaultOkfGraphViewMode([graphEdge("a-to-b", "a.md", "b.md")]),
-    "neighborhood",
-  );
+test("the graph opens in an overview before the user narrows its neighborhood", () => {
+  assert.equal(getDefaultOkfGraphViewMode(), "all");
 });
 
 test("graph view chooses the highest-degree concept when selection is not a graph node", () => {

@@ -2,6 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  buildInheritedAviationOkfMetadata,
+  emptyAviationDocumentMetadata,
+  replaceInheritedAviationOkfMetadata,
+  type AviationSourceClassification,
+  type IntendedAudience,
+} from "./aviation-document-metadata.ts";
 import { LOCAL_GENERAL_BUNDLE_ID } from "./knowledge-bundles.ts";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -244,11 +251,24 @@ export type Document = {
   mimeType: string;
   customProperties: CustomProperty[];
   subjectFamily: string | null;
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds?: string[];
+  applicabilityScope?: "entire-family" | "specific-variants" | "ambiguous" | null;
+  applicabilityConfidence?: number | null;
+  applicabilityEvidence?: string[];
+  applicabilityStatus?: "accepted" | "needs_review" | "manual_override" | null;
+  applicabilityProvider?: string | null;
+  applicabilityModel?: string | null;
+  applicabilityClassifiedAt?: string | null;
   documentType: string | null;
   classificationCode: string | null;
   effectivity: string | null;
   sourceAuthority: string | null;
   revision: string | null;
+  sourceClassification?: AviationSourceClassification | null;
+  licenseIdentifier?: string | null;
+  intendedAudiences?: IntendedAudience[];
+  contentPurpose?: string | null;
   extraction: DocumentExtraction;
   topicDiscovery?: DocumentTopicDiscovery;
 };
@@ -276,31 +296,51 @@ type VaultStore = {
 };
 
 type UploadMetadata = {
+  aircraftTypeIds?: string[];
   bytes: Buffer;
+  classificationCode: string | null;
+  contentPurpose?: string | null;
   description: string;
+  documentType: string | null;
+  effectivity: string | null;
+  intendedAudiences?: IntendedAudience[];
   knowledgeBundleId: string;
+  licenseIdentifier?: string | null;
   originalFilename: string;
   owner: string;
+  revision: string | null;
+  sourceAuthority: string | null;
+  sourceClassification?: AviationSourceClassification | null;
   sourceType: SourceType;
+  subjectFamily: string | null;
   tags: string[];
   title: string;
   type: string;
 };
 
 type UpdateMetadata = {
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds?: string[];
+  applicabilityManualOverride?: boolean;
+  applicabilityOverrideBy?: string;
+  applicabilityScope?: "entire-family" | "specific-variants" | "ambiguous";
   subjectFamily: string | null;
   classificationCode: string | null;
   description: string;
   effectivity: string | null;
   documentType: string | null;
+  intendedAudiences?: IntendedAudience[];
+  licenseIdentifier?: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
+  sourceClassification?: AviationSourceClassification | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
   title: string;
   customProperties: CustomProperty[];
+  contentPurpose?: string | null;
 };
 
 type CompleteExtractionInput = {
@@ -719,12 +759,17 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         contentSha256: createHash("sha256").update(input.bytes).digest("hex"),
         mimeType: "application/pdf",
         customProperties: [],
-        subjectFamily: null,
-        documentType: null,
-        classificationCode: null,
-        effectivity: null,
-        sourceAuthority: null,
-        revision: null,
+        subjectFamily: input.subjectFamily,
+        aircraftTypeIds: input.aircraftTypeIds ?? [],
+        documentType: input.documentType,
+        classificationCode: input.classificationCode,
+        effectivity: input.effectivity,
+        sourceAuthority: input.sourceAuthority,
+        revision: input.revision,
+        sourceClassification: input.sourceClassification ?? null,
+        licenseIdentifier: input.licenseIdentifier ?? null,
+        intendedAudiences: input.intendedAudiences ?? [],
+        contentPurpose: input.contentPurpose ?? null,
         extraction: {
           status: "queued",
           startedAt: null,
@@ -754,6 +799,17 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
 
       document.title = input.title.trim() || document.title;
       document.subjectFamily = normalizeOptionalMetadata(input.subjectFamily);
+      document.aircraftTypeIds = [...(input.aircraftTypeIds ?? [])];
+      if (input.applicabilityManualOverride) {
+        document.aircraftFamilyIds = [...(input.aircraftFamilyIds ?? [])];
+        document.applicabilityScope = input.applicabilityScope ?? "ambiguous";
+        document.applicabilityStatus = "manual_override";
+        document.applicabilityConfidence = null;
+        document.applicabilityEvidence = [];
+        document.applicabilityProvider = null;
+        document.applicabilityModel = null;
+        document.applicabilityClassifiedAt = new Date().toISOString();
+      }
       document.documentType = normalizeOptionalMetadata(input.documentType);
       document.classificationCode = normalizeOptionalMetadata(
         input.classificationCode,
@@ -761,6 +817,10 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       document.effectivity = normalizeOptionalMetadata(input.effectivity);
       document.sourceAuthority = normalizeOptionalMetadata(input.sourceAuthority);
       document.revision = normalizeOptionalMetadata(input.revision);
+      document.sourceClassification = input.sourceClassification ?? null;
+      document.licenseIdentifier = normalizeOptionalMetadata(input.licenseIdentifier ?? null);
+      document.intendedAudiences = [...(input.intendedAudiences ?? [])];
+      document.contentPurpose = normalizeOptionalMetadata(input.contentPurpose ?? null);
       document.owner = input.owner.trim() || "Unassigned";
       document.sourceType = input.sourceType;
       document.status = input.status;
@@ -768,6 +828,16 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       document.description = input.description.trim();
       document.customProperties = input.customProperties;
       document.updatedAt = formatTimestamp(new Date());
+
+      for (const topic of store.topicRecords ?? []) {
+        if (
+          topic.documentId === document.id &&
+          ["needs_review", "needs_cleanup"].includes(topic.reviewStatus)
+        ) {
+          topic.okfMetadata = replaceInheritedAviationOkfMetadata(topic.okfMetadata, document);
+          topic.updatedAt = document.updatedAt;
+        }
+      }
 
       store.activityEvents.unshift({
         id: `act-${randomUUID()}`,
@@ -933,7 +1003,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           editedBy: null,
           reviewStatus: "needs_review",
           relations: [],
-          okfMetadata: {},
+          okfMetadata: buildInheritedAviationOkfMetadata(document),
           exportedFilePath: null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -1650,11 +1720,25 @@ function normalizeDocument(document: Document): Document {
   document.knowledgeBundleId ??= LOCAL_GENERAL_BUNDLE_ID;
   document.extraction = normalizeExtraction(document.extraction);
   document.subjectFamily ??= null;
+  document.aircraftFamilyIds ??= [];
+  document.aircraftTypeIds ??= [];
+  document.applicabilityScope ??= null;
+  document.applicabilityConfidence ??= null;
+  document.applicabilityEvidence ??= [];
+  document.applicabilityStatus ??= null;
+  document.applicabilityProvider ??= null;
+  document.applicabilityModel ??= null;
+  document.applicabilityClassifiedAt ??= null;
   document.documentType ??= null;
   document.classificationCode ??= null;
   document.effectivity ??= null;
   document.sourceAuthority ??= null;
   document.revision ??= null;
+  const emptyAviation = emptyAviationDocumentMetadata();
+  document.sourceClassification ??= emptyAviation.sourceClassification;
+  document.licenseIdentifier ??= emptyAviation.licenseIdentifier;
+  document.intendedAudiences ??= emptyAviation.intendedAudiences;
+  document.contentPurpose ??= emptyAviation.contentPurpose;
   return document;
 }
 

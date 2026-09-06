@@ -12,6 +12,8 @@ import { approveTopicContentSource } from "./topic-enrichment.ts";
 import type { OperationProgressSnapshot } from "./operation-progress.ts";
 
 type ReviewTopic = {
+  discoveredTitle: string;
+  discoveredSummary: string;
   confidence: string;
   documentId: string;
   documentTitle: string;
@@ -206,6 +208,8 @@ export async function listBulkReviewTopics(input: {
     const eligibilityErrors = topicEligibilityErrors(topic, bundle.profile, topic.document);
     const enrichment = buildTopicEnrichmentAssessment(topic);
     return {
+      discoveredTitle: topic.title,
+      discoveredSummary: topic.summary,
       confidence: topic.confidence,
       documentId: topic.documentId,
       documentTitle: topic.document.title,

@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   BulkTopicReviewList,
   reviewCategory,
+  initialBulkMode,
   type BulkReviewTopic,
 } from "./bulk-topic-review-list.tsx";
 
@@ -101,4 +102,29 @@ test("ready topics disclose shared pages without blocking selection", () => {
   assert.match(markup, /does not block manual bulk approval/);
   assert.match(markup, /name="topicIds"/);
   assert.doesNotMatch(markup, /disabled="" name="topicIds"/);
+});
+
+test("discovered topics open in enrichment mode without enabling approval", () => {
+  const markup = renderToStaticMarkup(createElement(BulkTopicReviewList, {
+    bundleId: "bundle-1",
+    topics: [topic({enrichedTitle:null,enrichedSummary:null,discoveredTitle:"Flight control systems",discoveredSummary:"Primary and secondary controls.",enrichmentStatus:"none",eligible:false,eligibilityErrors:["topic_not_enriched"]})],
+  }));
+  assert.match(markup,/Flight control systems/);
+  assert.match(markup,/Primary and secondary controls/);
+  assert.match(markup,/Discovered topic/);
+  assert.match(markup,/Enrich selected topics/);
+  assert.match(markup,/Select all for enrichment/);
+  assert.doesNotMatch(markup,/<input(?=[^>]*name="topicIds")(?=[^>]*disabled="")[^>]*>/);
+  assert.doesNotMatch(markup,/No enriched title|No enriched summary/);
+});
+test("enriched review content takes precedence over source discovery", () => {
+ const markup=renderToStaticMarkup(createElement(BulkTopicReviewList,{bundleId:"bundle-1",topics:[topic({discoveredTitle:"Old source heading",discoveredSummary:"Old source summary"})]}));
+ assert.match(markup,/Ready inspection procedure/);
+ assert.doesNotMatch(markup,/Old source heading|Old source summary|Discovered topic/);
+});
+
+test("bulk workflow starts with the action the document is ready for",()=>{
+ assert.equal(initialBulkMode([topic({eligible:false,enrichmentStatus:"none"})]),"enrichment");
+ assert.equal(initialBulkMode([topic({eligible:true,enrichmentStatus:"completed"})]),"approval");
+ assert.equal(initialBulkMode([topic({eligible:false,enrichmentStatus:"completed",reviewStatus:"approved"})]),"approval");
 });

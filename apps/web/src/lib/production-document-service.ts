@@ -32,31 +32,51 @@ import { getExtractionQueue } from "./production-queue.ts";
 import type { TopicRelation } from "./okf-relation-types.ts";
 
 type UploadMetadata = {
+  aircraftTypeIds?: Document["aircraftTypeIds"];
   bytes: Buffer;
+  classificationCode: string | null;
+  contentPurpose?: string | null;
   description: string;
+  documentType: string | null;
+  effectivity: string | null;
+  intendedAudiences?: Document["intendedAudiences"];
   knowledgeBundleId: string;
   originalFilename: string;
   owner: string;
+  licenseIdentifier?: string | null;
+  revision: string | null;
+  sourceAuthority: string | null;
+  sourceClassification?: Document["sourceClassification"];
   sourceType: SourceType;
+  subjectFamily: string | null;
   tags: string[];
   title: string;
   type: string;
 };
 
 type UpdateMetadata = {
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds?: Document["aircraftTypeIds"];
+  applicabilityManualOverride?: boolean;
+  applicabilityOverrideBy?: string;
+  applicabilityScope?: Document["applicabilityScope"];
   subjectFamily: string | null;
   classificationCode: string | null;
   description: string;
   effectivity: string | null;
   documentType: string | null;
+  intendedAudiences?: Document["intendedAudiences"];
+  licenseIdentifier?: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
+  sourceClassification?: Document["sourceClassification"];
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
   title: string;
   customProperties: ReturnType<typeof parseCustomProperties>;
+  contentPurpose?: string | null;
 };
 
 export type ProductionDocumentService = {
@@ -193,16 +213,27 @@ export function createProductionDocumentService(
       });
 
       return repository.createUploadedDocumentRecord({
+        aircraftTypeIds: input.aircraftTypeIds ?? [],
+        classificationCode: input.classificationCode,
         contentSha256: createHash("sha256").update(input.bytes).digest("hex"),
+        contentPurpose: input.contentPurpose ?? null,
         context,
         description: input.description,
+        documentType: input.documentType,
+        effectivity: input.effectivity,
         documentId,
         knowledgeBundleId: input.knowledgeBundleId,
         objectKey,
+        intendedAudiences: input.intendedAudiences ?? [],
+        licenseIdentifier: input.licenseIdentifier ?? null,
         originalFilename: input.originalFilename,
         owner: input.owner,
+        revision: input.revision,
         sizeBytes: input.bytes.byteLength,
         sourceType: input.sourceType,
+        sourceAuthority: input.sourceAuthority,
+        sourceClassification: input.sourceClassification ?? null,
+        subjectFamily: input.subjectFamily,
         tags: input.tags,
         title: input.title,
       });
@@ -274,17 +305,26 @@ export function createProductionDocumentService(
       input: UpdateMetadata,
     ): Promise<Document> {
       return repository.updateDocumentMetadata({
+        aircraftFamilyIds: input.aircraftFamilyIds,
+        aircraftTypeIds: input.aircraftTypeIds ?? [],
+        applicabilityManualOverride: input.applicabilityManualOverride,
+        applicabilityOverrideBy: input.applicabilityOverrideBy,
+        applicabilityScope: input.applicabilityScope,
         subjectFamily: input.subjectFamily,
         classificationCode: input.classificationCode,
         context: await requireAuthWorkspaceContext(),
         customProperties: input.customProperties,
         description: input.description,
+        contentPurpose: input.contentPurpose ?? null,
         documentId,
         effectivity: input.effectivity,
         documentType: input.documentType,
+        intendedAudiences: input.intendedAudiences ?? [],
+        licenseIdentifier: input.licenseIdentifier ?? null,
         owner: input.owner,
         revision: input.revision,
         sourceAuthority: input.sourceAuthority,
+        sourceClassification: input.sourceClassification ?? null,
         sourceType: input.sourceType,
         status: input.status,
         tags: input.tags,

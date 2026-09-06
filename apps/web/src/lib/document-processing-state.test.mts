@@ -324,3 +324,14 @@ function stageStatus(state: ReturnType<typeof buildDocumentProcessingState>, id:
 function stageDetail(state: ReturnType<typeof buildDocumentProcessingState>, id: string) {
   return state.stages.find((stage) => stage.id === id)?.detail ?? "";
 }
+
+test("proposal-only processing hands off to topic selection, never article approval", () => {
+ for (const currentStage of ["review", "topic_selection"]) {
+ const state=buildDocumentProcessingState({authoringRun:authoringFixture({currentStage,status:"ready_for_review",completedStages:["metadata_discovery","concept_discovery","full_rag_index","media_discovery"]}),bundleName:"737",document:documentFixture("completed"),topicCount:76});
+ assert.equal(stageStatus(state,"enrichment"),"skipped");
+ assert.match(stageDetail(state,"review_export"),/76 discovered topics are ready to draft/);
+ assert.match(stageDetail(state,"review_export"),/have not been enriched or approved/);
+ assert.equal(state.automaticApprovalEnabled,false);
+ assert.equal(state.terminal,true);
+ }
+});

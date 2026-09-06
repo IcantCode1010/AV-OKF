@@ -16,6 +16,7 @@ import {
   traverseOkfRelations,
   type OkfGraphTraversalResult,
 } from "./okf-graph-retriever.ts";
+import { selectGraphEvidence, selectGraphEvidencePairs, pruneGraphEvidenceContext, GRAPH_EVIDENCE_LIMIT, type GraphEvidenceContext } from "./okf-graph-evidence.ts";
 import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
 import { retrieveDocuments, retrieveDocumentsByChunkIds } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
@@ -45,7 +46,7 @@ const EVIDENCE_EXCERPT_MAX_CHARS = 1500;
 
 // Fuller-text counterpart to a ChatCitation, keyed by the same index. Used
 // only to prompt the answer builder; never persisted or rendered.
-export type ChatRetrievalEvidence = {
+export type ChatRetrievalEvidence = GraphEvidenceContext & {
   approvalProvenance?: "automated" | "human" | "legacy";
   knowledgeBundleId?: string;
   knowledgeBundleName?: string;
@@ -221,6 +222,7 @@ async function traverseOkfRelationsWithLifecycle(input: {
 
   return traverseOkfRelations({
     ...input,
+    direction: "both",
     knowledgeBundleId,
     knowledgeRoot,
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
@@ -497,9 +499,9 @@ async function runSingleBundleChatRetrievalCore(
           );
 
           if (graphResults.length > 0) {
-            const graphOkfResults = [...okfResults, ...graphResults].slice(0, OKF_TOP_K);
-            return buildOkfBundleRetrievalResult(
-              graphOkfResults,
+            const selection = selectGraphEvidence({ direct: okfResults, graph, query });
+            const result = buildOkfBundleRetrievalResult(
+              selection.concepts,
               [...toolsForRoute, "okf_relation_traversal"],
               {
                 approvedOkfAvailable: true,
@@ -509,6 +511,23 @@ async function runSingleBundleChatRetrievalCore(
               "graph",
               effectiveKnowledgeBundleId,
             );
+            const byFile = new Map(selection.concepts.map((node) => [node.filePath, node]));
+            for (const evidence of result.evidence) {
+              evidence.graphDerived = !okfResults.some((node) => node.filePath === evidence.okfFilePath);
+              evidence.graphPaths = selection.paths.filter((entry) => entry.files.includes(evidence.okfFilePath!));
+              const connections = selection.paths.flatMap((entry) => entry.relationTypes.map((relation, index) => ({
+                sourceFile: entry.files[entry.directions?.[index] === "incoming" ? index + 1 : index],
+                targetFile: entry.files[entry.directions?.[index] === "incoming" ? index : index + 1], relation,
+              }))).filter((edge) => edge.sourceFile === evidence.okfFilePath || edge.targetFile === evidence.okfFilePath);
+              evidence.graphConnections = [...new Map(connections.map((edge) => [JSON.stringify(edge), {
+                source: byFile.get(edge.sourceFile!)!.title,
+                relation: edge.relation,
+                target: byFile.get(edge.targetFile!)!.title,
+                sourceFile: edge.sourceFile,
+                targetFile: edge.targetFile,
+              }])).values()];
+            }
+            return result;
           }
 
           const discovery = await fetchBySourceType(retrieve, rerank, {
@@ -744,9 +763,8 @@ export function mergeBundleRetrievalResults(
         )
       : pairs;
   eligiblePairs.sort(compareBundleEvidence);
-  const okfPairs = eligiblePairs
-    .filter((pair) => pair.citation.sourceType === "okf")
-    .slice(0, OKF_TOP_K);
+  const okfPairs = selectGraphEvidencePairs(eligiblePairs
+    .filter((pair) => pair.citation.sourceType === "okf"), request.decision.requiresGraphTraversal ? GRAPH_EVIDENCE_LIMIT : OKF_TOP_K);
   const ragPairs = eligiblePairs
     .filter((pair) => pair.citation.sourceType === "rag")
     .slice(0, RAG_TOP_K);
@@ -756,10 +774,10 @@ export function mergeBundleRetrievalResults(
     ...pair.citation,
     index: index + 1,
   }));
-  const evidence = selectedPairs.map((pair, index) => ({
+  const evidence = pruneGraphEvidenceContext(selectedPairs.map((pair, index) => ({
     ...pair.evidence,
     index: index + 1,
-  }));
+  })));
   const crossBundleConflict = detectCrossBundleConflict(citations);
   const executions = aggregateAgentCalls(
     annotated.flatMap((result) => result.agentExecution?.calls ?? []),
@@ -779,7 +797,7 @@ export function mergeBundleRetrievalResults(
       citations.length === 0
         ? annotated.find((result) => result.metadataClarification)?.metadataClarification
         : undefined,
-    okfEvidenceMode: annotated.some((result) => result.okfEvidenceMode === "graph")
+    okfEvidenceMode: evidence.some((item) => item.graphDerived ?? item.okfEvidenceMode === "graph")
       ? "graph"
       : annotated.some((result) => result.okfEvidenceMode)
         ? "direct"
@@ -835,17 +853,29 @@ export function mergeAdaptiveRetrievalResults(
   evidenceDelta: { approvedOkf: number; citations: number; rawRag: number };
   result: ChatRetrievalResult;
 } {
-  const seen = new Set<string>();
-  const pairs = [...pairCitationsWithEvidence(original), ...pairCitationsWithEvidence(retry)]
-    .filter((pair) => {
-      const key = citationIdentity(pair.citation);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  const okfPairs = pairs
-    .filter((pair) => pair.citation.sourceType === "okf")
-    .slice(0, OKF_TOP_K);
+  const originalPairs = pairCitationsWithEvidence(original);
+  const retryPairs = pairCitationsWithEvidence(retry);
+  const latest = new Map(originalPairs.map((pair) => [citationIdentity(pair.citation), pair]));
+  const changed = new Set<string>();
+  for (const pair of retryPairs) {
+    const key = citationIdentity(pair.citation);
+    const previous = latest.get(key);
+    if (previous && previous.evidence.text !== pair.evidence.text && pair.evidence.okfFilePath) {
+      changed.add(JSON.stringify([pair.evidence.knowledgeBundleId ?? "", pair.evidence.okfFilePath]));
+    }
+    // Keep rank position, but retain the most recently inspected evidence and
+    // newly discovered graph paths rather than discarding the entire retry hit.
+    latest.set(key, pair);
+  }
+  const retried = new Set(retryPairs.map((pair) => citationIdentity(pair.citation)));
+  const pairs = [...latest.values()].map((pair) => {
+    if (retried.has(citationIdentity(pair.citation)) || !pair.evidence.graphPaths?.length) return pair;
+    return { ...pair, evidence: { ...pair.evidence, graphPaths: pair.evidence.graphPaths.filter((path) =>
+      !path.files.some((file) => changed.has(JSON.stringify([pair.evidence.knowledgeBundleId ?? "", file]))),
+    ) } };
+  });
+  const okfPairs = selectGraphEvidencePairs(pairs
+    .filter((pair) => pair.citation.sourceType === "okf"), decision.requiresGraphTraversal ? GRAPH_EVIDENCE_LIMIT : OKF_TOP_K);
   const ragPairs = pairs
     .filter((pair) => pair.citation.sourceType === "rag")
     .slice(0, RAG_TOP_K);
@@ -854,10 +884,10 @@ export function mergeAdaptiveRetrievalResults(
     ...pair.citation,
     index: index + 1,
   }));
-  const evidence = selected.map((pair, index) => ({
+  const evidence = pruneGraphEvidenceContext(selected.map((pair, index) => ({
     ...pair.evidence,
     index: index + 1,
-  }));
+  })));
   const originalKeys = new Set(original.citations.map(citationIdentity));
   const added = citations.filter((citation) => !originalKeys.has(citationIdentity(citation)));
   const approvedOkfAvailable = citations.some(
@@ -885,9 +915,9 @@ export function mergeAdaptiveRetrievalResults(
       crossBundleConflict: detectCrossBundleConflict(citations),
       evidence,
       okfEvidenceMode:
-        retry.okfEvidenceMode === "graph" || original.okfEvidenceMode === "graph"
+        evidence.some((item) => item.graphDerived ?? item.okfEvidenceMode === "graph")
           ? "graph"
-          : retry.okfEvidenceMode ?? original.okfEvidenceMode,
+          : approvedOkfAvailable ? "direct" : undefined,
       okfMatchMode:
         retry.okfMatchMode === "lexical" || original.okfMatchMode === "lexical"
           ? "lexical"

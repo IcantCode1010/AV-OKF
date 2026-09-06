@@ -15,7 +15,7 @@ import {
   type LlmProviderId,
 } from "./llm-providers.ts";
 
-const QUERY_UNDERSTANDING_MAX_OUTPUT_TOKENS = 300;
+const QUERY_UNDERSTANDING_MAX_OUTPUT_TOKENS = 4096;
 
 export type ChatQueryUnderstandingInput = {
   clarificationAlreadyAsked?: boolean;
@@ -85,7 +85,8 @@ export function shouldRunQueryUnderstanding(input: {
 
   const words = normalizeWhitespace(input.question).split(" ").filter(Boolean);
   const meaningfulWords = words.filter(
-    (word) => !QUERY_FILLER_WORDS.has(word.toLowerCase().replace(/[^a-z0-9-]/g, "")),
+    (word) =>
+      !QUERY_FILLER_WORDS.has(word.toLowerCase().replace(/[^a-z0-9-]/g, "")),
   );
 
   return (
@@ -148,7 +149,9 @@ export async function understandChatQuery(
 
   const originalQuestion = input.question.trim();
   const retrievalSeed = buildRetrievalSeed(input);
-  const sourceText = [retrievalSeed, ...(input.conversationContext ?? [])].join(" ");
+  const sourceText = [retrievalSeed, ...(input.conversationContext ?? [])].join(
+    " ",
+  );
   const protectedEntities = extractProtectedEntities(retrievalSeed);
   const fallback = (warning: string): ChatQueryUnderstandingTrace => ({
     ambiguityLevel: inferFallbackAmbiguity(input.decision),
@@ -180,7 +183,9 @@ export async function understandChatQuery(
   const prompt = buildQueryUnderstandingPrompt(input, protectedEntities);
 
   try {
-    const output = await (options.callProvider ?? callQueryUnderstandingProvider)({
+    const output = await (
+      options.callProvider ?? callQueryUnderstandingProvider
+    )({
       apiKey: key.apiKey,
       model: provider.model,
       prompt,
@@ -230,7 +235,9 @@ export async function understandChatQuery(
       .map((entity) => entity.trim())
       .filter(
         (entity) =>
-          entity && includesEntity(sourceText, entity) && includesEntity(retrievalQuery, entity),
+          entity &&
+          includesEntity(sourceText, entity) &&
+          includesEntity(retrievalQuery, entity),
       );
     const detectedEntities = deduplicateEntities([
       ...protectedEntities,
@@ -324,7 +331,8 @@ function resolveRequiredAssumptions(input: {
   modelAssumptions: ChatContextAssumption[];
   sourceText: string;
 }): ChatContextAssumption[] {
-  const requiredFields = input.input.decision.requiredContext.filter(isChatContextField);
+  const requiredFields =
+    input.input.decision.requiredContext.filter(isChatContextField);
   const modelByField = new Map(
     input.modelAssumptions.map((assumption) => [assumption.field, assumption]),
   );
@@ -348,11 +356,13 @@ function resolveRequiredAssumptions(input: {
         value: derivedSubject,
       };
     }
-    return modelAssumption ?? {
-      basis: "safe_default",
-      field,
-      value: SAFE_CONTEXT_DEFAULTS[field],
-    };
+    return (
+      modelAssumption ?? {
+        basis: "safe_default",
+        field,
+        value: SAFE_CONTEXT_DEFAULTS[field],
+      }
+    );
   });
 }
 
@@ -432,7 +442,9 @@ async function callQueryUnderstandingProvider(input: {
     system:
       "You optimize search queries without answering them or changing routing. Return only the requested structured object.",
     maxOutputTokens: QUERY_UNDERSTANDING_MAX_OUTPUT_TOKENS,
-    temperature: 0,
+    ...(input.provider === "openai" && /^(gpt-[56]|o[134])/.test(input.model)
+      ? { providerOptions: { openai: { reasoningEffort: "low" } } }
+      : { temperature: 0 }),
   });
 
   return result.output;
@@ -452,8 +464,12 @@ export function extractProtectedEntities(question: string): string[] {
     ),
     ...(question.match(/\b\d{4}-\d{2}-\d{2}\b/g) ?? []),
     ...(question.match(/\bv?\d+(?:\.\d+){1,3}\b/gi) ?? []),
-    ...(question.match(/\b(?:ISO|SOC|NIST|GDPR|HIPAA|PCI(?: DSS)?|CFR)\s*[A-Z0-9.-]*\b/gi) ?? []),
-    ...(question.match(/\b(?:article|section|clause|policy|case|ticket|contract)\s+(?:no\.?\s*)?[A-Z0-9][A-Z0-9._/-]*\b/gi) ?? []),
+    ...(question.match(
+      /\b(?:ISO|SOC|NIST|GDPR|HIPAA|PCI(?: DSS)?|CFR)\s*[A-Z0-9.-]*\b/gi,
+    ) ?? []),
+    ...(question.match(
+      /\b(?:article|section|clause|policy|case|ticket|contract)\s+(?:no\.?\s*)?[A-Z0-9][A-Z0-9._/-]*\b/gi,
+    ) ?? []),
     ...(question.match(/\b\d{2}(?:-\d{2}){1,2}\b/g) ?? []),
     ...(question.match(/\b[A-Z][A-Z0-9]{1,}(?:[/-][A-Z0-9]+)*\b/g) ?? []),
     ...(question.match(/\b[A-Za-z0-9]+(?:-[A-Za-z0-9]+){1,}\b/g) ?? []),
@@ -492,12 +508,14 @@ function normalizeWhitespace(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
-const AMBIGUOUS_REFERENCE_PATTERN = /\b(it|this|that|these|those|they|them|there)\b/i;
+const AMBIGUOUS_REFERENCE_PATTERN =
+  /\b(it|this|that|these|those|they|them|there)\b/i;
 
 const SAFE_CONTEXT_DEFAULTS: Record<ChatContextField, string> = {
   applicable_scope_or_version: "all available scopes and versions",
   intended_action: "informational guidance only, not authorization to act",
-  source_authority: "approved OKF first, with raw documents only as labeled discovery",
+  source_authority:
+    "approved OKF first, with raw documents only as labeled discovery",
   subject_or_entity: "all subjects represented in the workspace",
 };
 

@@ -30,7 +30,7 @@ ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends imagemagick openssl poppler-utils procps qpdf tesseract-ocr tesseract-ocr-eng wget \
+  && apt-get install -y --no-install-recommends imagemagick librsvg2-bin fonts-dejavu-core openssl poppler-utils procps qpdf tesseract-ocr tesseract-ocr-eng wget \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --system nextjs \
   && useradd --system --gid nextjs --create-home nextjs \

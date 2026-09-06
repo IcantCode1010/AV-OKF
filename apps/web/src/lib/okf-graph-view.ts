@@ -46,10 +46,9 @@ export function buildOkfGraphFocus(input: {
   };
 }
 
-export function getDefaultOkfGraphViewMode(
-  edges: OkfExplorerEdge[],
-): OkfGraphViewMode {
-  return edges.length === 0 ? "all" : "neighborhood";
+export function getDefaultOkfGraphViewMode(): OkfGraphViewMode {
+  // Start with the whole map; large 3D maps collapse into navigable groups.
+  return "all";
 }
 
 export function buildOkfGraphView(input: {

@@ -59,7 +59,10 @@ export async function sendChatMessageAction(formData: FormData) {
     mismatchError: "chat_session_workspace_mismatch",
   });
 
-  await sendChatMessage(sessionId, content, metadataSelection);
+  try{await sendChatMessage(sessionId, content, metadataSelection);}catch(error){
+    if(error instanceof Error&&/^(chat_scope_changed|research_cancelled|knowledge_sources_changed|knowledge_evidence_unavailable|knowledge_scope_unavailable|knowledge_source_unavailable)$/.test(error.message))return {error:"The question was stopped because its knowledge scope or source evidence changed. Send it again in the current scope."};
+    throw error;
+  }
 
   revalidatePath(`/chat/${sessionId}`);
   redirect(`/chat/${sessionId}`);

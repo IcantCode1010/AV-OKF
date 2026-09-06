@@ -72,7 +72,11 @@ export type ChatEvidenceStatus =
   | "no_evidence"
   | "retrieval_error";
 
-export type ChatAnswerEvidenceKind = "approved_okf" | "raw_rag" | "mixed" | "none";
+export type ChatAnswerEvidenceKind =
+  | "approved_okf"
+  | "raw_rag"
+  | "mixed"
+  | "none";
 
 export type ChatAnswerTrustLevel = "high" | "medium" | "blocked";
 
@@ -109,6 +113,8 @@ export type ChatEntityCandidate = {
 };
 
 export type Stage6aRouterTrace = ChatRouterDecision & {
+  answerConnections?: import("./chat-answer-graph.ts").ChatAnswerConnection[];
+  responseKind?: "conversation" | "evidence";
   // Optional because traces persisted before each field existed don't carry
   // them; absent means the reply predates that tracking.
   answerEvidenceProfile?: ChatAnswerEvidenceProfile;
@@ -116,7 +122,10 @@ export type Stage6aRouterTrace = ChatRouterDecision & {
   answerMode?: "llm" | "deterministic";
   answerModel?: string;
   answerProvider?: string;
-  answerOutcome?: "answered" | "insufficient_evidence" | "retrieval_unavailable";
+  answerOutcome?:
+    | "answered"
+    | "insufficient_evidence"
+    | "retrieval_unavailable";
   answerProjectionFallback?: { reasonCodes: string[] };
   adaptiveRetry?: import("./chat-adaptive-retry.ts").AdaptiveRetryTrace;
   agentExecution?: import("./agent-tools.ts").AgentExecutionTrace;
@@ -201,7 +210,9 @@ export type ChatRouterProviderFn = (input: {
 
 export type RetrievalChatRoute = "okf_only" | "rag_only" | "hybrid";
 
-export function isRetrievalRoute(route: ChatRoute): route is RetrievalChatRoute {
+export function isRetrievalRoute(
+  route: ChatRoute,
+): route is RetrievalChatRoute {
   return route === "okf_only" || route === "rag_only" || route === "hybrid";
 }
 
@@ -228,7 +239,9 @@ function routeChatQuestionBase(
 ): ChatRouterDecision {
   const question = typeof input === "string" ? input : input.question;
   const clarificationAlreadyAsked =
-    typeof input === "string" ? false : input.clarificationAlreadyAsked === true;
+    typeof input === "string"
+      ? false
+      : input.clarificationAlreadyAsked === true;
   const normalized = normalizeQuestion(question);
 
   const hasKnowledgeSignal =
@@ -259,10 +272,9 @@ function routeChatQuestionBase(
       confidence: "high",
       constraints: { approvedOnly: true, includeUnreviewed: false },
       queryCategory: "missing_context",
-      rationale:
-        highRisk
-          ? "The question concerns a high-risk action and needs one combined context check before retrieval."
-          : "The question asks for a decision or recommendation without enough subject, scope, source, or intended-action context.",
+      rationale: highRisk
+        ? "The question concerns a high-risk action and needs one combined context check before retrieval."
+        : "The question asks for a decision or recommendation without enough subject, scope, source, or intended-action context.",
       requiredContext: MISSING_DECISION_CONTEXT,
       route: "missing_context",
     };
@@ -275,7 +287,9 @@ function routeChatQuestionBase(
       queryCategory: "high_risk_domain",
       rationale:
         "The question concerns a high-risk operational scenario and requires reviewed source material before any answer is attempted.",
-      requiredContext: clarificationAlreadyAsked ? MISSING_DECISION_CONTEXT : [],
+      requiredContext: clarificationAlreadyAsked
+        ? MISSING_DECISION_CONTEXT
+        : [],
       route: "okf_only",
     };
   }
@@ -477,16 +491,16 @@ function inferOkfCategory(normalized: string): ChatQueryCategory {
 }
 
 function formatRequiredContext(requiredContext: string[]): string {
-  return requiredContext
-    .map((item) => item.replaceAll("_", " "))
-    .join(", ");
+  return requiredContext.map((item) => item.replaceAll("_", " ")).join(", ");
 }
 
 function normalizeQuestion(question: string): string {
   return question.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function normalizeRouterInput(input: string | ChatRouterInput): ChatRouterInput {
+function normalizeRouterInput(
+  input: string | ChatRouterInput,
+): ChatRouterInput {
   return typeof input === "string" ? { question: input } : input;
 }
 
@@ -505,7 +519,7 @@ function buildRouterFallbackPrompt(input: ChatRouterFallbackInput): string {
     "Use okf_only for stable official reviewed knowledge.",
     "Use rag_only for broad search, summaries, comparisons, or discovery over raw documents.",
     "Use hybrid only when the question needs approved knowledge plus raw supporting examples.",
-    "Use missing_context when a safe answer requires more subject, scope, source, version, jurisdiction, or intent context.",
+    "Use missing_context only when the subject itself is missing or a specific requested determination requires essential configuration/context. Broad learning requests with a named subject (for example 'need to know about hydraulics') should use hybrid and begin with a source-grounded overview. Do not require a subtopic, desired level, or use case before researching. The selected knowledge collections supply the source scope.",
     "Use unsupported for live data, external systems, or requests static documents cannot answer.",
     'Return strict JSON: {"route": string, "queryCategory": string, "confidence": string, "rationale": string, "requiredContext": string[]}',
     "",
@@ -534,10 +548,18 @@ const routerFallbackSchema = z.object({
   ]),
   rationale: z.string(),
   requiredContext: z.array(z.string()),
-  route: z.enum(["okf_only", "rag_only", "hybrid", "missing_context", "unsupported"]),
+  route: z.enum([
+    "okf_only",
+    "rag_only",
+    "hybrid",
+    "missing_context",
+    "unsupported",
+  ]),
 });
 
-function parseRouterFallbackPayload(rawOutput: unknown): ChatRouterDecision | null {
+function parseRouterFallbackPayload(
+  rawOutput: unknown,
+): ChatRouterDecision | null {
   const parsed = routerFallbackSchema.safeParse(rawOutput);
 
   if (!parsed.success) {
@@ -555,7 +577,9 @@ function parseRouterFallbackPayload(rawOutput: unknown): ChatRouterDecision | nu
   };
 }
 
-function constraintsForRoute(route: ChatRoute): ChatRouterDecision["constraints"] {
+function constraintsForRoute(
+  route: ChatRoute,
+): ChatRouterDecision["constraints"] {
   if (route === "okf_only" || route === "missing_context") {
     return { approvedOnly: true, includeUnreviewed: false };
   }
@@ -579,7 +603,9 @@ async function callRouterProvider(input: {
     prompt: input.prompt,
     system:
       "You classify chat questions for a document retrieval router. Return only the requested structured object.",
-    temperature: 0,
+    ...(input.provider === "openai" && /^(gpt-[56]|o[134])/.test(input.model)
+      ? {}
+      : { temperature: 0 }),
   });
 
   return result.output;

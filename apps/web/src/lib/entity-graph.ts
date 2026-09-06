@@ -1,3 +1,4 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
 import { createHash } from "node:crypto";
 
 import { generateText, Output } from "ai";
@@ -12,6 +13,7 @@ import { canonicalizeRelationEvidenceText } from "./okf-relation-verifier.ts";
 import { getOkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 import { getPrisma } from "./prisma.ts";
 import { estimateTokens } from "./topic-discovery.ts";
+import { resolveEntityRelationTarget, normalizeEntityTargetName, type TargetResolutionStrategy } from "./entity-relation-target.ts";
 
 export const ENTITY_EXTRACTION_PROMPT_VERSION = "entity-grounding-v1";
 export const MAX_ENTITY_RELATIONS_PER_EXPANSION = 50;
@@ -69,12 +71,7 @@ type GroundingChunk = {
 };
 
 export function normalizeEntityName(value: string) {
-  return value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ");
+  return normalizeEntityTargetName(value);
 }
 
 export function getEntityExtractionJsonSchema() {
@@ -153,7 +150,7 @@ export async function scheduleEntityExtractionForTopic(
   const db = getPrisma();
   const topic = await db.topicRecord.findFirst({
     include: { document: { select: { deletedAt: true, knowledgeBundleId: true } } },
-    where: { enrichmentStatus: "completed", id: topicId },
+    where: { ...(knowledgeFeature("shared")?{}:{enrichmentStatus:"completed"}), id: topicId },
   });
   if (!topic || topic.document.deletedAt || !topic.document.knowledgeBundleId) return null;
   const revisionHash = buildEntityTopicRevisionHash(topic);
@@ -371,13 +368,16 @@ export async function runEntityExpansion(runId: string) {
       where: { entity: { workspaceId: run.workspaceId }, status: "accepted" },
     });
     const resolvable = assertions.flatMap((assertion) => {
-      const target = resolveEntityRelationTarget({ aliases, assertion, topics });
-      return target && target.id !== assertion.sourceTopicId ? [{ assertion, target }] : [];
+      const resolution = resolveEntityRelationTarget({ aliases, assertion, topics });
+      return resolution.target ? [{ assertion, target: resolution.target, strategy: resolution.strategy }] : [];
     });
-    const resolved = resolvable.slice(0, MAX_ENTITY_RELATIONS_PER_EXPANSION);
+    const publishedSources = new Map(topics.filter((topic) => topic.exportedFilePath).map((topic) => [topic.id, topic]));
+    const resolved = resolvable.filter(({ assertion }) => publishedSources.has(assertion.sourceTopicId));
     let queuedCount = 0;
-    for (const { assertion, target } of resolved) {
-      const source = topics.find((topic) => topic.id === assertion.sourceTopicId);
+    let capped = false;
+    for (const { assertion, target, strategy } of resolved) {
+      if (queuedCount >= MAX_ENTITY_RELATIONS_PER_EXPANSION) { capped = true; break; }
+      const source = publishedSources.get(assertion.sourceTopicId);
       if (!source?.exportedFilePath || !target.exportedFilePath) continue;
       const existing = await db.okfRelationCandidate.findUnique({
         where: { knowledgeBundleId_sourceFile_targetFile_relation: {
@@ -388,14 +388,20 @@ export async function runEntityExpansion(runId: string) {
         } },
       });
       if (existing && existing.status !== "pending") continue;
+      if (existing) {
+        const owner = await db.entityRelationCandidate.findUnique({ where: { projectedCandidateId: existing.id }, select: { id: true } });
+        // A projected candidate has one originating assertion. Do not overwrite
+        // another assertion's evidence or fail the whole run on its unique key.
+        if (owner && owner.id !== assertion.id) continue;
+      }
       const candidate = existing
         ? await db.okfRelationCandidate.update({
-            data: buildProjectedRelationData({ assertion, automaticApprovalRequested: bundle.profile.automation.autoApproveVerifiedRelations, runId: run.id }),
+            data: buildProjectedRelationData({ assertion, strategy, automaticApprovalRequested: bundle.profile.automation.autoApproveVerifiedRelations, runId: run.id }),
             where: { id: existing.id },
           })
         : await db.okfRelationCandidate.create({
             data: {
-              ...buildProjectedRelationData({ assertion, automaticApprovalRequested: bundle.profile.automation.autoApproveVerifiedRelations, runId: run.id }),
+              ...buildProjectedRelationData({ assertion, strategy, automaticApprovalRequested: bundle.profile.automation.autoApproveVerifiedRelations, runId: run.id }),
               knowledgeBundleId: run.knowledgeBundleId,
               reason: assertion.rationale ?? "Grounded entity relation assertion awaiting verification.",
               relation: assertion.relation,
@@ -409,7 +415,7 @@ export async function runEntityExpansion(runId: string) {
           expansionRunId: run.id,
           projectedCandidateId: candidate.id,
           status: "queued",
-          targetResolution: assertion.targetAnchor ? "unique_anchor" : "explicit_name",
+          targetResolution: strategy,
           targetTopicId: target.id,
         },
         where: { id: assertion.id },
@@ -425,7 +431,7 @@ export async function runEntityExpansion(runId: string) {
         resolvedCount: resolved.length,
         filteredCount: Math.max(0, assertions.length - resolved.length),
         status: "completed",
-        warningCodes: resolvable.length > MAX_ENTITY_RELATIONS_PER_EXPANSION
+        warningCodes: capped
           ? ["entity_expansion_candidate_cap_reached"]
           : [],
       },
@@ -681,31 +687,8 @@ async function callEntityExtractionProvider(input: { apiKey: string; prompt: str
   return result.output;
 }
 
-function resolveEntityRelationTarget(input: {
-  aliases: Array<{ normalizedValue: string; entity: { topicLinks: Array<{ topicId: string }> } }>;
-  assertion: { targetAnchor: string | null; targetResolutionValue: string | null };
-  topics: Array<{ enrichedBody: string | null; enrichedSummary: string | null; enrichedTitle: string | null; exportedFilePath: string | null; id: string; okfMetadata: unknown; summary: string; title: string }>;
-}) {
-  const value = input.assertion.targetResolutionValue ?? "";
-  const exact = input.topics.filter((topic) => [topic.title, topic.enrichedTitle]
-    .filter((title): title is string => Boolean(title))
-    .some((title) => normalizeEntityName(title) === value));
-  if (exact.length === 1) return exact[0];
-  const aliasTopicIds = new Set(input.aliases.filter((alias) => alias.normalizedValue === value).flatMap((alias) => alias.entity.topicLinks.map((link) => link.topicId)));
-  const aliasMatches = input.topics.filter((topic) => aliasTopicIds.has(topic.id));
-  if (aliasMatches.length === 1) return aliasMatches[0];
-  const anchor = input.assertion.targetAnchor?.trim();
-  if (!anchor) return null;
-  const anchorMatches = input.topics.filter((topic) => canonicalizeRelationEvidenceText([
-    topic.enrichedTitle ?? topic.title,
-    topic.enrichedSummary ?? topic.summary,
-    topic.enrichedBody ?? "",
-    JSON.stringify(topic.okfMetadata),
-  ].join(" ")).includes(canonicalizeRelationEvidenceText(anchor)));
-  return anchorMatches.length === 1 ? anchorMatches[0] : null;
-}
-
 function buildProjectedRelationData(input: {
+  strategy: TargetResolutionStrategy;
   assertion: { evidenceChunkIds: string[]; evidencePageNumbers: number[]; evidenceQuote: string; id: string; rationale: string | null; targetAnchor: string | null };
   automaticApprovalRequested: boolean;
   runId: string;
@@ -721,7 +704,7 @@ function buildProjectedRelationData(input: {
     requestedDirection: "proposed",
     signals: ["entity_grounded_assertion", `entity_relation:${input.assertion.id}`, `entity_expansion:${input.runId}`] as unknown as Prisma.InputJsonValue,
     targetAnchor: input.assertion.targetAnchor,
-    targetResolution: input.assertion.targetAnchor ? "unique_anchor" : "explicit_name",
+    targetResolution: input.strategy,
     verificationStatus: "queued",
   };
 }

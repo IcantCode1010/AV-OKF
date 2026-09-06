@@ -14,6 +14,7 @@ import {
   type OkfSource,
   type OkfV02Frontmatter,
 } from "./okf-frontmatter.ts";
+import { getProjectEfbArticleClassification } from "./project-efb-article-classification.ts";
 
 type ExportTopic = {
   id: string;
@@ -51,14 +52,26 @@ export type ExportTopicMedia = {
 
 type ExportDocument = {
   aircraftFamily?: string | null;
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds?: string[];
+  applicabilityConfidence?: number | null;
+  applicabilityEvidence?: string[];
+  applicabilityModel?: string | null;
+  applicabilityScope?: string | null;
+  applicabilityStatus?: string | null;
   ata?: string | null;
+  contentPurpose?: string | null;
   contentSha256: string | null;
   title: string;
   subjectFamily: string | null;
   documentType: string | null;
   classificationCode: string | null;
   effectivity: string | null;
+  intendedAudiences?: string[];
+  licenseIdentifier?: string | null;
   sourceAuthority: string | null;
+  sourceClassification?: string | null;
+  sourceType?: string;
   revision: string | null;
   mimeType: string;
   manualType?: string | null;
@@ -146,7 +159,46 @@ export function buildOkfSystemTopic(input: BuildOkfSystemTopicInput): {
   addOptionalField(frontmatterFields, "ata", input.document.ata);
   addOptionalField(frontmatterFields, "manual_type", input.document.manualType);
   addOptionalField(frontmatterFields, "source_authority", input.document.sourceAuthority);
-  addCustomMetadata(frontmatterFields, input.topic.okfMetadata);
+  if (input.document.sourceType === "aviation") {
+    addOptionalField(frontmatterFields, "aircraft_family", input.document.subjectFamily);
+    if (input.document.aircraftFamilyIds?.length) {
+      frontmatterFields.aircraft_family_ids = [...input.document.aircraftFamilyIds];
+    }
+    if (input.document.aircraftTypeIds?.length) {
+      frontmatterFields.aircraft_type_ids = [...input.document.aircraftTypeIds];
+    }
+    addOptionalField(frontmatterFields, "applicability_scope", input.document.applicabilityScope);
+    addOptionalField(frontmatterFields, "applicability_status", input.document.applicabilityStatus);
+    if (typeof input.document.applicabilityConfidence === "number") {
+      frontmatterFields.applicability_confidence = input.document.applicabilityConfidence;
+    }
+    if (input.document.applicabilityEvidence?.length) {
+      frontmatterFields.applicability_evidence = [...input.document.applicabilityEvidence];
+    }
+    addOptionalField(frontmatterFields, "applicability_model", input.document.applicabilityModel);
+    if (/^\d{2}(?:-\d{2}){0,2}$/.test(input.document.classificationCode?.trim() ?? "")) {
+      addOptionalField(frontmatterFields, "ata", input.document.classificationCode);
+    } else {
+      delete frontmatterFields.ata;
+      addOptionalField(frontmatterFields, "source_identifier", input.document.classificationCode);
+    }
+    addOptionalField(frontmatterFields, "manual_type", input.document.documentType);
+    addOptionalField(frontmatterFields, "source_classification", input.document.sourceClassification);
+    addOptionalField(frontmatterFields, "license_identifier", input.document.licenseIdentifier);
+    if (input.document.intendedAudiences?.length) {
+      frontmatterFields.intended_audiences = [...input.document.intendedAudiences];
+    }
+    addOptionalField(frontmatterFields, "content_purpose", input.document.contentPurpose);
+    const projectEfb = getProjectEfbArticleClassification(input.topic.okfMetadata);
+    if (projectEfb) {
+      frontmatterFields.extensions = { projectEfb: structuredClone(projectEfb) };
+    }
+  }
+  addCustomMetadata(
+    frontmatterFields,
+    input.topic.okfMetadata,
+    input.document.sourceType === "aviation" ? AVIATION_DOCUMENT_METADATA_FIELDS : undefined,
+  );
   if (input.topic.media?.length) {
     frontmatterFields.av_okf_media = input.topic.media.map((media) => ({
       alt: media.altText,
@@ -412,6 +464,7 @@ function addOptionalField(
 function addCustomMetadata(
   fields: OkfV02Frontmatter,
   metadata: Record<string, unknown> | undefined,
+  additionalProtectedFields?: ReadonlySet<string>,
 ) {
   if (!metadata) return;
 
@@ -433,7 +486,7 @@ function addCustomMetadata(
     "relations",
   ]);
   for (const [key, value] of Object.entries(metadata)) {
-    if (protectedFields.has(key)) continue;
+    if (protectedFields.has(key) || additionalProtectedFields?.has(key)) continue;
     if (typeof value === "string" && value.trim().length > 0) {
       fields[key] = value.trim();
     } else if (
@@ -444,6 +497,20 @@ function addCustomMetadata(
     }
   }
 }
+
+const AVIATION_DOCUMENT_METADATA_FIELDS = new Set([
+  "aircraft_family",
+  "aircraft_type_ids",
+  "ata",
+  "manual_type",
+  "source_authority",
+  "revision",
+  "effectivity",
+  "source_classification",
+  "license_identifier",
+  "intended_audiences",
+  "content_purpose",
+]);
 
 function normalizeConceptType(value: string) {
   const normalized = value.trim().toLowerCase().replaceAll("-", "_");

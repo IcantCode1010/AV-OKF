@@ -1,3 +1,5 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
+import {importLegacyTopic} from "./knowledge/editorial.ts";
 import { randomUUID } from "node:crypto";
 
 import type { Prisma } from "@prisma/client";
@@ -36,34 +38,60 @@ import {
   type TopicRelation,
 } from "./okf-relation-types.ts";
 import { deriveDocumentLibraryStatus } from "./document-library-status.ts";
+import {
+  buildInheritedAviationOkfMetadata,
+  normalizeStoredAviationSourceClassification,
+  normalizeStoredIntendedAudiences,
+  replaceInheritedAviationOkfMetadata,
+} from "./aviation-document-metadata.ts";
 
 type UploadRecordInput = {
+  aircraftTypeIds: string[];
+  classificationCode: string | null;
   contentSha256: string;
+  contentPurpose: string | null;
   context: AuthWorkspaceContext;
   description: string;
+  documentType: string | null;
+  effectivity: string | null;
+  intendedAudiences: string[];
   documentId: string;
   knowledgeBundleId: string;
   objectKey: string;
+  licenseIdentifier: string | null;
   originalFilename: string;
   owner: string;
+  revision: string | null;
   sizeBytes: number;
   sourceType: SourceType;
+  sourceAuthority: string | null;
+  sourceClassification: string | null;
+  subjectFamily: string | null;
   tags: string[];
   title: string;
 };
 
 type UpdateMetadataInput = {
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds: string[];
+  applicabilityManualOverride?: boolean;
+  applicabilityOverrideBy?: string;
+  applicabilityScope?: "entire-family" | "specific-variants" | "ambiguous" | null;
   subjectFamily: string | null;
   classificationCode: string | null;
   context: AuthWorkspaceContext;
   customProperties: CustomProperty[];
   description: string;
+  contentPurpose: string | null;
   documentId: string;
   effectivity: string | null;
   documentType: string | null;
+  intendedAudiences: string[];
+  licenseIdentifier: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
+  sourceClassification: string | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
@@ -138,7 +166,17 @@ type DbKnowledgeAuthoringRun = {
 };
 
 type DbDocumentRecord = {
+  aircraftFamilyIds: string[];
+  aircraftTypeIds: string[];
+  applicabilityClassifiedAt: Date | null;
+  applicabilityConfidence: number | null;
+  applicabilityEvidence: string[];
+  applicabilityModel: string | null;
+  applicabilityProvider: string | null;
+  applicabilityScope: string | null;
+  applicabilityStatus: string | null;
   contentSha256: string | null;
+  contentPurpose: string | null;
   subjectFamily: string | null;
   classificationCode: string | null;
   customProperties?: DbCustomProperty[];
@@ -148,6 +186,8 @@ type DbDocumentRecord = {
   extractionJobs?: DbExtractionJob[];
   extractionLogs?: DbExtractionLog[];
   knowledgeAuthoringRuns?: DbKnowledgeAuthoringRun[];
+  intendedAudiences: string[];
+  licenseIdentifier: string | null;
   topicDiscoveryJobs?: DbTopicDiscoveryJob[];
   topicRecords?: Array<{ id: string }>;
   fileType: string;
@@ -165,6 +205,7 @@ type DbDocumentRecord = {
   sizeBytes: number;
   sourceType: string;
   sourceAuthority: string | null;
+  sourceClassification: string | null;
   status: string;
   tags: string[];
   title: string;
@@ -445,18 +486,29 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const document = await db.$transaction(async (tx: Prisma.TransactionClient) => {
         const created = await tx.document.create({
           data: {
+            aircraftTypeIds: input.aircraftTypeIds,
+            classificationCode: input.classificationCode,
             contentSha256: input.contentSha256,
+            contentPurpose: input.contentPurpose,
             description: input.description.trim(),
+            documentType: input.documentType,
+            effectivity: input.effectivity,
             fileType: "PDF",
             id: input.documentId,
             knowledgeBundleId: input.knowledgeBundleId,
             mimeType: "application/pdf",
             originalFilename: input.originalFilename,
+            intendedAudiences: input.intendedAudiences,
+            licenseIdentifier: input.licenseIdentifier,
             owner: input.owner.trim() || "Unassigned",
             size: formatBytes(input.sizeBytes),
             sizeBytes: input.sizeBytes,
             sourceType: input.sourceType,
+            revision: input.revision,
+            sourceAuthority: input.sourceAuthority,
+            sourceClassification: input.sourceClassification,
             status: "processing",
+            subjectFamily: input.subjectFamily,
             tags: input.tags,
             title,
             updatedLabel: timestamp,
@@ -597,7 +649,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             enrichmentStatus: "none",
             originalSummary: topic.summary,
             originalTitle: topic.title,
-            okfMetadata: {},
+            okfMetadata: buildInheritedAviationOkfMetadata(mapped) as Prisma.InputJsonValue,
             pageEnd: topic.pageEnd,
             pageStart: topic.pageStart,
             reviewStatus: "needs_review",
@@ -953,6 +1005,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         const { scheduleEntityExtractionForTopic } = await import("./entity-graph.ts");
         await scheduleEntityExtractionForTopic(topic.id).catch(() => undefined);
       }
+      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id);
       return mapTopicRecord(topic);
     },
     async failTopicEnrichment(input: {
@@ -1048,6 +1101,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         },
         where: { id: input.topicId },
       });
+      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id);
       return mapTopicRecord(topic);
     },
     async startExtractionJob(input: {
@@ -1104,36 +1158,72 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async updateDocumentMetadata(input: UpdateMetadataInput) {
       await getDocumentForWorkspace(input.documentId, input.context.workspaceId);
-      await db.documentCustomProperty.deleteMany({
-        where: { documentId: input.documentId },
-      });
-      const document = await db.document.update({
-        data: {
-          subjectFamily: normalizeOptionalMetadata(input.subjectFamily),
-          classificationCode: normalizeOptionalMetadata(input.classificationCode),
-          customProperties: {
-            create: input.customProperties,
+      const document = await db.$transaction(async (tx) => {
+        await tx.documentCustomProperty.deleteMany({ where: { documentId: input.documentId } });
+        const updated = await tx.document.update({
+          data: {
+            ...(input.applicabilityManualOverride ? {
+              aircraftFamilyIds: input.aircraftFamilyIds ?? [],
+              applicabilityClassifiedAt: new Date(),
+              applicabilityConfidence: null,
+              applicabilityEvidence: [],
+              applicabilityModel: null,
+              applicabilityOverrideBy: input.applicabilityOverrideBy ?? null,
+              applicabilityOverriddenAt: new Date(),
+              applicabilityProvider: null,
+              applicabilityScope: input.applicabilityScope ?? "ambiguous",
+              applicabilityStatus: "manual_override",
+            } : {}),
+            aircraftTypeIds: input.aircraftTypeIds,
+            classificationCode: normalizeOptionalMetadata(input.classificationCode),
+            contentPurpose: normalizeOptionalMetadata(input.contentPurpose),
+            customProperties: { create: input.customProperties },
+            description: input.description.trim(),
+            documentType: normalizeOptionalMetadata(input.documentType),
+            effectivity: normalizeOptionalMetadata(input.effectivity),
+            intendedAudiences: input.intendedAudiences,
+            licenseIdentifier: normalizeOptionalMetadata(input.licenseIdentifier),
+            owner: input.owner.trim() || "Unassigned",
+            revision: normalizeOptionalMetadata(input.revision),
+            sourceAuthority: normalizeOptionalMetadata(input.sourceAuthority),
+            sourceClassification: normalizeOptionalMetadata(input.sourceClassification),
+            sourceType: input.sourceType,
+            status: input.status,
+            subjectFamily: normalizeOptionalMetadata(input.subjectFamily),
+            tags: input.tags,
+            title: input.title.trim(),
+            updatedLabel: formatTimestamp(new Date()),
           },
-          description: input.description.trim(),
-          effectivity: normalizeOptionalMetadata(input.effectivity),
-          documentType: normalizeOptionalMetadata(input.documentType),
-          owner: input.owner.trim() || "Unassigned",
-          revision: normalizeOptionalMetadata(input.revision),
-          sourceAuthority: normalizeOptionalMetadata(input.sourceAuthority),
-          sourceType: input.sourceType,
-          status: input.status,
-          tags: input.tags,
-          title: input.title.trim(),
-          updatedLabel: formatTimestamp(new Date()),
-        },
-        include: {
-          customProperties: true,
-          extractedPages: { orderBy: { pageNumber: "asc" } },
-          extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
-          extractionLogs: { orderBy: { timestamp: "asc" } },
-          objects: { orderBy: { createdAt: "asc" } },
-        },
-        where: { id: input.documentId },
+          include: {
+            customProperties: true,
+            extractedPages: { orderBy: { pageNumber: "asc" } },
+            extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
+            extractionLogs: { orderBy: { timestamp: "asc" } },
+            objects: { orderBy: { createdAt: "asc" } },
+          },
+          where: { id: input.documentId },
+        });
+        const topics = await tx.topicRecord.findMany({
+          select: { id: true, okfMetadata: true },
+          where: {
+            documentId: input.documentId,
+            reviewStatus: { in: ["needs_review", "needs_cleanup"] },
+            workspaceId: input.context.workspaceId,
+          },
+        });
+        const mapped = mapDocument(updated);
+        for (const topic of topics) {
+          await tx.topicRecord.update({
+            data: {
+              okfMetadata: replaceInheritedAviationOkfMetadata(
+                normalizeOkfMetadata(topic.okfMetadata),
+                mapped,
+              ) as Prisma.InputJsonValue,
+            },
+            where: { id: topic.id },
+          });
+        }
+        return updated;
       });
       await createActivity({
         context: input.context,
@@ -1311,7 +1401,13 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         take: limit,
         where: {
           document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
-          status: { in: ["queued", "running"] },
+          OR: [
+            { status: { in: ["queued", "running"] } },
+            {
+              document: { applicabilityStatus: null, sourceType: "aviation" },
+              status: { in: ["ready_for_review", "completed"] },
+            },
+          ],
         },
       });
     },
@@ -1465,6 +1561,15 @@ function mapDocument(record: DbDocumentRecord): Document {
   });
 
   return {
+    aircraftFamilyIds: record.aircraftFamilyIds ?? [],
+    aircraftTypeIds: record.aircraftTypeIds ?? [],
+    applicabilityScope: normalizeApplicabilityScope(record.applicabilityScope),
+    applicabilityConfidence: record.applicabilityConfidence,
+    applicabilityEvidence: record.applicabilityEvidence ?? [],
+    applicabilityStatus: normalizeApplicabilityStatus(record.applicabilityStatus),
+    applicabilityProvider: record.applicabilityProvider,
+    applicabilityModel: record.applicabilityModel,
+    applicabilityClassifiedAt: record.applicabilityClassifiedAt?.toISOString() ?? null,
     subjectFamily: record.subjectFamily,
     classificationCode: record.classificationCode,
     customProperties: (record.customProperties ?? []).map((property) => ({
@@ -1472,6 +1577,7 @@ function mapDocument(record: DbDocumentRecord): Document {
       value: property.value,
     })),
     description: record.description,
+    contentPurpose: record.contentPurpose,
     effectivity: record.effectivity,
     extraction: {
       completedAt: latestJob?.completedAt ? formatTimestamp(latestJob.completedAt) : null,
@@ -1494,6 +1600,8 @@ function mapDocument(record: DbDocumentRecord): Document {
     mimeType: record.mimeType,
     originalFilename: record.originalFilename,
     contentSha256: record.contentSha256,
+    intendedAudiences: normalizeStoredIntendedAudiences(record.intendedAudiences),
+    licenseIdentifier: record.licenseIdentifier,
     owner: record.owner,
     pages: record.pages,
     revision: record.revision,
@@ -1501,6 +1609,7 @@ function mapDocument(record: DbDocumentRecord): Document {
     sizeBytes: record.sizeBytes,
     sourceType: normalizeSourceType(record.sourceType),
     sourceAuthority: record.sourceAuthority,
+    sourceClassification: normalizeStoredAviationSourceClassification(record.sourceClassification),
     status,
     storageKey: primaryObject?.objectKey ?? null,
     tags: record.tags ?? [],
@@ -1800,6 +1909,18 @@ function normalizeApprovedContentSource(
   value: string | null,
 ): ApprovedContentSource | null {
   return value === "raw" || value === "enriched" ? value : null;
+}
+
+function normalizeApplicabilityScope(value: string | null) {
+  return value === "entire-family" || value === "specific-variants" || value === "ambiguous"
+    ? value
+    : null;
+}
+
+function normalizeApplicabilityStatus(value: string | null) {
+  return value === "accepted" || value === "needs_review" || value === "manual_override"
+    ? value
+    : null;
 }
 
 function normalizeExtractedTables(value: unknown): ExtractedPageRecord["tables"] {

@@ -10,10 +10,12 @@ export type DocumentProcessingStageId =
   | "inspection"
   | "extraction"
   | "metadata_discovery"
+  | "applicability_classification"
   | "concept_discovery"
   | "media_discovery"
   | "full_rag_index"
   | "enrichment"
+  | "efb_classification"
   | "entity_connections"
   | "relation_classification"
   | "validation"
@@ -101,10 +103,12 @@ export type DocumentProcessingFingerprintSnapshot = {
 
 const authoringStageIds: DocumentProcessingStageId[] = [
   "metadata_discovery",
+  "applicability_classification",
   "concept_discovery",
   "media_discovery",
   "full_rag_index",
   "enrichment",
+  "efb_classification",
   "relation_classification",
   "validation",
 ];
@@ -141,6 +145,10 @@ const stageCopy: Record<
     detail: "Identifying useful document metadata from the extracted source.",
     label: "Metadata discovery",
   },
+  applicability_classification: {
+    detail: "Classifying document applicability from exact source evidence when the source type supports it.",
+    label: "Applicability classification",
+  },
   concept_discovery: {
     detail: "Finding and consolidating the concepts discussed in the document.",
     label: "Concept discovery",
@@ -156,6 +164,10 @@ const stageCopy: Record<
   enrichment: {
     detail: "Preparing grounded titles, summaries, and article content for review.",
     label: "Topic enrichment",
+  },
+  efb_classification: {
+    detail: "Classifying article applicability, audience, and supported placement from exact source evidence when the source type supports it.",
+    label: "Article classification",
   },
   entity_connections: {
     detail: "Extracting grounded entities and explicit connection evidence in bounded background jobs.",
@@ -212,6 +224,21 @@ export function buildDocumentProcessingState(input: {
   stages[stageIndex("entity_connections")] = deriveEntityConnectionStage(run, input.entityConnections, input.topicCount);
   stages[stageIndex("review_export")] = deriveReviewStage(run, input.reviewTopicCount ?? input.topicCount);
 
+  const proposalsOnly = run.status === "ready_for_review" &&
+    (run.currentStage === "topic_selection" || (run.completedStages.includes("full_rag_index") && !run.completedStages.includes("enrichment")));
+  if (proposalsOnly) {
+    for (const id of ["enrichment", "efb_classification", "validation"] as const) {
+      stages[stageIndex(id)] = stage(id, "skipped", "Runs after you select a topic for article drafting.");
+    }
+    stages[stageIndex("relation_classification")] = stage("relation_classification", "completed", "Source relationship candidates prepared for review.");
+    stages[stageIndex("entity_connections")] = deriveEntityConnectionStage({...run, completedStages:[...run.completedStages,"enrichment"]}, input.entityConnections, input.topicCount);
+    stages[stageIndex("review_export")] = {
+      ...stage("review_export", input.topicCount ? "action_required" : "completed",
+        input.topicCount ? `${input.topicCount} discovered topics are ready to draft. Titles and summaries come from source discovery; articles have not been enriched or approved. Select the topics you want to develop.` : "No topics were discovered. Inspect the extracted source before drafting."),
+      label: "Select topics to draft",
+    };
+    return finish(stages, false, true, input.bundleName);
+  }
   return finish(stages, run.automaticTopicApprovalEnabled, true, input.bundleName);
 }
 

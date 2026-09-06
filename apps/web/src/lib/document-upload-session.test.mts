@@ -27,6 +27,30 @@ test("direct upload declaration rejects oversize and non-PDF input", () => {
   assert.throws(() => validateDocumentUploadDeclaration({ ...valid, filename: "..\\payload.txt" }), /only_pdf_uploads_supported/);
 });
 
+test("aviation upload declarations validate controlled metadata before presigning", () => {
+  const aviation = {
+    ...valid,
+    metadata: {
+      ...valid.metadata,
+      aircraftTypeIds: ["b738"],
+      classificationCode: "24",
+      contentPurpose: "technical-reference",
+      intendedAudiences: ["maintenance" as const],
+      sourceClassification: "training-reference" as const,
+      sourceType: "aviation" as const,
+    },
+  };
+  assert.doesNotThrow(() => validateDocumentUploadDeclaration(aviation));
+  assert.throws(() => validateDocumentUploadDeclaration({
+    ...aviation,
+    metadata: { ...aviation.metadata, classificationCode: "chapter 24" },
+  }), /invalid_aviation_ata/);
+  assert.throws(() => validateDocumentUploadDeclaration({
+    ...aviation,
+    metadata: { ...aviation.metadata, intendedAudiences: [] },
+  }), /aviation_intended_audience_required/);
+});
+
 test("upload batches accept one to ten independently validated PDFs", () => {
   const upload = {
     contentType: valid.contentType,

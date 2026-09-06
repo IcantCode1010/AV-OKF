@@ -1,5 +1,6 @@
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { createDocumentUploadSession } from "@/lib/document-upload-session";
+import type { AviationSourceClassification, IntendedAudience } from "@/lib/aviation-document-metadata";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,9 +19,20 @@ export async function POST(request: Request) {
         filename: stringField(body.filename),
         knowledgeBundleId: stringField(body.knowledgeBundleId),
         metadata: {
+          aircraftTypeIds: stringArrayField(metadata.aircraftTypeIds),
+          classificationCode: nullableStringField(metadata.classificationCode),
+          contentPurpose: nullableStringField(metadata.contentPurpose),
           description: stringField(metadata.description),
+          documentType: nullableStringField(metadata.documentType),
+          effectivity: nullableStringField(metadata.effectivity),
+          intendedAudiences: stringArrayField(metadata.intendedAudiences) as IntendedAudience[],
+          licenseIdentifier: nullableStringField(metadata.licenseIdentifier),
           owner: stringField(metadata.owner),
+          revision: nullableStringField(metadata.revision),
+          sourceAuthority: nullableStringField(metadata.sourceAuthority),
+          sourceClassification: nullableStringField(metadata.sourceClassification) as AviationSourceClassification | null,
           sourceType: metadata.sourceType === "aviation" ? "aviation" : "general",
+          subjectFamily: nullableStringField(metadata.subjectFamily),
           tags: Array.isArray(metadata.tags) ? metadata.tags.filter((value): value is string => typeof value === "string") : [],
           title: stringField(metadata.title),
         },
@@ -39,6 +51,15 @@ function stringField(value: unknown) {
 
 function numberField(value: unknown) {
   return typeof value === "number" ? value : Number.NaN;
+}
+
+function nullableStringField(value: unknown) {
+  const result = stringField(value).trim();
+  return result || null;
+}
+
+function stringArrayField(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function uploadErrorResponse(error: unknown) {

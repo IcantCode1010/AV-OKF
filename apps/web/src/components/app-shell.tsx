@@ -1,8 +1,10 @@
 "use client";
+import {ActivityCenter} from "@/components/activity-center";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import {createContext,useContext,type ReactNode} from "react";
+const KnowledgeFeatures=createContext({shared:false,export:false});
 import {
   Activity,
   BookOpen,
@@ -71,6 +73,9 @@ const manageNavigation: NavigationItem[] = [
 ];
 
 const workspaceNavigation: NavigationItem[] = [
+  { active: (path) => path.startsWith("/topic-builder"), href: () => "/topic-builder", icon: Sparkles, label: "Topic builder" },
+  { active: (path) => path.startsWith("/articles"), href: () => "/articles", icon: FileCheck2, label: "Articles" },
+  { active: (path) => path.startsWith("/efb-selections"), href: () => "/efb-selections", icon: BookOpenCheck, label: "EFB selections" },
   { active: (path) => path === "/knowledge", href: () => "/knowledge", icon: Boxes, label: "Knowledge bundles" },
   { active: (path) => path === "/settings", href: () => "/settings", icon: Settings, label: "Settings" },
 ];
@@ -82,6 +87,7 @@ export function AppShell({
   recentChats,
   user,
   workspace,
+  knowledgeFeatures={shared:false,export:false},
 }: {
   activeBundle: ShellKnowledgeBundle | null;
   bundles: ShellKnowledgeBundle[];
@@ -89,6 +95,7 @@ export function AppShell({
   recentChats: RecentChat[];
   user: User;
   workspace: Workspace;
+  knowledgeFeatures?:{shared:boolean;export:boolean};
 }) {
   const pathname = usePathname();
   const navigationBundle = selectNavigationKnowledgeBundle(
@@ -100,7 +107,7 @@ export function AppShell({
     /^\/knowledge\/[^/]+\/(browse|graph|activity)/.test(pathname);
 
   return (
-    <div className="min-h-dvh bg-background">
+    <KnowledgeFeatures.Provider value={knowledgeFeatures}><div className="min-h-dvh bg-background">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-white/10 bg-[#17191d] text-zinc-100 lg:block">
         <SidebarContent activeBundle={navigationBundle} bundles={bundles} recentChats={recentChats} workspace={workspace} />
       </aside>
@@ -108,7 +115,7 @@ export function AppShell({
         <TopBar activeBundle={navigationBundle} pathname={pathname} user={user} workspace={workspace} bundles={bundles} recentChats={recentChats} />
         <main className={cn("flex min-w-0 w-full max-w-none flex-col", edgeToEdge ? "h-[calc(100dvh-3.25rem)] overflow-hidden" : "gap-6 px-4 py-6 sm:px-6 lg:px-8")}>{children}</main>
       </div>
-    </div>
+    </div></KnowledgeFeatures.Provider>
   );
 }
 
@@ -120,6 +127,7 @@ function SidebarContent({ activeBundle, bundles, recentChats, workspace }: {
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const features=useContext(KnowledgeFeatures);
   const activeId = activeBundle?.id ?? "";
   const file = searchParams.get("file");
 
@@ -143,7 +151,7 @@ function SidebarContent({ activeBundle, bundles, recentChats, workspace }: {
           </div>
         ) : null}
         <NavigationGroup activeBundleId={activeId} file={file} items={manageNavigation} label="Manage" pathname={pathname} />
-        <NavigationGroup activeBundleId={activeId} file={file} items={workspaceNavigation} label="Workspace" pathname={pathname} />
+        <NavigationGroup activeBundleId={activeId} file={file} items={workspaceNavigation.filter(item=>item.label==="Articles"?features.shared:item.label==="EFB selections"?features.shared&&features.export:true)} label="Workspace" pathname={pathname} />
       </nav>
       <div className="border-t border-white/10 p-3">
         <div className="flex items-center justify-between gap-2">
@@ -195,7 +203,7 @@ function TopBar({ activeBundle, bundles, pathname, recentChats, user, workspace 
           <SheetContent side="left" className="w-72 border-white/10 bg-[#17191d] p-0 text-zinc-100"><SheetTitle className="sr-only">Navigation</SheetTitle><SidebarContent activeBundle={activeBundle} bundles={bundles} recentChats={recentChats} workspace={workspace} /></SheetContent>
         </Sheet>
         <div className="min-w-0"><span className="truncate text-sm font-medium">{title}</span>{activeBundle && title !== activeBundle.name ? <span className="ml-2 hidden text-xs text-muted-foreground sm:inline">{activeBundle.name}</span> : null}</div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2"><ActivityCenter />
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button variant="ghost" className="h-9 gap-2 px-2"><Avatar className="size-7"><AvatarFallback>{user.initials}</AvatarFallback></Avatar><span className="hidden text-sm md:inline">{user.name}</span></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56"><DropdownMenuLabel><span className="block text-sm">{user.name}</span><span className="block truncate text-xs font-normal text-muted-foreground">{user.email}</span></DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href="/settings">Workspace settings</Link></DropdownMenuItem></DropdownMenuContent>

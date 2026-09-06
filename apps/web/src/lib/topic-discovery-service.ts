@@ -14,6 +14,7 @@ import {
   estimateTokens,
 } from "./topic-discovery.ts";
 import type { TopicDiscoveryJobPayload } from "./topic-discovery-queue.ts";
+import { buildInheritedAviationOkfMetadata } from "./aviation-document-metadata.ts";
 
 export async function runTopicDiscoveryJob(
   payload: TopicDiscoveryJobPayload,
@@ -250,6 +251,7 @@ export async function runTopicDiscoveryJob(
           knowledgeBundleId,
           originalSummary: topic.summary,
           originalTitle: topic.title,
+          okfMetadata: buildInheritedAviationOkfMetadata(document) as Prisma.InputJsonValue,
           pageEnd: Math.max(...topic.pageNumbers),
           pageStart: Math.min(...topic.pageNumbers),
           reviewStatus: topic.confidence === "low" ? "needs_cleanup" : "needs_review",

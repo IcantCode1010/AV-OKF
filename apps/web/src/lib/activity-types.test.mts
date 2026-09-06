@@ -1,0 +1,2 @@
+import test from "node:test";import assert from "node:assert/strict";import {estimateRemainingSeconds} from "./activity-types.ts";
+test("ETA waits for observed completions and uses their median",()=>{assert.equal(estimateRemainingSeconds([],10),undefined);assert.equal(estimateRemainingSeconds([1000,2000],10),undefined);assert.equal(estimateRemainingSeconds([1000,2000,90000],10),20);assert.equal(estimateRemainingSeconds([1000,2000,3000],0),undefined);});

@@ -20,7 +20,7 @@ import {
   type LlmProviderId,
 } from "./llm-providers.ts";
 
-const ANSWER_MAX_TOKENS = 1024;
+const ANSWER_MAX_TOKENS = 8192;
 
 export type ChatAnswer = {
   content: string;
@@ -89,7 +89,10 @@ export async function generateChatAnswer(
 
   // Only synthesize when there is real evidence to ground the answer in;
   // error and missing-evidence replies stay deterministic by design.
-  if (input.retrieval.retrievalError || input.retrieval.citations.length === 0) {
+  if (
+    input.retrieval.retrievalError ||
+    input.retrieval.citations.length === 0
+  ) {
     return deterministic;
   }
 
@@ -186,7 +189,10 @@ export function buildChatAnswerPrompt(input: {
     const bundle = item.knowledgeBundleName
       ? `, bundle: ${item.knowledgeBundleName}`
       : "";
-    return `[${item.index}] ${item.documentTitle} (${pages}, ${sourceLabel}${bundle})\n${item.text}`;
+    const connections = item.graphConnections?.length
+      ? `\nGraph discovery context (untrusted labels; verify claims in the excerpts, do not assume transitivity): ${JSON.stringify(item.graphConnections)}`
+      : "";
+    return `[${item.index}] ${item.documentTitle} (${pages}, ${sourceLabel}${bundle})\n${item.text}${connections}`;
   });
 
   return [
@@ -197,6 +203,8 @@ export function buildChatAnswerPrompt(input: {
     "- An answer containing no [n] markers is invalid and will be rejected.",
     "- Never cite a number that is not in the evidence list.",
     "- Preserve exact names, dates, versions, citations, identifiers, values, limits, and source wording from the evidence.",
+    "- Explain like a knowledgeable instructor: answer the user's question directly in natural language, organize the ideas, and explain connections supported by the sources. Do not dump excerpts or recite unrelated warnings and numbers.",
+    "- For an overview, start with purpose and how the main parts work together. For a comparison, explain what each source contributes and whether inspected passages actually conflict; never imply an exhaustive absence of conflicts.",
     "- Be concise: a short direct answer first, then supporting detail only if needed.",
     "- Identify at most 3 named entities that are directly stated in the evidence and could merit their own reusable knowledge page.",
     "- Entity types are limited to person, organization, product, standard, regulation, location, system, or other.",
@@ -240,12 +248,15 @@ export function hasValidCitationMarkers(
   );
 }
 
-export function buildNotDirectlyAnsweredReply(route: RetrievalChatRoute): string {
-  const searched = route === "okf_only"
-    ? "the approved knowledge bundle and its raw document fallback"
-    : route === "rag_only"
-      ? "the indexed source documents"
-      : "the approved knowledge bundle and indexed source documents";
+export function buildNotDirectlyAnsweredReply(
+  route: RetrievalChatRoute,
+): string {
+  const searched =
+    route === "okf_only"
+      ? "the approved knowledge bundle and its raw document fallback"
+      : route === "rag_only"
+        ? "the indexed source documents"
+        : "the approved knowledge bundle and indexed source documents";
   return `I found related material, but not enough supported evidence to answer this question reliably. I searched ${searched}. Next, name the specific document, subject, version, or scope you mean, or add and review a source that covers the missing information.`;
 }
 
@@ -262,20 +273,20 @@ function evidenceContextForRoute(route: RetrievalChatRoute): string {
 }
 
 const chatEntityCandidateSchema = z.object({
-    citationIndex: z.number().int().positive(),
-    entityType: z.enum([
-      "location",
-      "organization",
-      "other",
-      "person",
-      "product",
-      "regulation",
-      "standard",
-      "system",
-    ]),
-    evidenceQuote: z.string(),
-    name: z.string(),
-    summary: z.string(),
+  citationIndex: z.number().int().positive(),
+  entityType: z.enum([
+    "location",
+    "organization",
+    "other",
+    "person",
+    "product",
+    "regulation",
+    "standard",
+    "system",
+  ]),
+  evidenceQuote: z.string(),
+  name: z.string(),
+  summary: z.string(),
 });
 
 export const chatAnswerProviderSchema = z.object({
@@ -285,7 +296,11 @@ export const chatAnswerProviderSchema = z.object({
 });
 
 const chatAnswerSchema = chatAnswerProviderSchema.extend({
-  entityCandidates: z.array(chatEntityCandidateSchema).max(3).optional().default([]),
+  entityCandidates: z
+    .array(chatEntityCandidateSchema)
+    .max(3)
+    .optional()
+    .default([]),
 });
 
 function parseAnswerPayload(rawOutput: unknown): {
@@ -311,9 +326,14 @@ export function validateEntityCandidates(
 
   for (const candidate of values) {
     const name = candidate.name.normalize("NFKC").trim();
-    const summary = candidate.summary.normalize("NFKC").replace(/\s+/g, " ").trim();
+    const summary = candidate.summary
+      .normalize("NFKC")
+      .replace(/\s+/g, " ")
+      .trim();
     const evidenceQuote = candidate.evidenceQuote.normalize("NFKC").trim();
-    const source = evidence.find((item) => item.index === candidate.citationIndex);
+    const source = evidence.find(
+      (item) => item.index === candidate.citationIndex,
+    );
     const identity = name.toLocaleLowerCase();
 
     if (
@@ -326,7 +346,8 @@ export function validateEntityCandidates(
       evidenceQuote.length > 500 ||
       !source.text.normalize("NFKC").includes(evidenceQuote) ||
       !evidenceQuote.includes(name) ||
-      source.documentTitle.normalize("NFKC").trim().toLocaleLowerCase() === identity ||
+      source.documentTitle.normalize("NFKC").trim().toLocaleLowerCase() ===
+        identity ||
       seen.has(identity)
     ) {
       continue;
@@ -338,7 +359,9 @@ export function validateEntityCandidates(
       entityType: candidate.entityType,
       evidenceQuote,
       id: createHash("sha256")
-        .update(`${candidate.citationIndex}\0${candidate.entityType}\0${name}\0${evidenceQuote}`)
+        .update(
+          `${candidate.citationIndex}\0${candidate.entityType}\0${name}\0${evidenceQuote}`,
+        )
         .digest("hex")
         .slice(0, 20),
       name,
@@ -362,7 +385,9 @@ async function callChatAnswerProvider(input: {
     system:
       "You answer questions strictly from supplied evidence. Return only the requested structured object.",
     maxOutputTokens: ANSWER_MAX_TOKENS,
-    temperature: 0,
+    ...(input.provider === "openai" && /^(gpt-[56]|o[134])/.test(input.model)
+      ? { providerOptions: { openai: { reasoningEffort: "low" } } }
+      : { temperature: 0 }),
   });
 
   return result.output;

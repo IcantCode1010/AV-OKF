@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { MAX_DOCUMENTS_PER_UPLOAD_BATCH, MAX_LARGE_PDF_UPLOAD_BYTES } from "@/lib/document-upload-limits";
 import type { DocumentUploadSessionDescriptor } from "@/lib/document-upload-types";
 import { getPdfUploadSizeError } from "@/lib/pdf-upload-validation";
+import { AviationDocumentMetadataFields } from "@/components/aviation-document-metadata-fields";
 
 type BundleOption = { id: string; name: string };
 type FileStatus = "cancelled" | "completed" | "failed" | "finalizing" | "preparing" | "selected" | "uploading";
@@ -76,9 +77,20 @@ export function DirectPdfUploadForm({
     setBatchError(null);
     const form = new FormData(event.currentTarget);
     const commonMetadata = {
+      aircraftTypeIds: String(form.get("aircraftTypeIds") ?? "").split(",").map((value) => value.trim()).filter(Boolean),
+      classificationCode: nullableFormValue(form, "classificationCode"),
+      contentPurpose: nullableFormValue(form, "contentPurpose"),
       description: String(form.get("description") ?? ""),
+      documentType: nullableFormValue(form, "documentType"),
+      effectivity: nullableFormValue(form, "effectivity"),
+      intendedAudiences: form.getAll("intendedAudiences").map(String),
+      licenseIdentifier: nullableFormValue(form, "licenseIdentifier"),
       owner: String(form.get("owner") ?? ""),
+      revision: nullableFormValue(form, "revision"),
+      sourceAuthority: nullableFormValue(form, "sourceAuthority"),
+      sourceClassification: nullableFormValue(form, "sourceClassification"),
       sourceType: String(form.get("sourceType") ?? "general"),
+      subjectFamily: nullableFormValue(form, "subjectFamily"),
       tags: String(form.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
     };
     updateAll((entry) => entry.status === "selected" ? { ...entry, error: null, status: "preparing" } : entry);
@@ -223,12 +235,7 @@ export function DirectPdfUploadForm({
         </div>
         <Field disabled={busy} id="owner" label="Owner" placeholder="Team or department" />
         <Field disabled={busy} id="tags" label="Tags" placeholder="operations, safety, handbook" />
-        <div className="space-y-2">
-          <Label htmlFor="sourceType">Source type</Label>
-          <select className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" defaultValue="general" disabled={busy} id="sourceType" name="sourceType">
-            <option value="general">General</option><option value="aviation">Aviation</option>
-          </select>
-        </div>
+        <AviationDocumentMetadataFields className="lg:col-span-2" disabled={busy} />
         <div className="space-y-2">
           <Label htmlFor="description">Shared description</Label>
           <textarea className="min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm" disabled={busy} id="description" name="description" placeholder="Description applied to this upload batch" />
@@ -347,6 +354,12 @@ function formatUploadFailure(error: unknown) {
   const code = error instanceof Error ? error.message : "upload_failed";
   const messages: Record<string, string> = {
     invalid_pdf_magic_bytes: "The uploaded file is not a valid PDF.",
+    invalid_aviation_ata: "Enter an ATA chapter or code such as 24 or 24-00-00.",
+    invalid_aviation_aircraft_type_id: "Aircraft type IDs must be 2-4 letters or numbers, such as B738.",
+    invalid_aviation_source_classification: "Choose a valid aviation source classification.",
+    invalid_aviation_intended_audience: "Choose Pilot, Maintenance, or both audiences.",
+    aviation_intended_audience_required: "Choose at least one intended audience.",
+    aviation_content_purpose_required: "Enter the aviation content purpose.",
     invalid_upload_batch_size: "Select between 1 and 10 PDF files.",
     object_upload_failed: "The storage upload failed. Retry this file.",
     only_pdf_uploads_supported: "Only PDF uploads are supported.",
@@ -361,4 +374,9 @@ function formatUploadFailure(error: unknown) {
 function formatBytes(bytes: number) {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function nullableFormValue(form: FormData, key: string) {
+  const value = String(form.get(key) ?? "").trim();
+  return value || null;
 }

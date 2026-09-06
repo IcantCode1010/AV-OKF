@@ -11,6 +11,7 @@ export type DocumentProcessingProgressData = {
   authoring: { completedStages: string[]; currentStage: string | null; status: string } | null;
   automaticApproval: { completed: number; failed: number; status: string; total: number } | null;
   entities: { completed: number; failed: number; queued: number; running: number };
+  efbRelease: { articleCount: number; errorCode: string | null; releaseDirectory: string | null; status: string } | null;
 };
 
 export async function getProductionDocumentProcessingStatusSnapshot(input: {
@@ -31,6 +32,11 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
       inspectionStatus: true,
       entityExtractionJobs: {
         select: { status: true },
+      },
+      efbReleaseJobs: {
+        orderBy: { createdAt: "desc" },
+        select: { articleCount: true, errorCode: true, id: true, releaseDirectory: true, status: true },
+        take: 1,
       },
       knowledgeAuthoringRuns: {
         orderBy: { createdAt: "desc" },
@@ -98,8 +104,9 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
     queued: document.entityExtractionJobs.filter((job) => job.status === "queued").length,
     running: document.entityExtractionJobs.filter((job) => job.status === "running").length,
   };
+  const efbRelease = document.efbReleaseJobs[0] ?? null;
 
-  const fingerprint = serializeDocumentProcessingFingerprint({
+  const fingerprint = `${serializeDocumentProcessingFingerprint({
     authoring: authoring
       ? {
           completedStages: authoring.completedStages,
@@ -137,7 +144,7 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
       status: topicDiscovery?.status ?? "not_started",
       totalWindows: topicDiscovery?.totalWindows ?? 0,
     },
-  });
+  })}|${efbRelease ? `${efbRelease.id}:${efbRelease.status}:${efbRelease.articleCount}` : "no-efb-release"}`;
 
   const active =
       ["queued", "running"].includes(extraction?.status ?? "") ||
@@ -147,6 +154,7 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
       ["queued", "running", "waiting_for_rag"].includes(authoring?.status ?? "") ||
       ["queued", "running", "awaiting_budget"].includes(ragIndex?.status ?? "") ||
       ["queued", "running"].includes(automaticApproval?.status ?? "") ||
+      ["queued", "running"].includes(efbRelease?.status ?? "") ||
       entityConnections.queued > 0 || entityConnections.running > 0;
   const data: DocumentProcessingProgressData = {
     authoring: authoring ? {
@@ -161,6 +169,12 @@ export async function getProductionDocumentProcessingStatusSnapshot(input: {
       total: automaticApproval.items.length,
     } : null,
     entities: entityConnections,
+    efbRelease: efbRelease ? {
+      articleCount: efbRelease.articleCount,
+      errorCode: efbRelease.errorCode,
+      releaseDirectory: efbRelease.releaseDirectory,
+      status: efbRelease.status,
+    } : null,
     extraction: {
       completed: extraction?.checkpoints.filter((item) => item.status === "completed").length ?? 0,
       ocrPages: methodCounts.ocr,
@@ -233,6 +247,24 @@ function buildOperations(documentId: string, data: DocumentProcessingProgressDat
     detail: `${data.automaticApproval.completed} exported, ${data.automaticApproval.failed} failed.`,
     id: `${documentId}:approval`, kind: "document_processing", label: "Automatic approval and export",
     stage: data.automaticApproval.status, status: normalizeStatus(data.automaticApproval.status), total: data.automaticApproval.total, updatedAt: now,
+  });
+  if (data.efbRelease) operations.push({
+    completed: data.efbRelease.status === "completed" ? data.efbRelease.articleCount : 0,
+    currentItem: data.efbRelease.releaseDirectory
+      ? `dist/efb-releases/${data.efbRelease.releaseDirectory.replaceAll("\\", "/").split("/").pop()}`
+      : undefined,
+    detail: data.efbRelease.status === "completed"
+      ? `${data.efbRelease.articleCount} prototype articles are ready for Project EFB import.`
+      : data.efbRelease.status === "failed"
+        ? `Prototype package validation failed (${data.efbRelease.errorCode ?? "unknown error"}). The release was not activated.`
+        : "Building and validating the Project EFB prototype package.",
+    id: `${documentId}:efb-release`,
+    kind: "efb_release",
+    label: "Project EFB prototype export",
+    stage: data.efbRelease.status,
+    status: normalizeStatus(data.efbRelease.status),
+    total: data.efbRelease.articleCount,
+    updatedAt: now,
   });
   return operations;
 }

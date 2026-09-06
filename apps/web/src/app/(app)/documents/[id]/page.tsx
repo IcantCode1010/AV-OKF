@@ -1,3 +1,5 @@
+import {SourceReadiness} from "@/components/document-detail/source-readiness";
+import {knowledgeFeature} from "@/lib/knowledge/contracts";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -242,6 +244,7 @@ export default async function DocumentDetailPage({
               <Button disabled>Seed document has no stored PDF</Button>
             )}
           </div>
+          {knowledgeFeature("shared")&&<SourceReadiness workspaceId={context.workspaceId} documentId={document.id}/>}
           {assigned ? <DocumentProcessingStatusStrip
             actionHref={manualReviewHref}
             documentId={currentDocument.id}
@@ -473,6 +476,16 @@ function formatMetadataError(raw: string | undefined) {
   if (raw === "document_workspace_mismatch") {
     return "This document belongs to a different workspace.";
   }
+
+  const aviationErrors: Record<string, string> = {
+    invalid_aviation_ata: "Enter an ATA chapter or code such as 24 or 24-00-00.",
+    invalid_aviation_aircraft_type_id: "Aircraft type IDs must be 2-4 letters or numbers, such as B738.",
+    invalid_aviation_source_classification: "Choose a valid aviation source classification.",
+    invalid_aviation_intended_audience: "Choose Pilot, Maintenance, or both audiences.",
+    aviation_intended_audience_required: "Choose at least one intended audience.",
+    aviation_content_purpose_required: "Enter the aviation content purpose.",
+  };
+  if (aviationErrors[raw]) return aviationErrors[raw];
 
   return "Document metadata could not be saved.";
 }

@@ -28,17 +28,23 @@ const approvedTopic = {
 
 const exportDocument = {
   aircraftFamily: "Boeing 737NG",
+  aircraftTypeIds: ["B738"],
   ata: "32",
   classificationCode: "32",
+  contentPurpose: "technical-reference",
   contentSha256: "a".repeat(64),
   documentType: "AMM",
   effectivity: "737-700/800/900",
+  intendedAudiences: ["maintenance"],
+  licenseIdentifier: "unknown",
   mimeType: "application/pdf",
   manualType: "AMM",
   originalFilename: "737ng-amm-32.pdf",
   revision: "2026-06",
   sizeBytes: 123456,
   sourceAuthority: "Boeing Aircraft Maintenance Manual",
+  sourceClassification: "training-reference",
+  sourceType: "aviation",
   subjectFamily: "Boeing 737NG",
   title: "737NG AMM 32 Landing Gear",
 };
@@ -72,9 +78,61 @@ test("buildOkfSystemTopic emits the v0.2 trust and provenance contract", () => {
   assert.equal(parsed.frontmatter.ata, "32");
   assert.equal(parsed.frontmatter.manual_type, "AMM");
   assert.equal(parsed.frontmatter.source_authority, "Boeing Aircraft Maintenance Manual");
+  assert.deepEqual(parsed.frontmatter.aircraft_type_ids, ["B738"]);
+  assert.equal(parsed.frontmatter.source_classification, "training-reference");
+  assert.equal(parsed.frontmatter.license_identifier, "unknown");
+  assert.deepEqual(parsed.frontmatter.intended_audiences, ["maintenance"]);
+  assert.equal(parsed.frontmatter.content_purpose, "technical-reference");
   for (const removed of ["review_status", "approved_by", "approved_at", "updated", "source_file"]) {
     assert.equal(Object.hasOwn(parsed.frontmatter, removed), false, `${removed} must not be emitted`);
   }
+});
+
+test("aviation export keeps EFB classification separate from source identifiers", () => {
+  const parsed = parseOkfMarkdown(buildOkfSystemTopic({
+    document: {
+      ...exportDocument,
+      ata: null,
+      classificationCode: "737SAR",
+    },
+    knowledgeVersion: "0.2.0",
+    topic: {
+      ...approvedTopic,
+      okfMetadata: {
+        extensions: {
+          projectEfb: {
+            aircraftFamilyIds: ["737-ng"],
+            aircraftTypeIds: [],
+            ataChapter: "29",
+            audiences: ["maintenance"],
+            classificationModel: "gpt-5.6-terra",
+            classificationProvider: "openai",
+            classificationSource: "llm",
+            confidence: 0.97,
+            evidence: ["The article discusses hydraulic pumps and system pressure."],
+            status: "accepted",
+          },
+        },
+      },
+    },
+  }).content);
+
+  assert.equal(parsed.frontmatter.ata, undefined);
+  assert.equal(parsed.frontmatter.source_identifier, "737SAR");
+  assert.deepEqual(parsed.frontmatter.extensions, {
+    projectEfb: {
+      aircraftFamilyIds: ["737-ng"],
+      aircraftTypeIds: [],
+      ataChapter: "29",
+      audiences: ["maintenance"],
+      classificationModel: "gpt-5.6-terra",
+      classificationProvider: "openai",
+      classificationSource: "llm",
+      confidence: 0.97,
+      evidence: ["The article discusses hydraulic pumps and system pressure."],
+      status: "accepted",
+    },
+  });
 });
 
 test("buildOkfSystemTopic rejects non-approved topics", () => {
