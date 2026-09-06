@@ -25,6 +25,7 @@ const bundle = {
   documentCount: 1,
   id: "bundle-1",
   name: "Test Knowledge",
+  okfVersion: "0.2",
   profile: {} as KnowledgeBundleRecord["profile"],
   slug: "test-knowledge",
   status: "active",
@@ -344,23 +345,36 @@ async function createBundleFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "okf-topic-view-"));
   const filePath = "concepts/system/inspection.md";
   await mkdir(path.dirname(path.join(root, filePath)), { recursive: true });
+  await writeFile(path.join(root, "index.md"), `---
+okf_version: "0.2"
+type: index
+title: Test bundle
+status: stable
+---
+
+# Test bundle
+`, "utf8");
   await writeFile(path.join(root, filePath), topicMarkdown("approved"), "utf8");
   return { filePath, root };
 }
 
 function topicMarkdown(reviewStatus: string) {
+  const approved = reviewStatus === "approved";
   return `---
 type: procedure
 title: Vehicle Pre-Start Inspection
 description: Checks required before operating the vehicle.
-updated: 2026-07-21
-review_status: ${reviewStatus}
-source_file: vehicle-manual.pdf
+status: ${approved ? "stable" : "draft"}
 source_pages:
   - 12
   - 13
-approved_by: automation:user-1
-approved_at: 2026-07-21
+${approved ? `verified:
+  - by: process:av-okf-auto-approval
+    at: 2026-07-21T12:00:00.000Z
+sources:
+  - resource: /references/sources/vehicle-manual.md
+    title: vehicle-manual.pdf
+av_okf_approval_mode: automated` : ""}
 ---
 
 Inspect the vehicle before operation.

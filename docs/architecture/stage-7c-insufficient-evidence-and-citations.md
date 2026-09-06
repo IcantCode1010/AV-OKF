@@ -13,6 +13,25 @@ That outcome:
 
 Open gaps are listed in the existing knowledge-bundle page for reviewer follow-up. Retrieval outages are not knowledge gaps because they represent system availability, not missing corpus coverage.
 
+## Reviewed Retrieval Triggers
+
+When an insufficient-evidence turn has a specific approved OKF near miss, the
+system may stage a small set of normalized query terms as a search-alias
+proposal for that concept. The proposal contains no concept body and is bound
+to the authenticated workspace, selected bundle, normalized concept path, and
+the exact hash of the live concept file.
+
+The proposal is retrieval-inert until a reviewer approves it from the bundle's
+**Review > Knowledge gaps** view. Approval revalidates the live active bundle,
+approved topic mapping, document assignment, safe path, and content hash. An
+approved alias participates only in lexical discovery; it does not modify OKF
+Markdown, trust, lifecycle, answer text, citations, or graph relations.
+
+Pending, rejected, or stale proposals never enter retrieval. A changed concept
+hash disables its previously approved aliases automatically. Near-miss
+diagnostics remain a separate type from qualified evidence and cannot be passed
+to answer generation, deterministic validation, or citation assembly.
+
 ## Citation Navigation
 
 Raw-document citations carry `documentId` and link to:

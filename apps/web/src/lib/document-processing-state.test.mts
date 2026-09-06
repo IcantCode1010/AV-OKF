@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildDocumentProcessingFingerprint,
   buildDocumentProcessingState,
+  resolveDocumentProcessingFingerprint,
   resolveDocumentPanel,
   serializeDocumentProcessingFingerprint,
   shouldPollDocumentProcessing,
@@ -18,7 +19,7 @@ test("queued extraction is visible as active processing", () => {
     topicCount: 0,
   });
   assert.equal(state.active, true);
-  assert.equal(state.currentLabel, "Text extraction");
+  assert.equal(state.currentLabel, "PDF inspection");
   assert.equal(state.showHeader, true);
 });
 
@@ -54,6 +55,18 @@ test("authoring stages and real discovery window progress are derived from recor
   assert.match(stageDetail(state, "concept_discovery"), /3 of 7/);
 });
 
+test("document processing excludes the separate knowledge-wide crawl", () => {
+  const state = buildDocumentProcessingState({
+    authoringRun: authoringFixture({ currentStage: "enrichment", completedStages: ["metadata_discovery", "concept_discovery", "full_rag_index"] }),
+    bundleName: "General Knowledge",
+    document: documentFixture("completed"),
+    topicCount: 3,
+  });
+  assert.equal(state.stages.some((stage) => stage.id === "grounded_crawler"), false);
+  assert.equal(stageStatus(state, "full_rag_index"), "completed");
+  assert.equal(stageStatus(state, "enrichment"), "running");
+});
+
 test("provider, cost, and failure states require attention and stop active polling", () => {
   for (const [status, expected] of [
     ["awaiting_provider", "action_required"],
@@ -85,6 +98,23 @@ test("manual review remains an action-required terminal state", () => {
   });
   assert.equal(stageStatus(state, "review_export"), "action_required");
   assert.equal(state.showHeader, true);
+});
+
+test("manual review completes when every discovered topic is already resolved", () => {
+  const state = buildDocumentProcessingState({
+    authoringRun: authoringFixture({
+      completedStages: ["metadata_discovery", "concept_discovery", "enrichment", "relation_classification", "validation"],
+      currentStage: "review",
+      status: "ready_for_review",
+    }),
+    bundleName: "General Knowledge",
+    document: documentFixture("completed"),
+    reviewTopicCount: 0,
+    topicCount: 101,
+  });
+  assert.equal(stageStatus(state, "review_export"), "completed");
+  assert.match(stageDetail(state, "review_export"), /reviewed/i);
+  assert.equal(state.showHeader, false);
 });
 
 test("automatic approval exposes queued, running, partial, and clean completion", () => {
@@ -242,6 +272,17 @@ test("page and lightweight API snapshots produce the same processing fingerprint
   );
 });
 
+test("production pages use the polling API fingerprint as their source of truth", () => {
+  assert.equal(
+    resolveDocumentProcessingFingerprint({
+      authoringRun: authoringFixture(),
+      document: documentFixture("completed"),
+      productionSnapshot: { fingerprint: "production-complete" },
+    }),
+    "production-complete",
+  );
+});
+
 function documentFixture(status: "completed" | "failed" | "queued" | "running") {
   return {
     extraction: {
@@ -283,3 +324,14 @@ function stageStatus(state: ReturnType<typeof buildDocumentProcessingState>, id:
 function stageDetail(state: ReturnType<typeof buildDocumentProcessingState>, id: string) {
   return state.stages.find((stage) => stage.id === id)?.detail ?? "";
 }
+
+test("proposal-only processing hands off to topic selection, never article approval", () => {
+ for (const currentStage of ["review", "topic_selection"]) {
+ const state=buildDocumentProcessingState({authoringRun:authoringFixture({currentStage,status:"ready_for_review",completedStages:["metadata_discovery","concept_discovery","full_rag_index","media_discovery"]}),bundleName:"737",document:documentFixture("completed"),topicCount:76});
+ assert.equal(stageStatus(state,"enrichment"),"skipped");
+ assert.match(stageDetail(state,"review_export"),/76 discovered topics are ready to draft/);
+ assert.match(stageDetail(state,"review_export"),/have not been enriched or approved/);
+ assert.equal(state.automaticApprovalEnabled,false);
+ assert.equal(state.terminal,true);
+ }
+});

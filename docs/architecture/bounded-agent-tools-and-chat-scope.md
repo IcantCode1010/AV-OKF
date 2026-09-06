@@ -51,6 +51,19 @@ Policy limits:
 - no OKF tools on `rag_only`;
 - raw RAG on `okf_only` is available only through the bounded fallback path.
 
+## Pinned Multi-Hop Policy
+
+Multi-hop retrieval exists to answer questions whose evidence is distributed
+across connected concepts rather than contained in one directly matching
+article. Production may follow approved typed relations for at most two hops,
+inside the originating bundle, and must cite the concept content reached by
+the path. The relation path is a retrieval aid, not evidence by itself.
+
+This bounded traversal is the production default. Increasing the hop limit or
+allowing the model to plan an open-ended graph search requires route-coverage
+evaluation showing better citation correctness without scope, lifecycle,
+trust, or validation violations.
+
 Later reads are capability-scoped to evidence discovered earlier in the same
 turn. A model cannot read an arbitrary OKF path, chunk ID, document, or page.
 Unsafe, stale, inactive, unapproved, retracted, archived, cross-workspace, and
@@ -250,9 +263,11 @@ prioritized scenarios:
 2. RAG is not more or less trusted based on score. RAG remains unreviewed.
    Improve the evidence-sufficiency classifier so RAG is invoked at the right
    time.
-3. Relation discovery remains cautious. Keep deterministic generation plus
-   one-pair LLM verification. Do not add semantic expansion until evaluation
-   proves recall, not precision, is the limiting problem.
+3. Relation discovery remains cautious. Document-local model proposals and
+   bounded cross-document semantic neighbors may expand candidate recall, but
+   one-pair exact-evidence verification and graph preflight remain mandatory.
+   Do not broaden semantic generation or operational automation until
+   evaluation proves recall, not precision, is the limiting problem.
 4. Evaluation gates everything. Do not expand agent autonomy, semantic
    relation discovery, or RAG behavior until route coverage, relation
    evaluation, failure injection, bundle-deletion tombstoning, and real user

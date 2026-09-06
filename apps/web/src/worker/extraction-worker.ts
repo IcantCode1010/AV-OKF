@@ -1,6 +1,9 @@
+import {BULK_ENRICHMENT_QUEUE,runSelectedTopicEnrichment,type SelectedEnrichmentJob} from "../lib/bulk-topic-enrichment.ts";
 import { Worker } from "bullmq";
+import { TOPIC_BUILDER_QUEUE, runTopicBuilder, reconcileTopicBuilder } from "../lib/topic-builder.ts";
 
 import { createPostgresDocumentRepository } from "../lib/production-repository.ts";
+import { getPrisma } from "../lib/prisma.ts";
 import { createBullMqExtractionQueue, type ExtractionJobPayload } from "../lib/production-queue.ts";
 import { runRagIndexJob } from "../lib/rag-indexer.ts";
 import { createBullMqRagIndexQueue, type RagIndexJobPayload } from "../lib/rag-queue.ts";
@@ -61,11 +64,49 @@ import {
   runOkfRelationVerificationJob,
 } from "../lib/okf-relation-verification.ts";
 import {
+  attemptAutomaticRelationApproval,
+  reconcileAutomaticRelationApprovals,
+} from "../lib/okf-relation-approval.ts";
+import {
   createOkfRelationVerificationQueue,
   type OkfRelationVerificationJobPayload,
 } from "../lib/okf-relation-verification-queue.ts";
+import { cleanupExpiredDocumentUploadSessions } from "../lib/document-upload-session.ts";
+import {
+  ENTITY_GRAPH_QUEUE_NAME,
+  createEntityGraphQueue,
+  type EntityGraphJobPayload,
+} from "../lib/entity-graph-queue.ts";
+import {
+  reconcileEntityGraphJobs,
+  runEntityExpansion,
+  runEntityExtractionJob,
+} from "../lib/entity-graph.ts";
+import {
+  TOPIC_EXPANSION_QUEUE_NAME,
+  createTopicExpansionQueue,
+  type TopicExpansionJobPayload,
+} from "../lib/topic-expansion-queue.ts";
+import {
+  reconcileTopicExpansionJobs,
+  runTopicExpansion,
+  runTopicExpansionEnrichmentJob,
+  runTopicExpansionResearchJob,
+} from "../lib/topic-expansion.ts";
+import {
+  createAutomaticPocEfbReleaseJob,
+  reconcilePocEfbReleaseJobs,
+  runPocEfbReleaseJob,
+} from "../lib/efb-release-automation.ts";
+import {
+  EFB_RELEASE_QUEUE_NAME,
+  createEfbReleaseQueue,
+  type EfbReleaseJobPayload,
+} from "../lib/efb-release-queue.ts";
 
+let selectedEnrichmentWorker:Worker<SelectedEnrichmentJob>|null=null;
 let extractionWorker: Worker<ExtractionJobPayload> | null = null;
+let topicBuilderWorker: Worker<{id:string}> | null = null;
 let ragWorker: Worker<RagIndexJobPayload> | null = null;
 let bundleDeletionWorker: Worker<KnowledgeBundleDeletionJobPayload> | null = null;
 let topicDiscoveryWorker: Worker<TopicDiscoveryJobPayload> | null = null;
@@ -75,6 +116,11 @@ let bulkTopicApprovalWorker: Worker<BulkTopicApprovalJobPayload> | null = null;
 let documentDeletionWorker: Worker<DocumentDeletionJobPayload> | null = null;
 let topicContinuationWorker: Worker<TopicContinuationReconciliationPayload> | null = null;
 let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null = null;
+let entityGraphWorker: Worker<EntityGraphJobPayload> | null = null;
+let topicExpansionWorker: Worker<TopicExpansionJobPayload> | null = null;
+let efbReleaseWorker: Worker<EfbReleaseJobPayload> | null = null;
+let uploadCleanupTimer: ReturnType<typeof setInterval> | null = null;
+let ragBudgetResumeTimer: ReturnType<typeof setInterval> | null = null;
 
 void main();
 
@@ -85,7 +131,12 @@ async function main() {
     throw new Error("missing_env_REDIS_URL");
   }
 
+  selectedEnrichmentWorker=new Worker<SelectedEnrichmentJob>(BULK_ENRICHMENT_QUEUE,job=>runSelectedTopicEnrichment(job.data),{concurrency:1,connection:{url:redisUrl}});
+  selectedEnrichmentWorker.on("error",()=>console.error("Selected topic enrichment queue unavailable"));
   const repository = createPostgresDocumentRepository();
+  topicBuilderWorker = new Worker<{id:string}>(TOPIC_BUILDER_QUEUE, job => runTopicBuilder(job.data.id), {concurrency:1,connection:{url:redisUrl}});
+  topicBuilderWorker.on("error", () => console.error("Topic builder queue connection error; retrying."));
+  await reconcileTopicBuilder();
   const ragRepository = createRagRepository();
   const storage = getObjectStorage();
   const queue = createBullMqExtractionQueue(redisUrl);
@@ -96,7 +147,12 @@ async function main() {
   const okfEmbeddingQueue = getOkfConceptEmbeddingQueue();
   const bulkTopicApprovalQueue = createBulkTopicApprovalQueue(redisUrl);
   const relationVerificationQueue = createOkfRelationVerificationQueue(redisUrl);
+  const entityGraphQueue = createEntityGraphQueue(redisUrl);
+  const topicExpansionQueue = createTopicExpansionQueue(redisUrl);
+  const efbReleaseQueue = createEfbReleaseQueue(redisUrl);
 
+  const expiredUploads = await cleanupExpiredDocumentUploadSessions();
+  if (expiredUploads > 0) console.log(`Cleaned ${expiredUploads} expired document uploads.`);
   await reconcileQueuedJobs(repository, queue);
   await reconcileQueuedRagJobs(ragRepository, ragQueue);
   await reconcileQueuedTopicDiscoveryJobs(repository, topicDiscoveryQueue);
@@ -115,12 +171,28 @@ async function main() {
   await reconcileDocumentDeletionJobs(enqueueDocumentDeletionJob);
   await reconcileKnowledgeBundleDeletionJobs(enqueueKnowledgeBundleDeletionJob);
   await reconcileOkfRelationVerificationJobs(relationVerificationQueue);
+  await reconcileAutomaticRelationApprovals();
+  await reconcileEntityGraphJobs(entityGraphQueue);
+  await reconcileTopicExpansionJobs(topicExpansionQueue.enqueue);
+  await reconcilePocEfbReleaseJobs(efbReleaseQueue);
+
+  uploadCleanupTimer = setInterval(() => {
+    void cleanupExpiredDocumentUploadSessions()
+      .then((count) => count > 0 && console.log(`Cleaned ${count} expired document uploads.`))
+      .catch((error) => console.error("Document upload cleanup failed", error));
+  }, 15 * 60 * 1_000);
+  uploadCleanupTimer.unref();
+
+  ragBudgetResumeTimer = setInterval(() => {
+    void reconcileQueuedRagJobs(ragRepository, ragQueue)
+      .catch((error) => console.error("RAG budget reconciliation failed", error));
+  }, 60 * 60 * 1_000);
+  ragBudgetResumeTimer.unref();
 
   extractionWorker = new Worker<ExtractionJobPayload>(
     "extraction",
     async (job) => {
       await runProductionExtractionJob(job.data, {
-        ragQueue,
         repository,
         storage,
         knowledgeAuthoringQueue,
@@ -137,7 +209,14 @@ async function main() {
   ragWorker = new Worker<RagIndexJobPayload>(
     "rag-index",
     async (job) => {
-      await runRagIndexJob(job.data);
+      const result = await runRagIndexJob(job.data) as { status?: string } | undefined;
+      if (result?.status === "completed") {
+        const waitingRuns = await getPrisma().knowledgeAuthoringRun.findMany({
+          select: { documentId: true, id: true, workspaceId: true },
+          where: { documentId: job.data.documentId, status: "waiting_for_rag" },
+        });
+        for (const run of waitingRuns) await knowledgeAuthoringQueue.enqueue({ documentId: run.documentId, runId: run.id, workspaceId: run.workspaceId });
+      }
     },
     {
       concurrency: Number(process.env.RAG_INDEX_WORKER_CONCURRENCY ?? "1"),
@@ -149,7 +228,36 @@ async function main() {
 
   topicDiscoveryWorker = new Worker<TopicDiscoveryJobPayload>(
     "topic-discovery",
-    async (job) => runTopicDiscoveryJob(job.data),
+    async (job) => {
+      const result = await runTopicDiscoveryJob(job.data);
+      const waitingRuns = await getPrisma().knowledgeAuthoringRun.findMany({
+        select: { documentId: true, id: true, workspaceId: true },
+        where: {
+          currentStage: "concept_discovery",
+          documentId: job.data.documentId,
+          status: { in: ["queued", "running"] },
+        },
+      });
+      if (result.status === "completed") {
+        for (const run of waitingRuns) {
+          await knowledgeAuthoringQueue.enqueue({
+            documentId: run.documentId,
+            runId: run.id,
+            workspaceId: run.workspaceId,
+          }, { waitForActive: true });
+        }
+      } else if (["failed", "awaiting_provider"].includes(result.status)) {
+        await getPrisma().knowledgeAuthoringRun.updateMany({
+          data: {
+            errorCode: `topic_discovery_${result.status}`,
+            errorMessage: `Topic discovery ${result.status.replaceAll("_", " ")}.`,
+            status: result.status,
+          },
+          where: { id: { in: waitingRuns.map(({ id }) => id) } },
+        });
+      }
+      return result;
+    },
     {
       concurrency: Number(process.env.TOPIC_DISCOVERY_WORKER_CONCURRENCY ?? "1"),
       connection: { url: redisUrl },
@@ -166,10 +274,14 @@ async function main() {
     "knowledge-authoring",
     async (job) => {
       const result = await runKnowledgeAuthoringJob(job.data);
-      if (result.status === "ready_for_review") {
+      if (result.status === "ready_for_review" && (result.validationResults as {mode?:string}|null)?.mode!=="proposals_only") {
         await createAutomaticBulkApprovalRun({
           authoringRunId: result.id,
           enqueue: bulkTopicApprovalQueue.enqueue,
+        });
+        await createAutomaticPocEfbReleaseJob({
+          authoringRunId: result.id,
+          queue: efbReleaseQueue,
         });
       }
       return result;
@@ -206,7 +318,51 @@ async function main() {
 
   relationVerificationWorker = new Worker<OkfRelationVerificationJobPayload>(
     "okf-relation-verification",
-    async (job) => runOkfRelationVerificationJob(job.data, { attemptNumber: job.attemptsMade + 1 }),
+    async (job) => {
+      const result = await runOkfRelationVerificationJob(job.data, {
+        attemptNumber: job.attemptsMade + 1,
+      });
+      if (result?.status) {
+        await getPrisma().entityRelationCandidate.updateMany({
+          data: { status: result.status },
+          where: { projectedCandidateId: job.data.candidateId },
+        });
+      }
+      if (result?.status === "confirmed") {
+        const approval = await attemptAutomaticRelationApproval(job.data.candidateId);
+        if (approval?.status === "approved") {
+          await getPrisma().entityRelationCandidate.updateMany({
+            data: { status: "published" },
+            where: { projectedCandidateId: job.data.candidateId },
+          });
+        }
+      }
+      return result;
+    },
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
+  entityGraphWorker = new Worker<EntityGraphJobPayload>(
+    ENTITY_GRAPH_QUEUE_NAME,
+    async (job) => job.data.kind === "extract"
+      ? runEntityExtractionJob(job.data.jobId)
+      : runEntityExpansion(job.data.runId),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
+  topicExpansionWorker = new Worker<TopicExpansionJobPayload>(
+    TOPIC_EXPANSION_QUEUE_NAME,
+    async (job) => job.data.kind === "crawl"
+      ? runTopicExpansion(job.data.runId, { enqueue: topicExpansionQueue.enqueue })
+      : job.data.kind === "research"
+        ? runTopicExpansionResearchJob(job.data.jobId)
+        : runTopicExpansionEnrichmentJob(job.data.jobId),
+    { concurrency: 1, connection: { url: redisUrl } },
+  );
+
+  efbReleaseWorker = new Worker<EfbReleaseJobPayload>(
+    EFB_RELEASE_QUEUE_NAME,
+    async (job) => runPocEfbReleaseJob(job.data.jobId),
     { concurrency: 1, connection: { url: redisUrl } },
   );
 
@@ -232,7 +388,7 @@ async function main() {
     console.log(`Topic discovery job completed: ${job.id}`);
   });
   topicDiscoveryWorker.on("failed", (job, error) => {
-    console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error);
+    console.error(`Topic discovery job failed: ${job?.id ?? "unknown"}`, error.message);
   });
   topicContinuationWorker.on("completed", (job, result) => {
     console.log(
@@ -259,6 +415,15 @@ async function main() {
   });
   relationVerificationWorker.on("failed", (job, error) => {
     console.error(`OKF relation verification failed: ${job?.id ?? "unknown"}`, error);
+  });
+  entityGraphWorker.on("failed", (job, error) => {
+    console.error(`Entity graph job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  topicExpansionWorker.on("failed", (job, error) => {
+    console.error(`Topic expansion job failed: ${job?.id ?? "unknown"}`, error);
+  });
+  efbReleaseWorker.on("failed", (job, error) => {
+    console.error(`EFB release export failed: ${job?.id ?? "unknown"}`, error);
   });
 
   process.on("SIGINT", () => {
@@ -338,6 +503,10 @@ async function reconcileQueuedKnowledgeAuthoringRuns(
 }
 
 async function shutdown() {
+  await selectedEnrichmentWorker?.close();
+  await topicBuilderWorker?.close();
+  if (uploadCleanupTimer) clearInterval(uploadCleanupTimer);
+  if (ragBudgetResumeTimer) clearInterval(ragBudgetResumeTimer);
   await extractionWorker?.close();
   await ragWorker?.close();
   await bundleDeletionWorker?.close();
@@ -348,5 +517,8 @@ async function shutdown() {
   await bulkTopicApprovalWorker?.close();
   await documentDeletionWorker?.close();
   await relationVerificationWorker?.close();
+  await entityGraphWorker?.close();
+  await topicExpansionWorker?.close();
+  await efbReleaseWorker?.close();
   process.exit(0);
 }

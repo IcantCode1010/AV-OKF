@@ -13,6 +13,17 @@ test("generic OKF accepts type as the only required field", () => {
   });
 });
 
+test("generic OKF accepts descriptive multiword and unknown types", () => {
+  assert.deepEqual(validateGenericOkfMetadata({ type: " BigQuery Table " }), {
+    metadata: { type: "BigQuery Table" },
+    valid: true,
+  });
+  assert.deepEqual(validateGenericOkfMetadata({ type: "Custom Producer Type" }), {
+    metadata: { type: "Custom Producer Type" },
+    valid: true,
+  });
+});
+
 test("generic OKF normalizes optional fields", () => {
   assert.deepEqual(
     validateGenericOkfMetadata({
@@ -20,7 +31,7 @@ test("generic OKF normalizes optional fields", () => {
       tags: ["vehicle", "vehicle", "inspection"],
       title: " Pre-start inspection ",
       type: "procedure",
-      updated: "2026-07-15",
+      resource: "urn:example:inspection",
     }),
     {
       metadata: {
@@ -28,26 +39,64 @@ test("generic OKF normalizes optional fields", () => {
         tags: ["vehicle", "inspection"],
         title: "Pre-start inspection",
         type: "procedure",
-        updated: "2026-07-15",
+        resource: "urn:example:inspection",
       },
       valid: true,
     },
   );
 });
 
-test("generic OKF rejects invalid type, tags, and updated date", () => {
+test("generic OKF rejects missing type, invalid tags, and stale date", () => {
   const result = validateGenericOkfMetadata({
     tags: ["valid", " "],
-    type: "../policy",
-    updated: "2026-02-31",
+    type: " ",
+    stale_after: "2026-02-31",
   });
   assert.equal(result.valid, false);
   if (!result.valid) {
     assert.deepEqual(result.errors, [
-      "generic_okf_type_invalid",
-      "generic_okf_updated_invalid",
+      "generic_okf_type_required",
       "generic_okf_tags_invalid",
+      "okf_v02_stale_after_invalid",
     ].sort((a, b) => result.errors.indexOf(a) - result.errors.indexOf(b)));
+  }
+});
+
+test("OKF lifecycle timestamps require valid datetimes with explicit offsets", () => {
+  for (const staleAfter of [
+    "2026-12-31",
+    "2026-02-31T00:00:00Z",
+    "2026-12-31T00:00:00",
+  ]) {
+    const result = validateGenericOkfMetadata({ type: "policy", stale_after: staleAfter });
+    assert.equal(result.valid, false, staleAfter);
+    if (!result.valid) {
+      assert.ok(result.errors.includes("okf_v02_stale_after_invalid"), staleAfter);
+    }
+  }
+
+  assert.equal(
+    validateGenericOkfMetadata({
+      stale_after: "2026-12-31T00:00:00-05:00",
+      type: "policy",
+    }).valid,
+    true,
+  );
+});
+
+test("OKF source and usage-window timestamps use the same datetime contract", () => {
+  const result = validateGenericOkfMetadata({
+    sources: [{ last_modified: "2026-08-24", resource: "manual.md" }],
+    type: "policy",
+    usage_window: {
+      from: "2026-08-01T00:00:00Z",
+      to: "2026-08-24",
+    },
+  });
+  assert.equal(result.valid, false);
+  if (!result.valid) {
+    assert.ok(result.errors.includes("okf_v02_sources_invalid"));
+    assert.ok(result.errors.includes("okf_v02_usage_window_invalid"));
   }
 });
 
@@ -56,9 +105,9 @@ test("generic validity does not imply trusted agent evidence", () => {
   assert.equal(
     isAgentReadyOkfMetadata(
       {
-        review_status: "approved",
-        source_authority: "Manufacturer",
-        source_file: "manual.pdf",
+        status: "stable",
+        verified: [{ by: "human:reviewer", at: "2026-07-20T12:00:00.000Z" }],
+        sources: [{ resource: "/references/sources/manual.md" }],
         source_pages: [2, 3],
         title: "Inspection",
         type: "procedure",

@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AUTHORING_STAGES,
   AUTHORING_CONCEPT_CONFIRMATION_THRESHOLD,
   AUTHORING_INPUT_TOKEN_CONFIRMATION_THRESHOLD,
   KNOWLEDGE_AUTHORING_OPERATIONS,
+  applyMetadataProposalWithoutOverwritingAviationInput,
   normalizeMetadataProposal,
   normalizeAuthoringRelationSuggestions,
   parseTopicReference,
+  planAuthoringTopicDiscovery,
   requiresAuthoringCostConfirmation,
   validateAuthoringTopics,
 } from "./knowledge-authoring.ts";
@@ -19,28 +22,101 @@ test("cost confirmation is required only above either threshold", () => {
   assert.equal(requiresAuthoringCostConfirmation({ conceptCount: 1, estimatedInputTokens: AUTHORING_INPUT_TOKEN_CONFIRMATION_THRESHOLD + 1 }), true);
 });
 
+test("document authoring does not include the separate knowledge-wide crawl", () => {
+  assert.deepEqual(AUTHORING_STAGES, [
+    "metadata_discovery",
+    "applicability_classification",
+    "concept_discovery",
+    "media_discovery",
+    "full_rag_index",
+    "enrichment",
+    "efb_classification",
+    "relation_classification",
+    "validation",
+  ]);
+});
+
 test("metadata proposals are trimmed, deduplicated, and preserve unknown values as null", () => {
   assert.deepEqual(normalizeMetadataProposal({
     classificationCode: "  SEC-14 ",
+    contentPurpose: " technical-reference ",
     description: "  General operations guide. ",
     documentType: " manual ",
     effectivity: null,
+    intendedAudiences: ["maintenance", "maintenance"],
+    licenseIdentifier: null,
     rationale: [],
     revision: " ",
     sourceAuthority: " Manufacturer ",
+    sourceClassification: "training-reference",
     subjectFamily: " Vehicles ",
     tags: [" safety ", "safety", "operations"],
     title: "  Operations Manual ",
   }), {
     classificationCode: "SEC-14",
+    contentPurpose: "technical-reference",
     description: "General operations guide.",
     documentType: "manual",
     effectivity: null,
+    intendedAudiences: ["maintenance"],
+    licenseIdentifier: null,
     revision: null,
     sourceAuthority: "Manufacturer",
+    sourceClassification: "training-reference",
     subjectFamily: "Vehicles",
     tags: ["safety", "operations"],
     title: "Operations Manual",
+  });
+});
+
+test("aviation metadata discovery fills blanks without overwriting entered values", () => {
+  const proposal = normalizeMetadataProposal({
+    classificationCode: "32",
+    contentPurpose: "model-purpose",
+    description: "Model description",
+    documentType: "Model manual",
+    effectivity: "All aircraft",
+    intendedAudiences: ["pilot"],
+    licenseIdentifier: "model-license",
+    rationale: [],
+    revision: "3",
+    sourceAuthority: "Model publisher",
+    sourceClassification: "open-reference",
+    subjectFamily: "Model family",
+    tags: ["model"],
+    title: "Model title",
+  });
+  assert.deepEqual(applyMetadataProposalWithoutOverwritingAviationInput(proposal, {
+    aircraftTypeIds: ["B738"],
+    classificationCode: "24",
+    contentPurpose: "technical-reference",
+    description: "Entered description",
+    documentType: "Training Manual",
+    effectivity: null,
+    intendedAudiences: ["maintenance"],
+    licenseIdentifier: null,
+    revision: "2.0",
+    sourceAuthority: "Entered publisher",
+    sourceClassification: "training-reference",
+    sourceType: "aviation",
+    subjectFamily: "Boeing 737NG",
+    tags: ["entered"],
+    title: "Entered title",
+  }), {
+    aircraftTypeIds: ["B738"],
+    classificationCode: "24",
+    contentPurpose: "technical-reference",
+    description: "Entered description",
+    documentType: "Training Manual",
+    effectivity: "All aircraft",
+    intendedAudiences: ["maintenance"],
+    licenseIdentifier: "model-license",
+    revision: "2.0",
+    sourceAuthority: "Entered publisher",
+    sourceClassification: "training-reference",
+    subjectFamily: "Boeing 737NG",
+    tags: ["entered"],
+    title: "Entered title",
   });
 });
 
@@ -65,6 +141,24 @@ test("authoring queue job identity is stable per durable run", () => {
   const payload = { documentId: "doc-a", runId: "run-a", workspaceId: "workspace-a" };
   assert.equal(buildKnowledgeAuthoringJobId(payload), "knowledge-authoring-run-a");
   assert.equal(buildKnowledgeAuthoringJobId(payload), buildKnowledgeAuthoringJobId(payload));
+});
+
+test("authoring retains one discovery owner and supersedes concurrent duplicates", () => {
+  const first = { id: "job-a", queuedAt: new Date("2026-01-01T00:00:00Z"), status: "consolidating" };
+  const second = { id: "job-b", queuedAt: new Date("2026-01-01T00:01:00Z"), status: "analyzing" };
+  assert.deepEqual(planAuthoringTopicDiscovery([second, first]), {
+    job: first,
+    supersededIds: ["job-b"],
+  });
+});
+
+test("authoring prefers a completed discovery result over an active duplicate", () => {
+  const active = { id: "job-a", queuedAt: new Date("2026-01-01T00:00:00Z"), status: "consolidating" };
+  const completed = { id: "job-b", queuedAt: new Date("2026-01-01T00:01:00Z"), status: "completed" };
+  assert.deepEqual(planAuthoringTopicDiscovery([active, completed]), {
+    job: completed,
+    supersededIds: ["job-a"],
+  });
 });
 
 test("authoring relation suggestions remain topic references until review promotion", () => {

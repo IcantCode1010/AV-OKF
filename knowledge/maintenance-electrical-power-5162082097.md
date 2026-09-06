@@ -1,19 +1,19 @@
 ---
 type: "system_topic"
-review_status: "approved"
+status: "draft"
+generated:
+  by: "process:av-okf-repository-fixture-migration"
+  at: "2026-08-06T12:00:00.000Z"
 title: "ELECTRICAL POWER"
 description: "Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER DISCLAIMER This is an UNCONTROLLED DOCUMENT and will not be revised. Information contained herein is For Tra..."
 subject_family: "N/A (non-aviation)"
 document_type: "737"
 classification_code: "Maintenance"
 effectivity: "737-700/800/900"
-source_authority: "Boeing Aircraft Maintenance Manual"
 revision: "2026-06"
-source_file: "737NG AMM 32 Landing Gear"
 source_pages:
   - 1
-knowledge_version: "0.1.0"
-updated: "2026-07-15"
+knowledge_version: "0.2.0"
 ---
 
 # ELECTRICAL POWER

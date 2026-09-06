@@ -2,7 +2,9 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { LanguageModel } from "ai";
 
-export type LlmProviderId = "anthropic" | "openai";
+export type LlmProviderId = "anthropic" | "kimi" | "openai";
+
+export const DEFAULT_OPENAI_MODEL = "gpt-5.6-terra";
 
 export const LLM_PROVIDERS: {
   id: LlmProviderId;
@@ -15,9 +17,14 @@ export const LLM_PROVIDERS: {
     model: "claude-3-5-haiku-20241022",
   },
   {
+    id: "kimi",
+    label: "Moonshot AI (Kimi K3)",
+    model: "kimi-k3",
+  },
+  {
     id: "openai",
     label: "OpenAI (GPT)",
-    model: "gpt-4o-mini",
+    model: DEFAULT_OPENAI_MODEL,
   },
 ];
 
@@ -45,5 +52,13 @@ export function getSdkModel(
     return createAnthropic({ apiKey }).languageModel(provider.model);
   }
 
-  return createOpenAI({ apiKey }).chat(provider.model);
+  if (provider.id === "kimi") {
+    return createOpenAI({
+      apiKey,
+      baseURL: "https://api.moonshot.ai/v1",
+      name: "kimi",
+    }).chat(provider.model);
+  }
+
+  return createOpenAI({ apiKey }).responses(provider.model);
 }

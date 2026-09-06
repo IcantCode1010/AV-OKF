@@ -13,6 +13,7 @@ import {
 import { assertActionDocumentWorkspace } from "@/lib/document-action-guards";
 import { getKnowledgeBundle } from "@/lib/knowledge-bundles";
 import type { MetadataClarificationSelection } from "@/lib/chat-router";
+import { promoteChatEntityCandidate } from "@/lib/chat-entity-candidates";
 
 export async function createChatSessionAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
@@ -21,6 +22,19 @@ export async function createChatSessionAction(formData: FormData) {
   if (!bundle) throw new Error("knowledge_bundle_not_found");
   const session = await createChatSession(bundle.id);
 
+  revalidatePath("/chat");
+  redirect(`/chat/${session.id}`);
+}
+
+export async function createAndSendChatMessageAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const knowledgeBundleId = getFormString(formData, "knowledgeBundleId");
+  const content = getFormString(formData, "content").trim();
+  if (!content) throw new Error("chat_message_required");
+  const bundle = await getKnowledgeBundle({ bundleId: knowledgeBundleId, context });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const session = await createChatSession(bundle.id, content.slice(0, 72));
+  await sendChatMessage(session.id, content);
   revalidatePath("/chat");
   redirect(`/chat/${session.id}`);
 }
@@ -45,7 +59,10 @@ export async function sendChatMessageAction(formData: FormData) {
     mismatchError: "chat_session_workspace_mismatch",
   });
 
-  await sendChatMessage(sessionId, content, metadataSelection);
+  try{await sendChatMessage(sessionId, content, metadataSelection);}catch(error){
+    if(error instanceof Error&&/^(chat_scope_changed|research_cancelled|knowledge_sources_changed|knowledge_evidence_unavailable|knowledge_scope_unavailable|knowledge_source_unavailable)$/.test(error.message))return {error:"The question was stopped because its knowledge scope or source evidence changed. Send it again in the current scope."};
+    throw error;
+  }
 
   revalidatePath(`/chat/${sessionId}`);
   redirect(`/chat/${sessionId}`);
@@ -63,6 +80,40 @@ export async function updateChatKnowledgeSourcesAction(formData: FormData) {
   });
   await updateChatSessionKnowledgeBundles(sessionId, bundleIds);
   revalidatePath(`/chat/${sessionId}`);
+}
+
+export async function promoteChatEntityCandidateAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const sessionId = getFormString(formData, "sessionId");
+  let result;
+  try {
+    result = await promoteChatEntityCandidate({
+      candidateId: getFormString(formData, "candidateId"),
+      context,
+      messageId: getFormString(formData, "messageId"),
+    });
+  } catch (error) {
+    if (isSafeEntityPromotionError(error)) {
+      redirect(`/chat/${sessionId}?entityError=${encodeURIComponent(error.message)}`);
+    }
+    throw error;
+  }
+
+  revalidatePath(`/chat/${sessionId}`);
+  revalidatePath(`/documents/${result.documentId}`);
+  redirect(
+    `/documents/${result.documentId}?panel=topics&topic=${result.topicId}&entityCandidate=${
+      result.created ? "created" : "existing"
+    }`,
+  );
+}
+
+function isSafeEntityPromotionError(error: unknown): error is Error {
+  return error instanceof Error && [
+    "chat_entity_candidate_not_found",
+    "chat_entity_candidate_source_unavailable",
+    "chat_entity_identity_collision",
+  ].includes(error.message);
 }
 
 function parseMetadataSelection(

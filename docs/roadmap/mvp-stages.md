@@ -6,9 +6,15 @@ Build AV-OKF in stages, starting with a generic document management foundation a
 
 The first usable product should be a clean document vault. Chat comes later, after ingestion, citations, review status, and retrieval exist.
 
+## EFB aircraft-content direction — 2026-09-05
+
+The [aircraft article pipeline review and delivery plan](efb-content-platform-plan.md) pins shared agentic graph RAG for existing AV-OKF chat and Topic builder, a complete independent AV-OKF knowledge workflow, source figures and original diagrams, and hand-selected topic publication to EFB. This is planned work; existing stage completion labels do not imply that the new Topic builder or illustrated EFB delivery is integrated.
+
 ## Current Implementation Status
 
-As of 2026-07-23:
+Large-PDF processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, and portable citations. A bounded non-blocking entity stage now follows enrichment, and topic publication schedules bundle-local incremental relation expansion. A separate manually initiated Topic expansion workflow can inspect approved bundle knowledge and return up to 10 grounded missing-topic proposals to normal enrichment and review. Structural entity projections remain separate from trusted exported OKF relations. Production rollout at the 250 MB/5,000-page ceiling and automatic relation publication remain gated on their documented evaluations.
+
+As of 2026-07-26:
 
 | Stage | Status |
 | --- | --- |
@@ -22,13 +28,44 @@ As of 2026-07-23:
 | 5.8 | Complete: opt-in bundle-scoped automatic high-confidence approval/export with provenance-aware trust presentation |
 | 6 | Complete: persistent chat, rules-first router with LLM fallback, OKF/RAG/Hybrid retrieval, synthesis, citations, and trace |
 | 6.5 | Complete: live uncached OKF bundle retrieval with precision gating and lifecycle filtering |
-| 6.6 | Core implemented; restore, historical citation notices, and coverage reconciliation remain |
+| 6.6 | Complete for permanent document and bundle deletion; restore is intentionally unsupported |
 | 7A | Complete: deterministic post-answer evidence validation |
 | 7B | Core implemented: bounded OKF graph traversal and coverage-linked RAG support |
-| 7B.5 | Complete: deterministic bundle-local candidates, reviewer approval/rejection, and re-exported graph edges |
+| 7B.5 | Core implemented: deterministic and entity-grounded candidates, one-pair verification, entity-map projections, strict opt-in publication gate, and re-exported graph edges |
 | 7C | Complete: chat-quality closeout and bounded Vercel AI SDK tool contracts |
 | 7D | Complete: user-controlled dynamic multi-bundle chat scope |
 | 8 | Deferred optional domain pack; the core platform remains generic |
+
+## Current Priorities
+
+The late-stage MVP is feature-complete enough for controlled internal use. The
+remaining work is evaluation, hardening, standards migration, and portable
+import rather than another application rewrite.
+
+Work in this order:
+
+1. Complete the bounded adaptive-retry internal pilot: at least seven days and
+   50 eligible turns on one non-safety-critical bundle.
+2. Run the trust-UX protocol with five non-technical reviewers. Any trust
+   criterion misunderstood by more than one reviewer requires a UI correction.
+3. Run production-stack failure injection for provider outage, malformed
+   output, budget exhaustion, partial retrieval failure, and an in-flight chat
+   scope change.
+4. Run the configured multi-document entity/relation evaluation. Keep verified
+   proposals review-first below 90% precision and leave the global automatic
+   publication switch disabled until that gate passes without negative-control regressions.
+5. Reconcile every live bundle with its active profile and add the explicit
+   coverage-link reconciliation action.
+6. Design and execute the OKF v0.2-only hard cutover across the parser,
+   exporter, validator, retriever, vault, and existing bundle content.
+7. Build portable bundle import only after the v0.2 cutover, including
+   structure-only and source-linked reviewed import modes.
+8. Add column-aware PDF extraction and permanent mixed-domain document-quality
+   evaluations before treating multi-column technical manuals as reliably
+   high-confidence input.
+
+Free model-directed tool choice, free-form corpus-wide relation generation,
+cross-bundle typed relations, and mutating agent tools remain deferred.
 
 ## Stage 0: Product Shell
 
@@ -260,7 +297,7 @@ Deliverables:
 - Typed relation field and controlled vocabulary
 - Markdown exporter
 - `index.md` generation
-- `source_manifest.md` generation
+- portable `references/sources/*.md` source-reference generation (replaced the v0.1 `source_manifest.md` contract)
 - derived OKF-to-RAG coverage projection; OKF frontmatter remains the source of truth
 - OKF-to-RAG coverage links
 - Bundle validation
@@ -268,12 +305,14 @@ Deliverables:
 - Deterministic relation lint for relation enum values, target resolution, and target type matching
 - GitHub Actions `okflint validate` CI gate
 - Workspace-scoped bundle library with Generic, Aviation, and versioned custom profiles
-- Generic `type`-required metadata contract with optional `title`, `description`, `tags`, and `updated`
+- OKF v0.2 `type`-required metadata contract with optional standard metadata and stricter AV-OKF trust/provenance extensions
 - Required upload/chat bundle assignment and bundle-isolated retrieval, relations, lifecycle, and RAG filtering
 - Dry-run/resumable migration into General Knowledge with backup and recovery journal
 - Durable BullMQ bundle deletion that removes OKF and derived knowledge while preserving source PDFs, document metadata, and extraction history as Unassigned documents
 - Bundle-first Knowledge page
 - Three-pane OKF bundle explorer with a physical file tree, force-directed typed-relation graph, and rendered Markdown reader
+- Bundle-centered application shell with an authenticated active-bundle selector, grouped workflow navigation, dedicated Browse and Graph workspaces, bundle Activity, and active-context Documents/Review/Relations/Settings pages
+- Chat-first landing that resumes the active bundle's latest conversation and creates a new session only when its first question is submitted
 - Shared `?file=` deep-link selection across tree rows, graph nodes, internal links, outgoing relations, and derived backlinks
 - Active-lifecycle filtering, safe relation warnings, and a usable tree/reader fallback when WebGL is unavailable
 
@@ -293,6 +332,7 @@ Architecture note:
 - [Link Resolution](../architecture/link-resolution.md)
 - [Typed Relations](../architecture/typed-relations.md)
 - [Knowledge Explorer V2](../architecture/knowledge-explorer.md)
+- [Bundle-Centered Workspace](../architecture/bundle-centered-workspace.md)
 
 ## Stage 5.6: LLM-Assisted Knowledge Authoring
 
@@ -357,7 +397,7 @@ Agent-readiness pass: `routeChatQuestion` now also accepts the structured input 
 
 Stage 6 closeout correction: the LLM fallback classifier is now implemented for low-confidence rule results, with high-confidence safety routes kept rules-first. The current Stage 6 boundary is router-first retrieval, evidence-bound answer synthesis, citations, and traceability; gap-targeted hybrid retrieval and claim-level validation move to Stage 7.
 
-Stage 6.5 architecture correction: OKF retrieval should read the exported OKF bundle files directly, not depend on `okf_topic` rows embedded into the RAG vector database. The `okf_topic` RAG projection remains a legacy/optional cache from the Stage 4 follow-up, but the agent path should treat `knowledge/` as the reviewed knowledge source of truth. RAG remains the raw document discovery layer; OKF remains the reviewed Markdown/YAML bundle the agent can crawl through `index.md`, frontmatter, links, relations, `source_manifest.md`, and `log.md`.
+Stage 6.5 architecture correction: OKF retrieval reads exported bundle files directly, not `okf_topic` rows in RAG. The agent treats the v0.2 Markdown/YAML bundle as reviewed knowledge and traverses `index.md`, nested frontmatter, portable source references, standard links, typed relations, and `log.md`. RAG remains the raw document discovery layer.
 
 Stage 6.5 implementation status: complete. `okf-bundle-retriever.ts` reads the active bundle live on every query with no cache, uses the shared frontmatter parser, rejects unsafe paths, ignores reserved/non-approved/malformed files, applies lifecycle state, and uses a deterministic precision gate before approved OKF evidence can qualify. The admin OKF-to-RAG sync is labeled as a legacy optional cache rather than the primary agent path.
 
@@ -468,7 +508,7 @@ Purpose: make the agent useful for questions that require more than one approved
 
 Status: core implementation complete. Bounded relation traversal, lifecycle/path/type guards, cycle prevention, coverage-linked RAG retrieval, graph-aware citations, and trace metadata are implemented. The broader response-state vocabulary and permanent graph-retrieval evaluation set remain Stage 7C closeout work.
 
-Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, metadata-driven weak-evidence clarification, unsupported live data, and missing-vector discovery fallback. The metadata case is two-turn: diagnostic near misses cannot become citations or validation input, and a still-unresolved follow-up falls through to labeled raw RAG without asking again. The profile also blocks retracted evidence and per-question citation regressions. Failure injection, multi-bundle isolation, and the broader mixed-domain question corpus remain separate follow-up slices.
+Route-coverage closeout: complete for every current router path. The permanent Docker profile seeds a dedicated bundle and asserts persisted traces for direct lexical OKF, semantic OKF fallback, typed-relation graph traversal, raw RAG reranking, Hybrid OKF-first evidence, missing-context clarification, metadata-driven weak-evidence clarification, unsupported live data, and missing-vector discovery fallback. The metadata case is two-turn: diagnostic near misses cannot become citations or validation input, and a still-unresolved follow-up falls through to labeled raw RAG without asking again. The profile also blocks retracted evidence and per-question citation regressions. Multi-bundle isolation and the 30-question mixed-domain comparison are implemented. Running-stack failure injection and concurrent in-flight scope mutation remain production-readiness gates.
 
 Stage 7C release coverage now runs in that same Docker profile. It enforces the PDF-serving workspace boundary (including indistinguishable foreign and nonexistent responses), exercises persisted citation behavior after retraction/archive/source deletion, verifies exact positive and negative KnowledgeGap writes with final evidence status, and confirms honest misses report real searched-corpus counts without invented citation markers.
 
@@ -512,7 +552,7 @@ Deferred from Stage 7B:
 
 Purpose: populate the typed OKF graph with useful relationships without allowing inferred links to become trusted agent evidence automatically.
 
-Implementation status: Relation Discovery V3 is implemented around the unchanged V2 deterministic candidate generator. New candidates are verified asynchronously one pair per configured-provider call, require an exact canonical source quote and an allowed typed relation, and are bound to source/target content hashes. Only confirmed results reach human review or count as pending graph edges; filtered, failed, queued, and running candidates cannot influence frontmatter, the explorer graph, or agent traversal. Human approval and re-export remain mandatory, and changing direction requires re-verification against the new source. The next checkpoint is a configured-provider Docker sample at 80% precision; approximately 90% is required before considering any reduction in review or expansion of LLM authority.
+Implementation status: Relation Discovery V3 retains deterministic candidate generation and adds a bounded document-grounded entity path. Entity extraction runs after enrichment in separate retryable jobs, workspace identities reconcile across documents, and approved topic export schedules a finite bundle-local expansion capped at 50 candidates. Every semantic candidate still requires exact chunk/page evidence, deterministic target resolution, one-pair configured-provider verification, current content hashes, and graph preflight. Structural entity-map links never affect OKF retrieval. Automatic publication is bundle opt-in, globally kill-switchable, requires 95% verifier confidence, and remains globally disabled until a representative multi-document evaluation reaches approximately 90% precision without negative-control regression. Human review remains available throughout.
 
 Policy checkpoint: stay with deterministic candidate generation plus one-pair LLM verification. Do not add semantic expansion, embedding-neighbor relation discovery, free-form relation generation, or broader LLM graph construction until the Phase 3 evaluation proves recall is the limiting problem. If precision remains the limiting problem, improve filtering, verifier prompts, quote requirements, profile stopwords, and review UX instead.
 
@@ -536,7 +576,7 @@ Deliverables:
 - Re-export integration that writes approved relations into OKF frontmatter and refreshes the live graph.
 - Audit record for candidate generation and reviewer decisions.
 - Append-only verification-attempt audit records containing provider/model, prompt, raw response, result, and errors.
-- Dry-run before/after evaluation reports and mixed-domain fixtures proving discovery works without aviation-specific assumptions; reviewer acceptance metrics gate semantic expansion.
+- Dry-run cleanup and evaluation reports, bounded 50-candidate runs, published-relation explanation revalidation, and mixed-domain fixtures proving discovery works without aviation-specific assumptions; reviewer acceptance metrics gate semantic expansion and automatic publication.
 
 Exit criteria:
 
@@ -561,6 +601,13 @@ Purpose: close the remaining user-facing evidence gaps and expose the proven ret
 
 Status: implementation complete for deterministic production controls and the disabled-by-default adaptive candidate. Insufficient-evidence completion, bundle-scoped knowledge gaps, authenticated citations, bundle-deletion tombstoning, bounded read-only tool wrappers, mandatory validation, persisted tool traces, deterministic evidence sufficiency, and one per-bundle bounded adaptive retry are implemented. Free model-directed tool choice remains evaluation-only.
 
+Chat entity discovery now provides an additional review-first knowledge-growth
+path. Supported answers may surface exact-source-quoted entity candidates.
+Selecting one creates a `needs_review` entity topic tied to the cited document
+and pages; the normal enrichment, approval, export, lifecycle, and relation
+controls remain mandatory. Multi-source entity consolidation remains future
+work.
+
 Deliverables:
 
 - [x] Preserve an explicit insufficient-evidence response when the LLM returns `supported: false`, rather than replacing it with concatenated excerpts solely because related citations exist.
@@ -568,7 +615,7 @@ Deliverables:
 - [x] Clickable citation-to-source navigation. Raw RAG citations continue linking directly to authenticated PDFs, while approved OKF citations drill down through `Chat citation -> approved OKF topic page -> Source document block -> PDF route` with server-side source resolution and browser-native `#page=N` PDF fragments.
 - [x] Clear separation between router intent, evidence actually used, selected bundle scope, and bounded tool execution in the trace UI.
 - [x] Historical citation lifecycle notices with stale links disabled.
-- Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
+- [x] Permanent mixed-domain evaluation questions for direct OKF, OKF via graph, raw RAG, hybrid, no-evidence, and retrieval-error paths.
 - [x] Vercel AI SDK tool contracts for `searchOkf`, `readOkfFile`, `followOkfRelation`, `searchCoveredRag`, `searchRawRag`, `readSourcePages`, and `validateAnswerEvidence`.
 - [x] Deterministic router, workspace authorization, lifecycle filters, hop limits, citation rules, and post-answer validation remain authoritative.
 - [x] Persist bounded tool calls and outcomes in the existing chat trace.
@@ -645,10 +692,21 @@ Production-ready agent gate:
 
 - [x] P0: bundle-deletion citation tombstoning is implemented in the durable
   worker and covered by unit and Docker E2E assertions.
-- P1: provider outage, budget exhaustion, malformed provider output, and partial retrieval failure are tested against the running stack.
-- P1: concurrent scope changes during an in-flight message preserve the captured scope snapshot.
-- P1: conflicting approved values across selected bundles produce a visible conflict, never a silent choice.
-- P2: at least three to five non-technical user sessions confirm the trust UX is understandable without reading trace internals; any trust criterion failed by more than one reviewer requires a UI/product fix.
+- [x] P0: the configured-provider 30-question comparison improved correctly
+  cited questions from 15/30 to 23/30 with 100% citation precision, no baseline
+  regression, and zero route, scope, trust, or lifecycle violations.
+- [ ] P1: complete a seven-day, 50-eligible-turn internal adaptive-retry pilot
+  on one non-safety-critical bundle.
+- [ ] P1: test provider outage, budget exhaustion, malformed provider output,
+  and partial retrieval failure against the running stack.
+- [ ] P1: prove against the running stack that concurrent scope changes during
+  an in-flight message preserve the captured scope snapshot.
+- [ ] P1: rerun the visible cross-bundle conflict scenario end to end and
+  confirm conflicting approved values are presented separately, never silently
+  selected.
+- [ ] P2: five non-technical reviewers complete the trust-UX protocol without
+  reading trace internals; any trust criterion failed by more than one reviewer
+  requires a UI/product correction.
 
 Agent decision framework:
 
@@ -659,14 +717,134 @@ Agent decision framework:
 - Relation discovery stays deterministic plus one-pair LLM verification until Phase 3 evaluation proves recall is the limiting problem.
 - Do not expand agent autonomy, semantic relation discovery, or RAG behavior until route coverage, relation evaluation, failure injection, bundle-deletion tombstoning, and real user trust review are actually run.
 
-Deferred OKF v0.2 compatibility:
+## Next Platform Milestone: OKF v0.2 And Portable Import
 
-- Adopt the published OKF v0.2 trust and provenance families through a separately reviewed hard-cutover migration, not an immediate exporter change.
-- After migration, read and write only OKF v0.2; do not retain a permanent legacy or dual-read format.
-- Preserve AV-OKF typed relations, page provenance, approval modes, and richer lifecycle behavior as extensions.
-- Replace generated `updated` fields with `generated.at`.
-- Resolve `source_manifest.md` conformance because v0.2 recognizes only `index.md` and `log.md` as reserved Markdown files.
-- Require backups, a dry-run report, a resumable migration, and successful validation of every bundle before switching production reads and writes.
+Status: v0.2 hard cutover, active-guidance reconciliation, and the pinned
+upstream compatibility corpus are complete. All four official sample bundles
+at commit `fe3268a` pass portable validation and deterministic round trips;
+they remain separate from AV runtime and agent-readiness decisions. Claim-level
+`sources[].id` footnote validation is also complete: portable mismatches are
+reported without invalidating generic conformance, while unresolved or
+ambiguous attribution blocks strict AV runtime readiness. Runtime documents and
+document-derived knowledge were intentionally
+purged across all workspaces on 2026-08-16, leaving the existing bundle
+registries and profiles as an empty starting point. Existing user data no
+longer gates compatibility work; controlled repository fixtures are the test
+authority for each phase. The v0.2-only
+runtime, exporter, validator, staged migration, production activation, and
+release verification are complete. All active bundles were migrated during a
+backed-up maintenance window on 2026-08-06 and pass bundle validation and
+relation lint. Active user and architecture documentation is guarded against
+reintroducing v0.1 contract examples. The application
+has no finished UI or API for importing an arbitrary bundle archive. The
+product decision is a v0.2-only hard cutover, not permanent dual-read support.
+
+Purpose: make a knowledge bundle portable between systems without weakening
+workspace isolation, source provenance, lifecycle state, or agent trust.
+
+Required sequencing:
+
+1. Map current AV-OKF metadata to the published OKF v0.2 trust and provenance
+   families.
+2. Update the shared parser, exporter, profile manifest, validators, live
+   retriever, explorer, relation tooling, vault registry, and tests together.
+3. Back up every live bundle and run a dry-run, resumable migration.
+4. Validate every migrated bundle before atomically switching production reads
+   and writes to v0.2.
+5. Remove v0.1 production reads after successful cutover; do not maintain a
+   permanent compatibility parser.
+6. Implement archive import against the now-active stable v0.2 contract.
+
+Completed compatibility gate:
+
+- pinned 79 upstream bundle files under Apache-2.0 with exact SHA-256 digests;
+- validated 78 Markdown round trips and 53 generic concept frontmatter blocks;
+- accepted descriptive multiword types and reserved nested indexes;
+- kept optional generic root-version behavior separate from AV-OKF's mandatory
+  production declaration;
+- confirmed no fixture concept qualifies as agent-ready evidence.
+- validated 45 claim-footnote references against exact `sources[].id` values,
+  with 33 matches and 11 deterministic warnings covering 12 references in the
+  upstream Stack Overflow sample;
+- kept those attribution findings non-fatal for portable conformance while
+  making them errors in AV runtime validation.
+
+Completed enrichment-safety gate:
+
+- first enrichment remains separate from raw discovery content and records a
+  deterministic accepted baseline;
+- changed re-enrichment output is retained as a reviewable proposal instead of
+  replacing accepted content;
+- bulk and individual approval remain blocked until the reviewer accepts or
+  rejects the proposal;
+- equivalent reruns create no review work, while failed reruns preserve the
+  last accepted enrichment.
+
+Completed retrieval-learning gate:
+
+- insufficient-evidence turns can stage deterministic search-alias proposals
+  only when diagnostics identify a specific approved OKF near miss;
+- proposals are bound to the exact bundle, normalized concept path, and live
+  concept content hash, and remain inert until a reviewer approves them;
+- approved aliases extend lexical concept discovery without changing OKF
+  Markdown, lifecycle, trust, evidence text, or citation eligibility;
+- pending, rejected, stale, cross-workspace, and unavailable proposals cannot
+  affect retrieval, and diagnostic concept content remains structurally absent
+  from answer generation and validation.
+
+Next gated slice:
+
+- add privacy-minimized bundle retrieval-health and concept-usage telemetry
+  before portable archive import begins.
+
+Migration and format rules:
+
+- Map authoring provenance to `generated`, approval provenance to `verified`,
+  source provenance to `sources`, and lifecycle to `status`/`stale_after`.
+- Replace generated `updated` metadata with `generated.at`.
+- Preserve AV-OKF typed relations, source pages, approval modes, and richer
+  lifecycle behavior as documented extensions.
+- Resolve `source_manifest.md` conformance because v0.2 recognizes only
+  `index.md` and `log.md` as reserved Markdown files.
+- Generate new workspace and bundle IDs in the receiving system; portable
+  Markdown must not contain tenant database IDs.
+
+Portable import modes:
+
+- **Structure-only:** validate and import Markdown for human exploration, but
+  do not honor external approval claims as target-workspace trust.
+- **Source-linked reviewed:** import or map source documents, verify
+  `sources[].resource` identities and source pages, rebuild projections and lookup
+  indexes, and require target-workspace authorization before concepts become
+  trusted agent evidence.
+
+Import safety requirements:
+
+- Stage archives outside the live vault and reject traversal, unsafe links,
+  escaping symlinks, duplicate normalized paths, and cross-bundle relations.
+- Treat the OKF files as the portable source of truth and rebuild database
+  projections rather than importing foreign database identifiers.
+- Build raw RAG only from source documents that were actually imported and
+  extracted.
+- Commit the new bundle atomically only after profile, frontmatter, link,
+  relation, lifecycle, and source-mapping validation succeeds.
+- Record one import event in the bundle log and update `okf-vault.json`.
+
+Reference:
+
+- [OKF v0.2 Adoption Decision](../architecture/okf-v0.2-adoption.md)
+- [Published OKF v0.2 Specification](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md)
+- [Document-to-OKF Bundle Walkthrough](../user-guides/file-processing-walkthrough.md)
+
+Exit criteria:
+
+- Production reads and writes only OKF v0.2.
+- Every migrated live bundle validates before activation.
+- A portable package can create a structurally valid isolated bundle without
+  becoming trusted automatically.
+- A source-linked package can rebuild source drilldown, lifecycle projections,
+  relations, embeddings, and agent retrieval after explicit review.
+- A failed import leaves the live vault and database unchanged.
 
 ## Stage 8: Aviation Domain Pack
 
@@ -720,3 +898,8 @@ Demo flow:
 10. Ask a mixed question that uses Hybrid only when needed.
 11. Show citations, router decision, retrieval mode, evidence card, and trace.
 ```
+
+
+## Shared knowledge workflow checkpoint
+
+See [AV-OKF shared workflow delivery](efb-content-platform-plan.md#local-delivery-checkpoint--2026-09-06) for the local implementation, verified checks and remaining release gates. AV-OKF approval, EFB selection and artifact export are distinct steps.

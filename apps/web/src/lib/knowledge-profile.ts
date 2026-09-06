@@ -9,16 +9,25 @@ export type KnowledgeFieldType =
   | "date"
   | "number"
   | "number_array"
+  | "object"
+  | "object_array"
   | "relations"
   | "string"
   | "string_array";
 
 export type KnowledgeProfileSchema = {
+  okfVersion: "0.1" | "0.2";
   agent: {
     boundedAdaptiveRetryEnabled: boolean;
   };
   automation: {
     autoApproveEnrichedTopics: boolean;
+    autoApproveVerifiedRelations: boolean;
+  };
+  media: {
+    autoApproveHighConfidenceEnabled: boolean;
+    autoApproveThreshold: number;
+    topicFiguresEnabled: boolean;
   };
   clarificationFields: string[];
   fields: Record<string, { required?: boolean; type: KnowledgeFieldType }>;
@@ -50,6 +59,24 @@ export const PROHIBITED_CLARIFICATION_FIELDS = new Set([
   "revision",
   "source_authority",
   "source_pages",
+  "generated",
+  "sources",
+  "stale_after",
+  "status",
+  "verified",
+  "efb_aircraft_type_ids",
+  "efb_aircraft_family_ids",
+  "efb_audiences",
+  "efb_authority_label",
+  "efb_content_purpose",
+  "efb_entry_id",
+  "efb_inclusion_status",
+  "efb_license_identifier",
+  "efb_license_reviewed_at",
+  "efb_license_reviewed_by",
+  "efb_placements",
+  "efb_related_entry_ids",
+  "efb_source_classification",
 ]);
 
 const CLARIFICATION_FIELD_TYPES = new Set<KnowledgeFieldType>([
@@ -60,9 +87,17 @@ const CLARIFICATION_FIELD_TYPES = new Set<KnowledgeFieldType>([
 ]);
 
 export const DEFAULT_RELATIONS = [
+  "applies_to",
+  "part_of",
+  "implements",
   "routes_to",
   "references",
   "supports",
+  "requires",
+  "triggers",
+  "affects",
+  "mitigates",
+  "governs",
   "covered_by",
   "supersedes",
   "conflicts_with",
@@ -93,28 +128,42 @@ export const BASE_FIELDS: KnowledgeProfileSchema["fields"] = {
   type: { required: true, type: "string" },
   title: { type: "string" },
   description: { type: "string" },
+  resource: { type: "string" },
   tags: { type: "string_array" },
-  updated: { type: "date" },
-  approved_at: { type: "date" },
-  approved_by: { type: "string" },
-  review_status: { type: "string" },
-  source_file: { type: "string" },
+  sources: { type: "object_array" },
+  generated: { type: "object" },
+  verified: { type: "object_array" },
+  status: { type: "string" },
+  stale_after: { type: "date" },
   source_pages: { type: "number_array" },
-  source_authority: { type: "string" },
   knowledge_version: { type: "string" },
+  av_okf_approval_mode: { type: "string" },
+  av_okf_lifecycle: { type: "string" },
+  av_okf_role: { type: "string" },
+  av_okf_media: { type: "object_array" },
   relations: { type: "relations" },
   classification_code: { type: "string" },
   coverage_type: { type: "string" },
   covered_rag_chunk_ids: { type: "string_array" },
   document_type: { type: "string" },
+  entity_type: { type: "string" },
   effectivity: { type: "string" },
   revision: { type: "string" },
   subject_family: { type: "string" },
 };
 
 export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
+  okfVersion: "0.2",
   agent: { boundedAdaptiveRetryEnabled: false },
-  automation: { autoApproveEnrichedTopics: false },
+  automation: {
+    autoApproveEnrichedTopics: false,
+    autoApproveVerifiedRelations: false,
+  },
+  media: {
+    autoApproveHighConfidenceEnabled: false,
+    autoApproveThreshold: 0.95,
+    topicFiguresEnabled: false,
+  },
   clarificationFields: [...DEFAULT_CLARIFICATION_FIELDS],
   fields: BASE_FIELDS,
   id: "generic",
@@ -125,11 +174,11 @@ export const GENERIC_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   relations: [...DEFAULT_RELATIONS],
   types: {
     concept: { category: "concepts", label: "Concept" },
+    entity: { category: "concepts", label: "Entity" },
     metric: { category: "references", label: "Metric" },
     policy: { category: "concepts", label: "Policy" },
     procedure: { category: "procedures", label: "Procedure" },
     reference: { category: "references", label: "Reference" },
-    source_manifest: { category: "indexes", label: "Source manifest" },
     system: { category: "concepts", label: "System" },
     system_topic: { category: "concepts", label: "System topic" },
   },
@@ -141,11 +190,36 @@ export const AVIATION_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
   fields: {
     ...BASE_FIELDS,
     aircraft_family: { type: "string" },
+    aircraft_family_ids: { type: "string_array" },
+    aircraft_type_ids: { type: "string_array" },
+    applicability_scope: { type: "string" },
+    applicability_status: { type: "string" },
+    applicability_confidence: { type: "number" },
+    applicability_evidence: { type: "string_array" },
+    applicability_model: { type: "string" },
     aircraft_variant: { type: "string" },
     ata: { type: "string" },
     effectivity: { type: "string" },
     manual_type: { type: "string" },
+    source_classification: { type: "string" },
+    license_identifier: { type: "string" },
+    intended_audiences: { type: "string_array" },
+    content_purpose: { type: "string" },
     revision: { type: "string" },
+    source_authority: { type: "string" },
+    efb_entry_id: { type: "string" },
+    efb_audiences: { type: "string_array" },
+    efb_aircraft_type_ids: { type: "string_array" },
+    efb_aircraft_family_ids: { type: "string_array" },
+    efb_placements: { type: "string_array" },
+    efb_authority_label: { type: "string" },
+    efb_license_identifier: { type: "string" },
+    efb_license_reviewed_by: { type: "string" },
+    efb_license_reviewed_at: { type: "date" },
+    efb_content_purpose: { type: "string" },
+    efb_inclusion_status: { type: "string" },
+    efb_related_entry_ids: { type: "string_array" },
+    efb_source_classification: { type: "string" },
   },
   id: "aviation",
   name: "Aviation",
@@ -172,6 +246,37 @@ export function normalizeKnowledgeProfile(
   profile: KnowledgeProfileSchema,
 ): KnowledgeProfileSchema {
   const normalized = structuredClone(profile);
+  normalized.okfVersion = normalized.okfVersion === "0.2" ? "0.2" : "0.1";
+  if (
+    ["generic", "aviation"].includes(normalized.id) &&
+    !normalized.types.entity
+  ) {
+    normalized.types.entity = { category: "concepts", label: "Entity" };
+  }
+  if (
+    ["generic", "aviation"].includes(normalized.id) &&
+    !normalized.fields.entity_type
+  ) {
+    normalized.fields.entity_type = { type: "string" };
+  }
+  if (normalized.id === "aviation") {
+    normalized.fields.aircraft_family_ids ??= { type: "string_array" };
+    normalized.fields.aircraft_type_ids ??= { type: "string_array" };
+    normalized.fields.applicability_scope ??= { type: "string" };
+    normalized.fields.applicability_status ??= { type: "string" };
+    normalized.fields.applicability_confidence ??= { type: "number" };
+    normalized.fields.applicability_evidence ??= { type: "string_array" };
+    normalized.fields.applicability_model ??= { type: "string" };
+    normalized.fields.source_classification ??= { type: "string" };
+    normalized.fields.license_identifier ??= { type: "string" };
+    normalized.fields.intended_audiences ??= { type: "string_array" };
+    normalized.fields.content_purpose ??= { type: "string" };
+  }
+  if (["generic", "aviation"].includes(normalized.id)) {
+    normalized.relations = [
+      ...new Set([...DEFAULT_RELATIONS, ...(normalized.relations ?? [])]),
+    ];
+  }
   normalized.agent = {
     boundedAdaptiveRetryEnabled:
       normalized.agent?.boundedAdaptiveRetryEnabled === true,
@@ -179,6 +284,18 @@ export function normalizeKnowledgeProfile(
   normalized.automation = {
     autoApproveEnrichedTopics:
       normalized.automation?.autoApproveEnrichedTopics === true,
+    autoApproveVerifiedRelations:
+      normalized.automation?.autoApproveVerifiedRelations === true,
+  };
+  normalized.media = {
+    autoApproveHighConfidenceEnabled:
+      normalized.media?.autoApproveHighConfidenceEnabled === true,
+    autoApproveThreshold:
+      typeof normalized.media?.autoApproveThreshold === "number" &&
+        Number.isFinite(normalized.media.autoApproveThreshold)
+        ? Math.max(0.95, Math.min(1, normalized.media.autoApproveThreshold))
+        : 0.95,
+    topicFiguresEnabled: normalized.media?.topicFiguresEnabled === true,
   };
   if (!Array.isArray(normalized.clarificationFields)) {
     normalized.clarificationFields = ["generic", "aviation"].includes(normalized.id)
@@ -208,16 +325,42 @@ export function getTypeDirectory(profile: KnowledgeProfileSchema, type: string):
 
 export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): string[] {
   const errors: string[] = [];
+  if (profile.okfVersion !== "0.2") {
+    errors.push("knowledge_profile_okf_v02_required");
+  }
   if (typeof profile.agent?.boundedAdaptiveRetryEnabled !== "boolean") {
     errors.push("knowledge_profile_agent_invalid");
   }
-  if (typeof profile.automation?.autoApproveEnrichedTopics !== "boolean") {
+  if (
+    typeof profile.automation?.autoApproveEnrichedTopics !== "boolean" ||
+    typeof profile.automation?.autoApproveVerifiedRelations !== "boolean"
+  ) {
     errors.push("knowledge_profile_automation_invalid");
+  }
+  if (
+    typeof profile.media?.topicFiguresEnabled !== "boolean" ||
+    typeof profile.media?.autoApproveHighConfidenceEnabled !== "boolean" ||
+    typeof profile.media?.autoApproveThreshold !== "number" ||
+    !Number.isFinite(profile.media.autoApproveThreshold) ||
+    profile.media.autoApproveThreshold < 0.95 ||
+    profile.media.autoApproveThreshold > 1
+  ) {
+    errors.push("knowledge_profile_media_invalid");
   }
   if (profile.fields.type?.required !== true || profile.fields.type.type !== "string") {
     errors.push("knowledge_profile_type_field_required");
   }
-  for (const field of ["title", "description", "tags", "updated"]) {
+  for (const field of [
+    "title",
+    "description",
+    "resource",
+    "tags",
+    "sources",
+    "generated",
+    "verified",
+    "status",
+    "stale_after",
+  ]) {
     if (!profile.fields[field]) errors.push(`knowledge_profile_base_field_missing:${field}`);
   }
   if (Object.keys(profile.types).length === 0) errors.push("knowledge_profile_types_required");
@@ -232,10 +375,10 @@ export function validateKnowledgeProfile(profile: KnowledgeProfileSchema): strin
     }
     seenClarificationFields.add(field);
     const definition = profile.fields[field];
-    if (!definition) {
-      errors.push(`knowledge_profile_clarification_field_unknown:${field}`);
-    } else if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) {
+    if (PROHIBITED_CLARIFICATION_FIELDS.has(field)) {
       errors.push(`knowledge_profile_clarification_field_prohibited:${field}`);
+    } else if (!definition) {
+      errors.push(`knowledge_profile_clarification_field_unknown:${field}`);
     } else if (!CLARIFICATION_FIELD_TYPES.has(definition.type)) {
       errors.push(`knowledge_profile_clarification_field_type_unsupported:${field}`);
     }

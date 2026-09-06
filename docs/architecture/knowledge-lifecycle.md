@@ -47,7 +47,12 @@ Deletion paths use the shared realpath boundary guard. Missing files and objects
 
 `TopicRecord.exportedFilePath` is the primary source-to-file mapping. Legacy records use the stable SHA-256 topic-ID fragment in generated filenames.
 
-Deletion removes exact links from `index.md`, removes the source-manifest entry only when no surviving exported document with the same title needs it, and removes obsolete export/re-export log lines. Typed relations targeting deleted concepts are pruned from surviving topic drafts and frontmatter. Relation changes update `updated` and queue replacement semantic embeddings.
+Deletion removes exact links from `index.md` and deletes a portable source-reference
+concept only when no surviving concept still cites it. Obsolete export/re-export
+log lines are removed. Typed relations targeting deleted concepts are pruned
+from surviving topic drafts, typed frontmatter, and portable Markdown relation
+links. Relation changes record `av_okf_relation_updated_at` and queue replacement
+semantic embeddings.
 
 ## Chat History
 

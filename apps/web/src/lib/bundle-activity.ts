@@ -1,0 +1,406 @@
+import { createHash } from "node:crypto";
+
+import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import { getKnowledgeBundle } from "./knowledge-bundles.ts";
+import { getPrisma } from "./prisma.ts";
+import { isProductionBackend } from "./production-document-service.ts";
+import type { OperationProgress, OperationProgressSnapshot } from "./operation-progress.ts";
+
+export type BundleActivityStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "action_required"
+  | "failed";
+
+export type BundleActivityItem = {
+  id: string;
+  documentId?: string;
+  occurredAt: string;
+  stage: string;
+  status: BundleActivityStatus;
+  title: string;
+  detail: string;
+  resultCount?: number;
+  actionHref?: string;
+};
+
+export type BundleActivitySnapshot = {
+  active: boolean;
+  fingerprint: string;
+  items: BundleActivityItem[];
+  summary: {
+    processing: number;
+    awaitingReview: number;
+    failed: number;
+    completed: number;
+  };
+};
+
+export function buildBundleActivityProgressSnapshot(snapshot: BundleActivitySnapshot): OperationProgressSnapshot<BundleActivitySnapshot> {
+  const operations: OperationProgress[] = snapshot.items.filter((item) => item.status === "queued" || item.status === "running").map((item) => ({
+    ...(item.actionHref ? { action: { href: item.actionHref, label: "Open" } } : {}),
+    detail: item.detail,
+    id: item.id,
+    kind: "bundle_activity",
+    label: item.title,
+    stage: item.stage,
+    status: item.status,
+    updatedAt: item.occurredAt,
+  }));
+  return { active: snapshot.active, data: snapshot, fingerprint: snapshot.fingerprint, generatedAt: new Date().toISOString(), operations };
+}
+
+export async function getBundleActivitySnapshot({
+  bundleId,
+  context,
+}: {
+  bundleId: string;
+  context: AuthWorkspaceContext;
+}): Promise<BundleActivitySnapshot> {
+  const bundle = await getKnowledgeBundle({ bundleId, context });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  if (!isProductionBackend()) return buildBundleActivitySnapshot([]);
+
+  const prisma = getPrisma();
+  const [
+    documents,
+    authoringRuns,
+    bulkRuns,
+    relationRuns,
+    entityJobs,
+    entityRuns,
+    topicExpansionRuns,
+    topicExpansionBatches,
+  ] = await Promise.all([
+    prisma.document.findMany({
+      orderBy: { updatedAt: "desc" },
+      select: {
+        activityEvents: { orderBy: { createdAt: "desc" }, take: 8 },
+        extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
+        id: true,
+        title: true,
+        topicRecords: {
+          orderBy: { updatedAt: "desc" },
+          select: { updatedAt: true },
+          where: { reviewStatus: "needs_review" },
+        },
+        topicDiscoveryJobs: {
+          orderBy: { queuedAt: "desc" },
+          take: 1,
+          where: {
+            OR: [
+              { errorCode: null },
+              { errorCode: { not: "topic_discovery_superseded_by_active_job" } },
+            ],
+          },
+        },
+      },
+      where: { deletedAt: null, knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.knowledgeAuthoringRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+      include: { document: { select: { title: true } } },
+    }),
+    prisma.bulkTopicApprovalRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+      include: { items: { select: { status: true } } },
+    }),
+    prisma.okfRelationDiscoveryRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.entityExtractionJob.findMany({
+      include: { topic: { select: { title: true, enrichedTitle: true } } },
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.entityExpansionRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 30,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.topicExpansionRun.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+    prisma.topicExpansionEnrichmentBatch.findMany({
+      include: { items: { select: { status: true } } },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      where: { knowledgeBundleId: bundleId, workspaceId: context.workspaceId },
+    }),
+  ]);
+
+  const items: BundleActivityItem[] = [];
+  for (const document of documents) {
+    const extraction = document.extractionJobs[0];
+    if (extraction) {
+      items.push({
+        id: `extraction:${extraction.id}`,
+        documentId: document.id,
+        occurredAt: (extraction.completedAt ?? extraction.startedAt ?? extraction.queuedAt).toISOString(),
+        stage: "Text extraction",
+        status: normalizeJobStatus(extraction.status),
+        title: document.title,
+        detail: extraction.errorMessage ?? describeStatus("Text extraction", extraction.status),
+        actionHref: `/documents/${encodeURIComponent(document.id)}?panel=processing`,
+      });
+    }
+    const discovery = document.topicDiscoveryJobs[0];
+    if (discovery) {
+      items.push({
+        id: `discovery:${discovery.id}`,
+        documentId: document.id,
+        occurredAt: (discovery.completedAt ?? discovery.startedAt ?? discovery.queuedAt).toISOString(),
+        stage: "Concept discovery",
+        status: normalizeJobStatus(discovery.status),
+        title: document.title,
+        detail: discovery.errorMessage ?? (discovery.totalWindows > 0
+          ? `${discovery.completedWindows} of ${discovery.totalWindows} document windows analyzed`
+          : describeStatus("Concept discovery", discovery.status)),
+        resultCount: discovery.completedWindows,
+        actionHref: `/documents/${encodeURIComponent(document.id)}?panel=processing`,
+      });
+    }
+    for (const event of document.activityEvents) {
+      items.push({
+        id: `event:${event.id}`,
+        documentId: document.id,
+        occurredAt: event.createdAt.toISOString(),
+        stage: event.label,
+        status: normalizeBundleActivityEventStatus(event.status),
+        title: document.title,
+        detail: event.label,
+        actionHref: `/documents/${encodeURIComponent(document.id)}?panel=logs`,
+      });
+    }
+    const reviewItem = buildTopicReviewActivityItem({
+      bundleId,
+      documentId: document.id,
+      occurredAt: document.topicRecords[0]?.updatedAt.toISOString(),
+      title: document.title,
+      topicCount: document.topicRecords.length,
+    });
+    if (reviewItem) items.push(reviewItem);
+  }
+
+  for (const run of authoringRuns) {
+    items.push({
+      id: `authoring:${run.id}`,
+      documentId: run.documentId,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: formatStage(run.currentStage),
+      status: normalizeAuthoringStatus(run.status),
+      title: run.document.title,
+      detail: run.errorMessage ?? describeStatus(formatStage(run.currentStage), run.status),
+      actionHref: `/documents/${encodeURIComponent(run.documentId)}?panel=processing`,
+    });
+  }
+
+  for (const run of bulkRuns) {
+    const succeeded = run.items.filter((item) => item.status === "succeeded").length;
+    const failed = run.items.filter((item) => item.status === "failed").length;
+    items.push({
+      id: `bulk:${run.id}`,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: "Topic approval and export",
+      status: normalizeBulkStatus(run.status),
+      title: run.mode === "automated" ? "Automatic topic approval" : "Bulk topic approval",
+      detail: run.errorMessage ?? `${succeeded} exported${failed > 0 ? `, ${failed} failed` : ""}`,
+      resultCount: succeeded,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/review/${encodeURIComponent(run.id)}`,
+    });
+  }
+
+  for (const run of relationRuns) {
+    items.push({
+      id: `relations:${run.id}`,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: "Relation verification",
+      status: normalizeRelationStatus(run.status, run.failedCount),
+      title: "Relation discovery",
+      detail: `${run.confirmedCount} confirmed, ${run.filteredCount} filtered, ${run.failedCount} failed`,
+      resultCount: run.confirmedCount,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/relations`,
+    });
+  }
+
+  for (const job of entityJobs) {
+    items.push({
+      id: `entity-extraction:${job.id}`,
+      documentId: job.documentId,
+      occurredAt: job.updatedAt.toISOString(),
+      stage: "Entities and connections",
+      status: normalizeJobStatus(job.status),
+      title: job.topic.enrichedTitle ?? job.topic.title,
+      detail: job.errorMessage ?? `${job.entityCount} entities and ${job.relationCount} grounded relation assertions`,
+      resultCount: job.entityCount + job.relationCount,
+      actionHref: `/documents/${encodeURIComponent(job.documentId)}?panel=processing`,
+    });
+  }
+
+  for (const run of entityRuns) {
+    items.push({
+      id: `entity-expansion:${run.id}`,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: "Entity connection expansion",
+      status: normalizeJobStatus(run.status),
+      title: run.mode === "full" ? "Full entity reconciliation" : "Incremental entity reconciliation",
+      detail: run.errorMessage ?? `${run.resolvedCount} resolved, ${run.queuedCount} queued for verification, ${run.filteredCount} filtered`,
+      resultCount: run.resolvedCount,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/graph?mode=entities`,
+    });
+  }
+
+  for (const run of topicExpansionRuns) {
+    items.push({
+      id: `topic-expansion:${run.id}`,
+      occurredAt: run.updatedAt.toISOString(),
+      stage: "Topic expansion",
+      status: normalizeTopicExpansionStatus(run.status),
+      title: "Approved knowledge crawl",
+      detail: run.errorMessage ?? describeTopicExpansionRun(run),
+      resultCount: run.proposedCount,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/topic-expansion`,
+    });
+  }
+
+  for (const batch of topicExpansionBatches) {
+    const succeeded = batch.items.filter((item) => item.status === "succeeded").length;
+    const failed = batch.items.filter((item) => item.status === "failed").length;
+    const active = batch.items.filter((item) => ["pending", "queued", "running"].includes(item.status)).length;
+    items.push({
+      id: `topic-expansion-enrichment:${batch.id}`,
+      occurredAt: batch.updatedAt.toISOString(),
+      stage: "Expanded topic enrichment",
+      status: normalizeTopicExpansionStatus(batch.status),
+      title: "Topic expansion enrichment",
+      detail: batch.status === "awaiting_confirmation"
+        ? `${batch.items.length} selected topics are awaiting cost confirmation`
+        : `${succeeded} enriched, ${active} processing${failed > 0 ? `, ${failed} failed` : ""}`,
+      resultCount: succeeded,
+      actionHref: `/knowledge/${encodeURIComponent(bundleId)}/topic-expansion?batch=${encodeURIComponent(batch.id)}`,
+    });
+  }
+
+  return buildBundleActivitySnapshot(items);
+}
+
+export function buildTopicReviewActivityItem(input: {
+  bundleId: string;
+  documentId: string;
+  occurredAt?: string;
+  title: string;
+  topicCount: number;
+}): BundleActivityItem | null {
+  if (input.topicCount <= 0 || !input.occurredAt) return null;
+  return {
+    id: `review:${input.documentId}`,
+    documentId: input.documentId,
+    occurredAt: input.occurredAt,
+    stage: "Topic review",
+    status: "action_required",
+    title: input.title,
+    detail: `${input.topicCount} ${input.topicCount === 1 ? "topic needs" : "topics need"} review`,
+    resultCount: input.topicCount,
+    actionHref: `/knowledge/${encodeURIComponent(input.bundleId)}/review?documentId=${encodeURIComponent(input.documentId)}`,
+  };
+}
+
+export function buildBundleActivitySnapshot(items: BundleActivityItem[]): BundleActivitySnapshot {
+  const sorted = [...items]
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || a.id.localeCompare(b.id))
+    .slice(0, 150);
+  const active = sorted.some((item) => item.status === "queued" || item.status === "running");
+  const fingerprint = createHash("sha256")
+    .update(sorted.map((item) => `${item.id}:${item.status}:${item.occurredAt}:${item.detail}`).join("|"))
+    .digest("hex");
+  return {
+    active,
+    fingerprint,
+    items: sorted,
+    summary: {
+      processing: sorted.filter((item) => item.status === "queued" || item.status === "running").length,
+      awaitingReview: sorted.filter((item) => item.status === "action_required").length,
+      failed: sorted.filter((item) => item.status === "failed").length,
+      completed: sorted.filter((item) => item.status === "completed").length,
+    },
+  };
+}
+
+function normalizeJobStatus(status: string): BundleActivityStatus {
+  if (["queued", "analyzing", "consolidating"].includes(status)) return status === "queued" ? "queued" : "running";
+  if (["running", "processing", "exporting", "approving"].includes(status)) return "running";
+  if (["failed", "completed_with_failures"].includes(status)) return "failed";
+  if (["needs_review", "awaiting_confirmation", "ready"].includes(status)) return "action_required";
+  return "completed";
+}
+
+function normalizeAuthoringStatus(status: string): BundleActivityStatus {
+  if (["queued", "running"].includes(status)) return status as "queued" | "running";
+  if (["failed", "blocked"].includes(status)) return "failed";
+  if (["awaiting_cost_confirmation", "ready", "review_required"].includes(status)) return "action_required";
+  return "completed";
+}
+
+function normalizeBulkStatus(status: string): BundleActivityStatus {
+  if (status === "queued") return "queued";
+  if (status === "running") return "running";
+  if (status === "awaiting_confirmation") return "action_required";
+  if (["failed", "completed_with_failures"].includes(status)) return "failed";
+  return "completed";
+}
+
+function normalizeRelationStatus(status: string, failedCount: number): BundleActivityStatus {
+  if (["queued", "running"].includes(status)) return status as "queued" | "running";
+  if (failedCount > 0 || status === "failed") return "failed";
+  return "completed";
+}
+
+function normalizeTopicExpansionStatus(status: string): BundleActivityStatus {
+  if (status === "queued") return "queued";
+  if (["running", "cancellation_requested"].includes(status)) return "running";
+  if (["awaiting_confirmation", "awaiting_provider"].includes(status)) return "action_required";
+  if (["failed", "completed_with_failures"].includes(status)) return "failed";
+  return "completed";
+}
+
+function describeTopicExpansionRun(run: {
+  analyzedConceptCount: number;
+  approvedConceptCount: number;
+  filteredCount: number;
+  proposedCount: number;
+  status: string;
+}) {
+  if (run.status === "awaiting_confirmation") {
+    return `${run.approvedConceptCount} approved concepts are ready for analysis confirmation`;
+  }
+  if (["queued", "running"].includes(run.status)) {
+    return `${run.analyzedConceptCount} of ${run.approvedConceptCount} approved concepts analyzed`;
+  }
+  return `${run.proposedCount} proposed, ${run.filteredCount} filtered`;
+}
+
+export function normalizeBundleActivityEventStatus(status: string): BundleActivityStatus {
+  // ActivityEvent rows are immutable historical observations. Current work is
+  // represented by its job/run record, so old processing, failure, or review
+  // events must not keep polling or attention counts alive after resolution.
+  void status;
+  return "completed";
+}
+
+function formatStage(stage: string) {
+  return stage.replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
+}
+
+function describeStatus(stage: string, status: string) {
+  return `${stage} is ${status.replaceAll("_", " ")}.`;
+}

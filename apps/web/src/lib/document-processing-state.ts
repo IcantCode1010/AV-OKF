@@ -3,13 +3,20 @@ import type {
   ExtractionStatus,
   TopicDiscoveryStatus,
 } from "./document-vault.ts";
+import type { DocumentBatchProgress } from "./document-batch-progress.ts";
 
 export type DocumentProcessingStageId =
   | "upload"
+  | "inspection"
   | "extraction"
   | "metadata_discovery"
+  | "applicability_classification"
   | "concept_discovery"
+  | "media_discovery"
+  | "full_rag_index"
   | "enrichment"
+  | "efb_classification"
+  | "entity_connections"
   | "relation_classification"
   | "validation"
   | "review_export";
@@ -70,11 +77,22 @@ export type DocumentProcessingFingerprintSnapshot = {
     itemStatuses: string[];
     status: string;
   } | null;
+  entityConnections?: {
+    completed: number;
+    failed: number;
+    queued: number;
+    running: number;
+  } | null;
   extraction: {
+    completedBatches?: number;
     errorCode: string | null;
+    inspectionStatus?: string;
+    ocrPageCount?: number;
     pageCount: number;
     status: string;
+    totalBatches?: number;
   };
+  ragIndex?: { completedBatches: number; status: string; totalBatches: number } | null;
   topicDiscovery: {
     completedWindows: number;
     errorMessage: string | null;
@@ -85,8 +103,12 @@ export type DocumentProcessingFingerprintSnapshot = {
 
 const authoringStageIds: DocumentProcessingStageId[] = [
   "metadata_discovery",
+  "applicability_classification",
   "concept_discovery",
+  "media_discovery",
+  "full_rag_index",
   "enrichment",
+  "efb_classification",
   "relation_classification",
   "validation",
 ];
@@ -111,6 +133,10 @@ const stageCopy: Record<
     detail: "The source PDF is stored securely in its assigned knowledge bundle.",
     label: "PDF uploaded",
   },
+  inspection: {
+    detail: "Checking PDF integrity, encryption, page count, and which pages require OCR.",
+    label: "PDF inspection",
+  },
   extraction: {
     detail: "Reading the PDF and creating page-level source records.",
     label: "Text extraction",
@@ -119,17 +145,37 @@ const stageCopy: Record<
     detail: "Identifying useful document metadata from the extracted source.",
     label: "Metadata discovery",
   },
+  applicability_classification: {
+    detail: "Classifying document applicability from exact source evidence when the source type supports it.",
+    label: "Applicability classification",
+  },
   concept_discovery: {
     detail: "Finding and consolidating the concepts discussed in the document.",
     label: "Concept discovery",
+  },
+  media_discovery: {
+    detail: "Extracting source-grounded figure crops and associating them with exact-page topics for review.",
+    label: "Figure discovery",
+  },
+  full_rag_index: {
+    detail: "Building a complete, inactive search index across every readable nonblank page.",
+    label: "Full-document search index",
   },
   enrichment: {
     detail: "Preparing grounded titles, summaries, and article content for review.",
     label: "Topic enrichment",
   },
+  efb_classification: {
+    detail: "Classifying article applicability, audience, and supported placement from exact source evidence when the source type supports it.",
+    label: "Article classification",
+  },
+  entity_connections: {
+    detail: "Extracting grounded entities and explicit connection evidence in bounded background jobs.",
+    label: "Entities and connections",
+  },
   relation_classification: {
-    detail: "Identifying possible relationships between concepts for later review.",
-    label: "Relation classification",
+    detail: "Finding explicit relationships between this document's concepts and verifying them against source evidence.",
+    label: "Local relation discovery",
   },
   validation: {
     detail: "Checking source coverage, metadata readiness, and review requirements.",
@@ -145,12 +191,16 @@ export function buildDocumentProcessingState(input: {
   authoringRun: ProcessingAuthoringRun | null;
   bundleName: string;
   document: Pick<Document, "extraction" | "storageKey" | "topicDiscovery">;
+  extractionProgress?: DocumentBatchProgress | null;
+  entityConnections?: { completed: number; failed: number; queued: number; running: number } | null;
+  reviewTopicCount?: number;
   topicCount: number;
 }): DocumentProcessingState {
   const stages = initializeStages();
   stages[0] = stage("upload", input.document.storageKey ? "completed" : "skipped");
-  stages[1] = stage("extraction", extractionStageStatus(input.document.extraction.status),
-    extractionDetail(input.document.extraction.status));
+  stages[1] = stage("inspection", inspectionStageStatus(input.document.extraction.status, input.extractionProgress));
+  stages[2] = stage("extraction", extractionStageStatus(input.document.extraction.status),
+    extractionDetail(input.document.extraction.status, input.extractionProgress));
 
   const run = input.authoringRun;
   if (input.document.extraction.status === "failed") {
@@ -160,7 +210,7 @@ export function buildDocumentProcessingState(input: {
     return finish(stages, false, false, input.bundleName);
   }
   if (!run) {
-    stages[2] = stage(
+    stages[stageIndex("metadata_discovery")] = stage(
       "metadata_discovery",
       "action_required",
       "Extraction is complete. Start AI-assisted authoring when you are ready.",
@@ -171,8 +221,24 @@ export function buildDocumentProcessingState(input: {
   for (const id of authoringStageIds) {
     stages[stageIndex(id)] = deriveAuthoringStage(id, run, input.document.topicDiscovery);
   }
-  stages[7] = deriveReviewStage(run, input.topicCount);
+  stages[stageIndex("entity_connections")] = deriveEntityConnectionStage(run, input.entityConnections, input.topicCount);
+  stages[stageIndex("review_export")] = deriveReviewStage(run, input.reviewTopicCount ?? input.topicCount);
 
+  const proposalsOnly = run.status === "ready_for_review" &&
+    (run.currentStage === "topic_selection" || (run.completedStages.includes("full_rag_index") && !run.completedStages.includes("enrichment")));
+  if (proposalsOnly) {
+    for (const id of ["enrichment", "efb_classification", "validation"] as const) {
+      stages[stageIndex(id)] = stage(id, "skipped", "Runs after you select a topic for article drafting.");
+    }
+    stages[stageIndex("relation_classification")] = stage("relation_classification", "completed", "Source relationship candidates prepared for review.");
+    stages[stageIndex("entity_connections")] = deriveEntityConnectionStage({...run, completedStages:[...run.completedStages,"enrichment"]}, input.entityConnections, input.topicCount);
+    stages[stageIndex("review_export")] = {
+      ...stage("review_export", input.topicCount ? "action_required" : "completed",
+        input.topicCount ? `${input.topicCount} discovered topics are ready to draft. Titles and summaries come from source discovery; articles have not been enriched or approved. Select the topics you want to develop.` : "No topics were discovered. Inspect the extracted source before drafting."),
+      label: "Select topics to draft",
+    };
+    return finish(stages, false, true, input.bundleName);
+  }
   return finish(stages, run.automaticTopicApprovalEnabled, true, input.bundleName);
 }
 
@@ -199,10 +265,12 @@ export function shouldPollDocumentProcessing(input: {
   automaticApprovalStatus?: string;
   derivedProcessingActive?: boolean;
   extractionStatus: ExtractionStatus;
+  entityConnectionsActive?: boolean;
   topicDiscoveryStatus?: TopicDiscoveryStatus;
 }) {
   return (
     input.derivedProcessingActive === true ||
+    input.entityConnectionsActive === true ||
     isActiveExtractionStatus(input.extractionStatus) ||
     isActiveDiscoveryStatus(input.topicDiscoveryStatus ?? "not_started") ||
     ["queued", "running"].includes(input.authoringStatus ?? "") ||
@@ -213,6 +281,7 @@ export function shouldPollDocumentProcessing(input: {
 export function buildDocumentProcessingFingerprint(input: {
   authoringRun: ProcessingAuthoringRun | null;
   document: Pick<Document, "extraction" | "topicDiscovery">;
+  entityConnections?: { completed: number; failed: number; queued: number; running: number } | null;
 }) {
   const automaticRun = input.authoringRun?.automaticApprovalRun;
   return serializeDocumentProcessingFingerprint({
@@ -232,6 +301,7 @@ export function buildDocumentProcessingFingerprint(input: {
           status: automaticRun.status,
         }
       : null,
+    ...(input.entityConnections ? { entityConnections: input.entityConnections } : {}),
     extraction: {
       errorCode: input.document.extraction.error?.code ?? null,
       pageCount: input.document.extraction.pageRecords.length,
@@ -246,6 +316,32 @@ export function buildDocumentProcessingFingerprint(input: {
         }
       : null,
   });
+}
+
+function deriveEntityConnectionStage(
+  run: ProcessingAuthoringRun,
+  status: { completed: number; failed: number; queued: number; running: number } | null | undefined,
+  topicCount: number,
+) {
+  if (!run.completedStages.includes("enrichment")) return stage("entity_connections", "waiting");
+  if (!status) {
+    return topicCount > 0 && !["ready_for_review", "completed"].includes(run.status)
+      ? stage("entity_connections", "queued", "Grounded entity extraction will continue in the background.")
+      : stage("entity_connections", "skipped", topicCount > 0 ? "No entity extraction job was recorded for this run." : "No enriched topics are available for entity extraction.");
+  }
+  if (status.running > 0) return stage("entity_connections", "running", `${status.running} topic extraction ${status.running === 1 ? "job is" : "jobs are"} running.`);
+  if (status.queued > 0) return stage("entity_connections", "queued", `${status.queued} topic extraction ${status.queued === 1 ? "job is" : "jobs are"} queued.`);
+  if (status.failed > 0) return stage("entity_connections", "action_required", `${status.completed} completed; ${status.failed} require retry. Topic review and export remain available.`);
+  return stage("entity_connections", "completed", `${status.completed} grounded entity extraction ${status.completed === 1 ? "job is" : "jobs are"} complete.`);
+}
+
+export function resolveDocumentProcessingFingerprint(input: {
+  authoringRun: ProcessingAuthoringRun | null;
+  document: Pick<Document, "extraction" | "topicDiscovery">;
+  productionSnapshot?: { fingerprint: string } | null;
+}) {
+  return input.productionSnapshot?.fingerprint
+    ?? buildDocumentProcessingFingerprint(input);
 }
 
 export function serializeDocumentProcessingFingerprint(
@@ -307,6 +403,13 @@ function deriveReviewStage(
     return stage("review_export", "waiting");
   }
   if (!run.automaticTopicApprovalEnabled) {
+    if (topicCount === 0) {
+      return stage(
+        "review_export",
+        "completed",
+        "All discovered topics have been reviewed.",
+      );
+    }
     return stage(
       "review_export",
       "action_required",
@@ -397,10 +500,21 @@ function extractionStageStatus(status: ExtractionStatus): DocumentProcessingStag
   return status;
 }
 
-function extractionDetail(status: ExtractionStatus) {
+function extractionDetail(status: ExtractionStatus, progress?: DocumentBatchProgress | null) {
+  if ((status === "queued" || status === "running") && progress?.totalBatches) {
+    return `Extracted ${progress.completedPages} of ${progress.totalPages} pages across ${progress.completedBatches} of ${progress.totalBatches} batches. OCR pages: ${progress.ocrPages}.`;
+  }
   if (status === "failed") return "Text extraction failed. Review the error and retry the stored PDF.";
   if (status === "completed") return "Page-level source records are ready for downstream processing.";
   return stageCopy.extraction.detail;
+}
+
+function inspectionStageStatus(status: ExtractionStatus, progress?: DocumentBatchProgress | null): DocumentProcessingStageStatus {
+  if (progress?.inspectionStatus === "action_required") return "action_required";
+  if (progress?.inspectionStatus === "completed") return "completed";
+  if (status === "failed") return "failed";
+  if (status === "running") return "running";
+  return status === "queued" ? "queued" : "waiting";
 }
 
 function discoveryProgress(discovery: Document["topicDiscovery"]) {

@@ -10,6 +10,12 @@ const DEFAULT_OVERLAP_TOKENS = 120;
 export const RAG_CHUNK_STRATEGIES = [
   {
     description:
+      "Keeps detected section headings as hard chunk boundaries and embeds deterministic document, section, and page context while preserving clean source citations.",
+    id: "section-context-v3",
+    label: "Section-aware + context (v3)",
+  },
+  {
+    description:
       "Splits extracted page text into paragraph units and embeds deterministic document, section, and page context while preserving clean source citations.",
     id: "paragraph-context-v2",
     label: "Paragraph + context (v2)",
@@ -17,6 +23,7 @@ export const RAG_CHUNK_STRATEGIES = [
 ] as const;
 
 type TextUnit = {
+  headingPath: string[];
   pageNumber: number;
   text: string;
   tokenCount: number;
@@ -40,24 +47,11 @@ export function chunkExtractedPages(
 ): RagChunkRecord[] {
   const tokenCounter = input.tokenCounter ?? getTokenCounter();
   const config = resolveChunkConfig(input);
-  const textUnits = input.pages.flatMap((page) =>
-    page.text
-      .split(/\n\s*\n/)
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean)
-      .flatMap((text) =>
-        splitUnitToContextualMaxTokens(
-          {
-            pageNumber: page.pageNumber,
-            text,
-            tokenCount: tokenCounter.count(text),
-          },
-          tokenCounter,
-          config,
-          input,
-        ),
-      ),
-  );
+  const chunkingStrategyId = input.chunkingStrategyId ?? RAG_CHUNK_STRATEGIES[0].id;
+  const textUnits = (chunkingStrategyId === "paragraph-context-v2"
+    ? buildParagraphTextUnits(input.pages, tokenCounter)
+    : buildSectionAwareTextUnits(input.pages, tokenCounter))
+    .flatMap((unit) => splitUnitToContextualMaxTokens(unit, tokenCounter, config, input));
 
   const chunks: RagChunkRecord[] = [];
   const emittedHashes = new Set<string>();
@@ -65,6 +59,15 @@ export function chunkExtractedPages(
   let bufferHasNewContent = false;
 
   for (const unit of textUnits) {
+    if (
+      buffer.length > 0 &&
+      bufferHasNewContent &&
+      !sameHeadingPath(buffer[0]!.headingPath, unit.headingPath)
+    ) {
+      emitChunk(input, chunks, buffer, tokenCounter, emittedHashes, config);
+      buffer = [];
+      bufferHasNewContent = false;
+    }
     const targetCandidate = [...buffer, unit];
 
     if (
@@ -140,7 +143,7 @@ function createChunk(
   const text = units.map((unit) => unit.text).join("\n\n");
   const pageStart = Math.min(...sourcePageNumbers);
   const pageEnd = Math.max(...sourcePageNumbers);
-  const headingPath = inferHeadingPath(text);
+  const headingPath = units.find((unit) => unit.headingPath.length > 0)?.headingPath ?? inferHeadingPath(text);
   const embeddingText = buildContextualEmbeddingText(input, {
     headingPath,
     pageEnd,
@@ -151,6 +154,7 @@ function createChunk(
 
   return {
     chunkOrdinal: ordinal,
+    chunkingStrategyId: input.chunkingStrategyId ?? RAG_CHUNK_STRATEGIES[0].id,
     contentHash,
     documentId: input.documentId,
     embeddingText,
@@ -213,6 +217,56 @@ function inferHeadingPath(text: string): string[] {
   return firstLine ? [firstLine.slice(0, 120)] : [];
 }
 
+function buildSectionAwareTextUnits(
+  pages: RagChunkInput["pages"],
+  tokenCounter: TokenCounter,
+) {
+  const units: TextUnit[] = [];
+  let activeHeading: string[] = [];
+  for (const page of pages) {
+    const paragraphs = page.text
+      .split(/\n\s*\n/)
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+    for (const paragraph of paragraphs) {
+      const firstLine = paragraph.split(/\r?\n/, 1)[0]?.trim() ?? "";
+      if (isLikelySectionHeading(firstLine)) activeHeading = [firstLine.slice(0, 120)];
+      units.push(createTextUnit(paragraph, page.pageNumber, tokenCounter, activeHeading));
+    }
+  }
+  return units;
+}
+
+function buildParagraphTextUnits(
+  pages: RagChunkInput["pages"],
+  tokenCounter: TokenCounter,
+) {
+  return pages.flatMap((page) => page.text
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => createTextUnit(paragraph, page.pageNumber, tokenCounter)));
+}
+
+function isLikelySectionHeading(line: string) {
+  const normalized = line.replace(/\s+/g, " ").trim();
+  if (normalized.length < 3 || normalized.length > 120 || /[.!?;:]$/.test(normalized)) return false;
+  const words = normalized.split(" ");
+  if (words.length > 14) return false;
+  if (/^(?:ata|chapter|section|part|appendix)\b/i.test(normalized)) return true;
+  if (/^\d+(?:[.-]\d+)*\s+[A-Za-z]/.test(normalized)) return true;
+  const letters = normalized.match(/[A-Za-z]/g) ?? [];
+  const uppercase = normalized.match(/[A-Z]/g) ?? [];
+  if (letters.length >= 4 && uppercase.length / letters.length >= 0.75) return true;
+  return words.length >= 2 && words.length <= 8 && words.every((word) =>
+    /^(?:[A-Z][A-Za-z0-9/'()-]*|and|or|of|the|to|for|in|on)$/.test(word),
+  );
+}
+
+function sameHeadingPath(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function hashText(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -255,7 +309,7 @@ function splitUnitToContextualMaxTokens(
   return splitUnitToMaxTokens(unit, tokenCounter, splitConfig).flatMap((candidate) =>
     countContextualUnitText(input, [candidate], tokenCounter) <= config.maxTokens
       ? [candidate]
-      : splitTextByTokenWindows(candidate.text, candidate.pageNumber, tokenCounter, splitConfig),
+      : splitTextByTokenWindows(candidate.text, candidate.pageNumber, tokenCounter, splitConfig, candidate.headingPath),
   );
 }
 
@@ -273,7 +327,7 @@ function splitUnitToMaxTokens(
     .map((sentence) => sentence.trim())
     .filter(Boolean)
     .flatMap((sentence) =>
-      splitTextByTokenWindows(sentence, unit.pageNumber, tokenCounter, config),
+      splitTextByTokenWindows(sentence, unit.pageNumber, tokenCounter, config, unit.headingPath),
     );
 
   const packed: TextUnit[] = [];
@@ -305,6 +359,7 @@ function splitUnitToMaxTokens(
           packedUnit.pageNumber,
           tokenCounter,
           config,
+          packedUnit.headingPath,
         ),
   );
 }
@@ -314,16 +369,17 @@ function splitTextByTokenWindows(
   pageNumber: number,
   tokenCounter: TokenCounter,
   config: ChunkTokenConfig,
+  headingPath: string[] = [],
 ): TextUnit[] {
   const tokenCount = tokenCounter.count(text);
 
   if (tokenCount <= config.maxTokens) {
-    return [{ pageNumber, text, tokenCount }];
+    return [{ headingPath, pageNumber, text, tokenCount }];
   }
 
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length <= 1) {
-    return splitLongTextByCharacters(text, pageNumber, tokenCounter, config);
+    return splitLongTextByCharacters(text, pageNumber, tokenCounter, config, headingPath);
   }
 
   const units: TextUnit[] = [];
@@ -332,11 +388,11 @@ function splitTextByTokenWindows(
   for (const word of words) {
     if (tokenCounter.count(word) > config.maxTokens) {
       if (buffer.length > 0) {
-        units.push(createTextUnit(buffer.join(" "), pageNumber, tokenCounter));
+        units.push(createTextUnit(buffer.join(" "), pageNumber, tokenCounter, headingPath));
         buffer = [];
       }
       units.push(
-        ...splitLongTextByCharacters(word, pageNumber, tokenCounter, config),
+        ...splitLongTextByCharacters(word, pageNumber, tokenCounter, config, headingPath),
       );
       continue;
     }
@@ -346,7 +402,7 @@ function splitTextByTokenWindows(
       buffer.length > 0 &&
       tokenCounter.count(candidate) > config.targetTokens
     ) {
-      units.push(createTextUnit(buffer.join(" "), pageNumber, tokenCounter));
+      units.push(createTextUnit(buffer.join(" "), pageNumber, tokenCounter, headingPath));
       buffer = [word];
       continue;
     }
@@ -355,13 +411,13 @@ function splitTextByTokenWindows(
   }
 
   if (buffer.length > 0) {
-    units.push(createTextUnit(buffer.join(" "), pageNumber, tokenCounter));
+    units.push(createTextUnit(buffer.join(" "), pageNumber, tokenCounter, headingPath));
   }
 
   return units.flatMap((unit) =>
     unit.tokenCount <= config.maxTokens
       ? [unit]
-      : splitLongTextByCharacters(unit.text, pageNumber, tokenCounter, config),
+      : splitLongTextByCharacters(unit.text, pageNumber, tokenCounter, config, headingPath),
   );
 }
 
@@ -370,6 +426,7 @@ function splitLongTextByCharacters(
   pageNumber: number,
   tokenCounter: TokenCounter,
   config: ChunkTokenConfig,
+  headingPath: string[] = [],
 ): TextUnit[] {
   const units: TextUnit[] = [];
   let remaining = text.trim();
@@ -386,7 +443,7 @@ function splitLongTextByCharacters(
       throw new Error("rag_chunk_split_failed: unable to split oversized text");
     }
 
-    units.push(createTextUnit(prefix, pageNumber, tokenCounter));
+    units.push(createTextUnit(prefix, pageNumber, tokenCounter, headingPath));
     remaining = remaining.slice(splitIndex).trim();
   }
 
@@ -421,17 +478,19 @@ function createPackedUnit(
   units: TextUnit[],
   tokenCounter: TokenCounter,
 ): TextUnit {
-  return createTextUnit(units.map((unit) => unit.text).join(" "), units[0]!.pageNumber, tokenCounter);
+  return createTextUnit(units.map((unit) => unit.text).join(" "), units[0]!.pageNumber, tokenCounter, units[0]!.headingPath);
 }
 
 function createTextUnit(
   text: string,
   pageNumber: number,
   tokenCounter: TokenCounter,
+  headingPath: string[] = [],
 ): TextUnit {
   const trimmed = text.trim();
 
   return {
+    headingPath,
     pageNumber,
     text: trimmed,
     tokenCount: tokenCounter.count(trimmed),
@@ -455,7 +514,7 @@ function countContextualUnitText(
   const sourcePageNumbers = [...new Set(units.map((unit) => unit.pageNumber))];
   const text = units.map((unit) => unit.text).join("\n\n");
   return tokenCounter.count(buildContextualEmbeddingText(input, {
-    headingPath: inferHeadingPath(text),
+    headingPath: units.find((unit) => unit.headingPath.length > 0)?.headingPath ?? inferHeadingPath(text),
     pageEnd: Math.max(...sourcePageNumbers),
     pageStart: Math.min(...sourcePageNumbers),
     text,

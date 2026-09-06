@@ -1,7 +1,14 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  buildInheritedAviationOkfMetadata,
+  emptyAviationDocumentMetadata,
+  replaceInheritedAviationOkfMetadata,
+  type AviationSourceClassification,
+  type IntendedAudience,
+} from "./aviation-document-metadata.ts";
 import { LOCAL_GENERAL_BUNDLE_ID } from "./knowledge-bundles.ts";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -10,8 +17,17 @@ import {
   normalizeTopicRelations,
   type TopicRelation,
 } from "./okf-relation-types.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  buildTopicEnrichmentDiff,
+  hasExistingTopicEnrichment,
+  normalizeTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+  type TopicEnrichmentDiff,
+} from "./topic-enrichment-diff.ts";
+import { buildTopicEnrichmentContextPageNumbers } from "./topic-enrichment-context.ts";
 
-export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
 export type Workspace = {
   id: string;
@@ -30,6 +46,7 @@ export type User = {
 
 export type DocumentStatus =
   | "ready"
+  | "pending"
   | "processing"
   | "needs_review"
   | "indexed"
@@ -62,6 +79,8 @@ export type ExtractedPageRecord = {
   tables: ExtractedTable[];
   imageCount: number;
   charCount: number;
+  figureCaptionHints?: string[];
+  visualCandidate?: boolean;
 };
 
 export type ExtractionError = {
@@ -107,6 +126,7 @@ export type TopicEnrichmentStatus =
   | "none"
   | "pending"
   | "completed"
+  | "review_required"
   | "failed";
 
 export type ApprovedContentSource = "raw" | "enriched";
@@ -123,6 +143,31 @@ export type TopicEnrichmentAudit = {
   requestedBy: string;
   succeeded: boolean;
   errorMessage: string | null;
+  baselineFingerprint?: string | null;
+  baselineTitle?: string | null;
+  baselineSummary?: string | null;
+  baselineBody?: string | null;
+  baselineProposedSourcePageNumbers?: number[];
+  candidateTitle?: string | null;
+  candidateSummary?: string | null;
+  candidateBody?: string | null;
+  candidateProposedSourcePageNumbers?: number[];
+  diff?: TopicEnrichmentDiff;
+  disposition?: "applied" | "awaiting_review" | "failed" | "rejected" | "unchanged";
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+};
+
+export type PendingTopicEnrichment = {
+  auditId: string;
+  body: string;
+  createdAt: string;
+  diff: TopicEnrichmentDiff;
+  model: string;
+  proposedSourcePageNumbers: number[];
+  provider: string;
+  summary: string;
+  title: string;
 };
 
 export type TopicRecord = {
@@ -147,6 +192,7 @@ export type TopicRecord = {
   enrichedAt: string | null;
   enrichmentModel: string | null;
   enrichmentErrorMessage: string | null;
+  pendingEnrichment?: PendingTopicEnrichment | null;
   editedAt: string | null;
   editedBy: string | null;
   pageStart: number;
@@ -159,6 +205,29 @@ export type TopicRecord = {
   okfMetadata: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  mediaReferences?: TopicMediaReference[];
+};
+
+export type TopicMediaReference = {
+  anchorTerms: string[];
+  confidence: number;
+  id: string;
+  mediaAsset: {
+    altText: string;
+    height: number;
+    id: string;
+    kind: "diagram" | "figure";
+    pageNumber: number;
+    sourceCaption: string | null;
+    visibleLabels: string[];
+    visualContext: string;
+    width: number;
+  };
+  rationale: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  role: "primary_evidence" | "reference_diagram" | "supporting_detail";
+  status: "approved" | "auto_approved" | "pending_review" | "rejected" | "stale";
 };
 
 export type Document = {
@@ -178,14 +247,28 @@ export type Document = {
   description: string;
   storageKey: string | null;
   originalFilename: string | null;
+  contentSha256?: string | null;
   mimeType: string;
   customProperties: CustomProperty[];
   subjectFamily: string | null;
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds?: string[];
+  applicabilityScope?: "entire-family" | "specific-variants" | "ambiguous" | null;
+  applicabilityConfidence?: number | null;
+  applicabilityEvidence?: string[];
+  applicabilityStatus?: "accepted" | "needs_review" | "manual_override" | null;
+  applicabilityProvider?: string | null;
+  applicabilityModel?: string | null;
+  applicabilityClassifiedAt?: string | null;
   documentType: string | null;
   classificationCode: string | null;
   effectivity: string | null;
   sourceAuthority: string | null;
   revision: string | null;
+  sourceClassification?: AviationSourceClassification | null;
+  licenseIdentifier?: string | null;
+  intendedAudiences?: IntendedAudience[];
+  contentPurpose?: string | null;
   extraction: DocumentExtraction;
   topicDiscovery?: DocumentTopicDiscovery;
 };
@@ -213,31 +296,51 @@ type VaultStore = {
 };
 
 type UploadMetadata = {
+  aircraftTypeIds?: string[];
   bytes: Buffer;
+  classificationCode: string | null;
+  contentPurpose?: string | null;
   description: string;
+  documentType: string | null;
+  effectivity: string | null;
+  intendedAudiences?: IntendedAudience[];
   knowledgeBundleId: string;
+  licenseIdentifier?: string | null;
   originalFilename: string;
   owner: string;
+  revision: string | null;
+  sourceAuthority: string | null;
+  sourceClassification?: AviationSourceClassification | null;
   sourceType: SourceType;
+  subjectFamily: string | null;
   tags: string[];
   title: string;
   type: string;
 };
 
 type UpdateMetadata = {
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds?: string[];
+  applicabilityManualOverride?: boolean;
+  applicabilityOverrideBy?: string;
+  applicabilityScope?: "entire-family" | "specific-variants" | "ambiguous";
   subjectFamily: string | null;
   classificationCode: string | null;
   description: string;
   effectivity: string | null;
   documentType: string | null;
+  intendedAudiences?: IntendedAudience[];
+  licenseIdentifier?: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
+  sourceClassification?: AviationSourceClassification | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
   title: string;
   customProperties: CustomProperty[];
+  contentPurpose?: string | null;
 };
 
 type CompleteExtractionInput = {
@@ -284,6 +387,7 @@ const seedDocuments: Document[] = [
       "Maintenance manual section staged for future extraction and topic review.",
     storageKey: null,
     originalFilename: "737ng-amm-electrical-power-ata-24.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [
       { key: "Manual family", value: "AMM" },
@@ -315,6 +419,7 @@ const seedDocuments: Document[] = [
       "Training material that can explain system behavior but cannot authorize dispatch or procedure claims.",
     storageKey: null,
     originalFilename: "elt-system-training-notes.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Training reference" }],
     subjectFamily: "Boeing 737NG",
@@ -343,6 +448,7 @@ const seedDocuments: Document[] = [
       "Internal policy example for validating the platform beyond aviation manuals.",
     storageKey: null,
     originalFilename: "technical-publications-control-policy.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Quality" }],
     subjectFamily: null,
@@ -371,6 +477,7 @@ const seedDocuments: Document[] = [
       "Seeded route reference used to represent future OKF candidate generation.",
     storageKey: null,
     originalFilename: "apu-fault-route-reference.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Route type", value: "Fault isolation" }],
     subjectFamily: "Boeing 737NG",
@@ -399,6 +506,7 @@ const seedDocuments: Document[] = [
       "General business document used to keep the platform domain-neutral.",
     storageKey: null,
     originalFilename: "vendor-onboarding-handbook.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Department", value: "Operations" }],
     subjectFamily: null,
@@ -427,6 +535,7 @@ const seedDocuments: Document[] = [
       "Blocked seed item showing how unsupported or incomplete source metadata will surface.",
     storageKey: null,
     originalFilename: "mel-dispatch-gate-examples.pdf",
+    contentSha256: null,
     mimeType: "application/pdf",
     customProperties: [{ key: "Authority", value: "Example only" }],
     subjectFamily: "Boeing 737NG",
@@ -500,7 +609,7 @@ export function assertPdfUpload(file: { name: string; size: number; type: string
   }
 
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error("upload_exceeds_25mb_limit");
+    throw new Error("upload_exceeds_250mb_limit");
   }
 }
 
@@ -647,14 +756,20 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         description: input.description.trim(),
         storageKey,
         originalFilename: input.originalFilename,
+        contentSha256: createHash("sha256").update(input.bytes).digest("hex"),
         mimeType: "application/pdf",
         customProperties: [],
-        subjectFamily: null,
-        documentType: null,
-        classificationCode: null,
-        effectivity: null,
-        sourceAuthority: null,
-        revision: null,
+        subjectFamily: input.subjectFamily,
+        aircraftTypeIds: input.aircraftTypeIds ?? [],
+        documentType: input.documentType,
+        classificationCode: input.classificationCode,
+        effectivity: input.effectivity,
+        sourceAuthority: input.sourceAuthority,
+        revision: input.revision,
+        sourceClassification: input.sourceClassification ?? null,
+        licenseIdentifier: input.licenseIdentifier ?? null,
+        intendedAudiences: input.intendedAudiences ?? [],
+        contentPurpose: input.contentPurpose ?? null,
         extraction: {
           status: "queued",
           startedAt: null,
@@ -684,6 +799,17 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
 
       document.title = input.title.trim() || document.title;
       document.subjectFamily = normalizeOptionalMetadata(input.subjectFamily);
+      document.aircraftTypeIds = [...(input.aircraftTypeIds ?? [])];
+      if (input.applicabilityManualOverride) {
+        document.aircraftFamilyIds = [...(input.aircraftFamilyIds ?? [])];
+        document.applicabilityScope = input.applicabilityScope ?? "ambiguous";
+        document.applicabilityStatus = "manual_override";
+        document.applicabilityConfidence = null;
+        document.applicabilityEvidence = [];
+        document.applicabilityProvider = null;
+        document.applicabilityModel = null;
+        document.applicabilityClassifiedAt = new Date().toISOString();
+      }
       document.documentType = normalizeOptionalMetadata(input.documentType);
       document.classificationCode = normalizeOptionalMetadata(
         input.classificationCode,
@@ -691,6 +817,10 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       document.effectivity = normalizeOptionalMetadata(input.effectivity);
       document.sourceAuthority = normalizeOptionalMetadata(input.sourceAuthority);
       document.revision = normalizeOptionalMetadata(input.revision);
+      document.sourceClassification = input.sourceClassification ?? null;
+      document.licenseIdentifier = normalizeOptionalMetadata(input.licenseIdentifier ?? null);
+      document.intendedAudiences = [...(input.intendedAudiences ?? [])];
+      document.contentPurpose = normalizeOptionalMetadata(input.contentPurpose ?? null);
       document.owner = input.owner.trim() || "Unassigned";
       document.sourceType = input.sourceType;
       document.status = input.status;
@@ -698,6 +828,16 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       document.description = input.description.trim();
       document.customProperties = input.customProperties;
       document.updatedAt = formatTimestamp(new Date());
+
+      for (const topic of store.topicRecords ?? []) {
+        if (
+          topic.documentId === document.id &&
+          ["needs_review", "needs_cleanup"].includes(topic.reviewStatus)
+        ) {
+          topic.okfMetadata = replaceInheritedAviationOkfMetadata(topic.okfMetadata, document);
+          topic.updatedAt = document.updatedAt;
+        }
+      }
 
       store.activityEvents.unshift({
         id: `act-${randomUUID()}`,
@@ -863,7 +1003,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
           editedBy: null,
           reviewStatus: "needs_review",
           relations: [],
-          okfMetadata: {},
+          okfMetadata: buildInheritedAviationOkfMetadata(document),
           exportedFilePath: null,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -982,11 +1122,14 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     const store = await readStore();
     const topic = getStoreTopic(store, topicId);
     const document = getStoreDocument(store, topic.documentId);
+    const contextPageNumbers = new Set(buildTopicEnrichmentContextPageNumbers({
+      pageEnd: topic.pageEnd,
+      pageStart: topic.pageStart,
+      sourcePageNumbers: topic.sourcePageNumbers,
+    }));
     return {
       sourcePages: document.extraction.pageRecords.filter(
-        (pageRecord) =>
-          pageRecord.pageNumber >= Math.max(1, topic.pageStart - 2) &&
-          pageRecord.pageNumber <= topic.pageEnd + 2,
+        (pageRecord) => contextPageNumbers.has(pageRecord.pageNumber),
       ),
       topic: normalizeTopicRecord(topic, store.topicEnrichmentAudits),
     };
@@ -997,6 +1140,12 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const topic = getStoreTopic(store, topicId);
       if (topic.reviewStatus === "approved") {
         throw new Error("topic_enrichment_requires_unapproved_topic");
+      }
+      if (topic.enrichmentStatus === "pending") {
+        throw new Error("topic_enrichment_already_pending");
+      }
+      if (topic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
       }
       topic.enrichmentStatus = "pending";
       topic.enrichmentErrorMessage = null;
@@ -1017,15 +1166,44 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       provider: string;
       rawResponse: string;
       requestedBy: string;
+      baselineFingerprint: string;
     },
   ) {
     return mutateStore(async (store) => {
       store.topicEnrichmentAudits ??= [];
       const topic = getStoreTopic(store, topicId);
       const createdAt = formatTimestamp(new Date());
+      const baseline = buildAcceptedTopicEnrichmentSnapshot(topic);
+      if (topicEnrichmentSnapshotFingerprint(baseline) !== input.baselineFingerprint) {
+        throw new Error("topic_enrichment_baseline_changed");
+      }
+      const candidate = normalizeTopicEnrichmentSnapshot({
+        body: input.enrichedBody ?? input.enrichedSummary,
+        proposedSourcePageNumbers: input.proposedSourcePageNumbers ?? [],
+        summary: input.enrichedSummary,
+        title: input.enrichedTitle,
+      });
+      const diff = buildTopicEnrichmentDiff(baseline, candidate);
+      const hadExistingEnrichment = hasExistingTopicEnrichment(topic);
+      const disposition = !hadExistingEnrichment
+        ? "applied"
+        : diff.changed
+          ? "awaiting_review"
+          : "unchanged";
       store.topicEnrichmentAudits.push({
+        baselineBody: baseline.body,
+        baselineFingerprint: input.baselineFingerprint,
+        baselineProposedSourcePageNumbers: baseline.proposedSourcePageNumbers,
+        baselineSummary: baseline.summary,
+        baselineTitle: baseline.title,
+        candidateBody: candidate.body,
+        candidateProposedSourcePageNumbers: candidate.proposedSourcePageNumbers,
+        candidateSummary: candidate.summary,
+        candidateTitle: candidate.title,
         id: `audit-${randomUUID()}`,
         createdAt,
+        diff,
+        disposition,
         errorMessage: null,
         model: input.model,
         promptSent: input.promptSent,
@@ -1035,14 +1213,18 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         succeeded: true,
         topicId,
       });
-      topic.enrichedTitle = input.enrichedTitle;
-      topic.enrichedSummary = input.enrichedSummary;
-      topic.enrichedBody = input.enrichedBody ?? input.enrichedSummary;
-      topic.proposedSourcePageNumbers = input.proposedSourcePageNumbers ?? [];
-      topic.enrichmentStatus = "completed";
+      if (disposition === "applied") {
+        topic.enrichedTitle = candidate.title;
+        topic.enrichedSummary = candidate.summary;
+        topic.enrichedBody = candidate.body;
+        topic.proposedSourcePageNumbers = candidate.proposedSourcePageNumbers;
+        topic.enrichedAt = createdAt;
+      }
+      topic.enrichmentStatus = disposition === "awaiting_review"
+        ? "review_required"
+        : "completed";
       topic.enrichmentErrorMessage = null;
       topic.enrichmentModel = input.model;
-      topic.enrichedAt = createdAt;
       topic.updatedAt = createdAt;
       return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
@@ -1064,6 +1246,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const topic = getStoreTopic(store, topicId);
       const createdAt = formatTimestamp(new Date());
       store.topicEnrichmentAudits.push({
+        disposition: "failed",
         id: `audit-${randomUUID()}`,
         createdAt,
         errorMessage: input.errorMessage,
@@ -1075,9 +1258,64 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         succeeded: false,
         topicId,
       });
-      topic.enrichmentStatus = "failed";
+      topic.enrichmentStatus = hasExistingTopicEnrichment(topic) ? "completed" : "failed";
       topic.enrichmentErrorMessage = input.errorMessage;
       topic.updatedAt = createdAt;
+      return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
+    });
+  }
+
+  async function resolveTopicEnrichmentCandidate(
+    topicId: string,
+    input: {
+      auditId: string;
+      decision: "accept" | "reject";
+      resolvedBy: string;
+    },
+  ) {
+    return mutateStore(async (store) => {
+      store.topicEnrichmentAudits ??= [];
+      const topic = getStoreTopic(store, topicId);
+      if (topic.reviewStatus === "approved") {
+        throw new Error("topic_enrichment_requires_unapproved_topic");
+      }
+      const audit = store.topicEnrichmentAudits.find(
+        (candidate) => candidate.id === input.auditId && candidate.topicId === topicId,
+      );
+      if (!audit || audit.disposition !== "awaiting_review") {
+        throw new Error("topic_enrichment_candidate_not_pending");
+      }
+      const baseline = buildAcceptedTopicEnrichmentSnapshot(topic);
+      if (
+        !audit.baselineFingerprint ||
+        topicEnrichmentSnapshotFingerprint(baseline) !== audit.baselineFingerprint
+      ) {
+        throw new Error("topic_enrichment_baseline_changed");
+      }
+      if (
+        input.decision === "accept" &&
+        (!audit.candidateTitle || !audit.candidateSummary || !audit.candidateBody)
+      ) {
+        throw new Error("topic_enrichment_candidate_invalid");
+      }
+
+      const resolvedAt = formatTimestamp(new Date());
+      if (input.decision === "accept") {
+        topic.enrichedTitle = audit.candidateTitle!;
+        topic.enrichedSummary = audit.candidateSummary!;
+        topic.enrichedBody = audit.candidateBody!;
+        topic.proposedSourcePageNumbers = audit.candidateProposedSourcePageNumbers ?? [];
+        topic.enrichedAt = resolvedAt;
+        topic.enrichmentModel = audit.model;
+        audit.disposition = "applied";
+      } else {
+        audit.disposition = "rejected";
+      }
+      audit.resolvedAt = resolvedAt;
+      audit.resolvedBy = input.resolvedBy;
+      topic.enrichmentStatus = "completed";
+      topic.enrichmentErrorMessage = null;
+      topic.updatedAt = resolvedAt;
       return normalizeTopicRecord(topic, store.topicEnrichmentAudits);
     });
   }
@@ -1095,6 +1333,9 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       const topic = getStoreTopic(store, topicId);
       if (topic.reviewStatus === "approved") {
         throw new Error("topic_already_approved");
+      }
+      if (topic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
       }
       if (approvedContentSource === "enriched") {
         if (!topic.enrichedTitle || !topic.enrichedSummary) {
@@ -1146,6 +1387,7 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
     getTopicEnrichmentInput,
     generateTopicRecords,
     markTopicEnrichmentPending,
+    resolveTopicEnrichmentCandidate,
     startExtraction,
     updateTopicReviewStatus,
     updateTopicRelations,
@@ -1270,6 +1512,13 @@ export async function failTopicEnrichment(
   return defaultVault.failTopicEnrichment(topicId, input);
 }
 
+export async function resolveTopicEnrichmentCandidate(
+  topicId: string,
+  input: Parameters<typeof defaultVault.resolveTopicEnrichmentCandidate>[1],
+) {
+  return defaultVault.resolveTopicEnrichmentCandidate(topicId, input);
+}
+
 export async function approveTopicContent(
   topicId: string,
   approvedContentSource: ApprovedContentSource,
@@ -1369,17 +1618,40 @@ function normalizeTopicRecord(
   topic.approvedBy ??= null;
   topic.approvedAt ??= null;
   topic.exportedFilePath ??= null;
+  topic.mediaReferences ??= [];
   const topicAudits = audits
     .filter((audit) => audit.topicId === topic.id)
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   const latestAudit = topicAudits.at(-1);
-  const latestSuccess = topicAudits.filter((audit) => audit.succeeded).at(-1);
+  const latestSuccess = topicAudits.filter((audit) =>
+    audit.succeeded &&
+    (!audit.disposition || audit.disposition === "applied")
+  ).at(-1);
+  const pendingAudit = topicAudits.filter(
+    (audit) => audit.disposition === "awaiting_review",
+  ).at(-1);
   topic.enrichedAt ??= latestSuccess?.createdAt ?? null;
   topic.enrichmentModel ??= latestSuccess?.model ?? null;
   topic.enrichmentErrorMessage ??=
-    topic.enrichmentStatus === "failed"
+    latestAudit?.succeeded === false
       ? latestAudit?.errorMessage ?? null
       : null;
+  topic.pendingEnrichment = pendingAudit?.candidateTitle &&
+      pendingAudit.candidateSummary &&
+      pendingAudit.candidateBody &&
+      pendingAudit.diff
+    ? {
+        auditId: pendingAudit.id,
+        body: pendingAudit.candidateBody,
+        createdAt: pendingAudit.createdAt,
+        diff: pendingAudit.diff,
+        model: pendingAudit.model,
+        proposedSourcePageNumbers: pendingAudit.candidateProposedSourcePageNumbers ?? [],
+        provider: pendingAudit.provider,
+        summary: pendingAudit.candidateSummary,
+        title: pendingAudit.candidateTitle,
+      }
+    : null;
   topic.relations = normalizeTopicRelations(topic.relations);
   return topic;
 }
@@ -1448,11 +1720,25 @@ function normalizeDocument(document: Document): Document {
   document.knowledgeBundleId ??= LOCAL_GENERAL_BUNDLE_ID;
   document.extraction = normalizeExtraction(document.extraction);
   document.subjectFamily ??= null;
+  document.aircraftFamilyIds ??= [];
+  document.aircraftTypeIds ??= [];
+  document.applicabilityScope ??= null;
+  document.applicabilityConfidence ??= null;
+  document.applicabilityEvidence ??= [];
+  document.applicabilityStatus ??= null;
+  document.applicabilityProvider ??= null;
+  document.applicabilityModel ??= null;
+  document.applicabilityClassifiedAt ??= null;
   document.documentType ??= null;
   document.classificationCode ??= null;
   document.effectivity ??= null;
   document.sourceAuthority ??= null;
   document.revision ??= null;
+  const emptyAviation = emptyAviationDocumentMetadata();
+  document.sourceClassification ??= emptyAviation.sourceClassification;
+  document.licenseIdentifier ??= emptyAviation.licenseIdentifier;
+  document.intendedAudiences ??= emptyAviation.intendedAudiences;
+  document.contentPurpose ??= emptyAviation.contentPurpose;
   return document;
 }
 

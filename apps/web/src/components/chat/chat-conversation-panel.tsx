@@ -31,6 +31,7 @@ export function ChatConversationPanel({
   sessionId: string;
 }) {
   const router = useRouter();
+  const [feedback,setFeedback]=useState("");
   const [isPending, startTransition] = useTransition();
   const [pendingMessage, setPendingMessage] =
     useState<PendingChatMessage | null>(null);
@@ -62,6 +63,7 @@ export function ChatConversationPanel({
       formData.set("metadataSelection", JSON.stringify(metadataSelection));
     }
 
+    setFeedback("");
     setPendingMessage({
       content,
       id: `pending-${Date.now()}`,
@@ -70,16 +72,18 @@ export function ChatConversationPanel({
 
     startTransition(async () => {
       await wait(MINIMUM_PENDING_ANIMATION_MS);
-      await sendChatMessageAction(formData);
+      const result=await sendChatMessageAction(formData);
+      if(result?.error){setFeedback(result.error);setPendingMessage(null);}
       router.refresh();
     });
   }
 
   return (
     <>
+      {feedback&&<p role="status" className="px-4 py-2 text-sm">{feedback}</p>}
       <ChatKnowledgeSourceSelector
         availableBundles={availableBundles}
-        disabled={isPending}
+        disabled={false}
         selectedBundleIds={selectedBundleIds}
         sessionId={sessionId}
       />

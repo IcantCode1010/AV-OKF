@@ -1,0 +1,510 @@
+{
+  "schemaVersion": 2,
+  "corpus": {
+    "commit": "ad30107c31c06aec8a7d5636e0d1058118604e6f",
+    "license": "Apache-2.0",
+    "repository": "https://github.com/GoogleCloudPlatform/open-knowledge-format"
+  },
+  "integrity": {
+    "mismatches": [],
+    "valid": true
+  },
+  "expectedTotals": {
+    "bundleFiles": 79,
+    "markdownFiles": 78,
+    "conceptFiles": 53,
+    "indexFiles": 24,
+    "logFiles": 1,
+    "resourceFiles": 1
+  },
+  "totals": {
+    "bundleFiles": 79,
+    "conceptFiles": 53,
+    "indexFiles": 24,
+    "logFiles": 1,
+    "markdownFiles": 78,
+    "resourceFiles": 1
+  },
+  "summary": {
+    "agentReadyConcepts": 0,
+    "claimAttributionWarnings": 11,
+    "claimFootnoteReferences": 45,
+    "conceptValidationFailures": 8,
+    "portableCompatibleBundles": 3,
+    "matchedClaimFootnotes": 33,
+    "roundTripsPassed": 78,
+    "runtimeReadyBundles": 0,
+    "warnings": 11
+  },
+  "bundles": [
+    {
+      "agentReadyConcepts": 0,
+      "claimAttribution": {
+        "definitions": 8,
+        "matchedReferences": 14,
+        "references": 14,
+        "warnings": 0
+      },
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 18,
+        "conceptFiles": 9,
+        "indexFiles": 7,
+        "logFiles": 1,
+        "markdownFiles": 17,
+        "resourceFiles": 1
+      },
+      "expectedCounts": {
+        "bundleFiles": 18,
+        "markdownFiles": 17,
+        "conceptFiles": 9,
+        "indexFiles": 7,
+        "logFiles": 1,
+        "resourceFiles": 1
+      },
+      "fields": {
+        "attester": 2,
+        "description": 9,
+        "executor": 2,
+        "generated": 9,
+        "not": 1,
+        "parameters": 2,
+        "resource": 3,
+        "runtime": 2,
+        "sources": 5,
+        "stale_after": 7,
+        "status": 9,
+        "tags": 9,
+        "title": 9,
+        "type": 9,
+        "usage_window": 1,
+        "verified": 8
+      },
+      "name": "acme_retail",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 17,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "Attested Computation": 2,
+        "BigQuery Table": 1,
+        "Metric": 3,
+        "Policy": 2,
+        "Skill": 1
+      },
+      "warnings": []
+    },
+    {
+      "agentReadyConcepts": 0,
+      "claimAttribution": {
+        "definitions": 5,
+        "matchedReferences": 8,
+        "references": 8,
+        "warnings": 0
+      },
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 15,
+        "conceptFiles": 9,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "markdownFiles": 15,
+        "resourceFiles": 0
+      },
+      "expectedCounts": {
+        "bundleFiles": 15,
+        "markdownFiles": 15,
+        "conceptFiles": 9,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "resourceFiles": 0
+      },
+      "fields": {
+        "description": 9,
+        "generated": 9,
+        "resource": 9,
+        "sources": 9,
+        "tags": 9,
+        "title": 9,
+        "type": 9
+      },
+      "name": "crypto_bitcoin",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 15,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "BigQuery Dataset": 1,
+        "BigQuery Table": 4,
+        "Reference": 4
+      },
+      "warnings": []
+    },
+    {
+      "agentReadyConcepts": 0,
+      "claimAttribution": {
+        "definitions": 10,
+        "matchedReferences": 11,
+        "references": 11,
+        "warnings": 0
+      },
+      "conceptValidationIssues": [],
+      "counts": {
+        "bundleFiles": 14,
+        "conceptFiles": 9,
+        "indexFiles": 5,
+        "logFiles": 0,
+        "markdownFiles": 14,
+        "resourceFiles": 0
+      },
+      "expectedCounts": {
+        "bundleFiles": 14,
+        "markdownFiles": 14,
+        "conceptFiles": 9,
+        "indexFiles": 5,
+        "logFiles": 0,
+        "resourceFiles": 0
+      },
+      "fields": {
+        "description": 9,
+        "generated": 9,
+        "resource": 9,
+        "sources": 9,
+        "tags": 9,
+        "title": 9,
+        "type": 9
+      },
+      "name": "ga4",
+      "portableCompatible": true,
+      "portableIssues": [],
+      "roundTripFailures": [],
+      "roundTripsPassed": 14,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "BigQuery Dataset": 1,
+        "BigQuery Table": 1,
+        "Reference": 7
+      },
+      "warnings": []
+    },
+    {
+      "agentReadyConcepts": 0,
+      "claimAttribution": {
+        "definitions": 11,
+        "matchedReferences": 0,
+        "references": 12,
+        "warnings": 11
+      },
+      "conceptValidationIssues": [
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "datasets/stackoverflow.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_answers.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_moderator_nomination.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_questions.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/posts_wiki_placeholder.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/stackoverflow_posts.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/users.md"
+        },
+        {
+          "codes": [
+            "okf_v02_tags_invalid"
+          ],
+          "filePath": "tables/votes.md"
+        }
+      ],
+      "counts": {
+        "bundleFiles": 32,
+        "conceptFiles": 26,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "markdownFiles": 32,
+        "resourceFiles": 0
+      },
+      "expectedCounts": {
+        "bundleFiles": 32,
+        "markdownFiles": 32,
+        "conceptFiles": 26,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "resourceFiles": 0
+      },
+      "fields": {
+        "description": 26,
+        "generated": 26,
+        "resource": 26,
+        "sources": 26,
+        "status": 1,
+        "tags": 26,
+        "title": 26,
+        "type": 26
+      },
+      "name": "stackoverflow",
+      "portableCompatible": false,
+      "portableIssues": [
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "datasets/stackoverflow.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_answers.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_moderator_nomination.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_questions.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_wiki_placeholder.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/stackoverflow_posts.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/users.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/votes.md",
+          "message": "okf_v02_tags_invalid"
+        }
+      ],
+      "roundTripFailures": [],
+      "roundTripsPassed": 32,
+      "runtimeIssues": [
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "datasets/stackoverflow.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_version_missing",
+          "filePath": "index.md",
+          "message": "index.md must declare okf_version: 0.2."
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/content_licenses.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/comments__posts.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/post_links__posts.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/posts__votes.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/posts_answers__posts_questions.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/metrics/accepted_answer_rate.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/metrics/bad_question_flag_ratio.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/post_types.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/vote_types.md",
+          "message": "Footnote definition does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_answers.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_moderator_nomination.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "tables/posts_questions.md",
+          "message": "Claim footnote does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_questions.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/posts_wiki_placeholder.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/stackoverflow_posts.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/users.md",
+          "message": "okf_v02_tags_invalid"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "tables/votes.md",
+          "message": "Claim footnote does not match a sources[].id: 1"
+        },
+        {
+          "code": "okf_v02_tags_invalid",
+          "filePath": "tables/votes.md",
+          "message": "okf_v02_tags_invalid"
+        }
+      ],
+      "runtimeReady": false,
+      "types": {
+        "BigQuery Dataset": 1,
+        "BigQuery Table": 16,
+        "Reference": 9
+      },
+      "warnings": [
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/content_licenses.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/comments__posts.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/post_links__posts.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/posts__votes.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/joins/posts_answers__posts_questions.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/metrics/accepted_answer_rate.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/metrics/bad_question_flag_ratio.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/post_types.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "references/vote_types.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "tables/posts_questions.md",
+          "target": "1"
+        },
+        {
+          "code": "okf_v02_claim_source_missing",
+          "filePath": "tables/votes.md",
+          "target": "1"
+        }
+      ]
+    }
+  ]
+}

@@ -6,7 +6,7 @@ type DocumentProcessingStatusDependencies = {
   getSnapshot(
     documentId: string,
     context: AuthWorkspaceContext,
-  ): Promise<{ active: boolean; fingerprint: string } | null>;
+  ): Promise<({ active: boolean; fingerprint: string } & Record<string, unknown>) | null>;
   getWorkspaceId(documentId: string): Promise<string | undefined>;
 };
 

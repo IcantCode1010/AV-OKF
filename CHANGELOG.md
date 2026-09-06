@@ -6,6 +6,273 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added a shared, evidence-grounded knowledge workflow with topic recipes, immutable article revisions, review and approval, source-change detection, visual authoring, explicit EFB selection, signed export support, activity tracking, and durable background processing. Topic recipes can use either bounded agentic research or checkpointed full-document scans and export approved native OKF bundles.
+- Added scoped graph-assisted agent research over published OKF relationships. The agent can search topics, traverse incoming and outgoing links, inspect original passages, retain directed connection provenance through final citations, invalidate stale graph results, and show an answer-specific 3D or 2D graph without treating graph discovery as source proof.
+- Rebuilt the knowledge explorer around interactive 3D navigation with 2D fallback, deterministic community grouping, worker-based projection for large graphs, relationship filters, concept search, neighborhood focus, reduced-motion behavior, mobile controls, evidence/review layers, and accessible text alternatives. Collapsed groups retain relationship discovery, and graph detail adapts when switching between small and large layers.
+- Fixed Topic builder false `recipe_changed_refresh_again` failures caused by PostgreSQL JSONB key ordering and mismatched web/worker research-policy versions. Draft repair now receives measured word counts, the previous draft, and valid output-local relationship targets while retaining strict evidence, length, and graph validation.
+- Added linked aircraft-family and aircraft-type selectors for EFB article selection. The form uses the connected EFB registry identifiers, clears incompatible types when the family changes, normalizes recognized legacy family labels, and rejects unsupported family/type combinations server-side.
+- Clarified document-level aircraft applicability review with a dedicated evidence summary and an explicit correction control. A manual document override now takes precedence over article-level aircraft family and variant predictions in future Project EFB releases while preserving each article's independently classified ATA chapter and audience.
+- Added evidence-backed Project EFB classification for every enriched aviation article. The ingestion stage stores aircraft family and variants, audience, supported ATA chapter, confidence, provider/model, and exact validated evidence under `extensions.projectEfb`; unsupported or ambiguous chapters remain unplaced. The PoC exporter now uses this protected article metadata, rejects source identifiers such as `737SAR` as ATA targets, preserves them in provenance, and fails unless manifest, agent, and retrieval applicability, audience, and placements agree. Reprocessed the 23 current hydraulic articles and contract-validated immutable release `737-ng-poc@0.1.8` with 23 ATA 29 placements.
+- Added one evidence-backed aircraft-applicability classification stage to aviation ingestion. The bounded LLM pass classifies family IDs, specific variants, scope, confidence, and exact source evidence once per document; high-confidence consistent results are accepted automatically, uncertain or contradictory results remain reviewable, and explicit manual overrides are available. Topics and Project EFB manifest, agent, and retrieval artifacts now share the same normalized applicability, including entire-family packages with no variant IDs.
+- Fixed Project EFB entire-family exports so an accepted `aircraftFamilyIds` value can be packaged with an intentionally empty `aircraftTypeIds` list. The manifest, every agent artifact, and every retrieval record now carry the same applicability object.
+- Added automatic Project EFB proof-of-concept packaging after aviation document authoring. Durable jobs now package every completed enriched article through the existing EFB exporter, assign stable article IDs, include aircraft, audience, ATA/QRH, source-page, display, agent, and retrieval artifacts, and atomically publish `<package-id>@<version>` only after Project EFB's own validator succeeds. PoC packages bypass technical approval, license review, reviewer identity, and signatures while labeling every article as unreviewed prototype knowledge; the strict signed production mode remains available.
+- Fixed PoC release regeneration after bundle deletion or database cleanup. Package version allocation now considers retained immutable release directories as well as durable jobs, so a reused bundle slug advances to the next version instead of colliding with an existing package.
+- Added structured Project EFB aviation metadata to upload and document editing. Aircraft type IDs, source classification, license reference, intended audiences, and content purpose now persist in local JSON and PostgreSQL, protected user-entered values survive LLM metadata discovery, and document-discovered topics inherit normalized aviation metadata without changing generic ingestion or silently rewriting approved exports.
+- Fixed figure discovery so source PDFs are streamed from object storage into
+  bounded worker scratch space instead of being loaded into a single memory
+  buffer. Batched extraction now shares the same streaming boundary.
+- Added an opt-in Project EFB release profile and deterministic
+  `export:efb-release` pipeline. Stable, human-reviewed OKF 0.2 articles can now
+  produce immutable display and agent artifacts, a structured-keyword index,
+  package manifest, and checksums from a clean commit. Publication fails closed
+  on missing audience, B738 applicability, placement, authority, license,
+  source, review, or relationship metadata; truncated bodies, ATA/effectivity
+  conflicts, and training sources falsely labeled as approved manuals are also
+  rejected. Every result validates with the consuming Project EFB contract
+  before succeeding.
+- Added a non-mutating EFB human-review packet generator. It collects exact
+  source pages and hashes for explicitly selected topics, reports ATA,
+  authority, revision, title, and aircraft metadata conflicts, and leaves all
+  technical and license approvals unresolved. Local packets are excluded from
+  Git because they can contain extracted source text.
+- Added mandatory Ed25519 signing to the release CLI. The command verifies the
+  supplied private/public key pair, signs a domain-separated package identity
+  and artifact checksum, and requires Project EFB to verify that signature and
+  trusted key ID before reporting a successful release build.
+- Added opt-in multimodal figure and diagram discovery during document
+  authoring. Candidate pages are rendered temporarily, analyzed against only
+  exact-page topic IDs, cropped into durable PNG assets, checked with local
+  OCR, and routed through strict pending-review or 95%+ auto-approval gates.
+  Reviewers can approve, reject, edit, or reassign figure links; approved
+  figures can enrich topics and export portably under `resources/media` with
+  `av_okf_media` metadata. Added Moonshot AI Kimi K3 provider support, durable
+  media audits, stale-source protection, cleanup, feature flags, and tests.
+- Added distinct, accessible colors for the eight generic entity types in Entity map mode. The filter legend and entity list use the same stable palette, while concepts, documents, aliases, and unresolved support nodes remain neutral so color does not conflict with trust or review status.
+- Aligned OKF v0.2 compatibility with the canonical `open-knowledge-format`
+  repository at commit `ad30107c`. Lifecycle and provenance timestamps now
+  require valid ISO 8601 datetimes with explicit UTC offsets, staleness uses an
+  exact instant comparison, absent `status` follows the standard's `stable`
+  default, and the knowledge reader resolves canonical bundle-root Markdown
+  links. Refreshed byte-pinned sample fixtures keep generated viewers separate
+  and surface eight upstream scalar `tags` violations without rewriting them.
+- Added one structured operation-progress architecture across Topic expansion, Workflow, Activity, document processing, bulk approval, relation verification, and document/bundle deletion. Authenticated two-second polling now updates stages, counts, current items, rows, and failures in place with bounded backoff and reconnect handling; terminal transitions refresh server data once without full-page reload loops.
+- Reworked **Topic expansion** into durable per-approved-topic research. Each topic now generates synonyms and direct questions, runs bundle-scoped hybrid RAG with metadata filtering and reranking, extracts exact-quote-grounded claims and terminology, and searches again until no meaningful new evidence remains or the three-round cap is reached. Per-topic jobs persist stage, round, search, evidence, candidate, and heartbeat checkpoints during work, resume independently, merge grounded discoveries deterministically, and retain the 10-proposal enrichment and human-review boundary.
+- Upgraded the default OpenAI generation model from `gpt-4o-mini` to `gpt-5.6-terra` and routed OpenAI generation through the Responses API. New chat, discovery, enrichment, relation-verification, and topic-expansion calls now use the stronger research model while embeddings remain unchanged.
+- Added a separate bundle-level **Topic expansion** workflow. A reviewer can estimate and run a bounded crawl over active approved OKF concepts, inspect up to 10 exact-source-grounded topic proposals, reject or select them, confirm enrichment cost, and send successful drafts into the existing Review workflow. Durable crawl and per-topic enrichment jobs provide live progress, cancellation, retries, startup reconciliation, stale-evidence protection, atomic proposal claims, and Activity integration without approving, exporting, or relating topics automatically.
+- Added a bundle-centered **Workflow** page as the default bundle landing experience. It derives seven live stages from existing processing, publication, entity, relation, and chat records, highlights one actionable next step, and polls only while backend work is active.
+- Added searchable Entity map filtering by generic entity type and individual entity, while retaining directly connected context and improving selected-node readability in light and dark themes.
+- Fixed the live OpenAI entity-extraction contract to use fully required strict structured-output fields with nullable optional values. Added a recursive schema regression test and successfully backfilled grounded entities from existing enriched `737ng` topics.
+- Improved graph focus readability: selecting a node now keeps its direct neighbors fully highlighted while unrelated nodes and links remain visibly subdued instead of becoming nearly black. The treatment is shared by Published knowledge and Entity map views and adapts to light and dark themes.
+- Added bounded automatic entity and relation graph expansion after topic enrichment. Grounded entity jobs now persist exact quotes, chunks, pages, hashes, workspace identities, aliases, bundle occurrences, classifications, and retryable expansion runs without blocking topic publication.
+- Added separate **Published knowledge**, **Entity map**, and **Needs attention** graph modes plus live Processing, Activity, and Relations status. Structural entity links remain non-authoritative; only exported OKF relations can affect graph retrieval or agent traversal.
+- Replaced the relation-type automation allowlist with one strict gate for the active profile vocabulary: bundle opt-in, global kill switch, approved same-bundle endpoints, exact evidence and deterministic target resolution, one-pair verification, 95% confidence, current hashes, and graph preflight. Automation remains disabled by default pending the approximately 90% precision evaluation.
+- Separated knowledge-wide crawling from document ingestion. Document authoring now proceeds from the complete RAG index directly to enrichment; bundle-level **Relations -> Expand graph** remains the explicit post-publication process for discovering and verifying connections across enriched, approved OKF concepts.
+- Clarified stale relation approvals: when concept content changes after verification, the candidate is automatically reverified and the Relations page now reports that transition as an informational integrity check instead of a failed approval.
+- Stabilized relation discovery around reviewable deterministic batches. Production graph expansion now ranks deterministic candidates and queues at most 50 per run; semantic-neighbor expansion and automatic relation publishing are suspended until measured precision meets the release gate.
+- Strengthened one-pair relation verification with 40-character pair-specific rationales, exact target identification for `references` and `routes_to`, and the existing exact source-quote, vocabulary, direction, hash, and graph checks.
+- Added dry-run-first all-bundle relation cleanup and a separate published-relation revalidation lifecycle. Pending candidates can be cleared without touching OKF files, while weak published explanations remain live until a reviewer re-approves their new evidence or explicitly rejects and removes the edge.
+- Fixed durable knowledge-bundle deletion on Docker volumes by assigning the shared knowledge root to the application user instead of a stale numeric UID/GID, and by explicitly reviving exhausted deterministic BullMQ jobs when a user retries a failed deletion.
+- Added the large-PDF grounded processing pipeline: direct presigned MinIO uploads, streamed inspection and SHA-256, selective local OCR, resumable 20-page extraction, durable overlapping discovery, batched full-document RAG, one-pass grounded crawling, flat consolidation, and portable `av_okf_citations`.
+- Raised the bounded processing envelope to 250 MB or 5,000 pages, with the final production limit still gated on real and mechanical upper-bound verification.
+- Fixed PDF inspection so recoverable qpdf warning exits, including legacy linearization hint-table warnings, remain processable and cannot be mistaken for password protection merely because qpdf reports that the file is not encrypted.
+- Moved authoring token confirmation into the active processing-timeline event so users can see exactly which stage is paused and continue from that row without searching the panel header.
+- Fixed enrichment for topics with non-contiguous evidence pages so page anchors use bounded local neighborhoods instead of pulling every intervening page into the model prompt. Provider context-limit failures now receive one globally bounded compact retry with actionable final diagnostics.
+
+- Added reviewed retrieval-trigger learning for insufficient-evidence chat
+  turns. Specific approved OKF near misses can now create bundle-scoped search
+  alias proposals in the Knowledge gaps reviewer, but proposals remain inert
+  until human approval. Approved aliases are workspace-, bundle-, path-, and
+  content-hash-bound and improve lexical concept discovery without rewriting
+  OKF files or changing trust; pending, rejected, stale, and unavailable
+  proposals cannot affect answers, validation, citations, or graph traversal.
+
+- Added non-destructive topic enrichment revisions. First enrichment remains
+  separate from raw discovery content and now records deterministic baseline,
+  candidate, and diff data. Changed re-enrichment output waits for an explicit
+  **Use new enrichment** or **Keep current enrichment** decision instead of
+  overwriting accepted content; equivalent reruns create no review task and
+  failed reruns preserve the accepted article. Workspace-scoped fingerprint
+  and atomic-claim guards prevent stale or concurrent decisions, while topic
+  approval and bulk export remain blocked until pending revisions are resolved.
+
+- Added exact claim-level provenance validation for OKF v0.2 Markdown
+  footnotes. Claim references now join case-sensitively to `sources[].id`,
+  duplicate source IDs and footnote definitions fail AV runtime validation,
+  and missing source or definition joins are reported deterministically while
+  code examples and escaped references are ignored. Portable conformance stays
+  permissive: the pinned corpus remains four-for-four compatible, while its
+  report now records 45 claim references, 33 exact matches, and 11 Stack
+  Overflow source-ID warnings without modifying upstream fixtures.
+- Added a pinned Apache-2.0 OKF v0.2 compatibility corpus containing all four
+  official Google sample bundles at commit `fe3268a`, with per-file SHA-256
+  integrity checks and a deterministic committed report. All 78 Markdown files
+  round-trip successfully, all 53 concepts pass portable frontmatter
+  validation, and none is promoted to AV-OKF agent-ready evidence.
+- Split generic portable bundle validation from strict AV-OKF runtime
+  validation. Portable bundles now accept descriptive multiword concept types,
+  optional root indexes/version declarations, and reserved nested indexes,
+  while production still requires `okf_version: "0.2"` and retains source,
+  relation, lifecycle, profile, and trust gates. Added a focused compatibility
+  command and CI enforcement.
+
+- Added a guarded all-workspace document purge command with dry-run inventory,
+  exact confirmation, durable sequential deletion, retry monitoring, orphaned
+  object/knowledge cleanup, citation tombstoning, and idempotent verification.
+  The 2026-08-16 clean-slate run permanently removed 24 documents, 17 tracked
+  source objects, 216 topics, one orphaned PDF, 14 orphaned runtime knowledge
+  files, and eight remaining citation-backed answers while preserving bundle
+  registries and profiles.
+
+- Reconciled active user and architecture guidance with the production OKF
+  v0.2-only contract. The document pipeline now describes portable
+  `references/sources/` concepts, `generated`, `verified`, `sources`, and
+  `status` instead of v0.1 manifests and trust fields. Added a documentation
+  regression test that rejects legacy contract examples outside the explicitly
+  historical migration note.
+
+- Reworked the Relations workspace into a human-readable, concept-centered
+  review queue. Confirmed candidates are grouped by source concept and show
+  plain-language relationship sentences, concept titles, source documents,
+  confidence, and exact evidence before expandable technical audit details.
+  Added status views, search, relation-type filtering, incremental rendering,
+  concise verifier rejection reasons, and lifecycle-safe approval controls.
+- Split relation discovery into two complementary paths. Document authoring
+  now proposes explicit evidence-backed relations only among concepts from the
+  uploaded file, while the Relations workspace offers **Expand graph** to add
+  bounded cross-document semantic-neighbor candidates from the existing OKF
+  embedding index. Every candidate still passes one-pair LLM verification,
+  exact-quote validation, graph preflight, and profile vocabulary checks.
+- Normalized common LLM topic-type variants into active profile types and
+  expanded the generic relation vocabulary with structural and operational
+  relationships. Automatic relation publication is now restricted to 95%+
+  confidence `applies_to`, `part_of`, `implements`, and `references`;
+  operational and lifecycle relations continue to require human review.
+
+- Clarified the manual bulk-approval handoff as an explicit two-step flow.
+  Topic selection now continues to a clearly labeled confirmation step, and
+  the confirmation action remains sticky above long topic lists while stating
+  that approval has not started. Bundle deep links also drive the displayed
+  shell context, preventing a review run from being labeled as another active
+  bundle.
+- Added bundle-scoped automatic verified relations during document authoring.
+  When enabled through a versioned bundle profile, relation classification
+  compares new topics with approved concepts in the same bundle, verifies each
+  deterministic candidate against an exact source quote, and automatically
+  publishes only results at 90% confidence or higher after vocabulary, path,
+  target-type, duplicate, cycle, and supersession checks. The setting defaults
+  off, is snapshotted per authoring run, resumes after worker restarts, and
+  grants no deletion or lifecycle authority.
+- Added portable relation provenance and corrected v0.2 relation serialization
+  to emit `target_type`, `av_okf_approval_mode`, and verifier confidence.
+  Automation-created graph edges are visibly labeled in the concept reader.
+- Fixed extraction-triggered authoring runs so they snapshot both bundle
+  automation settings. The extraction repository previously copied automatic
+  topic approval but silently left automatic verified relations disabled.
+  Added fail-closed regression coverage for both settings.
+- Completed a real-provider Generic-bundle pilot with a 104-page equipment
+  manual. Processing discovered 31 topics, enriched 26, and automatically
+  approved/exported 17 without failures. The verifier assessed 50
+  deterministic relation pairs, rejected 49 as unsupported, blocked one
+  invalid exact quote, and published no graph edge. The result is recorded as
+  a safe hold for a related-document positive-control evaluation rather than a
+  reason to weaken evidence requirements.
+
+- Reorganized the application into a persistent bundle-centered workspace with
+  an authenticated active-bundle cookie, grouped Use/Manage/Workspace
+  navigation, system-aware light/dark themes, and compatibility redirects.
+  Bundle Browse now pairs a resizable physical tree with a large reader, Graph
+  has a dedicated full-workspace view and concept drawer, and Documents default
+  to the active bundle while retaining Unassigned and All workspace views.
+- Added bundle-scoped Activity derived from existing extraction, discovery,
+  authoring, bulk approval, relation verification, and document event records.
+  It polls only while work is active and exposes safe actions and outcomes
+  without prompts, raw model responses, or hidden reasoning.
+- Made Chat the default landing experience. `/chat` resumes the active bundle's
+  most recent conversation, new sessions are persisted only with their first
+  message, conversation history is separate, and the conversation workspace is
+  edge-to-edge while retaining multi-bundle scope and evidence controls.
+- Fixed the Relations sidebar transition by replacing its unbounded candidate
+  read with a bounded review projection. The page now loads every actionable
+  verification item plus the latest 50 verifier rejections, retains complete
+  run totals, and navigates through the normal Next.js client transition.
+
+- Prevented duplicate manual bulk-approval batches by assigning each selected
+  topic set a deterministic, database-unique fingerprint. Repeated and
+  concurrent `Prepare batch` submissions now reopen the same run instead of
+  creating competing confirmation and export workflows.
+
+- Changed shared source-page provenance from a hidden manual bulk-approval
+  failure into an explicit review and confirmation warning. Reviewer-selected
+  batches may export distinct overlapping concepts, while unattended automatic
+  approval retains the strict overlap blocker.
+
+- Improved topic-enrichment failure recovery and diagnostics: empty structured
+  model output now receives one bounded compact-source retry with a larger
+  output allowance, failed topics show the actual provider model, and new
+  discovery excludes administrative revision/effective-page sections.
+
+- Changed additional enrichment context pages from a bulk-approval blocker to
+  an explicit source disclosure. Bulk approval now promotes those pages into
+  the approved citation range, and review rows show enrichment completeness
+  plus a concise summary of established and additional source pages.
+
+- Clarified document-scoped topic review with status filters and distinct row
+  treatments for ready-to-approve, individual-review, approved, and rejected
+  topics. Review opens on actionable topics instead of mixing published work
+  into the default queue.
+
+- Made the final manual `Review and export` processing stage an obvious,
+  clickable handoff into a document-scoped review page. The header attention
+  strip now opens the same review destination instead of returning users to a
+  static processing summary.
+
+- Improved the new-knowledge-bundle handoff: bundle creation now opens the
+  document upload workflow with the new bundle preselected instead of landing
+  on an empty bundle explorer.
+
+- Fixed synthetic and legacy documents with extracted page records but no
+  `ExtractionJob` appearing permanently queued in the Processing panel. The
+  production mapper now derives completed extraction from existing pages only
+  when the job is absent, and the route-coverage fixture now persists an
+  explicit completed extraction job.
+- Completed the backed-up production OKF v0.2 hard cutover on 2026-08-06.
+  Every active bundle now declares v0.2 in Postgres and `index.md`, immutable
+  v0.2 profiles and bundle-local manifests are active, source PDFs have
+  portable SHA-256 references, stale lookup vectors were rebuilt, and the
+  live explorer/source drilldown passed browser verification. The final Docker
+  route suite passed 24/24 scenarios and bundle deletion passed all source,
+  tombstone, idempotency, and reassignment assertions.
+- Hardened cutover operations after dry-run and rollback testing: Prisma 7
+  scripts now use the configured adapter, source objects use the real
+  `original_pdf` discriminator, directory-less bundles activate safely,
+  bundle manifests are staged, document deletion can log into a missing bundle
+  root, and the PowerShell wrapper checks every native process exit code before
+  restart. Local maintenance backups are now excluded from Git.
+- Fixed live OpenAI chat synthesis discovered by the cutover route gate. The
+  provider-facing structured schema now requires `entityCandidates` (an empty
+  array is valid), satisfying OpenAI strict JSON Schema while the internal
+  compatibility parser still accepts older provider payloads.
+- Implemented the OKF v0.2 hard-cutover runtime and migration tooling. The
+  shared parser now uses pinned `yaml@2.9.0`, preserves nested and unknown
+  metadata, and rejects duplicate keys and aliases. New exports use `generated`,
+  `verified`, `sources`, `status`, source-reference concepts, portable relation
+  links, and date-grouped logs without emitting legacy trust fields.
+- Added bundle/document format persistence, upload SHA-256 hashing, v0.2 profile
+  manifests, live runtime version guards, lifecycle-safe structured rewrites,
+  source-reference deletion cleanup, a dedicated conformance validator, and
+  the dry-run/staged `migrate:okf-v0.2` cutover with backup enforcement and
+  rollback. Production migration and release checks are complete; portable
+  archive import is now the next isolated platform slice.
+- Added review-first chat entity discovery. Validated LLM answers may surface up
+  to three named entities backed by exact quotes from persisted evidence.
+  `Review and enrich` creates a deterministic, workspace-and-bundle-scoped
+  `needs_review` entity topic from the cited document pages and opens the
+  existing topic workflow. Built-in Generic and Aviation profiles now include
+  the `entity` concept type and optional `entity_type` metadata.
+- Entity suggestions cannot become answer evidence or approved knowledge.
+  Promotion re-resolves the persisted assistant trace and citation server-side,
+  verifies workspace and bundle ownership, requires an active source document,
+  and uses only real extracted pages from the cited range.
 - Tightened bounded adaptive retrieval after the first 30-question evaluation. The provider now returns canonical expansion terms that are appended to the unchanged user query, structurally preserving route cues and protected identifiers. OKF-only merges retain raw evidence's discovery-only label, raw-only retry additions cannot count as qualified OKF improvement, and malformed LLM citation formatting is repaired with a deterministic cited answer that must pass the same validator before use. The unchanged real-provider corpus improved from 15/30 baseline to 23/30 candidate questions with 100% citation precision, zero baseline regressions, zero policy violations, and a completed blinded technical review with no new incorrect candidate response; the result is `promote_to_internal_pilot`, not global enablement.
 - Fixed the Chat navigation appearing blank or stalled after evaluation runs. The workspace conversation index now loads only the 50 most recent sessions instead of rendering an unbounded history, and the adaptive-retrieval evaluator clears only its own sessions inside its isolated evaluation workspace before each repeat run.
 - Added the real-provider 30-question adaptive-retrieval evaluation to the existing Docker route harness. Five isolated mixed-domain bundles provide 15 weak and 15 partial cases, each run three times with retry disabled and enabled after the full route prerequisite. Reports now separate answer-quality failures from true policy violations, record per-turn SDK token usage and latency, enforce majority scoring and baseline-regression gates, and generate JSON comparison artifacts plus a blinded review worksheet. The first 180-turn run improved correctly cited questions from 15/30 to 17/30 with 100% citation precision, no baseline regressions, and zero route/scope/trust violations; it remains `hold_for_tuning` because the required three-question gain and human review were not met.

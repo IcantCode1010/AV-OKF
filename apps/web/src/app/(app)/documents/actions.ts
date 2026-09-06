@@ -31,6 +31,7 @@ import { isProductionBackend } from "@/lib/production-document-service";
 import {
   approveTopicContentSource,
   enrichTopic,
+  resolveTopicEnrichmentCandidateDecision,
 } from "@/lib/topic-enrichment";
 import {
   requestPermanentDocumentDeletion,
@@ -47,15 +48,32 @@ import {
 } from "@/lib/knowledge-authoring";
 import { createBullMqKnowledgeAuthoringQueue } from "@/lib/knowledge-authoring-queue";
 import { getDocumentProcessingHref } from "@/lib/document-row-navigation";
+import { getEntityGraphQueue } from "@/lib/entity-graph-queue";
+import {
+  emptyAviationDocumentMetadata,
+  normalizeAviationDocumentMetadata,
+} from "@/lib/aviation-document-metadata";
+import { createAutomaticPocEfbReleaseJob } from "@/lib/efb-release-automation";
+import { createEfbReleaseQueue } from "@/lib/efb-release-queue";
+import { normalizeManualAircraftApplicability } from "@/lib/aircraft-applicability";
 
 const RECOVERABLE_UPLOAD_ERRORS = new Set([
   "missing_pdf_file",
   "only_pdf_uploads_supported",
-  "upload_exceeds_25mb_limit",
+  "upload_exceeds_250mb_limit",
   "invalid_pdf_magic_bytes",
+  "invalid_aviation_ata",
+  "invalid_aviation_aircraft_type_id",
+  "invalid_aviation_source_classification",
+  "invalid_aviation_intended_audience",
+  "aviation_intended_audience_required",
+  "aviation_content_purpose_required",
 ]);
 
 export async function uploadDocumentAction(formData: FormData) {
+  if (isProductionBackend()) {
+    throw new Error("production_upload_requires_direct_storage_session");
+  }
   const file = formData.get("file");
   const context = await requireAuthWorkspaceContext();
   const knowledgeBundleId = getFormString(formData, "knowledgeBundleId");
@@ -73,13 +91,16 @@ export async function uploadDocumentAction(formData: FormData) {
       throw new Error("knowledge_bundle_not_found");
     }
 
+    const sourceType = getSourceType(getFormString(formData, "sourceType"));
+    const aviation = getAviationMetadata(formData, sourceType);
     document = await createUploadedDocument({
+      ...aviation,
       bytes: Buffer.from(await file.arrayBuffer()),
       description: getFormString(formData, "description"),
       knowledgeBundleId: bundle.id,
       originalFilename: file.name,
       owner: getFormString(formData, "owner"),
-      sourceType: getSourceType(getFormString(formData, "sourceType")),
+      sourceType,
       tags: parseTags(getFormString(formData, "tags")),
       title: getFormString(formData, "title"),
       type: file.type,
@@ -180,6 +201,28 @@ export async function retryKnowledgeAuthoringAction(formData: FormData) {
   await enqueueKnowledgeAuthoringRun(queued);
   revalidatePath(`/documents/${documentId}`);
   redirect(getAuthoringReturnHref(documentId, formData));
+}
+
+export async function retryEntityExtractionAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const context = await requireAuthWorkspaceContext();
+  const jobs = await getPrisma().entityExtractionJob.findMany({
+    where: {
+      documentId,
+      status: { in: ["failed", "completed_with_warnings"] },
+      workspaceId: context.workspaceId,
+    },
+  });
+  const queue = getEntityGraphQueue();
+  for (const job of jobs) {
+    await getPrisma().entityExtractionJob.update({
+      data: { completedAt: null, errorCode: null, errorMessage: null, status: "queued", warningCodes: [] },
+      where: { id: job.id },
+    });
+    await queue.enqueue({ jobId: job.id, kind: "extract", workspaceId: job.workspaceId });
+  }
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=processing`);
 }
 
 export async function undoAuthoringMetadataAction(formData: FormData) {
@@ -289,6 +332,36 @@ export async function approveTopicContentAction(formData: FormData) {
   redirect(`/documents/${documentId}`);
 }
 
+export async function resolveTopicEnrichmentCandidateAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const auditId = getFormString(formData, "auditId");
+  const decisionValue = getFormString(formData, "decision");
+  if (decisionValue !== "accept" && decisionValue !== "reject") {
+    throw new Error("invalid_topic_enrichment_decision");
+  }
+  const context = await requireAuthWorkspaceContext();
+  const workspaceId = await getDocumentWorkspaceId(documentId);
+  assertActionDocumentWorkspace({
+    allowMissingWorkspace: !isProductionBackend(),
+    context,
+    document: { workspaceId },
+    mismatchError: "topic_enrichment_workspace_mismatch",
+  });
+  const topicBelongsToDocument = (await getTopicRecordsByDocumentId(documentId))
+    .some((topic) => topic.id === topicId);
+  if (!topicBelongsToDocument) {
+    throw new Error("topic_not_found");
+  }
+  await resolveTopicEnrichmentCandidateDecision(
+    topicId,
+    { auditId, decision: decisionValue },
+    { context },
+  );
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=topics&topic=${topicId}`);
+}
+
 export async function updateTopicContentAction(formData: FormData) {
   const documentId = getFormString(formData, "documentId");
   const topicId = getFormString(formData, "topicId");
@@ -380,6 +453,16 @@ export async function updateTopicOkfMetadataAction(formData: FormData) {
 const RECOVERABLE_METADATA_ERRORS = new Set([
   "classification_code_too_long",
   "document_workspace_mismatch",
+  "invalid_aviation_ata",
+  "invalid_aviation_aircraft_type_id",
+  "invalid_aviation_source_classification",
+  "invalid_aviation_intended_audience",
+  "aviation_intended_audience_required",
+  "aviation_content_purpose_required",
+  "invalid_aircraft_applicability_scope",
+  "invalid_entire_family_applicability",
+  "invalid_specific_variant_applicability",
+  "invalid_ambiguous_applicability",
 ]);
 
 export async function updateDocumentMetadataAction(formData: FormData) {
@@ -397,25 +480,71 @@ export async function updateDocumentMetadataAction(formData: FormData) {
       mismatchError: "document_workspace_mismatch",
     });
 
+    const sourceType = getSourceType(getFormString(formData, "sourceType"));
+    const aviation = getAviationMetadata(formData, sourceType);
+    const currentDocument = await getDocumentById(id);
+    const submittedSourceIdentifier = getNullableFormString(formData, "sourceIdentifier");
+    const preservedSourceIdentifier = sourceType === "aviation" &&
+      submittedSourceIdentifier === currentDocument?.classificationCode &&
+      submittedSourceIdentifier !== null &&
+      !/^\d{2}(?:-\d{2}){0,2}$/.test(submittedSourceIdentifier)
+      ? submittedSourceIdentifier
+      : null;
+    const applicabilityManualOverride = sourceType === "aviation" && getFormString(formData, "applicabilityManualOverride") === "true";
+    const applicability = applicabilityManualOverride
+      ? normalizeManualAircraftApplicability({
+          aircraftFamilyIds: getFormString(formData, "aircraftFamilyIds"),
+          aircraftTypeIds: getFormString(formData, "aircraftTypeIds"),
+          scope: getFormString(formData, "applicabilityScope"),
+        })
+      : null;
     await updateDocumentMetadata(id, {
-      subjectFamily: getNullableFormString(formData, "subjectFamily"),
-      classificationCode: normalizeClassificationCode(
-        getNullableFormString(formData, "classificationCode"),
-      ),
+      aircraftFamilyIds: applicability?.aircraftFamilyIds,
+      aircraftTypeIds: aviation.aircraftTypeIds,
+      applicabilityManualOverride,
+      applicabilityOverrideBy: context.userId,
+      applicabilityScope: applicability?.scope,
+      subjectFamily: sourceType === "aviation"
+        ? aviation.subjectFamily
+        : getNullableFormString(formData, "subjectFamily"),
+      classificationCode: sourceType === "aviation"
+        ? aviation.classificationCode ?? preservedSourceIdentifier
+        : normalizeClassificationCode(getNullableFormString(formData, "classificationCode")),
+      contentPurpose: aviation.contentPurpose,
       customProperties: parseCustomProperties(
         getFormString(formData, "customProperties"),
       ),
       description: getFormString(formData, "description"),
-      effectivity: getNullableFormString(formData, "effectivity"),
-      documentType: getNullableFormString(formData, "documentType"),
+      effectivity: sourceType === "aviation" ? aviation.effectivity : getNullableFormString(formData, "effectivity"),
+      documentType: sourceType === "aviation" ? aviation.documentType : getNullableFormString(formData, "documentType"),
+      intendedAudiences: aviation.intendedAudiences,
+      licenseIdentifier: aviation.licenseIdentifier,
       owner: getFormString(formData, "owner"),
-      revision: getNullableFormString(formData, "revision"),
-      sourceAuthority: getNullableFormString(formData, "sourceAuthority"),
-      sourceType: getSourceType(getFormString(formData, "sourceType")),
+      revision: sourceType === "aviation" ? aviation.revision : getNullableFormString(formData, "revision"),
+      sourceAuthority: sourceType === "aviation" ? aviation.sourceAuthority : getNullableFormString(formData, "sourceAuthority"),
+      sourceClassification: aviation.sourceClassification,
+      sourceType,
       status: getDocumentStatus(getFormString(formData, "status")),
       tags: parseTags(getFormString(formData, "tags")),
       title: getFormString(formData, "title"),
     });
+    if (isProductionBackend() && sourceType === "aviation") {
+      const readyRun = await getPrisma().knowledgeAuthoringRun.findFirst({
+        orderBy: { updatedAt: "desc" },
+        select: { id: true },
+        where: { documentId: id, status: "ready_for_review", workspaceId: context.workspaceId },
+      });
+      if (readyRun) {
+        const queue = createEfbReleaseQueue();
+        try {
+          await createAutomaticPocEfbReleaseJob({ authoringRunId: readyRun.id, queue });
+        } catch (error) {
+          console.error("efb_release_enqueue_after_metadata_update_failed", error);
+        } finally {
+          await queue.close();
+        }
+      }
+    }
   } catch (error) {
     if (error instanceof Error && RECOVERABLE_METADATA_ERRORS.has(error.message)) {
       redirect(
@@ -466,6 +595,33 @@ export async function retryPermanentDocumentDeletionAction(formData: FormData) {
 function getFormString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+function getAviationMetadata(formData: FormData, sourceType: SourceType) {
+  if (sourceType !== "aviation") {
+    return {
+      ...emptyAviationDocumentMetadata(),
+      classificationCode: null,
+      documentType: null,
+      effectivity: null,
+      revision: null,
+      sourceAuthority: null,
+      subjectFamily: null,
+    };
+  }
+  return normalizeAviationDocumentMetadata({
+    aircraftFamily: getNullableFormString(formData, "subjectFamily"),
+    aircraftTypeIds: getFormString(formData, "aircraftTypeIds"),
+    ata: getNullableFormString(formData, "classificationCode"),
+    contentPurpose: getNullableFormString(formData, "contentPurpose"),
+    effectivity: getNullableFormString(formData, "effectivity"),
+    intendedAudiences: formData.getAll("intendedAudiences"),
+    licenseIdentifier: getNullableFormString(formData, "licenseIdentifier"),
+    manualType: getNullableFormString(formData, "documentType"),
+    revision: getNullableFormString(formData, "revision"),
+    sourceAuthority: getNullableFormString(formData, "sourceAuthority"),
+    sourceClassification: getNullableFormString(formData, "sourceClassification"),
+  });
 }
 
 function getAuthoringReturnHref(documentId: string, formData: FormData) {

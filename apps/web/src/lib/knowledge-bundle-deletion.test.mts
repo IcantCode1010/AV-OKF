@@ -2,10 +2,41 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ensureKnowledgeBundleDeletionQueued,
   requestKnowledgeBundleDeletion,
   runKnowledgeBundleDeletionJob,
 } from "./knowledge-bundle-deletion.ts";
 import { DELETED_KNOWLEDGE_SOURCE_CHAT_ANSWER } from "./chat-evidence-tombstone.ts";
+
+test("deletion enqueue revives an exhausted deterministic queue job", async () => {
+  const calls: string[] = [];
+  const result = await ensureKnowledgeBundleDeletionQueued({
+    async add() { calls.push("add"); },
+    async getExisting() {
+      return {
+        async getState() { return "failed"; },
+        async retry() { calls.push("retry"); },
+      };
+    },
+  });
+  assert.equal(result, "retried");
+  assert.deepEqual(calls, ["retry"]);
+});
+
+test("deletion enqueue preserves an already waiting deterministic job", async () => {
+  const calls: string[] = [];
+  const result = await ensureKnowledgeBundleDeletionQueued({
+    async add() { calls.push("add"); },
+    async getExisting() {
+      return {
+        async getState() { return "waiting"; },
+        async retry() { calls.push("retry"); },
+      };
+    },
+  });
+  assert.equal(result, "existing");
+  assert.deepEqual(calls, []);
+});
 
 test("request immediately unassigns documents and deactivates RAG without touching source objects", async () => {
   const previousBackend = process.env.AV_OKF_BACKEND;

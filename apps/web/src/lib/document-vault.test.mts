@@ -62,7 +62,7 @@ test("assertPdfUpload rejects non-PDF and oversized uploads", () => {
         size: MAX_UPLOAD_BYTES + 1,
         type: "application/pdf",
       }),
-    /upload_exceeds_25mb_limit/,
+    /upload_exceeds_250mb_limit/,
   );
 });
 
@@ -348,6 +348,98 @@ test("local vault topic content edits preserve original extracted values", async
     assert.equal(edited.originalSummary, topic.summary);
     assert.match(edited.editedAt ?? "", /\d{4}/);
     assert.equal(edited.editedBy, "usr_reviewer");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("local aviation topics inherit metadata and pending topics follow metadata edits", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-aviation-metadata-"));
+  const vault = createLocalDocumentVault(root);
+  try {
+    const uploaded = await vault.createUploadedDocument({
+      aircraftTypeIds: ["B738"],
+      bytes: Buffer.from("%PDF-1.7\n"),
+      classificationCode: "24",
+      contentPurpose: "technical-reference",
+      description: "Electrical power training source.",
+      documentType: "Training Manual",
+      effectivity: "Boeing 737NG",
+      intendedAudiences: ["maintenance"],
+      knowledgeBundleId: "bundle_aviation",
+      licenseIdentifier: "unknown",
+      originalFilename: "manual.pdf",
+      owner: "Maintenance Control",
+      revision: "2.0",
+      sourceAuthority: "Example Publisher",
+      sourceClassification: "training-reference",
+      sourceType: "aviation",
+      subjectFamily: "Boeing 737NG",
+      tags: ["topic"],
+      title: "Electrical Power Manual",
+      type: "application/pdf",
+    });
+    await vault.completeExtraction(uploaded.id, { pageRecords: [{
+      charCount: 45,
+      imageCount: 0,
+      pageNumber: 1,
+      tables: [],
+      text: "ATA 24 ELECTRICAL POWER\nGenerator bus detail.",
+    }] });
+    const [topic] = await vault.generateTopicRecords(uploaded.id);
+    assert.equal(topic.okfMetadata.aircraft_family, "Boeing 737NG");
+    assert.deepEqual(topic.okfMetadata.aircraft_type_ids, ["B738"]);
+    assert.deepEqual(topic.okfMetadata.intended_audiences, ["maintenance"]);
+
+    await vault.updateDocumentMetadata(uploaded.id, {
+      aircraftTypeIds: ["B739"],
+      classificationCode: "24-00",
+      contentPurpose: "technical-reference",
+      customProperties: [],
+      description: uploaded.description,
+      documentType: "Training Manual",
+      effectivity: "Boeing 737NG",
+      intendedAudiences: ["pilot", "maintenance"],
+      licenseIdentifier: "unknown",
+      owner: uploaded.owner,
+      revision: "2.1",
+      sourceAuthority: "Example Publisher",
+      sourceClassification: "training-reference",
+      sourceType: "aviation",
+      status: uploaded.status,
+      subjectFamily: "Boeing 737NG",
+      tags: uploaded.tags,
+      title: uploaded.title,
+    });
+    const [updated] = await vault.getTopicRecordsByDocumentId(uploaded.id);
+    assert.equal(updated.okfMetadata.ata, "24-00");
+    assert.deepEqual(updated.okfMetadata.aircraft_type_ids, ["B739"]);
+    assert.deepEqual(updated.okfMetadata.intended_audiences, ["pilot", "maintenance"]);
+
+    await vault.updateTopicReviewStatus(updated.id, "approved");
+    await vault.updateDocumentMetadata(uploaded.id, {
+      aircraftTypeIds: ["B738"],
+      classificationCode: "32",
+      contentPurpose: "technical-reference",
+      customProperties: [],
+      description: uploaded.description,
+      documentType: "Training Manual",
+      effectivity: "Boeing 737NG",
+      intendedAudiences: ["pilot"],
+      licenseIdentifier: "unknown",
+      owner: uploaded.owner,
+      revision: "3.0",
+      sourceAuthority: "Example Publisher",
+      sourceClassification: "training-reference",
+      sourceType: "aviation",
+      status: uploaded.status,
+      subjectFamily: "Boeing 737NG",
+      tags: uploaded.tags,
+      title: uploaded.title,
+    });
+    const [approved] = await vault.getTopicRecordsByDocumentId(uploaded.id);
+    assert.equal(approved.okfMetadata.ata, "24-00");
+    assert.deepEqual(approved.okfMetadata.aircraft_type_ids, ["B739"]);
   } finally {
     await rm(root, { force: true, recursive: true });
   }

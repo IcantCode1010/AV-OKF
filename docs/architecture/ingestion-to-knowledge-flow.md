@@ -114,7 +114,7 @@ Every approved OKF concept should link back to the RAG chunks, pages, and source
 
 The purpose is not to make OKF depend on RAG. The purpose is to let the system know when a RAG result is already governed by an approved OKF concept.
 
-Coverage link fields:
+Coverage projection fields (database workflow state, not portable v0.2 frontmatter):
 
 ```text
 okf_concept_id

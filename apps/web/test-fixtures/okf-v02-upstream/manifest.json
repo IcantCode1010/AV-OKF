@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/GoogleCloudPlatform/open-knowledge-format",
+    "commit": "ad30107c31c06aec8a7d5636e0d1058118604e6f",
+    "license": {
+      "name": "Apache-2.0",
+      "path": "okf/LICENSE.md",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  },
+  "expected": {
+    "bundleFiles": 79,
+    "markdownFiles": 78,
+    "conceptFiles": 53,
+    "indexFiles": 24,
+    "logFiles": 1,
+    "resourceFiles": 1
+  },
+  "bundles": [
+    {
+      "name": "acme_retail",
+      "path": "okf/bundles/acme_retail",
+      "expected": {
+        "bundleFiles": 18,
+        "markdownFiles": 17,
+        "conceptFiles": 9,
+        "indexFiles": 7,
+        "logFiles": 1,
+        "resourceFiles": 1
+      }
+    },
+    {
+      "name": "crypto_bitcoin",
+      "path": "okf/bundles/crypto_bitcoin",
+      "expected": {
+        "bundleFiles": 15,
+        "markdownFiles": 15,
+        "conceptFiles": 9,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "resourceFiles": 0
+      }
+    },
+    {
+      "name": "ga4",
+      "path": "okf/bundles/ga4",
+      "expected": {
+        "bundleFiles": 14,
+        "markdownFiles": 14,
+        "conceptFiles": 9,
+        "indexFiles": 5,
+        "logFiles": 0,
+        "resourceFiles": 0
+      }
+    },
+    {
+      "name": "stackoverflow",
+      "path": "okf/bundles/stackoverflow",
+      "expected": {
+        "bundleFiles": 32,
+        "markdownFiles": 32,
+        "conceptFiles": 26,
+        "indexFiles": 6,
+        "logFiles": 0,
+        "resourceFiles": 0
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "okf/bundles/acme_retail/attesters/index.md",
+      "sha256": "a2dbb9651deca6c16bb4d7a862ceb97dad8d132887edfa7711ef1f29b23d846d"
+    },
+    {
+      "path": "okf/bundles/acme_retail/attesters/sql_equality.py",
+      "sha256": "ef41f8497de5ea3a4415bebc9222424576bfb56e114b2eacab53256aa86c1955"
+    },
+    {
+      "path": "okf/bundles/acme_retail/computations/gross-margin-period.md",
+      "sha256": "5e96ae11835ad328ccc94d29ae4bc7cc40176758cbcbad63231d0461c1f8f0e7"
+    },
+    {
+      "path": "okf/bundles/acme_retail/computations/index.md",
+      "sha256": "efba1dede9e991a05ca123d8d1d1cd3ca911791ef8e488dc82ea9cffa40f60d1"
+    },
+    {
+      "path": "okf/bundles/acme_retail/computations/revenue-ytd.md",
+      "sha256": "d4584e831dff9f6a284b1f9116ca41a16cfc5c26ca377fa6faa46ea0e9b5c5e7"
+    },
+    {
+      "path": "okf/bundles/acme_retail/index.md",
+      "sha256": "0e5fe5ba3143b14019e6658af425d9606d94f479e7df61a41985f31f7e75a377"
+    },
+    {
+      "path": "okf/bundles/acme_retail/log.md",
+      "sha256": "def518ddaa234f4a6533b9ca530622d39816d1a767de77ae489f43a538354005"
+    },
+    {
+      "path": "okf/bundles/acme_retail/metrics/gross-margin-legacy.md",
+      "sha256": "26ccbfecbf2d12dab7952121240d280428b63e4815706bb462e999a2ac714b73"
+    },
+    {
+      "path": "okf/bundles/acme_retail/metrics/gross-margin.md",
+      "sha256": "912be604fe7f681322b2ba6414b5791e9eb91b73aad1cae7afa666cedfe7d3c9"
+    },
+    {
+      "path": "okf/bundles/acme_retail/metrics/index.md",
+      "sha256": "4b2e8e14ee8905acbb3c06eefbb19fd01ce80fbc754480d15528527a924c077c"
+    },
+    {
+      "path": "okf/bundles/acme_retail/metrics/revenue.md",
+      "sha256": "1b9c033d2c715fa8beecfa0f371fafa1e70f64f1eeeac2a873ef5389389376b2"
+    },
+    {
+      "path": "okf/bundles/acme_retail/policies/index.md",
+      "sha256": "5e7cecc6f5e44f65713cb824af4526246a12c30424dcc18a0f59c4534af95706"
+    },
+    {
+      "path": "okf/bundles/acme_retail/policies/margin-standard.md",
+      "sha256": "fad81a5eabc286913a4d9436c2d36d31bcfb1494659c4110900ec2569bc6e42c"
+    },
+    {
+      "path": "okf/bundles/acme_retail/policies/revenue-recognition.md",
+      "sha256": "7660f72336e41c8af22a5910934d4903e502c9e2c1248409249e5dc5393107f3"
+    },
+    {
+      "path": "okf/bundles/acme_retail/skills/index.md",
+      "sha256": "7372d3f267f92a2411f52dfa4d3d68145e28ecdbaaa05f3866801fbdaf04416e"
+    },
+    {
+      "path": "okf/bundles/acme_retail/skills/run-on-bq.md",
+      "sha256": "89ee137f49de8dd7e830c41e1c86abb588107af3e1840fcec02ee8f272073c27"
+    },
+    {
+      "path": "okf/bundles/acme_retail/tables/index.md",
+      "sha256": "a36a20168ab34230a498b41707553d0029389b223277b421df56728c351ed628"
+    },
+    {
+      "path": "okf/bundles/acme_retail/tables/orders.md",
+      "sha256": "bfeecd29df0033a3fa441e42412ac7c5b64457e2b1b07c214318f91618058476"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/datasets/crypto_bitcoin.md",
+      "sha256": "70306b176addce9e6d7a021406d35170563e97d8d31a95a77c5856b7a27f7b18"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/datasets/index.md",
+      "sha256": "eba6d3f151eded4c889b29213b5d36e0446a706927a81e293e93db42b5035209"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/index.md",
+      "sha256": "9e4ba5c470325704d4a6f9d48076762ea3533d1f24facb1d710ffcc06c2e0108"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/index.md",
+      "sha256": "f9b1826b28c26fcb23b55ccbb5dd80ba93b34e8f2ec4f626711ced7fc636c080"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/joins/blocks___transactions.md",
+      "sha256": "c469b95c1598258beefd306bd5657bb8fad8b33c878b39d64ddeac309abfd85c"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/joins/index.md",
+      "sha256": "672f6470071cc8bfebcccf8f2b052834b29463eb8ade6ab08cb366076f712f59"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/joins/inputs___transactions.md",
+      "sha256": "4d9dba5c2e7448b90d0f02a92bf96bfbc11a75dea212d55b12108c3635df7a51"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/joins/outputs___transactions.md",
+      "sha256": "c2a6fe778905b0a77616c3367e48c641701feb27d51a3f979cd38d76c0086ad2"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/metrics/duplicate_transactions.md",
+      "sha256": "28c0d9a7a96287a8e5a18604736647bb1f16e64674e39f2724ee7c731f2a566e"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/references/metrics/index.md",
+      "sha256": "0fa96ce3f6741d233ab27fd96f767b481a567469ecbcb4c3b41c26c2d2a6ab88"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/tables/blocks.md",
+      "sha256": "3c2deafc70a9123d55f93869b89097e72a17c7cf9b244eeda027a2655220eb60"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/tables/index.md",
+      "sha256": "e579e1231f8ecc1f1b67c145bac6d12ea1a4f4e6b82b25ab75b02d43e49dcf72"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/tables/inputs.md",
+      "sha256": "4ef826d12bc4d714b41fc7195b3615d871e2b20832c49d7a349df5537f894be1"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/tables/outputs.md",
+      "sha256": "f9ad8175a3b564d703cfac152552a2c66093a5eaac25720fa6cd5e0f4bb937e6"
+    },
+    {
+      "path": "okf/bundles/crypto_bitcoin/tables/transactions.md",
+      "sha256": "0a1da887da85f16da7b7e4dc5a4291580a09999121d488eaeb0e72a3717e5a27"
+    },
+    {
+      "path": "okf/bundles/ga4/datasets/ga4_obfuscated_sample_ecommerce.md",
+      "sha256": "29bf5c2ec7ab1b148db4c41b49a0d177d5eea9161351bc9573c52d33a5417e82"
+    },
+    {
+      "path": "okf/bundles/ga4/datasets/index.md",
+      "sha256": "c965bd5e7c23d84e25d0bc36473174dfcd9914b2f000758464169da06adb936b"
+    },
+    {
+      "path": "okf/bundles/ga4/index.md",
+      "sha256": "dac904a29b0cf8a3ccae669250d44a03ae29c7c21d15da411827fa2cb61479b3"
+    },
+    {
+      "path": "okf/bundles/ga4/references/index.md",
+      "sha256": "f99816271272f0b41afac0832978a0c935196e9de0417b02508b55716121511a"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/acquired_users.md",
+      "sha256": "03311ced9505dce14b5c7c180597c493d76547ba2769c6a6614dda9e87bf0550"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/frequently_active_users.md",
+      "sha256": "6b7579ac125da18d7e7f65afbc64cade00d5233df29edadca67ea8cafed2bab2"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/google_acquired_cohorts.md",
+      "sha256": "c7288bb8dd427516fb3180f2996e5acf6da4456a3276da35689c2def1a76fc87"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/highly_active_users.md",
+      "sha256": "c8ec750c89224ea1b07ff2821196e27b66c4849128edbcadba89751a48b6a178"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/index.md",
+      "sha256": "41e6086ad27dc61a164c1515f90f42c8009dabee6fe0acb9ebe121815eeb35f9"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/n_day_active_users.md",
+      "sha256": "f590a30ed85fb6bf3e74dea70808d632f1d7e27b6180e3e177c2c3a7da8fa0bb"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/n_day_inactive_users.md",
+      "sha256": "e08e5aeed20f75c47572b7a50cff18ee1ec8c243d976fa75921a9232d826409c"
+    },
+    {
+      "path": "okf/bundles/ga4/references/metrics/purchasers.md",
+      "sha256": "22ad2f75f7382078515af14e27ffe56fe510f4610b57fb54c6dfd05993dd925b"
+    },
+    {
+      "path": "okf/bundles/ga4/tables/events_.md",
+      "sha256": "6446a3ae46b6c361e6598cc568dc1671225e496aada397d6ea185eaeec1c1b8c"
+    },
+    {
+      "path": "okf/bundles/ga4/tables/index.md",
+      "sha256": "a774803cf7e9156ead4dd3b90a717da5f2f4a13c1907b6994f220c31dc596aa3"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/datasets/index.md",
+      "sha256": "a98e06e999e5f404bf5a0b4e5a2ea93c965c855554695f7051deae7a0c71ae2c"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/datasets/stackoverflow.md",
+      "sha256": "652dc378975cd87e553aabf5669ef20edbad6c6c2f1120ee5543b57aca4e963c"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/index.md",
+      "sha256": "0799576aa6ad832faaaacb7add2fd8057851c795bd7eb5efbad0217af53e68dd"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/content_licenses.md",
+      "sha256": "52b517b7e565744b3d49b2ea9fa4ef437887d5c5f729a1b8371912493f9f309b"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/index.md",
+      "sha256": "96c3d111b92cc0c19c21ec7fdb81b51f9b8517396db06aafd516b6e1de195095"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/joins/comments__posts.md",
+      "sha256": "b2b01e7390b5296f2a6c57125870d42864f6984fbf2f9c3ebfe6a3890d5adbd6"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/joins/index.md",
+      "sha256": "6ae299c8008c8240e4968223628666d9e2d5debef6682cc66a6ac49ec2f98696"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/joins/post_links__posts.md",
+      "sha256": "b8401dca15fd8faeee1a727746f159d46beb22b504dec6afaedaf2ec0cb0c829"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/joins/posts__votes.md",
+      "sha256": "b8bd473f77dc64178a20c8a5df8dfae496cda483bb2f25324cd5091f5fa87bce"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/joins/posts_answers__posts_questions.md",
+      "sha256": "5ad2e2589e58b3ea46ffd685507eb2c8372483003deba5df76ce97928a60ab0b"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/metrics/accepted_answer_rate.md",
+      "sha256": "bd965fa192fb6f8e8f84d714b3157d842bf69b730a0a537936af6a1e0ca599bd"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/metrics/bad_question_flag_ratio.md",
+      "sha256": "63f5cbc9bce817146a39a85df8b290eee2033e34eac736854ba3b478988d3ddc"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/metrics/index.md",
+      "sha256": "c0e4db208eeb5b9f92523755a4bd51fd145175b95d6032458a3f904ab4c6be88"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/post_types.md",
+      "sha256": "3116fd2ff3e970f363a2fb16c0d2f8325e1dd945d0c57506ea7e1c63291dcf5d"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/references/vote_types.md",
+      "sha256": "f424ac3e9c67e2d489fc76a1f37b7d3353bb8574a2d96116aa3755593cee18fd"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/badges.md",
+      "sha256": "d12aa0dbfdab49a23a5205d1fab3d493e848669c3a7fb770ebb0f1d4afde2788"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/comments.md",
+      "sha256": "d4868a8cf11b3fe9271ccef996fb1103f4abdfad85d1eda250ba308d27dacf80"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/index.md",
+      "sha256": "da868796c0e5d6c9464d666322513cead90aa4f29bc092842e0857ef5bf1b087"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/post_history.md",
+      "sha256": "ee59db21f1c6336029e588d1664131548ffae0f93417904d9c0af613e975e185"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/post_links.md",
+      "sha256": "0857dff8b5dd2f59bd7dec6a6503702110a543615bd4d0c25537757104558466"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_answers.md",
+      "sha256": "f7815477c909e2fa232da6b1c78cee54128c545885743d19783b44144ce20dfa"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_moderator_nomination.md",
+      "sha256": "4ad34227093939a030e7198566abdf880d43b5d951c7fcc3540d0ab227dd6868"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_orphaned_tag_wiki.md",
+      "sha256": "9992a536330f10424f3fad19503c77c384e3278c3b4ceda3015ef36aa3ce2ad5"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_privilege_wiki.md",
+      "sha256": "5947f420f1022a810bdee36f66bac1f6d652246de856884f60f9f27b434816c1"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_questions.md",
+      "sha256": "6cdc47a540c341a82b3d80f643e2c06bdc87aada7097e8c5383d6ee0ae8ff46f"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_tag_wiki_excerpt.md",
+      "sha256": "69b0615615fab1fa3120bcd59ee63a9568d940cef8c94345b50c5a85745eadc9"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_tag_wiki.md",
+      "sha256": "c707d0f2397a0017781c213509aac7886f8eeb3f0f70727d90d3b599733fc72f"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/posts_wiki_placeholder.md",
+      "sha256": "8a20e10b4da3cf33f4cc53863cf0289183c7f1add652778d1c0c9feabc6928a8"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/stackoverflow_posts.md",
+      "sha256": "8e4d32024966f2403dca801ac5b5fd1e41b21fde1c972b2088f3a69a92478662"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/tags.md",
+      "sha256": "c8bcfad355b524c0f57a9485572048c27a739c6c7b5df8289b5103badd3b4c6e"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/users.md",
+      "sha256": "cb81d762fe3a3a4468563536ccf5378090c35896a5378cb8a1f408e8958265fc"
+    },
+    {
+      "path": "okf/bundles/stackoverflow/tables/votes.md",
+      "sha256": "4179725997f711d913ae8eee321dbc43d64e3dfc3fe71fbef98bf2e757041565"
+    }
+  ]
+}

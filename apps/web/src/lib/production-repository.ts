@@ -1,3 +1,5 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
+import {importLegacyTopic} from "./knowledge/editorial.ts";
 import { randomUUID } from "node:crypto";
 
 import type { Prisma } from "@prisma/client";
@@ -21,38 +23,75 @@ import type {
   TopicRecord,
   TopicReviewStatus,
 } from "./document-vault.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  buildTopicEnrichmentDiff,
+  hasExistingTopicEnrichment,
+  normalizeTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+  type TopicEnrichmentDiff,
+} from "./topic-enrichment-diff.ts";
+import { buildTopicEnrichmentContextPageNumbers } from "./topic-enrichment-context.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
   normalizeTopicRelations,
   type TopicRelation,
 } from "./okf-relation-types.ts";
+import { deriveDocumentLibraryStatus } from "./document-library-status.ts";
+import {
+  buildInheritedAviationOkfMetadata,
+  normalizeStoredAviationSourceClassification,
+  normalizeStoredIntendedAudiences,
+  replaceInheritedAviationOkfMetadata,
+} from "./aviation-document-metadata.ts";
 
 type UploadRecordInput = {
+  aircraftTypeIds: string[];
+  classificationCode: string | null;
+  contentSha256: string;
+  contentPurpose: string | null;
   context: AuthWorkspaceContext;
   description: string;
+  documentType: string | null;
+  effectivity: string | null;
+  intendedAudiences: string[];
   documentId: string;
   knowledgeBundleId: string;
   objectKey: string;
+  licenseIdentifier: string | null;
   originalFilename: string;
   owner: string;
+  revision: string | null;
   sizeBytes: number;
   sourceType: SourceType;
+  sourceAuthority: string | null;
+  sourceClassification: string | null;
+  subjectFamily: string | null;
   tags: string[];
   title: string;
 };
 
 type UpdateMetadataInput = {
+  aircraftFamilyIds?: string[];
+  aircraftTypeIds: string[];
+  applicabilityManualOverride?: boolean;
+  applicabilityOverrideBy?: string;
+  applicabilityScope?: "entire-family" | "specific-variants" | "ambiguous" | null;
   subjectFamily: string | null;
   classificationCode: string | null;
   context: AuthWorkspaceContext;
   customProperties: CustomProperty[];
   description: string;
+  contentPurpose: string | null;
   documentId: string;
   effectivity: string | null;
   documentType: string | null;
+  intendedAudiences: string[];
+  licenseIdentifier: string | null;
   owner: string;
   revision: string | null;
   sourceAuthority: string | null;
+  sourceClassification: string | null;
   sourceType: SourceType;
   status: DocumentStatus;
   tags: string[];
@@ -62,6 +101,21 @@ type UpdateMetadataInput = {
 export type ProductionDocumentRepository = ReturnType<
   typeof createPostgresDocumentRepository
 >;
+
+export function resolveKnowledgeAuthoringAutomationSettings(schema: unknown) {
+  const profile = schema as {
+    automation?: {
+      autoApproveEnrichedTopics?: boolean;
+      autoApproveVerifiedRelations?: boolean;
+    };
+  };
+  return {
+    automaticRelationApprovalEnabled:
+      profile.automation?.autoApproveVerifiedRelations === true,
+    automaticTopicApprovalEnabled:
+      profile.automation?.autoApproveEnrichedTopics === true,
+  };
+}
 
 type DbCustomProperty = {
   key: string;
@@ -79,6 +133,8 @@ type DbExtractedPage = {
   pageNumber: number;
   tables: unknown;
   text: string;
+  figureCaptionHints?: string[];
+  visualCandidate?: boolean;
 };
 
 type DbExtractionJob = {
@@ -104,7 +160,23 @@ type DbTopicDiscoveryJob = {
   totalWindows: number;
 };
 
+type DbKnowledgeAuthoringRun = {
+  automaticApprovalRun?: { status: string } | null;
+  status: string;
+};
+
 type DbDocumentRecord = {
+  aircraftFamilyIds: string[];
+  aircraftTypeIds: string[];
+  applicabilityClassifiedAt: Date | null;
+  applicabilityConfidence: number | null;
+  applicabilityEvidence: string[];
+  applicabilityModel: string | null;
+  applicabilityProvider: string | null;
+  applicabilityScope: string | null;
+  applicabilityStatus: string | null;
+  contentSha256: string | null;
+  contentPurpose: string | null;
   subjectFamily: string | null;
   classificationCode: string | null;
   customProperties?: DbCustomProperty[];
@@ -113,7 +185,11 @@ type DbDocumentRecord = {
   extractedPages?: DbExtractedPage[];
   extractionJobs?: DbExtractionJob[];
   extractionLogs?: DbExtractionLog[];
+  knowledgeAuthoringRuns?: DbKnowledgeAuthoringRun[];
+  intendedAudiences: string[];
+  licenseIdentifier: string | null;
   topicDiscoveryJobs?: DbTopicDiscoveryJob[];
+  topicRecords?: Array<{ id: string }>;
   fileType: string;
   id: string;
   knowledgeBundleId: string | null;
@@ -123,11 +199,13 @@ type DbDocumentRecord = {
   originalFilename: string | null;
   owner: string;
   pages: number;
+  ragStatus: string;
   revision: string | null;
   size: string;
   sizeBytes: number;
   sourceType: string;
   sourceAuthority: string | null;
+  sourceClassification: string | null;
   status: string;
   tags: string[];
   title: string;
@@ -175,10 +253,44 @@ type DbTopicRecord = {
   title: string;
   topicType: string;
   updatedAt: Date;
+  mediaReferences?: DbTopicMediaReference[];
+};
+
+type DbTopicMediaReference = {
+  anchorTerms: string[];
+  confidence: number;
+  id: string;
+  mediaAsset: {
+    altText: string;
+    height: number;
+    id: string;
+    kind: string;
+    pageNumber: number;
+    sourceCaption: string | null;
+    visibleLabels: string[];
+    visualContext: string;
+    width: number;
+  };
+  rationale: string;
+  reviewedAt: Date | null;
+  reviewedBy: string | null;
+  role: string;
+  status: string;
 };
 
 type DbTopicEnrichmentAudit = {
+  baselineBody: string | null;
+  baselineFingerprint: string | null;
+  baselineProposedSourcePageNumbers: number[];
+  baselineSummary: string | null;
+  baselineTitle: string | null;
+  candidateBody: string | null;
+  candidateProposedSourcePageNumbers: number[];
+  candidateSummary: string | null;
+  candidateTitle: string | null;
   createdAt: Date;
+  diff: Prisma.JsonValue;
+  disposition: string;
   errorMessage: string | null;
   id: string;
   model: string;
@@ -186,6 +298,8 @@ type DbTopicEnrichmentAudit = {
   provider: string;
   rawResponse: string;
   requestedBy: string;
+  resolvedAt: Date | null;
+  resolvedBy: string | null;
   succeeded: boolean;
   topicId: string;
 };
@@ -206,7 +320,28 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         extractedPages: { orderBy: { pageNumber: "asc" } },
         extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
         extractionLogs: { orderBy: { timestamp: "asc" } },
-        topicDiscoveryJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
+        knowledgeAuthoringRuns: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            automaticApprovalRun: { select: { status: true } },
+            status: true,
+          },
+          take: 1,
+        },
+        topicDiscoveryJobs: {
+          orderBy: { queuedAt: "desc" },
+          take: 1,
+          where: {
+            OR: [
+              { errorCode: null },
+              { errorCode: { not: "topic_discovery_superseded_by_active_job" } },
+            ],
+          },
+        },
+        topicRecords: {
+          select: { id: true },
+          where: { reviewStatus: { in: ["needs_review", "needs_cleanup"] } },
+        },
         objects: { orderBy: { createdAt: "asc" } },
       },
       where: { deletedAt: null, id: documentId, workspaceId },
@@ -255,9 +390,11 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             charCount: page.charCount,
             documentId: input.documentId,
             imageCount: page.imageCount,
+            figureCaptionHints: page.figureCaptionHints ?? [],
             pageNumber: page.pageNumber,
             tables: page.tables,
             text: page.text,
+            visualCandidate: page.visualCandidate ?? false,
             workspaceId: input.workspaceId,
           })),
         });
@@ -349,17 +486,29 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const document = await db.$transaction(async (tx: Prisma.TransactionClient) => {
         const created = await tx.document.create({
           data: {
+            aircraftTypeIds: input.aircraftTypeIds,
+            classificationCode: input.classificationCode,
+            contentSha256: input.contentSha256,
+            contentPurpose: input.contentPurpose,
             description: input.description.trim(),
+            documentType: input.documentType,
+            effectivity: input.effectivity,
             fileType: "PDF",
             id: input.documentId,
             knowledgeBundleId: input.knowledgeBundleId,
             mimeType: "application/pdf",
             originalFilename: input.originalFilename,
+            intendedAudiences: input.intendedAudiences,
+            licenseIdentifier: input.licenseIdentifier,
             owner: input.owner.trim() || "Unassigned",
             size: formatBytes(input.sizeBytes),
             sizeBytes: input.sizeBytes,
             sourceType: input.sourceType,
+            revision: input.revision,
+            sourceAuthority: input.sourceAuthority,
+            sourceClassification: input.sourceClassification,
             status: "processing",
+            subjectFamily: input.subjectFamily,
             tags: input.tags,
             title,
             updatedLabel: timestamp,
@@ -500,7 +649,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             enrichmentStatus: "none",
             originalSummary: topic.summary,
             originalTitle: topic.title,
-            okfMetadata: {},
+            okfMetadata: buildInheritedAviationOkfMetadata(mapped) as Prisma.InputJsonValue,
             pageEnd: topic.pageEnd,
             pageStart: topic.pageStart,
             reviewStatus: "needs_review",
@@ -527,6 +676,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       const topics = await db.topicRecord.findMany({
         include: {
           enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          mediaReferences: {
+            include: { mediaAsset: true },
+            orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
+          },
         },
         orderBy: [{ pageStart: "asc" }, { createdAt: "asc" }],
         where: {
@@ -563,19 +716,52 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async getDocumentMetrics(context: AuthWorkspaceContext) {
       const documents = await db.document.findMany({
+        select: {
+          extractionJobs: {
+            orderBy: { queuedAt: "desc" },
+            select: { status: true },
+            take: 1,
+          },
+          knowledgeAuthoringRuns: {
+            orderBy: { createdAt: "desc" },
+            select: {
+              automaticApprovalRun: { select: { status: true } },
+              status: true,
+            },
+            take: 1,
+          },
+          knowledgeBundleId: true,
+          pages: true,
+          ragStatus: true,
+          status: true,
+          topicRecords: {
+            select: { id: true },
+            where: { reviewStatus: { in: ["needs_review", "needs_cleanup"] } },
+          },
+        },
         where: { deletedAt: null, workspaceId: context.workspaceId },
       });
+      const statuses = documents.map((document) => {
+        const latestAuthoringRun = document.knowledgeAuthoringRuns[0];
+        return deriveDocumentLibraryStatus({
+          assignedToBundle: Boolean(document.knowledgeBundleId),
+          authoringStatus: latestAuthoringRun?.status,
+          automaticApprovalStatus: latestAuthoringRun?.automaticApprovalRun?.status,
+          extractionStatus: resolveProductionExtractionStatus({
+            pageCount: document.pages,
+            status: document.extractionJobs[0]?.status,
+          }),
+          persistedStatus: normalizeDocumentStatus(document.status),
+          ragStatus: document.ragStatus,
+          unresolvedTopicCount: document.topicRecords.length,
+        });
+      });
       return {
-        processing: documents.filter(
-          (document: { status: string }) => document.status === "processing",
+        processing: statuses.filter((status) => status === "processing").length,
+        ready: statuses.filter(
+          (status) => status === "ready" || status === "indexed",
         ).length,
-        ready: documents.filter(
-          (document: { status: string }) =>
-            document.status === "ready" || document.status === "indexed",
-        ).length,
-        review: documents.filter(
-          (document: { status: string }) => document.status === "needs_review",
-        ).length,
+        review: statuses.filter((status) => status === "needs_review").length,
         total: documents.length,
       };
     },
@@ -586,7 +772,19 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           extractedPages: { orderBy: { pageNumber: "asc" } },
           extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
           extractionLogs: { orderBy: { timestamp: "asc" } },
+          knowledgeAuthoringRuns: {
+            orderBy: { createdAt: "desc" },
+            select: {
+              automaticApprovalRun: { select: { status: true } },
+              status: true,
+            },
+            take: 1,
+          },
           objects: { orderBy: { createdAt: "asc" } },
+          topicRecords: {
+            select: { id: true },
+            where: { reviewStatus: { in: ["needs_review", "needs_cleanup"] } },
+          },
         },
         orderBy: { updatedAt: "desc" },
         where: { deletedAt: null, workspaceId: context.workspaceId },
@@ -617,7 +815,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         take: limit,
         where: {
           document: { deletedAt: null },
-          status: { in: ["queued", "running"] },
+          status: { in: ["queued", "running", "waiting_for_rag"] },
         },
       }) as Promise<QueuedExtractionJob[]>;
     },
@@ -655,14 +853,17 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         throw new Error("topic_not_found");
       }
 
+      const contextPageNumbers = buildTopicEnrichmentContextPageNumbers({
+        pageEnd: topic.pageEnd,
+        pageStart: topic.pageStart,
+        sourcePageNumbers: topic.sourcePageNumbers,
+      });
+
       const sourcePages = await db.extractedPage.findMany({
         orderBy: { pageNumber: "asc" },
         where: {
           documentId: topic.documentId,
-          pageNumber: {
-            gte: Math.max(1, topic.pageStart - 2),
-            lte: topic.pageEnd + 2,
-          },
+          pageNumber: { in: contextPageNumbers },
           workspaceId: input.context.workspaceId,
         },
       });
@@ -690,17 +891,37 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       if (normalizeTopicReviewStatus(existingTopic.reviewStatus) === "approved") {
         throw new Error("topic_enrichment_requires_unapproved_topic");
       }
-
-      const topic = await db.topicRecord.update({
+      if (existingTopic.enrichmentStatus === "pending") {
+        throw new Error("topic_enrichment_already_pending");
+      }
+      if (existingTopic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
+      }
+      const claimed = await db.topicRecord.updateMany({
         data: { enrichmentStatus: "pending" },
+        where: {
+          enrichmentStatus: { in: ["none", "completed", "failed"] },
+          id: input.topicId,
+          workspaceId: input.context.workspaceId,
+        },
+      });
+      if (claimed.count !== 1) {
+        throw new Error("topic_enrichment_already_pending");
+      }
+      const topic = await db.topicRecord.findUniqueOrThrow({
         include: {
           enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          mediaReferences: {
+            include: { mediaAsset: true },
+            orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
+          },
         },
         where: { id: input.topicId },
       });
       return mapTopicRecord(topic);
     },
     async completeTopicEnrichment(input: {
+      baselineFingerprint: string;
       context: AuthWorkspaceContext;
       enrichedSummary: string;
       enrichedTitle: string;
@@ -713,10 +934,43 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       requestedBy: string;
       topicId: string;
     }) {
-      await assertTopicInWorkspace(db, input.topicId, input.context.workspaceId);
       const topic = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        const existingTopic = await tx.topicRecord.findFirst({
+          where: { id: input.topicId, workspaceId: input.context.workspaceId },
+        });
+        if (!existingTopic) throw new Error("topic_not_found");
+        if (existingTopic.enrichmentStatus !== "pending") {
+          throw new Error("topic_enrichment_not_pending");
+        }
+        const baseline = buildAcceptedTopicEnrichmentSnapshot(existingTopic);
+        if (topicEnrichmentSnapshotFingerprint(baseline) !== input.baselineFingerprint) {
+          throw new Error("topic_enrichment_baseline_changed");
+        }
+        const candidate = normalizeTopicEnrichmentSnapshot({
+          body: input.enrichedBody ?? input.enrichedSummary,
+          proposedSourcePageNumbers: input.proposedSourcePageNumbers ?? [],
+          summary: input.enrichedSummary,
+          title: input.enrichedTitle,
+        });
+        const diff = buildTopicEnrichmentDiff(baseline, candidate);
+        const disposition = !hasExistingTopicEnrichment(existingTopic)
+          ? "applied"
+          : diff.changed
+            ? "awaiting_review"
+            : "unchanged";
         await tx.topicEnrichmentAudit.create({
           data: {
+            baselineBody: baseline.body,
+            baselineFingerprint: input.baselineFingerprint,
+            baselineProposedSourcePageNumbers: baseline.proposedSourcePageNumbers,
+            baselineSummary: baseline.summary,
+            baselineTitle: baseline.title,
+            candidateBody: candidate.body,
+            candidateProposedSourcePageNumbers: candidate.proposedSourcePageNumbers,
+            candidateSummary: candidate.summary,
+            candidateTitle: candidate.title,
+            diff: diff as unknown as Prisma.InputJsonValue,
+            disposition,
             errorMessage: null,
             model: input.model,
             promptSent: input.promptSent,
@@ -729,11 +983,17 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         });
         return tx.topicRecord.update({
           data: {
-            enrichedSummary: input.enrichedSummary,
-            enrichedTitle: input.enrichedTitle,
-            enrichedBody: input.enrichedBody ?? input.enrichedSummary,
-            proposedSourcePageNumbers: input.proposedSourcePageNumbers ?? [],
-            enrichmentStatus: "completed",
+            ...(disposition === "applied"
+              ? {
+                  enrichedBody: candidate.body,
+                  enrichedSummary: candidate.summary,
+                  enrichedTitle: candidate.title,
+                  proposedSourcePageNumbers: candidate.proposedSourcePageNumbers,
+                }
+              : {}),
+            enrichmentStatus: disposition === "awaiting_review"
+              ? "review_required"
+              : "completed",
           },
           include: {
             enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
@@ -741,6 +1001,11 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           where: { id: input.topicId },
         });
       });
+      if (topic.enrichmentStatus === "completed") {
+        const { scheduleEntityExtractionForTopic } = await import("./entity-graph.ts");
+        await scheduleEntityExtractionForTopic(topic.id).catch(() => undefined);
+      }
+      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id);
       return mapTopicRecord(topic);
     },
     async failTopicEnrichment(input: {
@@ -753,10 +1018,14 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       requestedBy: string;
       topicId: string;
     }) {
-      await assertTopicInWorkspace(db, input.topicId, input.context.workspaceId);
       const topic = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        const existingTopic = await tx.topicRecord.findFirst({
+          where: { id: input.topicId, workspaceId: input.context.workspaceId },
+        });
+        if (!existingTopic) throw new Error("topic_not_found");
         await tx.topicEnrichmentAudit.create({
           data: {
+            disposition: "failed",
             errorMessage: input.errorMessage,
             model: input.model,
             promptSent: input.promptSent,
@@ -768,7 +1037,11 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           },
         });
         return tx.topicRecord.update({
-          data: { enrichmentStatus: "failed" },
+          data: {
+            enrichmentStatus: hasExistingTopicEnrichment(existingTopic)
+              ? "completed"
+              : "failed",
+          },
           include: {
             enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
           },
@@ -799,6 +1072,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       if (normalizeTopicReviewStatus(existingTopic.reviewStatus) === "approved") {
         throw new Error("topic_already_approved");
       }
+      if (existingTopic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
+      }
 
       if (input.approvedContentSource === "enriched") {
         if (!existingTopic.enrichedTitle || !existingTopic.enrichedSummary) {
@@ -825,6 +1101,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         },
         where: { id: input.topicId },
       });
+      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id);
       return mapTopicRecord(topic);
     },
     async startExtractionJob(input: {
@@ -881,36 +1158,72 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async updateDocumentMetadata(input: UpdateMetadataInput) {
       await getDocumentForWorkspace(input.documentId, input.context.workspaceId);
-      await db.documentCustomProperty.deleteMany({
-        where: { documentId: input.documentId },
-      });
-      const document = await db.document.update({
-        data: {
-          subjectFamily: normalizeOptionalMetadata(input.subjectFamily),
-          classificationCode: normalizeOptionalMetadata(input.classificationCode),
-          customProperties: {
-            create: input.customProperties,
+      const document = await db.$transaction(async (tx) => {
+        await tx.documentCustomProperty.deleteMany({ where: { documentId: input.documentId } });
+        const updated = await tx.document.update({
+          data: {
+            ...(input.applicabilityManualOverride ? {
+              aircraftFamilyIds: input.aircraftFamilyIds ?? [],
+              applicabilityClassifiedAt: new Date(),
+              applicabilityConfidence: null,
+              applicabilityEvidence: [],
+              applicabilityModel: null,
+              applicabilityOverrideBy: input.applicabilityOverrideBy ?? null,
+              applicabilityOverriddenAt: new Date(),
+              applicabilityProvider: null,
+              applicabilityScope: input.applicabilityScope ?? "ambiguous",
+              applicabilityStatus: "manual_override",
+            } : {}),
+            aircraftTypeIds: input.aircraftTypeIds,
+            classificationCode: normalizeOptionalMetadata(input.classificationCode),
+            contentPurpose: normalizeOptionalMetadata(input.contentPurpose),
+            customProperties: { create: input.customProperties },
+            description: input.description.trim(),
+            documentType: normalizeOptionalMetadata(input.documentType),
+            effectivity: normalizeOptionalMetadata(input.effectivity),
+            intendedAudiences: input.intendedAudiences,
+            licenseIdentifier: normalizeOptionalMetadata(input.licenseIdentifier),
+            owner: input.owner.trim() || "Unassigned",
+            revision: normalizeOptionalMetadata(input.revision),
+            sourceAuthority: normalizeOptionalMetadata(input.sourceAuthority),
+            sourceClassification: normalizeOptionalMetadata(input.sourceClassification),
+            sourceType: input.sourceType,
+            status: input.status,
+            subjectFamily: normalizeOptionalMetadata(input.subjectFamily),
+            tags: input.tags,
+            title: input.title.trim(),
+            updatedLabel: formatTimestamp(new Date()),
           },
-          description: input.description.trim(),
-          effectivity: normalizeOptionalMetadata(input.effectivity),
-          documentType: normalizeOptionalMetadata(input.documentType),
-          owner: input.owner.trim() || "Unassigned",
-          revision: normalizeOptionalMetadata(input.revision),
-          sourceAuthority: normalizeOptionalMetadata(input.sourceAuthority),
-          sourceType: input.sourceType,
-          status: input.status,
-          tags: input.tags,
-          title: input.title.trim(),
-          updatedLabel: formatTimestamp(new Date()),
-        },
-        include: {
-          customProperties: true,
-          extractedPages: { orderBy: { pageNumber: "asc" } },
-          extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
-          extractionLogs: { orderBy: { timestamp: "asc" } },
-          objects: { orderBy: { createdAt: "asc" } },
-        },
-        where: { id: input.documentId },
+          include: {
+            customProperties: true,
+            extractedPages: { orderBy: { pageNumber: "asc" } },
+            extractionJobs: { orderBy: { queuedAt: "desc" }, take: 1 },
+            extractionLogs: { orderBy: { timestamp: "asc" } },
+            objects: { orderBy: { createdAt: "asc" } },
+          },
+          where: { id: input.documentId },
+        });
+        const topics = await tx.topicRecord.findMany({
+          select: { id: true, okfMetadata: true },
+          where: {
+            documentId: input.documentId,
+            reviewStatus: { in: ["needs_review", "needs_cleanup"] },
+            workspaceId: input.context.workspaceId,
+          },
+        });
+        const mapped = mapDocument(updated);
+        for (const topic of topics) {
+          await tx.topicRecord.update({
+            data: {
+              okfMetadata: replaceInheritedAviationOkfMetadata(
+                normalizeOkfMetadata(topic.okfMetadata),
+                mapped,
+              ) as Prisma.InputJsonValue,
+            },
+            where: { id: topic.id },
+          });
+        }
+        return updated;
       });
       await createActivity({
         context: input.context,
@@ -979,6 +1292,10 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         data: { exportedFilePath: input.exportedFilePath },
         where: { id: input.topicId },
       });
+      if (topic.reviewStatus === "approved") {
+        const { scheduleEntityExpansionForTopic } = await import("./entity-graph.ts");
+        await scheduleEntityExpansionForTopic(topic.id).catch(() => undefined);
+      }
       return mapTopicRecord(topic);
     },
     async updateTopicContent(input: {
@@ -1057,9 +1374,9 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       if (!document.knowledgeBundle.activeProfileVersion) {
         throw new Error("knowledge_bundle_active_profile_missing");
       }
-      const profile = document.knowledgeBundle.activeProfileVersion.schema as {
-        automation?: { autoApproveEnrichedTopics?: boolean };
-      };
+      const automation = resolveKnowledgeAuthoringAutomationSettings(
+        document.knowledgeBundle.activeProfileVersion.schema,
+      );
       const member = await db.workspaceMember.findFirst({
         orderBy: { createdAt: "asc" },
         select: { userId: true },
@@ -1067,8 +1384,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return db.knowledgeAuthoringRun.create({
         data: {
-          automaticTopicApprovalEnabled:
-            profile.automation?.autoApproveEnrichedTopics === true,
+          ...automation,
           documentId: input.documentId,
           knowledgeBundleId: document.knowledgeBundleId,
           profileVersion: document.knowledgeBundle.activeProfileVersion.version,
@@ -1085,7 +1401,13 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         take: limit,
         where: {
           document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
-          status: { in: ["queued", "running"] },
+          OR: [
+            { status: { in: ["queued", "running"] } },
+            {
+              document: { applicabilityStatus: null, sourceType: "aviation" },
+              status: { in: ["ready_for_review", "completed"] },
+            },
+          ],
         },
       });
     },
@@ -1096,6 +1418,16 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         take: limit,
         where: {
           document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
+          NOT: {
+            document: {
+              knowledgeAuthoringRuns: {
+                some: {
+                  currentStage: "concept_discovery",
+                  status: { in: ["queued", "running"] },
+                },
+              },
+            },
+          },
           status: { in: ["queued", "analyzing", "consolidating"] },
         },
       });
@@ -1118,19 +1450,91 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
       });
       return mapTopicRecord(topic);
     },
+    async resolveTopicEnrichmentCandidate(input: {
+      auditId: string;
+      context: AuthWorkspaceContext;
+      decision: "accept" | "reject";
+      resolvedBy: string;
+      topicId: string;
+    }) {
+      const topic = await db.$transaction(async (tx: Prisma.TransactionClient) => {
+        const existingTopic = await tx.topicRecord.findFirst({
+          where: { id: input.topicId, workspaceId: input.context.workspaceId },
+        });
+        if (!existingTopic) throw new Error("topic_not_found");
+        if (normalizeTopicReviewStatus(existingTopic.reviewStatus) === "approved") {
+          throw new Error("topic_enrichment_requires_unapproved_topic");
+        }
+        const audit = await tx.topicEnrichmentAudit.findFirst({
+          where: {
+            disposition: "awaiting_review",
+            id: input.auditId,
+            topicId: input.topicId,
+          },
+        });
+        if (!audit) throw new Error("topic_enrichment_candidate_not_pending");
+        const baseline = buildAcceptedTopicEnrichmentSnapshot(existingTopic);
+        if (
+          !audit.baselineFingerprint ||
+          topicEnrichmentSnapshotFingerprint(baseline) !== audit.baselineFingerprint
+        ) {
+          throw new Error("topic_enrichment_baseline_changed");
+        }
+        if (
+          input.decision === "accept" &&
+          (!audit.candidateTitle || !audit.candidateSummary || !audit.candidateBody)
+        ) {
+          throw new Error("topic_enrichment_candidate_invalid");
+        }
+        const now = new Date();
+        const claimed = await tx.topicEnrichmentAudit.updateMany({
+          data: {
+            disposition: input.decision === "accept" ? "applied" : "rejected",
+            resolvedAt: now,
+            resolvedBy: input.resolvedBy,
+          },
+          where: { disposition: "awaiting_review", id: input.auditId },
+        });
+        if (claimed.count !== 1) {
+          throw new Error("topic_enrichment_candidate_not_pending");
+        }
+        return tx.topicRecord.update({
+          data: {
+            ...(input.decision === "accept"
+              ? {
+                  enrichedBody: audit.candidateBody!,
+                  enrichedSummary: audit.candidateSummary!,
+                  enrichedTitle: audit.candidateTitle!,
+                  proposedSourcePageNumbers:
+                    audit.candidateProposedSourcePageNumbers,
+                }
+              : {}),
+            enrichmentStatus: "completed",
+          },
+          include: {
+            enrichmentAudits: { orderBy: { createdAt: "desc" }, take: 10 },
+          },
+          where: { id: input.topicId },
+        });
+      });
+      return mapTopicRecord(topic);
+    },
   };
 }
 
 function mapDocument(record: DbDocumentRecord): Document {
   const latestJob = record.extractionJobs?.[0];
   const latestDiscoveryJob = record.topicDiscoveryJobs?.[0];
+  const latestAuthoringRun = record.knowledgeAuthoringRuns?.[0];
   const pageRecords: ExtractedPageRecord[] = (record.extractedPages ?? []).map(
     (page) => ({
       charCount: page.charCount,
       imageCount: page.imageCount,
+      figureCaptionHints: page.figureCaptionHints ?? [],
       pageNumber: page.pageNumber,
       tables: normalizeExtractedTables(page.tables),
       text: page.text,
+      visualCandidate: page.visualCandidate ?? false,
     }),
   );
   const logs = (record.extractionLogs ?? []).map((log) => ({
@@ -1142,8 +1546,30 @@ function mapDocument(record: DbDocumentRecord): Document {
   const primaryObject = record.objects?.find(
     (object) => object.kind === "original_pdf",
   );
+  const extractionStatus = resolveProductionExtractionStatus({
+    pageCount: pageRecords.length,
+    status: latestJob?.status,
+  });
+  const status = deriveDocumentLibraryStatus({
+    assignedToBundle: Boolean(record.knowledgeBundleId),
+    authoringStatus: latestAuthoringRun?.status,
+    automaticApprovalStatus: latestAuthoringRun?.automaticApprovalRun?.status,
+    extractionStatus,
+    persistedStatus: normalizeDocumentStatus(record.status),
+    ragStatus: record.ragStatus,
+    unresolvedTopicCount: record.topicRecords?.length ?? 0,
+  });
 
   return {
+    aircraftFamilyIds: record.aircraftFamilyIds ?? [],
+    aircraftTypeIds: record.aircraftTypeIds ?? [],
+    applicabilityScope: normalizeApplicabilityScope(record.applicabilityScope),
+    applicabilityConfidence: record.applicabilityConfidence,
+    applicabilityEvidence: record.applicabilityEvidence ?? [],
+    applicabilityStatus: normalizeApplicabilityStatus(record.applicabilityStatus),
+    applicabilityProvider: record.applicabilityProvider,
+    applicabilityModel: record.applicabilityModel,
+    applicabilityClassifiedAt: record.applicabilityClassifiedAt?.toISOString() ?? null,
     subjectFamily: record.subjectFamily,
     classificationCode: record.classificationCode,
     customProperties: (record.customProperties ?? []).map((property) => ({
@@ -1151,6 +1577,7 @@ function mapDocument(record: DbDocumentRecord): Document {
       value: property.value,
     })),
     description: record.description,
+    contentPurpose: record.contentPurpose,
     effectivity: record.effectivity,
     extraction: {
       completedAt: latestJob?.completedAt ? formatTimestamp(latestJob.completedAt) : null,
@@ -1163,7 +1590,7 @@ function mapDocument(record: DbDocumentRecord): Document {
       logs,
       pageRecords,
       startedAt: latestJob?.startedAt ? formatTimestamp(latestJob.startedAt) : null,
-      status: normalizeExtractionStatus(latestJob?.status),
+      status: extractionStatus,
     },
     fileType: record.fileType,
     id: record.id,
@@ -1172,6 +1599,9 @@ function mapDocument(record: DbDocumentRecord): Document {
     documentType: record.documentType,
     mimeType: record.mimeType,
     originalFilename: record.originalFilename,
+    contentSha256: record.contentSha256,
+    intendedAudiences: normalizeStoredIntendedAudiences(record.intendedAudiences),
+    licenseIdentifier: record.licenseIdentifier,
     owner: record.owner,
     pages: record.pages,
     revision: record.revision,
@@ -1179,7 +1609,8 @@ function mapDocument(record: DbDocumentRecord): Document {
     sizeBytes: record.sizeBytes,
     sourceType: normalizeSourceType(record.sourceType),
     sourceAuthority: record.sourceAuthority,
-    status: normalizeDocumentStatus(record.status),
+    sourceClassification: normalizeStoredAviationSourceClassification(record.sourceClassification),
+    status,
     storageKey: primaryObject?.objectKey ?? null,
     tags: record.tags ?? [],
     title: record.title,
@@ -1206,9 +1637,11 @@ function mapExtractedPage(page: DbExtractedPage): ExtractedPageRecord {
   return {
     charCount: page.charCount,
     imageCount: page.imageCount,
+    figureCaptionHints: page.figureCaptionHints ?? [],
     pageNumber: page.pageNumber,
     tables: normalizeExtractedTables(page.tables),
     text: page.text,
+    visualCandidate: page.visualCandidate ?? false,
   };
 }
 
@@ -1230,7 +1663,15 @@ function mapActivityEvent(record: DbActivityEvent): ActivityEvent {
 function mapTopicRecord(record: DbTopicRecord): TopicRecord {
   const audits = record.enrichmentAudits ?? [];
   const latestAudit = audits[0];
-  const latestSuccess = audits.find((audit) => audit.succeeded);
+  const latestSuccess = audits.find(
+    (audit) => audit.succeeded && audit.disposition === "applied",
+  );
+  const pendingAudit = audits.find(
+    (audit) => audit.disposition === "awaiting_review",
+  );
+  const pendingDiff = pendingAudit
+    ? normalizeTopicEnrichmentDiff(pendingAudit.diff)
+    : null;
 
   return {
     approvedContentSource: normalizeApprovedContentSource(
@@ -1250,11 +1691,10 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     proposedSourcePageNumbers: record.proposedSourcePageNumbers,
     discoveryMetadata: normalizeOkfMetadata(record.discoveryMetadata),
     enrichedTitle: record.enrichedTitle,
-    enrichmentErrorMessage:
-      normalizeTopicEnrichmentStatus(record.enrichmentStatus) === "failed"
-        ? latestAudit?.errorMessage ?? null
-        : null,
-    enrichmentModel: latestSuccess?.model ?? null,
+    enrichmentErrorMessage: latestAudit?.succeeded === false
+      ? latestAudit.errorMessage
+      : null,
+    enrichmentModel: latestAudit?.model ?? latestSuccess?.model ?? null,
     enrichmentStatus: normalizeTopicEnrichmentStatus(record.enrichmentStatus),
     exportedFilePath: record.exportedFilePath,
     id: record.id,
@@ -1262,6 +1702,24 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     originalSummary: record.originalSummary ?? record.summary,
     originalTitle: record.originalTitle ?? record.title,
     okfMetadata: normalizeOkfMetadata(record.okfMetadata),
+    pendingEnrichment:
+      pendingAudit?.candidateTitle &&
+      pendingAudit.candidateSummary &&
+      pendingAudit.candidateBody &&
+      pendingDiff
+        ? {
+            auditId: pendingAudit.id,
+            body: pendingAudit.candidateBody,
+            createdAt: formatTimestamp(pendingAudit.createdAt),
+            diff: pendingDiff,
+            model: pendingAudit.model,
+            proposedSourcePageNumbers:
+              pendingAudit.candidateProposedSourcePageNumbers,
+            provider: pendingAudit.provider,
+            summary: pendingAudit.candidateSummary,
+            title: pendingAudit.candidateTitle,
+          }
+        : null,
     pageEnd: record.pageEnd,
     pageStart: record.pageStart,
     relations: normalizeTopicRelations(record.relations),
@@ -1271,7 +1729,36 @@ function mapTopicRecord(record: DbTopicRecord): TopicRecord {
     title: record.title,
     topicType: record.topicType,
     updatedAt: formatTimestamp(record.updatedAt),
+    mediaReferences: (record.mediaReferences ?? []).map((reference) => ({
+      anchorTerms: reference.anchorTerms,
+      confidence: reference.confidence,
+      id: reference.id,
+      mediaAsset: {
+        altText: reference.mediaAsset.altText,
+        height: reference.mediaAsset.height,
+        id: reference.mediaAsset.id,
+        kind: reference.mediaAsset.kind === "diagram" ? "diagram" : "figure",
+        pageNumber: reference.mediaAsset.pageNumber,
+        sourceCaption: reference.mediaAsset.sourceCaption,
+        visibleLabels: reference.mediaAsset.visibleLabels,
+        visualContext: reference.mediaAsset.visualContext,
+        width: reference.mediaAsset.width,
+      },
+      rationale: reference.rationale,
+      reviewedAt: reference.reviewedAt ? formatTimestamp(reference.reviewedAt) : null,
+      reviewedBy: reference.reviewedBy,
+      role: reference.role === "primary_evidence" || reference.role === "reference_diagram"
+        ? reference.role
+        : "supporting_detail",
+      status: normalizeTopicMediaStatus(reference.status),
+    })),
   };
+}
+
+function normalizeTopicMediaStatus(value: string) {
+  return ["approved", "auto_approved", "pending_review", "rejected", "stale"].includes(value)
+    ? value as "approved" | "auto_approved" | "pending_review" | "rejected" | "stale"
+    : "pending_review";
 }
 
 function normalizeTopicApprovalMode(value: string | null): TopicApprovalMode | null {
@@ -1325,6 +1812,7 @@ function pagesOverlap(left: number[], right: number[]) {
 function normalizeDocumentStatus(value: string): DocumentStatus {
   if (
     value === "ready" ||
+    value === "pending" ||
     value === "processing" ||
     value === "needs_review" ||
     value === "indexed" ||
@@ -1336,7 +1824,11 @@ function normalizeDocumentStatus(value: string): DocumentStatus {
   return "needs_review";
 }
 
-function normalizeExtractionStatus(value: string | undefined): ExtractionStatus {
+export function resolveProductionExtractionStatus(input: {
+  pageCount: number;
+  status: string | undefined;
+}): ExtractionStatus {
+  const value = input.status;
   if (
     value === "queued" ||
     value === "running" ||
@@ -1345,6 +1837,8 @@ function normalizeExtractionStatus(value: string | undefined): ExtractionStatus 
   ) {
     return value;
   }
+
+  if (value === undefined && input.pageCount > 0) return "completed";
 
   return "queued";
 }
@@ -1385,6 +1879,7 @@ function normalizeTopicEnrichmentStatus(value: string): TopicEnrichmentStatus {
   if (
     value === "pending" ||
     value === "completed" ||
+    value === "review_required" ||
     value === "failed"
   ) {
     return value;
@@ -1393,10 +1888,39 @@ function normalizeTopicEnrichmentStatus(value: string): TopicEnrichmentStatus {
   return "none";
 }
 
+function normalizeTopicEnrichmentDiff(value: Prisma.JsonValue): TopicEnrichmentDiff | null {
+  if (!value || Array.isArray(value) || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.changed !== "boolean" ||
+    typeof candidate.titleChanged !== "boolean" ||
+    typeof candidate.summaryChanged !== "boolean" ||
+    typeof candidate.bodyChanged !== "boolean" ||
+    typeof candidate.beforeWordCount !== "number" ||
+    typeof candidate.afterWordCount !== "number" ||
+    typeof candidate.wordCountDelta !== "number" ||
+    !Array.isArray(candidate.addedSourcePageNumbers) ||
+    !Array.isArray(candidate.removedSourcePageNumbers)
+  ) return null;
+  return candidate as unknown as TopicEnrichmentDiff;
+}
+
 function normalizeApprovedContentSource(
   value: string | null,
 ): ApprovedContentSource | null {
   return value === "raw" || value === "enriched" ? value : null;
+}
+
+function normalizeApplicabilityScope(value: string | null) {
+  return value === "entire-family" || value === "specific-variants" || value === "ambiguous"
+    ? value
+    : null;
+}
+
+function normalizeApplicabilityStatus(value: string | null) {
+  return value === "accepted" || value === "needs_review" || value === "manual_override"
+    ? value
+    : null;
 }
 
 function normalizeExtractedTables(value: unknown): ExtractedPageRecord["tables"] {

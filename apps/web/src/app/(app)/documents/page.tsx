@@ -1,5 +1,6 @@
 import { DocumentLibrary } from "@/components/document-library";
-import { DocumentDeletionPoller } from "@/components/document-deletion-poller";
+import Link from "next/link";
+import { DocumentDeletionLiveStatus } from "@/components/document-deletion-live-status";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,35 +8,57 @@ import { Label } from "@/components/ui/label";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { PdfUploadInput } from "@/components/pdf-upload-input";
 import { MAX_UPLOAD_BYTES, getDocuments } from "@/lib/document-backend";
-import { retryPermanentDocumentDeletionAction, uploadDocumentAction } from "./actions";
+import { uploadDocumentAction } from "./actions";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
-import { getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
+import { buildDocumentDeletionProgressSnapshot, getDocumentDeletionStatusSnapshot } from "@/lib/document-deletion";
+import { resolveDocumentUploadBundleSelection } from "@/lib/document-upload-bundle-selection";
+import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
+import { Button } from "@/components/ui/button";
+import { DirectPdfUploadForm } from "@/components/direct-pdf-upload-form";
+import { isProductionBackend } from "@/lib/production-document-service";
+import { AviationDocumentMetadataFields } from "@/components/aviation-document-metadata-fields";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocumentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ deletionJob?: string; uploadError?: string }>;
+  searchParams: Promise<{
+    deletionJob?: string;
+    knowledgeBundleId?: string;
+    scope?: string;
+    uploadError?: string;
+  }>;
 }) {
-  const { deletionJob, uploadError } = await searchParams;
+  const { deletionJob, knowledgeBundleId, scope, uploadError } = await searchParams;
   const context = await requireAuthWorkspaceContext();
   const [documents, bundles, deletionSnapshot] = await Promise.all([
     getDocuments(),
     listKnowledgeBundles(context),
     getDocumentDeletionStatusSnapshot(context),
   ]);
-  const deletionJobs = deletionSnapshot.jobs;
+  const { activeBundle } = await resolveActiveKnowledgeBundle(context, bundles);
   const uploadErrorMessage = formatUploadError(uploadError);
-  const selectedDeletion = deletionJobs.find((job) => job.id === deletionJob);
+  const selectedBundleId = resolveDocumentUploadBundleSelection(
+    bundles,
+    knowledgeBundleId ?? activeBundle?.id,
+  );
+  const documentScope = scope === "all" || scope === "unassigned" ? scope : "bundle";
+  const visibleDocuments = documentScope === "all"
+    ? documents
+    : documentScope === "unassigned"
+      ? documents.filter((document) => !document.knowledgeBundleId)
+      : documents.filter((document) => document.knowledgeBundleId === selectedBundleId);
 
   return (
     <>
-      <DocumentDeletionPoller
-        active={deletionSnapshot.active}
-        fingerprint={deletionSnapshot.fingerprint}
-      />
+      {context.role === "admin" ? (
+        <DocumentDeletionLiveStatus
+          initialSnapshot={buildDocumentDeletionProgressSnapshot(deletionSnapshot)}
+          selectedJobId={deletionJob}
+        />
+      ) : null}
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <Badge variant="secondary">Document library</Badge>
@@ -47,51 +70,14 @@ export default async function DocumentsPage({
             extraction and AI authoring from one workflow.
           </p>
         </div>
-        <Badge variant="outline">Max upload 25 MB</Badge>
+        <Badge variant="outline">Max upload 250 MB / 5,000 pages</Badge>
       </div>
 
-      {context.role === "admin" && (deletionJobs.length > 0 || deletionJob) ? (
-        <Card className="border-red-400/20">
-          <CardHeader>
-            <CardTitle>Document deletion</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {deletionJob && !selectedDeletion ? (
-              <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-3 text-sm text-emerald-100">
-                Permanent deletion completed. The bundle log contains the removal summary.
-              </div>
-            ) : null}
-            {deletionJobs.map((job) => (
-              <div
-                className="flex flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
-                key={job.id}
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{job.documentTitle}</p>
-                    <Badge variant={job.status === "failed" ? "destructive" : "outline"}>
-                      {job.status}
-                    </Badge>
-                  </div>
-                  {job.errorMessage ? (
-                    <p className="mt-1 text-xs text-red-200">{job.errorMessage}</p>
-                  ) : (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Source and derived products are being removed.
-                    </p>
-                  )}
-                </div>
-                {job.status === "failed" ? (
-                  <form action={retryPermanentDocumentDeletionAction}>
-                    <input type="hidden" name="jobId" value={job.id} />
-                    <PendingSubmitButton pendingLabel="Retrying...">Retry deletion</PendingSubmitButton>
-                  </form>
-                ) : null}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/30 p-1 sm:w-fit" aria-label="Document scope">
+        <Button asChild size="sm" variant={documentScope === "bundle" ? "secondary" : "ghost"}><Link href={`/documents?scope=bundle&knowledgeBundleId=${encodeURIComponent(selectedBundleId)}`}>This bundle</Link></Button>
+        <Button asChild size="sm" variant={documentScope === "unassigned" ? "secondary" : "ghost"}><Link href="/documents?scope=unassigned">Unassigned</Link></Button>
+        <Button asChild size="sm" variant={documentScope === "all" ? "secondary" : "ghost"}><Link href="/documents?scope=all">All workspace</Link></Button>
+      </div>
 
       <Card>
         <CardHeader>
@@ -103,6 +89,12 @@ export default async function DocumentsPage({
               {uploadErrorMessage}
             </div>
           ) : null}
+          {isProductionBackend() ? (
+            <DirectPdfUploadForm
+              bundles={bundles.map(({ id, name }) => ({ id, name }))}
+              selectedBundleId={selectedBundleId}
+            />
+          ) : (
           <form
             action={uploadDocumentAction}
             className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]"
@@ -125,6 +117,7 @@ export default async function DocumentsPage({
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
                   required
                   disabled={bundles.length === 0}
+                  defaultValue={selectedBundleId}
                 >
                   {bundles.map((bundle) => (
                     <option key={bundle.id} value={bundle.id}>
@@ -145,25 +138,14 @@ export default async function DocumentsPage({
                 <Input
                   id="owner"
                   name="owner"
-                  placeholder="Maintenance Control"
+                  placeholder="Team or department"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="tags">Tags</Label>
-                <Input id="tags" name="tags" placeholder="737NG, AMM, ATA 24" />
+                <Input id="tags" name="tags" placeholder="operations, safety, handbook" />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="sourceType">Source type</Label>
-                <select
-                  id="sourceType"
-                  name="sourceType"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-                  defaultValue="general"
-                >
-                  <option value="general">General</option>
-                  <option value="aviation">Aviation</option>
-                </select>
-              </div>
+              <AviationDocumentMetadataFields className="md:col-span-2" />
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="description">Description</Label>
                 <textarea
@@ -180,10 +162,11 @@ export default async function DocumentsPage({
               {bundles.length > 0 ? <PendingSubmitButton pendingLabel="Uploading...">Upload PDF</PendingSubmitButton> : <button className="h-9 rounded-md border border-input px-4 text-sm text-muted-foreground" disabled type="button">Create a bundle first</button>}
             </div>
           </form>
+          )}
         </CardContent>
       </Card>
 
-      <DocumentLibrary documents={documents} />
+      <DocumentLibrary documents={visibleDocuments} />
     </>
   );
 }
@@ -201,8 +184,18 @@ function formatUploadError(raw: string | undefined) {
     return "Only PDF uploads are supported.";
   }
 
-  if (raw === "upload_exceeds_25mb_limit") {
-    return "File exceeds the 25 MB upload limit.";
+  const aviationErrors: Record<string, string> = {
+    invalid_aviation_ata: "Enter an ATA chapter or code such as 24 or 24-00-00.",
+    invalid_aviation_aircraft_type_id: "Aircraft type IDs must be 2-4 letters or numbers, such as B738.",
+    invalid_aviation_source_classification: "Choose a valid aviation source classification.",
+    invalid_aviation_intended_audience: "Choose Pilot, Maintenance, or both audiences.",
+    aviation_intended_audience_required: "Choose at least one intended audience.",
+    aviation_content_purpose_required: "Enter the aviation content purpose.",
+  };
+  if (aviationErrors[raw]) return aviationErrors[raw];
+
+  if (raw === "upload_exceeds_250mb_limit") {
+    return "File exceeds the 250 MB upload limit.";
   }
 
   if (raw === "invalid_pdf_magic_bytes") {

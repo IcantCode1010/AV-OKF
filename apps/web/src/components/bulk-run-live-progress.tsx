@@ -1,0 +1,21 @@
+"use client";
+
+import Link from "next/link";
+import { CheckCircle2, CircleAlert, Clock3 } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useOperationProgress, useOperationTerminalRefresh } from "@/components/use-operation-progress";
+import type { BulkTopicApprovalStatusSnapshot } from "@/lib/bulk-topic-approval";
+
+export type BulkRunDisplayItem = { confidence: string; documentId: string; documentTitle: string; exportedFilePath: string | null; failureMessage: string | null; id: string; pageEnd: number; pageStart: number; status: string; summary: string; title: string; topicId: string };
+
+export function BulkRunLiveProgress({ initialItems, initialSnapshot, runId }: { initialItems: BulkRunDisplayItem[]; initialSnapshot: BulkTopicApprovalStatusSnapshot; runId: string }) {
+  const refreshTerminal = useOperationTerminalRefresh();
+  const { connected, snapshot } = useOperationProgress({ initialSnapshot, onTerminal: refreshTerminal, url: `/api/bulk-topic-approval-runs/${encodeURIComponent(runId)}/status` });
+  const statusById = new Map(snapshot.data.items.map((item) => [item.id, item]));
+  const items = initialItems.map((item) => ({ ...item, ...statusById.get(item.id) }));
+  const completed = items.filter((item) => ["succeeded", "failed"].includes(item.status)).length;
+  const current = items.find((item) => ["approving", "exporting"].includes(item.status));
+  return <div className="space-y-4"><section aria-live="polite" className="border border-border bg-muted/20 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-medium">Approval and export progress</h2><Badge variant="outline">{connected ? "Live" : "Reconnecting"}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{completed} of {items.length} topics finished{current ? ` · ${current.status === "exporting" ? "Exporting" : "Approving"} ${current.title}` : ""}</p></div><div className="flex flex-wrap gap-2 text-xs"><Badge variant="outline">{items.filter((item) => item.status === "succeeded").length} approved</Badge><Badge variant="outline">{items.filter((item) => ["approving", "exporting"].includes(item.status)).length} processing</Badge><Badge variant="outline">{items.filter((item) => item.status === "pending").length} waiting</Badge>{items.some((item) => item.status === "failed") ? <Badge variant="destructive">{items.filter((item) => item.status === "failed").length} failed</Badge> : null}</div></div><div aria-label={`${completed} of ${items.length} topics finished`} aria-valuemax={items.length} aria-valuemin={0} aria-valuenow={completed} className="mt-4 h-2 overflow-hidden bg-muted" role="progressbar"><div className="h-full bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${items.length ? Math.round((completed / items.length) * 100) : 0}%` }} /></div></section><div className="space-y-3">{items.map((item) => <article className="grid gap-3 border border-border bg-card p-4 md:grid-cols-[1fr_auto]" key={item.id}><div><div className="flex flex-wrap items-center gap-2">{item.status === "succeeded" ? <CheckCircle2 className="size-4 text-emerald-500" /> : item.status === "failed" ? <CircleAlert className="size-4 text-red-400" /> : <Clock3 className={`size-4 ${["approving", "exporting"].includes(item.status) ? "animate-pulse text-sky-500 motion-reduce:animate-none" : "text-amber-500"}`} />}<Badge className="capitalize" variant="outline">{item.status}</Badge><Badge variant="outline">{item.confidence} confidence</Badge><Badge variant="outline">pages {item.pageStart}-{item.pageEnd}</Badge></div><h2 className="mt-3 font-medium">{item.title}</h2><p className="mt-2 text-sm text-muted-foreground">{item.summary}</p><p className="mt-1 text-sm text-muted-foreground">{item.documentTitle}</p>{item.exportedFilePath ? <p className="mt-2 font-mono text-xs text-muted-foreground">{item.exportedFilePath}</p> : null}{item.failureMessage ? <p className="mt-2 text-sm text-red-300">{item.failureMessage.replaceAll("_", " ")}</p> : null}</div><Button asChild size="sm" variant="outline"><Link href={`/documents/${item.documentId}?panel=topics&topic=${item.topicId}`}>Open topic</Link></Button></article>)}</div></div>;
+}

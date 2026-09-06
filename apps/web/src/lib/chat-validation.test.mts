@@ -125,3 +125,34 @@ test("insufficient-evidence responses cannot cite near-miss material as answer s
     "insufficient_evidence_must_not_cite_related_sources",
   ]);
 });
+
+test("graph answers must cite every traversed OKF concept supplied for the path", () => {
+  const target = {
+    ...citation("okf", 2),
+    documentTitle: "Downstream subsystem",
+  };
+  const result = validateChatAnswerEvidence({
+    answerContent: "The protocol affects a downstream subsystem [1].",
+    availableCitations: [citation("okf"), target],
+    citations: [citation("okf")],
+    retrievalError: false,
+    route: "okf_only",
+    trace: { okfEvidenceMode: "graph", requiresGraphTraversal: true },
+  });
+
+  assert.equal(result.status, "fail");
+  assert.ok(result.violations.includes("answer_missing_graph_relation_citation"));
+});
+
+test("hybrid answers must cite both available evidence classes", () => {
+  const result = validateChatAnswerEvidence({
+    answerContent: "The approved procedure defines the requirement [1].",
+    availableCitations: [citation("okf"), citation("rag", 2)],
+    citations: [citation("okf")],
+    retrievalError: false,
+    route: "hybrid",
+  });
+
+  assert.equal(result.status, "fail");
+  assert.ok(result.violations.includes("answer_missing_hybrid_rag_citation"));
+});

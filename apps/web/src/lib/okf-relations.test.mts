@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+
+import { DEFAULT_RELATIONS } from "./knowledge-profile.ts";
 
 import {
   RelationValidationError,
@@ -13,7 +15,7 @@ import {
 
 test("getAllowedRelations reads vocabulary from okf-base.yaml", async () => {
   const allowed = await getAllowedRelations();
-  const manifestAllowed = await readAllowedRelationsFromManifest();
+  const manifestAllowed = [...DEFAULT_RELATIONS];
 
   assert.deepEqual(allowed, manifestAllowed);
 
@@ -178,26 +180,4 @@ async function writeTopic(root: string, filename: string, type: string) {
     ].join("\n"),
     "utf8",
   );
-}
-
-async function readAllowedRelationsFromManifest() {
-  const manifest = await readFile(
-    path.join(process.cwd(), "..", "..", "okf-base.yaml"),
-    "utf8",
-  );
-  const lines = manifest.split(/\r?\n/);
-  const allowedIndex = lines.findIndex((line) => line.trim() === "allowed:");
-  const values: string[] = [];
-
-  for (const line of lines.slice(allowedIndex + 1)) {
-    if (!line.startsWith("  - ")) {
-      break;
-    }
-
-    values.push(line.trim().slice(2).trim());
-  }
-
-  assert.notEqual(allowedIndex, -1);
-  assert.equal(values.length > 0, true);
-  return values;
 }

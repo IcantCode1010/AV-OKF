@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { FileText, Layers, Tags } from "lucide-react";
 
@@ -19,6 +20,7 @@ import {
   approveTopicContentAction,
   enrichTopicAction,
   generateTopicsAction,
+  resolveTopicEnrichmentCandidateAction,
   resolveProposedTopicPagesAction,
   updateDocumentMetadataAction,
   updateTopicContentAction,
@@ -29,6 +31,8 @@ import {
   exportTopicToOkfAction,
   markOkfConceptLifecycleAction,
   updateTopicRelationsAction,
+  reviewTopicMediaAction,
+  updateTopicMediaAction,
 } from "@/app/(app)/documents/okf-actions";
 import {
   customPropertiesToText,
@@ -38,6 +42,7 @@ import {
 import type { OkfBundleFile } from "@/lib/okf-bundle";
 import type { OkfConceptLifecycleRecord } from "@/lib/okf-bundle-retriever";
 import type { KnowledgeProfileSchema } from "@/lib/knowledge-profile";
+import { AviationDocumentMetadataFields } from "@/components/aviation-document-metadata-fields";
 
 type TopicPanelProps = {
   allowedRelations: string[];
@@ -52,6 +57,7 @@ type TopicPanelProps = {
   relationTargets: OkfBundleFile[];
   topic: TopicRecord | null;
   topicsGeneratedCount: number | "queued" | null;
+  topicOptions: Array<{ id: string; title: string }>;
 };
 
 export function DocumentSummaryPanel({
@@ -149,15 +155,52 @@ export function DocumentMetadataPanel({
           <div className="space-y-2">
             <p className="text-muted-foreground">OKF source metadata</p>
             <MetadataRow
-              label="Subject family"
+              label={document.sourceType === "aviation" ? "Aircraft family" : "Subject family"}
               value={document.subjectFamily ?? "Missing"}
             />
+            {document.sourceType === "aviation" ? (
+              <>
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">Aircraft applicability</p>
+                    <Badge variant={document.applicabilityStatus === "needs_review" ? "destructive" : "secondary"}>
+                      {formatApplicabilityStatus(document.applicabilityStatus)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {document.applicabilityStatus === "manual_override"
+                      ? "A user correction controls aircraft family and variants in future EFB releases."
+                      : "The ingestion classifier determined the document-level aircraft scope from source evidence."}
+                  </p>
+                  <MetadataRow label="Family IDs" value={document.aircraftFamilyIds?.join(", ") || "Missing"} />
+                  <MetadataRow label="Variant IDs" value={document.aircraftTypeIds?.join(", ") || "Entire family / missing"} />
+                  <MetadataRow label="Scope" value={document.applicabilityScope ?? "Not classified"} />
+                  <MetadataRow label="Confidence" value={typeof document.applicabilityConfidence === "number" ? `${Math.round(document.applicabilityConfidence * 100)}%` : document.applicabilityStatus === "manual_override" ? "Manual decision" : "Not classified"} />
+                  <MetadataRow label="Model" value={document.applicabilityModel ?? (document.applicabilityStatus === "manual_override" ? "Manual override" : "Not classified")} />
+                </div>
+                {document.applicabilityStatus === "needs_review" ? (
+                  <p className="rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-amber-200">
+                    Applicability is uncertain or conflicts with entered metadata. Review the evidence and use the manual override below if needed.
+                  </p>
+                ) : null}
+                {document.applicabilityEvidence?.length ? (
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground">Classification evidence</p>
+                    {document.applicabilityEvidence.map((evidence) => (
+                      <p className="border-l-2 border-border pl-2" key={evidence}>{evidence}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             <MetadataRow
-              label="Document type"
+              label={document.sourceType === "aviation" ? "Manual type" : "Document type"}
               value={document.documentType ?? "Missing"}
             />
             <MetadataRow
-              label="Classification code"
+              label={document.sourceType === "aviation" && document.classificationCode && !/^\d{2}(?:-\d{2}){0,2}$/.test(document.classificationCode)
+                ? "Source identifier"
+                : document.sourceType === "aviation" ? "ATA" : "Classification code"}
               value={document.classificationCode ?? "Missing"}
             />
             <MetadataRow
@@ -169,6 +212,14 @@ export function DocumentMetadataPanel({
               value={document.sourceAuthority ?? "Missing"}
             />
             <MetadataRow label="Revision" value={document.revision ?? "Missing"} />
+            {document.sourceType === "aviation" ? (
+              <>
+                <MetadataRow label="Source classification" value={document.sourceClassification ?? "Missing"} />
+                <MetadataRow label="License identifier" value={document.licenseIdentifier ?? "Missing"} />
+                <MetadataRow label="Intended audiences" value={document.intendedAudiences?.join(", ") || "Missing"} />
+                <MetadataRow label="Content purpose" value={document.contentPurpose ?? "Missing"} />
+              </>
+            ) : null}
           </div>
           <Separator />
           <div>
@@ -230,54 +281,13 @@ export function DocumentMetadataPanel({
               <Label htmlFor="owner">Owner</Label>
               <Input id="owner" name="owner" defaultValue={document.owner} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="subjectFamily">Subject family</Label>
-              <Input
-                id="subjectFamily"
-                name="subjectFamily"
-                defaultValue={document.subjectFamily ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="documentType">Document type</Label>
-              <Input
-                id="documentType"
-                name="documentType"
-                defaultValue={document.documentType ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="classificationCode">Classification code</Label>
-              <Input
-                id="classificationCode"
-                name="classificationCode"
-                defaultValue={document.classificationCode ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="effectivity">Effectivity</Label>
-              <Input
-                id="effectivity"
-                name="effectivity"
-                defaultValue={document.effectivity ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="sourceAuthority">Source authority</Label>
-              <Input
-                id="sourceAuthority"
-                name="sourceAuthority"
-                defaultValue={document.sourceAuthority ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="revision">Revision</Label>
-              <Input
-                id="revision"
-                name="revision"
-                defaultValue={document.revision ?? ""}
-              />
-            </div>
+            <AviationDocumentMetadataFields
+              className="lg:col-span-2"
+              initialSourceType={document.sourceType}
+              initialValues={document}
+              showMappedFieldsForGeneral
+              showApplicabilityOverride
+            />
             <div className="space-y-2">
               <Label htmlFor="tags">Tags</Label>
               <Input
@@ -286,20 +296,7 @@ export function DocumentMetadataPanel({
                 defaultValue={document.tags.join(", ")}
               />
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="sourceType">Source type</Label>
-                <select
-                  id="sourceType"
-                  name="sourceType"
-                  className={selectClassName}
-                  defaultValue={document.sourceType}
-                >
-                  <option value="general">General</option>
-                  <option value="aviation">Aviation</option>
-                </select>
-              </div>
-              <div className="space-y-2">
+            <div className="space-y-2">
                 <Label htmlFor="status">Status</Label>
                 <select
                   id="status"
@@ -307,13 +304,13 @@ export function DocumentMetadataPanel({
                   className={selectClassName}
                   defaultValue={document.status}
                 >
+                  <option value="pending">Pending</option>
                   <option value="processing">Processing</option>
                   <option value="needs_review">Needs review</option>
                   <option value="ready">Ready</option>
                   <option value="indexed">Indexed</option>
                   <option value="blocked">Blocked</option>
                 </select>
-              </div>
             </div>
             <div className="space-y-2 lg:col-span-2">
               <Label htmlFor="description">Description</Label>
@@ -481,6 +478,7 @@ export function TopicWorkflowPanel({
   lifecycleUpdated,
   topic,
   topicsGeneratedCount,
+  topicOptions,
 }: TopicPanelProps) {
   return (
     <Card>
@@ -556,6 +554,7 @@ export function TopicWorkflowPanel({
             relationError={relationError}
             relationTargets={relationTargets}
             topic={topic}
+            topicOptions={topicOptions}
           />
         ) : (
           <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
@@ -580,6 +579,7 @@ function SelectedTopicPanel({
   relationError,
   relationTargets,
   topic,
+  topicOptions,
 }: {
   allowedRelations: string[];
   documentId: string;
@@ -591,6 +591,7 @@ function SelectedTopicPanel({
   relationError: string | null;
   relationTargets: OkfBundleFile[];
   topic: TopicRecord;
+  topicOptions: Array<{ id: string; title: string }>;
 }) {
   return (
     <div className="space-y-4">
@@ -674,6 +675,62 @@ function SelectedTopicPanel({
         </div>
       </div>
 
+      {(topic.mediaReferences ?? []).length > 0 ? (
+        <section className="space-y-3 rounded-md border border-border p-4">
+          <div>
+            <h4 className="text-sm font-medium">Discovered figures</h4>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Review source-linked figure crops before they are exported or reused during enrichment.
+            </p>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            {(topic.mediaReferences ?? []).map((reference) => (
+              <article className="space-y-3 border border-border p-3" key={reference.id}>
+                <Image
+                  alt={reference.mediaAsset.altText}
+                  className="h-auto max-h-80 w-full object-contain"
+                  height={reference.mediaAsset.height}
+                  src={`/api/documents/${documentId}/media/${reference.mediaAsset.id}`}
+                  unoptimized
+                  width={reference.mediaAsset.width}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">Page {reference.mediaAsset.pageNumber}</Badge>
+                  <Badge variant="secondary">{reference.mediaAsset.kind}</Badge>
+                  <Badge variant="outline">{Math.round(reference.confidence * 100)}%</Badge>
+                  <Badge variant="outline" className="capitalize">{reference.status.replaceAll("_", " ")}</Badge>
+                </div>
+                <p className="text-sm">{reference.mediaAsset.visualContext}</p>
+                <p className="text-xs text-muted-foreground">{reference.rationale}</p>
+                {reference.status === "pending_review" || reference.status === "auto_approved" ? (
+                  <form action={reviewTopicMediaAction} className="flex gap-2">
+                    <input name="documentId" type="hidden" value={documentId} />
+                    <input name="topicId" type="hidden" value={topic.id} />
+                    <input name="referenceId" type="hidden" value={reference.id} />
+                    <PendingSubmitButton name="decision" pendingLabel="Approving..." value="approve">Approve</PendingSubmitButton>
+                    <PendingSubmitButton name="decision" pendingLabel="Rejecting..." value="reject" variant="outline">Reject</PendingSubmitButton>
+                  </form>
+                ) : null}
+                <details>
+                  <summary className="cursor-pointer text-xs font-medium">Edit or reassign</summary>
+                  <form action={updateTopicMediaAction} className="mt-3 grid gap-3">
+                    <input name="documentId" type="hidden" value={documentId} />
+                    <input name="topicId" type="hidden" value={topic.id} />
+                    <input name="referenceId" type="hidden" value={reference.id} />
+                    <label className="grid gap-1 text-xs">Topic<select className={selectClassName} defaultValue={topic.id} name="targetTopicId">{topicOptions.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}</select></label>
+                    <label className="grid gap-1 text-xs">Source page<Input defaultValue={reference.mediaAsset.pageNumber} min="1" name="pageNumber" type="number" /></label>
+                    <label className="grid gap-1 text-xs">Caption<Input defaultValue={reference.mediaAsset.sourceCaption ?? ""} name="sourceCaption" /></label>
+                    <label className="grid gap-1 text-xs">Alt text<Input defaultValue={reference.mediaAsset.altText} name="altText" required /></label>
+                    <label className="grid gap-1 text-xs">Topic context<textarea className={textareaClassName} defaultValue={reference.mediaAsset.visualContext} name="visualContext" required rows={3} /></label>
+                    <PendingSubmitButton pendingLabel="Saving figure...">Save figure</PendingSubmitButton>
+                  </form>
+                </details>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {topic.reviewStatus !== "approved" ? (
         <>
           <details className="rounded-md border border-border p-3">
@@ -682,7 +739,7 @@ function SelectedTopicPanel({
               <input name="documentId" type="hidden" value={documentId} />
               <input name="topicId" type="hidden" value={topic.id} />
               <label className="grid gap-2 text-sm">Concept type<select className={selectClassName} defaultValue={String(topic.okfMetadata.type ?? "system_topic")} name="okfField__type">{Object.entries(profile.types).map(([id, definition]) => <option key={id} value={id}>{definition.label}</option>)}</select></label>
-              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "updated", "review_status", "source_file", "source_pages", "source_authority", "knowledge_version", "relations"].includes(field)).map(([field, definition]) => (
+              {Object.entries(profile.fields).filter(([field]) => !["type", "title", "description", "resource", "tags", "sources", "generated", "verified", "status", "stale_after", "source_pages", "knowledge_version", "relations", "av_okf_approval_mode", "av_okf_lifecycle", "av_okf_role", "av_okf_media"].includes(field)).map(([field, definition]) => (
                 <label className="grid gap-2 text-sm" key={field}>{field.replaceAll("_", " ")}{definition.required ? " (required)" : ""}<Input defaultValue={Array.isArray(topic.okfMetadata[field]) ? (topic.okfMetadata[field] as unknown[]).join(", ") : String(topic.okfMetadata[field] ?? "")} name={`okfField__${field}`} required={Boolean(definition.required)} /></label>
               ))}
               <div className="md:col-span-2"><PendingSubmitButton pendingLabel="Saving metadata...">Save OKF metadata</PendingSubmitButton></div>
@@ -753,6 +810,10 @@ function SelectedTopicPanel({
                   <Button disabled type="submit">
                     Enrichment pending
                   </Button>
+                ) : topic.enrichmentStatus === "review_required" ? (
+                  <Button disabled type="submit">
+                    Review proposed enrichment
+                  </Button>
                 ) : (
                   <PendingSubmitButton pendingLabel="Enriching...">
                     {hasEnrichedContent(topic)
@@ -767,9 +828,64 @@ function SelectedTopicPanel({
                 {enrichmentError}
               </div>
             ) : null}
-            {topic.enrichmentStatus === "failed" ? (
+            {topic.enrichmentErrorMessage ? (
               <div className="rounded-md border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200">
-                {topic.enrichmentErrorMessage ?? "Enrichment failed."}
+                {topic.enrichmentErrorMessage}
+                {hasEnrichedContent(topic)
+                  ? " The previously accepted enrichment was kept."
+                  : ""}
+              </div>
+            ) : null}
+            {topic.pendingEnrichment ? (
+              <div className="space-y-3 rounded-md border border-amber-400/40 bg-amber-400/5 p-4">
+                <div>
+                  <p className="text-sm font-medium">Review proposed re-enrichment</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    The accepted article has not changed. Compare this proposal before approval or bulk export.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {topic.pendingEnrichment.diff.titleChanged ? <Badge variant="outline">Title changed</Badge> : null}
+                  {topic.pendingEnrichment.diff.summaryChanged ? <Badge variant="outline">Summary changed</Badge> : null}
+                  {topic.pendingEnrichment.diff.bodyChanged ? (
+                    <Badge variant="outline">
+                      Article {formatSignedCount(topic.pendingEnrichment.diff.wordCountDelta)} words
+                    </Badge>
+                  ) : null}
+                  {topic.pendingEnrichment.diff.addedSourcePageNumbers.length > 0 ? (
+                    <Badge variant="outline">Added pages {topic.pendingEnrichment.diff.addedSourcePageNumbers.join(", ")}</Badge>
+                  ) : null}
+                  {topic.pendingEnrichment.diff.removedSourcePageNumbers.length > 0 ? (
+                    <Badge variant="outline">Removed pages {topic.pendingEnrichment.diff.removedSourcePageNumbers.join(", ")}</Badge>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <TopicEnrichmentVersion
+                    body={topic.enrichedBody ?? topic.enrichedSummary ?? ""}
+                    label="Current accepted enrichment"
+                    summary={topic.enrichedSummary ?? ""}
+                    title={topic.enrichedTitle ?? ""}
+                  />
+                  <TopicEnrichmentVersion
+                    body={topic.pendingEnrichment.body}
+                    label="Proposed replacement"
+                    summary={topic.pendingEnrichment.summary}
+                    title={topic.pendingEnrichment.title}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(["accept", "reject"] as const).map((decision) => (
+                    <form action={resolveTopicEnrichmentCandidateAction} key={decision}>
+                      <input name="auditId" type="hidden" value={topic.pendingEnrichment!.auditId} />
+                      <input name="decision" type="hidden" value={decision} />
+                      <input name="documentId" type="hidden" value={documentId} />
+                      <input name="topicId" type="hidden" value={topic.id} />
+                      <PendingSubmitButton pendingLabel="Saving decision...">
+                        {decision === "accept" ? "Use new enrichment" : "Keep current enrichment"}
+                      </PendingSubmitButton>
+                    </form>
+                  ))}
+                </div>
               </div>
             ) : null}
             {topic.enrichmentStatus !== "none" ? (
@@ -788,7 +904,8 @@ function SelectedTopicPanel({
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-sm font-medium">Enriched topic</p>
                     <Badge variant="outline">
-                      {topic.enrichmentModel ?? "model pending"}
+                      {topic.enrichmentStatus === "failed" ? "Failed · " : ""}
+                      {topic.enrichmentModel ?? "Model unavailable"}
                     </Badge>
                   </div>
                   {topic.enrichedAt ? (
@@ -830,7 +947,7 @@ function SelectedTopicPanel({
                 </div>
               </div>
             ) : null}
-            {hasEnrichedContent(topic) ? (
+            {hasEnrichedContent(topic) && !topic.pendingEnrichment ? (
               <form
                 action={approveTopicContentAction}
                 className="space-y-3 rounded-md border border-border p-3"
@@ -1069,6 +1186,40 @@ function MetadataRow({ label, value }: { label: string; value: string }) {
 
 function hasEnrichedContent(topic: TopicRecord) {
   return Boolean(topic.enrichedTitle && topic.enrichedSummary);
+}
+
+function formatApplicabilityStatus(status: Document["applicabilityStatus"]) {
+  if (status === "manual_override") return "Manual override";
+  if (status === "needs_review") return "Review needed";
+  if (status === "accepted") return "Automatically accepted";
+  return "Not classified";
+}
+
+function TopicEnrichmentVersion({
+  body,
+  label,
+  summary,
+  title,
+}: {
+  body: string;
+  label: string;
+  summary: string;
+  title: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-background p-3">
+      <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+      <p className="mt-3 text-sm font-medium">{title}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{summary}</p>
+      <div className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap border-t border-border pt-3 text-sm text-muted-foreground">
+        {body}
+      </div>
+    </div>
+  );
+}
+
+function formatSignedCount(value: number) {
+  return value > 0 ? `+${value}` : String(value);
 }
 
 const selectClassName =
