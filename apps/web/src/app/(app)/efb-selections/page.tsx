@@ -5,6 +5,8 @@ import { getPrisma } from "@/lib/prisma";
 import { knowledgeFeature } from "@/lib/knowledge/contracts";
 import { assertArticleSourcesCurrent } from "@/lib/knowledge/editorial";
 import { KnowledgeActionForm } from "@/components/knowledge-action-form";
+import { EFB_AIRCRAFT_FAMILIES } from "@/lib/efb-aircraft-catalog";
+import { selectionMetadataSchema } from "@/lib/knowledge/export";
 export default async function EfbSelections() {
   if (!knowledgeFeature("shared") || !knowledgeFeature("export")) notFound();
   const context = await requireAuthWorkspaceContext(),
@@ -36,16 +38,22 @@ export default async function EfbSelections() {
         },
         select: { id: true, caption: true, reviewedAt: true },
       });
-      return { s, revision, available, visuals };
+      const parsedMetadata = selectionMetadataSchema.safeParse(s.metadata);
+      return {
+        s,
+        revision,
+        available,
+        visuals,
+        metadata: parsedMetadata.success ? parsedMetadata.data : null,
+      };
     }),
   );
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold">EFB selections</h1>
       <p>
-        Only these approved revisions and their declared assets will be
-        packaged. Export creates a downloadable release; it does not publish to
-        EFB.
+        Choose the aircraft and audience for each selected article. Export
+        creates a validated prototype package; it does not activate it in EFB.
       </p>
       <Link className="underline" href="/articles">
         Choose articles
@@ -53,7 +61,7 @@ export default async function EfbSelections() {
       {rows.length === 0 ? (
         <p>No articles selected.</p>
       ) : (
-        rows.map(({ s, revision, available, visuals }) => (
+        rows.map(({ s, revision, available, visuals, metadata }) => (
           <section key={s.id} className="space-y-3 rounded border p-4">
             <Link
               className="font-semibold underline"
@@ -67,9 +75,28 @@ export default async function EfbSelections() {
                 ? "Approved · Selected for EFB"
                 : "Source changed or unavailable — export blocked"}
             </p>
-            <pre className="overflow-auto whitespace-pre-wrap text-xs">
-              {JSON.stringify(s.metadata, null, 2)}
-            </pre>
+            {metadata ? (
+              <dl className="grid gap-2 text-sm sm:grid-cols-3">
+                <div>
+                  <dt className="text-muted-foreground">Aircraft</dt>
+                  <dd className="font-medium">
+                    {formatAircraft(metadata.aircraftFamily, metadata.aircraftTypeIds)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">ATA chapter</dt>
+                  <dd className="font-medium">ATA {metadata.ataChapter}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Audience</dt>
+                  <dd className="font-medium">
+                    {metadata.audiences.map(capitalize).join(" and ")}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <p role="alert">Update this selection before exporting.</p>
+            )}
             <p>{visuals.length} supporting visuals</p>
             <ul>
               {visuals.map((v) => (
@@ -88,11 +115,11 @@ export default async function EfbSelections() {
           </section>
         ))
       )}
-      {rows.length > 0 && rows.every((r) => r.available) && (
+      {rows.length > 0 && rows.every((r) => r.available && r.metadata) && (
         <KnowledgeActionForm>
           <input type="hidden" name="action" value="export" />
           <button className="rounded bg-primary px-4 py-2 text-primary-foreground">
-            Validate and export selected revisions
+            Validate and export topic package
           </button>
         </KnowledgeActionForm>
       )}
@@ -112,4 +139,16 @@ export default async function EfbSelections() {
       ))}
     </div>
   );
+}
+
+function formatAircraft(familyId: string, typeIds: string[]) {
+  const family = EFB_AIRCRAFT_FAMILIES.find((item) => item.id === familyId);
+  const types = typeIds.map((typeId) =>
+    family?.types.find((item) => item.id === typeId)?.label ?? typeId,
+  );
+  return [family?.label ?? familyId, ...types].join(" · ");
+}
+
+function capitalize(value: string) {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }

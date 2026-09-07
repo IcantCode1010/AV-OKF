@@ -95,6 +95,7 @@ export type EfbReleaseSourceEntry = {
 
 export const EFB_POC_AUTHORITY_LABEL =
   "Unreviewed prototype knowledge — not approved instructions";
+export const EFB_UNREVIEWED_LICENSE_IDENTIFIER = "POC-NOT-REVIEWED";
 
 const ENTRY_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?$/;
 const GIT_COMMIT_PATTERN = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;

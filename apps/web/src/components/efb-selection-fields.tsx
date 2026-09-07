@@ -4,21 +4,13 @@ import { EFB_AIRCRAFT_FAMILIES } from "@/lib/efb-aircraft-catalog";
 export function EfbSelectionFields() {
   const [aircraft, setAircraft] = useState<string[]>([]),
     [audiences, setAudiences] = useState<string[]>([]),
-    [ata, setAta] = useState(""),
-    [license, setLicense] = useState(""),
-    [attribution, setAttribution] = useState("");
-  const [family, setFamily] = useState(""),
-    [effectivity, setEffectivity] = useState("");
+    [family, setFamily] = useState(""),
+    [ataChapter, setAtaChapter] = useState("");
   const metadata = {
     aircraftTypeIds: aircraft,
     aircraftFamily: family,
-    effectivity,
+    ataChapter,
     audiences,
-    placements: ata ? [`ata:${ata}:0`] : [],
-    authority:
-      "Educational reference — not approved operating or maintenance instructions",
-    license,
-    attribution,
   };
   return (
     <>
@@ -33,15 +25,6 @@ export function EfbSelectionFields() {
           <option value="">Choose an aircraft family…</option>
           {EFB_AIRCRAFT_FAMILIES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
-      </label>
-      <label className="block">
-        Applicable configuration / effectivity
-        <input
-          required
-          value={effectivity}
-          onChange={(e) => setEffectivity(e.target.value)}
-          className="block w-full rounded border bg-background p-2"
-        />
       </label>
       <input type="hidden" name="metadata" value={JSON.stringify(metadata)} />
       <label className="block">
@@ -65,7 +48,25 @@ export function EfbSelectionFields() {
         </li>)}
       </ul>
       <p className="text-sm text-muted-foreground">Choose only the variants supported by the article’s sources. This list shows aircraft currently supported by EFB; selecting a family does not select every variant.</p>
-      <div className="flex gap-4">
+      <label className="block">
+        ATA chapter
+        <input
+          required
+          inputMode="numeric"
+          pattern="[0-9]{2}"
+          maxLength={2}
+          placeholder="36"
+          value={ataChapter}
+          onChange={(event) => setAtaChapter(event.target.value.replace(/\D/g, "").slice(0, 2))}
+          className="block w-full rounded border bg-background p-2"
+        />
+        <span className="mt-1 block text-sm text-muted-foreground">
+          Enter the two-digit ATA chapter used to place this article in Project EFB.
+        </span>
+      </label>
+      <fieldset className="space-y-2">
+        <legend className="font-medium">Audience</legend>
+        <div className="flex gap-4">
         {["pilot", "maintenance"].map((a) => (
           <label key={a}>
             <input
@@ -82,38 +83,14 @@ export function EfbSelectionFields() {
             {a}
           </label>
         ))}
-      </div>
-      <label className="block">
-        ATA chapter
-        <input
-          required
-          value={ata}
-          onChange={(e) => setAta(e.target.value)}
-          placeholder="24"
-          className="block w-full rounded border bg-background p-2"
-        />
-      </label>
-      <label className="block">
-        Permitted-use / license identifier
-        <input
-          required
-          value={license}
-          onChange={(e) => setLicense(e.target.value)}
-          className="block w-full rounded border bg-background p-2"
-        />
-      </label>
-      <label className="block">
-        Source attribution
-        <input
-          required
-          value={attribution}
-          onChange={(e) => setAttribution(e.target.value)}
-          className="block w-full rounded border bg-background p-2"
-        />
-      </label>
+        </div>
+        {audiences.length === 0 && (
+          <p className="text-sm text-muted-foreground">Select pilot, maintenance, or both.</p>
+        )}
+      </fieldset>
       <p className="text-sm">
-        Selecting confirms these publication details for this educational
-        revision. It does not publish to EFB.
+        The exported package is labeled as unreviewed prototype knowledge. It
+        is validated for Project EFB import but is not activated automatically.
       </p>
     </>
   );
