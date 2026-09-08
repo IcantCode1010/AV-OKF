@@ -1826,6 +1826,10 @@ model KnowledgeArticleRevision {
  articleId String
  article KnowledgeArticle @relation(fields:[articleId], references:[id])
  workspaceId String
+ version Int @default(0)
+ parentRevisionId String?
+ changeReason String @default("Generated article")
+ efbClassifications KnowledgeEfbClassification[]
  body Json
  evidence Json
  sourceFingerprint String
@@ -1834,6 +1838,44 @@ model KnowledgeArticleRevision {
  legacy Boolean @default(false)
  createdAt DateTime @default(now())
  @@index([workspaceId, articleId, createdAt])
+ @@unique([articleId, version])
+}
+
+model KnowledgeEfbRegistrySnapshot {
+ hash String @id
+ schemaVersion String
+ body Json
+ classifications KnowledgeEfbClassification[]
+ createdAt DateTime @default(now())
+}
+
+model KnowledgeEfbClassification {
+ id String @id @default(cuid())
+ workspaceId String
+ revisionId String
+ revision KnowledgeArticleRevision @relation(fields: [revisionId], references: [id])
+ registryHash String
+ registry KnowledgeEfbRegistrySnapshot @relation(fields: [registryHash], references: [hash])
+ policyVersion String
+ result Json
+ status String
+ decisions KnowledgeEfbClassificationDecision[]
+ createdAt DateTime @default(now())
+ @@unique([revisionId, registryHash, policyVersion])
+ @@index([workspaceId, status])
+}
+
+model KnowledgeEfbClassificationDecision {
+ id String @id @default(cuid())
+ workspaceId String
+ classificationId String
+ classification KnowledgeEfbClassification @relation(fields: [classificationId], references: [id])
+ previous Json
+ result Json
+ reason String
+ createdBy String
+ createdAt DateTime @default(now())
+ @@index([workspaceId, classificationId])
 }
 model KnowledgeVisual {
  id String @id @default(cuid())

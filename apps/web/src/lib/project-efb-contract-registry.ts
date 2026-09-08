@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
@@ -17,6 +18,14 @@ const registrySchema = z.object({
 }).strict();
 
 export type ProjectEfbContractRegistry = z.infer<typeof registrySchema>;
+
+export function registryFingerprint(registry: ProjectEfbContractRegistry): string {
+  return createHash("sha256").update(JSON.stringify({
+    schemaVersion: registry.schemaVersion,
+    aircraftFamilies: registry.aircraftFamilies.map(f => ({ id: f.id, aircraftTypeIds: [...f.aircraftTypeIds].sort() })).sort((a,b) => a.id.localeCompare(b.id)),
+    placements: Object.fromEntries(Object.entries(registry.placements).sort(([a],[b]) => a.localeCompare(b)).map(([k,v]) => [k, [...v].sort()])),
+  })).digest("hex");
+}
 
 export async function loadProjectEfbContractRegistry(
   projectEfbRoot = process.env.PROJECT_EFB_ROOT,

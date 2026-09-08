@@ -155,6 +155,8 @@ export async function executeEditorialAction(
         id: `revision-${randomUUID()}`,
         articleId: r.articleId,
         workspaceId: r.workspaceId,
+        parentRevisionId: r.id,
+        changeReason: String(form.get("changeReason") ?? "Editorial edit").trim() || "Editorial edit",
         body: json({ ...body, title, answer, keyPoints, details, markdown }),
         evidence: r.evidence as Prisma.InputJsonValue,
         sourceFingerprint: r.sourceFingerprint,

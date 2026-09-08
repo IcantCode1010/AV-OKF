@@ -155,6 +155,10 @@ export async function exportSelectedArticles(
           : []),
       ];
       const frontmatter = {
+        article_version: r.version,
+        article_revision_id: r.id,
+        article_parent_revision_id: r.parentRevisionId,
+        article_change_reason: r.changeReason,
         relations: related.map((link) => ({
           relation: link.relation,
           target: `${link.target}.md`,

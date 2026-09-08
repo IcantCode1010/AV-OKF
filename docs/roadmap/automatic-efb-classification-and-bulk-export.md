@@ -3,6 +3,29 @@
 Date: 2026-09-08  
 Status: planned
 
+## Implementation checkpoint — 2026-09-08
+
+Phase 1 is in progress; later phases have not passed their entry gate.
+Added canonical registry hashing, registry-constrained deterministic aircraft
+and ATA extraction, additive classification/snapshot/decision tables, and
+article revision versioning. Topic history displays a stable version number and
+change reason; edits retain their parent revision and exports retain version
+metadata. Existing history is backfilled chronologically, and a database trigger
+serializes new version allocation per article.
+
+Six focused registry/classifier tests pass. Prisma validation and client
+generation pass. The opt-in PostgreSQL migration/concurrency test requires
+`EFB_MIGRATION_TEST_DATABASE_URL`; it uses an isolated temporary schema.
+Docker Desktop startup failed with an inaccessible Secrets Engine socket, so
+database migration and concurrency verification have not run. No migration was
+applied to the user's database. Full TypeScript checking reports existing test
+fixture errors; the changed source files did not appear in those diagnostics.
+
+Before Phase 2, run the database migration test, finish registry descriptions
+and aliases and migrate all classification consumers away from the legacy fixed
+ATA vocabulary. Model classification, durable jobs, override UI, automatic
+selection, bulk preflight and evaluation rollout are still outstanding.
+
 ## Objective
 
 Classify every EFB candidate while its article revision is created so an editor

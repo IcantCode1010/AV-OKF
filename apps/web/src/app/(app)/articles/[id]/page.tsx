@@ -57,10 +57,11 @@ export default async function ArticlePage({
             className="space-y-4 rounded-xl border p-5"
           >
             <summary className="cursor-pointer font-semibold">
-              {b.title} · {r.approval ? "Approved" : "Draft"} ·{" "}
+              {b.title} · Version {r.version} · {r.approval ? "Approved" : "Draft"} ·{" "}
               {r.createdAt.toLocaleString()}
             </summary>
             <ArticleSourceStatus context={context} revisionId={r.id} />
+            <p className="text-sm text-muted-foreground">{r.changeReason}{r.parentRevisionId ? ` · Based on revision ${r.parentRevisionId}` : ""}</p>
             <p>{b.answer}</p>
             {b.markdown && (
               <div className="whitespace-pre-wrap">{b.markdown}</div>
@@ -101,6 +102,7 @@ export default async function ArticlePage({
               <KnowledgeActionForm>
                 <input type="hidden" name="action" value="edit" />
                 <input type="hidden" name="revisionId" value={r.id} />
+                <label className="block">Reason for this version<input name="changeReason" required defaultValue="Editorial edit" className="block w-full rounded border bg-background p-2" /></label>
                 <label className="block">
                   Title
                   <input
