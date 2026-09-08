@@ -8,6 +8,7 @@ import { getPrisma } from "@/lib/prisma";
 import { KnowledgeActionForm } from "@/components/knowledge-action-form";
 import { ArticleVisualFields } from "@/components/article-visual-fields";
 import { EfbSelectionFields } from "@/components/efb-selection-fields";
+import { loadProjectEfbContractRegistry } from "@/lib/project-efb-contract-registry";
 import type { BuilderResult } from "@/lib/topic-builder-core";
 export const dynamic = "force-dynamic";
 export default async function ArticlePage({
@@ -23,6 +24,9 @@ export default async function ArticlePage({
     include: { revisions: { orderBy: { createdAt: "desc" } } },
   });
   if (!article) notFound();
+  const efbRegistry = knowledgeFeature("export")
+    ? await loadProjectEfbContractRegistry()
+    : null;
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 break-words">
       <Link href="/articles" className="underline">
@@ -167,7 +171,7 @@ export default async function ArticlePage({
                 </button>
               </KnowledgeActionForm>
             </details>
-            {!r.approval ? (
+            {!r.approval && (
               <>
                 <KnowledgeActionForm>
                   <input type="hidden" name="action" value="suggest-diagram" />
@@ -195,19 +199,20 @@ export default async function ArticlePage({
                   </button>
                 </KnowledgeActionForm>
               </>
-            ) : knowledgeFeature("export") ? (
+            )}
+            {knowledgeFeature("export") && (
               <details>
                 <summary>Select this revision for EFB</summary>
                 <KnowledgeActionForm>
                   <input type="hidden" name="action" value="select" />
                   <input type="hidden" name="revisionId" value={r.id} />
-                  <EfbSelectionFields />
+                  <EfbSelectionFields registry={efbRegistry!} />
                   <button className="rounded border px-3 py-2">
                     Add to EFB selections
                   </button>
                 </KnowledgeActionForm>
               </details>
-            ) : null}
+            )}
           </details>
         );
       })}

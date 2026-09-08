@@ -1,7 +1,9 @@
 import { matchesEfbAircraftFamily, normalizeEfbAircraftFamily } from "../efb-aircraft-catalog.ts";
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
 import { z } from "zod";
@@ -9,27 +11,62 @@ import type { Prisma } from "@prisma/client";
 import type { AuthWorkspaceContext } from "../auth-workspace.ts";
 import { getPrisma } from "../prisma.ts";
 import {
+  EFB_POC_AUTHORITY_LABEL,
   EFB_UNREVIEWED_LICENSE_IDENTIFIER,
   exportEfbRelease,
 } from "../efb-release-export.ts";
+import {
+  loadProjectEfbContractRegistry,
+  type ProjectEfbContractRegistry,
+} from "../project-efb-contract-registry.ts";
 import { assertArticleSourcesCurrent } from "./editorial.ts";
 const exec = promisify(execFile),
   json = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 export const selectionMetadataSchema = z.object({
-  aircraftTypeIds: z.array(z.string().regex(/^[a-z0-9-]+$/)).min(1),
+  aircraftTypeIds: z.array(z.string().regex(/^[a-z0-9-]+$/)),
   aircraftFamily: z.string().min(1).transform(normalizeEfbAircraftFamily),
-  ataChapter: z.string().trim().regex(/^\d{2}$/, "Enter a two-digit ATA chapter."),
+  ataChapter: z.string().trim().regex(/^\d{2}$/).nullable(),
   audiences: z.array(z.enum(["pilot", "maintenance"])).min(1),
+  qrhTargetId: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).nullable(),
 }).refine((metadata) => matchesEfbAircraftFamily(metadata.aircraftFamily, metadata.aircraftTypeIds), {
   message: "Choose supported aircraft types from the selected family.", path: ["aircraftTypeIds"],
+}).superRefine((metadata, context) => {
+  if (metadata.audiences.includes("maintenance") && !metadata.ataChapter) {
+    context.addIssue({ code: "custom", message: "Choose an ATA placement for maintenance content.", path: ["ataChapter"] });
+  }
+  if (metadata.audiences.includes("pilot") && !metadata.qrhTargetId) {
+    context.addIssue({ code: "custom", message: "Choose a QRH placement for pilot content.", path: ["qrhTargetId"] });
+  }
 });
+
+export type SelectionMetadata = z.infer<typeof selectionMetadataSchema>;
+
+export function assertSelectionMetadataAllowed(
+  metadata: SelectionMetadata,
+  registry: ProjectEfbContractRegistry,
+): void {
+  const family = registry.aircraftFamilies.find(({ id }) => id === metadata.aircraftFamily);
+  if (!family || metadata.aircraftTypeIds.some((id) => !family.aircraftTypeIds.includes(id))) {
+    throw new Error("selected_aircraft_not_supported_by_project_efb");
+  }
+  if (metadata.ataChapter && !registry.placements.ataChapterIds.includes(metadata.ataChapter)) {
+    throw new Error("selected_ata_not_supported_by_project_efb");
+  }
+  if (metadata.qrhTargetId && !registry.placements.qrhTargetIds.includes(metadata.qrhTargetId)) {
+    throw new Error("selected_qrh_not_supported_by_project_efb");
+  }
+}
 export async function exportSelectedArticles(
   context: AuthWorkspaceContext,
   selectionIds?: string[],
 ) {
   const db = getPrisma();
-  const contractRoot = process.env.PROJECT_EFB_ROOT;
+  const contractRoot = process.env.PROJECT_EFB_ROOT,
+    signingKeyPath = process.env.AV_OKF_EFB_SIGNING_KEY_PATH,
+    signingKeyId = process.env.AV_OKF_EFB_SIGNING_KEY_ID;
   if (!contractRoot) throw Error("configure_project_efb_validator_first");
+  if (!signingKeyPath || !signingKeyId) throw Error("configure_poc_cloud_signing_first");
+  const registry = await loadProjectEfbContractRegistry(contractRoot);
   const selections = await db.knowledgeEfbSelection.findMany({
     where: {
       workspaceId: context.workspaceId,
@@ -41,11 +78,10 @@ export async function exportSelectedArticles(
   const records = await Promise.all(
     selections.map((s) => assertArticleSourcesCurrent(context, s.revisionId)),
   );
-  for (const r of records)
-    if (!r.approval) throw Error("selected_revision_not_approved");
   const metadata = selections.map((s) =>
     selectionMetadataSchema.parse(s.metadata),
   );
+  for (const item of metadata) assertSelectionMetadataAllowed(item, registry);
   const release = await db.knowledgeExportRelease.create({
     data: {
       workspaceId: context.workspaceId,
@@ -54,7 +90,12 @@ export async function exportSelectedArticles(
       selectionSnapshot: json(selections),
     },
   });
+  const scratch = await mkdtemp(path.join(tmpdir(), "av-okf-poc-cloud-"));
   try {
+    const privateKey = createPrivateKey(await readFile(signingKeyPath, "utf8"));
+    if (privateKey.asymmetricKeyType !== "ed25519") throw Error("efb_signing_key_must_be_ed25519");
+    const publicKeyPath = path.join(scratch, "signer-public.pem");
+    await writeFile(publicKeyPath, createPublicKey(privateKey).export({ format: "pem", type: "spki" }));
     const sourceEntries: Array<{ markdown: string; relativePath: string }> = [];
     for (let i = 0; i < records.length; i++) {
       const r = records[i],
@@ -74,18 +115,12 @@ export async function exportSelectedArticles(
         }>;
         relationships?: Array<{ target: string; relation?: string }>;
       };
-      const approval = r.approval as {
+      const approval = (r.approval ?? {}) as {
         by?: string;
         at?: string;
         mode?: string;
         legacy?: boolean;
       };
-      if (
-        !approval.by ||
-        !approval.at ||
-        (approval.legacy && !approval.mode?.startsWith("human_"))
-      )
-        throw Error("legacy_revision_requires_explicit_review");
       const related = (b.relationships ?? []).flatMap((link) => {
         const target = records.find(
           (other) => (other.body as { id: string }).id === link.target,
@@ -109,6 +144,16 @@ export async function exportSelectedArticles(
             page,
           }));
       const refs = (ids: string[] = []) => ids.map((id) => `[^${id}]`).join("");
+      const sourcePages = [...new Set(passages.map((p) => p.page))];
+      const displayOrder = (sourcePages[0] ?? 1) * 10;
+      const placements = [
+        ...(m.audiences.includes("maintenance") && m.ataChapter
+          ? [`ata:${m.ataChapter}:${displayOrder}`]
+          : []),
+        ...(m.audiences.includes("pilot") && m.qrhTargetId
+          ? [`qrh:${m.qrhTargetId}:${displayOrder}`]
+          : []),
+      ];
       const frontmatter = {
         relations: related.map((link) => ({
           relation: link.relation,
@@ -119,18 +164,26 @@ export async function exportSelectedArticles(
         description: b.answer,
         status: "stable",
         generated: { by: "av-okf", at: r.createdAt.toISOString() },
-        verified: [{ by: `human:${approval.by}`, at: approval.at }],
+        ...(approval.by && approval.at ? { verified: [{ by: `human:${approval.by}`, at: approval.at }] } : {}),
         sources: passages.map((p) => ({
           id: `${p.documentId}-${p.page}`,
           resource: `urn:av-okf:document:${p.documentId}:page:${p.page}`,
           title: `${p.documentTitle}, page ${p.page}`,
         })),
-        source_pages: [...new Set(passages.map((p) => p.page))],
+        source_pages: sourcePages,
         aircraft_family_ids: [m.aircraftFamily],
         aircraft_type_ids: m.aircraftTypeIds,
-        ata: m.ataChapter,
+        ...(m.ataChapter ? { ata: m.ataChapter } : {}),
         efb_entry_id: entryId,
         intended_audiences: m.audiences,
+        efb_aircraft_family_ids: [m.aircraftFamily],
+        efb_aircraft_type_ids: m.aircraftTypeIds,
+        efb_audiences: m.audiences,
+        efb_placements: placements,
+        efb_license_identifier: EFB_UNREVIEWED_LICENSE_IDENTIFIER,
+        efb_authority_label: EFB_POC_AUTHORITY_LABEL,
+        efb_inclusion_status: "approved-for-inclusion",
+        efb_related_entry_ids: related.map(({ target }) => target),
       };
       const body =
         b.markdown ??
@@ -143,9 +196,12 @@ export async function exportSelectedArticles(
             )
             .join("\n\n")
         : "";
+      const relationLinks = related.length > 0
+        ? `\n\n## Related topics\n\n${related.map(({ target }) => `- [${target}](${target}.md)`).join("\n")}`
+        : "";
       sourceEntries.push({
         relativePath: `topics/${entryId}.md`,
-        markdown: `---\n${stringify(frontmatter)}---\n\n${body}\n\n${footnotes}`,
+        markdown: `---\n${stringify(frontmatter)}---\n\n${body}${relationLinks}\n\n${footnotes}`,
       });
     }
     const now = new Date().toISOString();
@@ -156,7 +212,7 @@ export async function exportSelectedArticles(
     const result = await exportEfbRelease({
       config: {
         schemaVersion: "1.0",
-        mode: "poc",
+        mode: "poc-cloud",
         packageId: `selected-${context.workspaceId.toLowerCase()}`,
         version: `0.1.${Date.now()}`,
         source: "av-okf",
@@ -171,6 +227,7 @@ export async function exportSelectedArticles(
           attribution: "Prototype content",
         },
       },
+      contractRegistry: registry,
       sourceEntries,
       outputRoot: process.env.AV_OKF_EFB_RELEASE_ROOT ?? "/data/efb-releases",
       validateStagedPackage: async (manifest) => {
@@ -178,10 +235,23 @@ export async function exportSelectedArticles(
           await assertArticleSourcesCurrent(context, r.id);
         await exec(
           process.execPath,
-          [path.join(contractRoot, "scripts/validate-knowledge-package.mjs"), manifest],
+          [
+            path.join(contractRoot, "scripts/validate-knowledge-package.mjs"),
+            manifest,
+            "--require-signature",
+            "--public-key",
+            publicKeyPath,
+            "--expected-key-id",
+            signingKeyId,
+          ],
           { cwd: contractRoot },
         );
       },
+      signer: async (payload) => ({
+        algorithm: "ed25519",
+        keyId: signingKeyId,
+        value: sign(null, Buffer.from(payload, "utf8"), privateKey).toString("base64"),
+      }),
     });
     await db.knowledgeExportRelease.update({
       where: { id: release.id },
@@ -195,16 +265,16 @@ export async function exportSelectedArticles(
     });
     return release.id;
   } catch (error) {
+    const errorCode = error instanceof Error ? error.message.split(":", 1)[0]! : "export_validation_failed";
     await db.knowledgeExportRelease.update({
       where: { id: release.id },
       data: {
         status: "failed",
-        error:
-          error instanceof Error && /^[a-z_]+$/.test(error.message)
-            ? error.message
-            : "export_validation_failed",
+        error: /^[a-z_]+$/.test(errorCode) ? errorCode : "export_validation_failed",
       },
     });
     throw error;
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
   }
 }

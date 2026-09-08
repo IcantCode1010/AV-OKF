@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { generateKeyPairSync, sign, verify } from "node:crypto";
 import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import {
   buildPackageSignaturePayload,
+  EFB_POC_AUTHORITY_LABEL,
   exportEfbRelease,
   type EfbReleaseConfig,
 } from "./efb-release-export.ts";
@@ -17,6 +20,7 @@ import {
 } from "./efb-release-automation.ts";
 
 const sourceCommit = "a".repeat(40);
+const exec = promisify(execFile);
 const config: EfbReleaseConfig = {
   schemaVersion: "1.0",
   packageId: "b738-maintenance-reference",
@@ -169,7 +173,7 @@ Complete agent-readable article body with enough grounded technical detail to sa
   assert.equal(path.basename(result.releaseDirectory), "b738-poc@0.1.0");
   assert.notEqual(validatedStagingPath, result.manifestPath);
   assert.equal(result.manifest.signature, undefined);
-  assert.equal(result.manifest.entries[0]!.authorityLabel, "Unreviewed prototype knowledge — not approved instructions");
+  assert.equal(result.manifest.entries[0]!.authorityLabel, EFB_POC_AUTHORITY_LABEL);
   assert.deepEqual(result.manifest.entries[0]!.applicability, {
     aircraftFamilyIds: ["737-ng"],
     aircraftTypeIds: [],
@@ -180,13 +184,13 @@ Complete agent-readable article body with enough grounded technical detail to sa
   ]);
   assert.match(
     await readFile(path.join(result.releaseDirectory, "display", "b738-ata24-electrical-overview.md"), "utf8"),
-    /Unreviewed prototype knowledge — not approved instructions/,
+    /Prototype knowledge — not approved operational data/,
   );
   const agent = JSON.parse(await readFile(
     path.join(result.releaseDirectory, "agent", "b738-ata24-electrical-overview.json"),
     "utf8",
   ));
-  assert.equal(agent.authorityLabel, "Unreviewed prototype knowledge — not approved instructions");
+  assert.equal(agent.authorityLabel, EFB_POC_AUTHORITY_LABEL);
   assert.deepEqual(agent.applicability, result.manifest.entries[0]!.applicability);
   assert.deepEqual(agent.placements, [{ kind: "ata", targetId: "24" }]);
   const retrieval = JSON.parse((await readFile(path.join(result.releaseDirectory, "retrieval.jsonl"), "utf8")).trim());
@@ -195,6 +199,186 @@ Complete agent-readable article body with enough grounded technical detail to sa
   assert.deepEqual(retrieval.placements, [{ kind: "ata", targetId: "24" }]);
   await access(path.join(result.releaseDirectory, "checksums.sha256"));
   await access(path.join(result.releaseDirectory, "release.json"));
+});
+
+test("exports a signed schema 2.1 PoC cloud package with native parity and acceptance report", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-poc-cloud-"));
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const result = await exportEfbRelease({
+    config: {
+      ...config,
+      license: { identifier: "POC-NOT-REVIEWED" },
+      mode: "poc-cloud",
+      packageId: "737-ng-hydraulics",
+      validationProfile: "poc-structural-only",
+    },
+    contractRegistry: {
+      aircraftFamilies: [{ id: "737-ng", aircraftTypeIds: ["b738"] }],
+      placements: {
+        ataChapterIds: ["29"],
+        qrhTargetIds: ["hydraulics"],
+        quickAccessTargetIds: ["maintenance", "pilot"],
+      },
+    },
+    outputRoot: path.join(root, "release"),
+    signer: async (payload) => ({
+      algorithm: "ed25519",
+      keyId: "fixture-publisher-2026",
+      value: sign(null, Buffer.from(payload), privateKey).toString("base64"),
+    }),
+    sourceEntries: [{
+      relativePath: "topics/hydraulic-operation.md",
+      markdown: `---
+type: system_topic
+title: Hydraulic Operation
+description: Grounded hydraulic operation reference.
+status: stable
+sources: [{ id: source-1, resource: "urn:sha256:${"a".repeat(64)}", title: Source manual }]
+source_pages: [10]
+efb_entry_id: hydraulic-operation
+efb_audiences: [pilot, maintenance]
+efb_aircraft_family_ids: [737-ng]
+efb_aircraft_type_ids: []
+efb_placements: ["ata:29:100", "qrh:hydraulics:100"]
+efb_license_identifier: POC-NOT-REVIEWED
+efb_authority_label: ${EFB_POC_AUTHORITY_LABEL}
+efb_inclusion_status: approved-for-inclusion
+---
+
+# Hydraulic Operation
+
+This complete grounded article describes hydraulic operation for the selected prototype audiences without claiming approved operational authority.
+`,
+    }],
+    validateStagedPackage: async (manifestPath) => {
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const payload = buildPackageSignaturePayload({
+        packageVersionId: manifest.id,
+        checksum: manifest.checksum.value,
+      });
+      assert(verify(null, Buffer.from(payload), publicKey, Buffer.from(manifest.signature.value, "base64")));
+    },
+  });
+
+  assert.equal(result.manifest.schemaVersion, "2.1");
+  assert(result.manifest.nativeArtifacts?.includes("native/catalog.json"));
+  assert.deepEqual(result.manifest.placements.map(({ kind, targetId }) => ({ kind, targetId })), [
+    { kind: "ata", targetId: "29" },
+    { kind: "qrh", targetId: "hydraulics" },
+  ]);
+  const report = JSON.parse(await readFile(path.join(result.releaseDirectory, "acceptance-report.json"), "utf8"));
+  assert.equal(report.result, "pass");
+  assert.equal(report.checks.consumerValidator, "pass");
+});
+
+test("signed PoC cloud output passes the configured Project EFB validator", {
+  skip: !process.env.PROJECT_EFB_ROOT,
+}, async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-project-efb-contract-"));
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const publicKeyPath = path.join(root, "publisher-public.pem");
+  await writeFile(publicKeyPath, publicKey.export({ type: "spki", format: "pem" }));
+  const result = await exportEfbRelease({
+    config: {
+      ...config,
+      license: { identifier: "POC-NOT-REVIEWED" },
+      mode: "poc-cloud",
+      packageId: "737-ng-contract-check",
+      validationProfile: "poc-structural-only",
+    },
+    contractRegistry: {
+      aircraftFamilies: [{ id: "737-ng", aircraftTypeIds: ["b738"] }],
+      placements: { ataChapterIds: ["29"], qrhTargetIds: ["hydraulics"], quickAccessTargetIds: [] },
+    },
+    outputRoot: path.join(root, "release"),
+    signer: async (payload) => ({
+      algorithm: "ed25519",
+      keyId: "cross-contract-fixture",
+      value: sign(null, Buffer.from(payload), privateKey).toString("base64"),
+    }),
+    sourceEntries: [{
+      relativePath: "topics/hydraulic-system.md",
+      markdown: `---
+type: system_topic
+title: Hydraulic System
+description: Grounded hydraulic system reference.
+status: stable
+sources: [{ id: source-1, resource: "urn:sha256:${"c".repeat(64)}", title: Source manual }]
+source_pages: [10, 11]
+efb_entry_id: hydraulic-system
+efb_audiences: [pilot, maintenance]
+efb_aircraft_family_ids: [737-ng]
+efb_aircraft_type_ids: []
+efb_placements: ["ata:29:100", "qrh:hydraulics:100"]
+efb_license_identifier: POC-NOT-REVIEWED
+efb_authority_label: ${EFB_POC_AUTHORITY_LABEL}
+efb_inclusion_status: approved-for-inclusion
+---
+
+# Hydraulic System
+
+This complete grounded article describes the hydraulic system for prototype maintenance and pilot use.
+`,
+    }],
+    validateStagedPackage: async (manifestPath) => {
+      await exec(process.execPath, [
+        path.join(process.env.PROJECT_EFB_ROOT!, "scripts", "validate-knowledge-package.mjs"),
+        manifestPath,
+        "--require-signature",
+        "--public-key", publicKeyPath,
+        "--expected-key-id", "cross-contract-fixture",
+      ], { cwd: process.env.PROJECT_EFB_ROOT });
+    },
+  });
+  assert.equal(result.manifest.schemaVersion, "2.1");
+  await access(path.join(result.releaseDirectory, "acceptance-report.json"));
+  const displayPath = path.join(result.releaseDirectory, "display", "hydraulic-system.md");
+  await writeFile(displayPath, `${await readFile(displayPath, "utf8")}\ncorrupted after signing\n`);
+  await assert.rejects(
+    exec(process.execPath, [
+      path.join(process.env.PROJECT_EFB_ROOT!, "scripts", "validate-knowledge-package.mjs"),
+      result.manifestPath,
+      "--require-signature",
+      "--public-key", publicKeyPath,
+      "--expected-key-id", "cross-contract-fixture",
+    ], { cwd: process.env.PROJECT_EFB_ROOT }),
+    /Package artifact checksum does not match manifest/,
+  );
+});
+
+test("PoC cloud rejects missing and unregistered placement targets", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-poc-cloud-invalid-"));
+  const { privateKey } = generateKeyPairSync("ed25519");
+  const base = `---
+type: system_topic
+title: Hydraulic Operation
+description: Grounded hydraulic operation reference.
+status: stable
+sources: [{ id: source-1, resource: "urn:sha256:${"a".repeat(64)}", title: Source manual }]
+source_pages: [10]
+efb_entry_id: hydraulic-operation
+efb_audiences: [maintenance]
+efb_aircraft_family_ids: [737-ng]
+efb_aircraft_type_ids: []
+efb_license_identifier: POC-NOT-REVIEWED
+efb_authority_label: ${EFB_POC_AUTHORITY_LABEL}
+efb_inclusion_status: approved-for-inclusion
+`;
+  const run = (placement: string) => exportEfbRelease({
+    config: { ...config, license: { identifier: "POC-NOT-REVIEWED" }, mode: "poc-cloud" },
+    contractRegistry: {
+      aircraftFamilies: [{ id: "737-ng", aircraftTypeIds: ["b738"] }],
+      placements: { ataChapterIds: ["29"], qrhTargetIds: ["hydraulics"], quickAccessTargetIds: [] },
+    },
+    outputRoot: path.join(root, placement ? placement.replace(/[^a-z0-9]/gi, "-") : "missing"),
+    signer: async (payload) => ({ algorithm: "ed25519", keyId: "test", value: sign(null, Buffer.from(payload), privateKey).toString("base64") }),
+    sourceEntries: [{
+      relativePath: "topics/hydraulic-operation.md",
+      markdown: `${base}${placement ? `efb_placements: ["${placement}"]\n` : ""}---\n\n# Hydraulic Operation\n\nThis complete grounded article contains enough source-backed material for validation.\n`,
+    }],
+  });
+  await assert.rejects(run(""), /efb_metadata_required:efb_placements/);
+  await assert.rejects(run("ata:36:10"), /efb_placement_target_unsupported/);
 });
 
 test("keeps 737SAR as provenance while exporting hydraulic placement as ATA 29", async () => {

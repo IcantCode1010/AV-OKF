@@ -7,12 +7,13 @@ import {
   getFrontmatterSources,
   getFrontmatterStringArray,
   parseOkfMarkdown,
+  validateOkfV02Frontmatter,
 } from "./okf-frontmatter.ts";
 import { normalizeProjectEfbAtaChapter } from "./project-efb-article-classification.ts";
 
 export type EfbReleaseConfig = {
   schemaVersion: "1.0";
-  mode?: "poc" | "production";
+  mode?: "poc" | "poc-cloud" | "production";
   packageId: string;
   version: string;
   source: string;
@@ -93,8 +94,17 @@ export type EfbReleaseSourceEntry = {
   relativePath: string;
 };
 
+export type EfbContractRegistry = {
+  aircraftFamilies: Array<{ id: string; aircraftTypeIds: string[] }>;
+  placements: {
+    ataChapterIds: string[];
+    qrhTargetIds: string[];
+    quickAccessTargetIds: string[];
+  };
+};
+
 export const EFB_POC_AUTHORITY_LABEL =
-  "Unreviewed prototype knowledge — not approved instructions";
+  "Prototype knowledge — not approved operational data";
 export const EFB_UNREVIEWED_LICENSE_IDENTIFIER = "POC-NOT-REVIEWED";
 
 const ENTRY_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9-]*[a-z0-9])?$/;
@@ -112,12 +122,21 @@ export async function exportEfbRelease(input: {
     keyId: string;
     value: string;
   }>;
+  contractRegistry?: EfbContractRegistry;
   validateStagedPackage?: (manifestPath: string) => Promise<void>;
 }): Promise<EfbReleaseResult> {
   validateConfig(input.config);
   const mode = input.config.mode ?? "production";
+  const nativeMode = mode !== "poc";
+  if (mode === "poc-cloud") {
+    if (!input.signer) throw new Error("efb_release_signer_required");
+    if (!input.contractRegistry) throw new Error("project_efb_registry_required");
+    if (input.config.license.identifier !== EFB_UNREVIEWED_LICENSE_IDENTIFIER) {
+      throw new Error("efb_poc_cloud_license_invalid");
+    }
+  }
   const packageVersionId = `${input.config.packageId}@${input.config.version}`;
-  const releaseDirectory = mode === "poc"
+  const releaseDirectory = mode === "poc" || mode === "poc-cloud"
     ? path.join(input.outputRoot, packageVersionId)
     : path.join(input.outputRoot, input.config.packageId, input.config.version);
   if (await exists(releaseDirectory)) {
@@ -153,7 +172,7 @@ export async function exportEfbRelease(input: {
   const entryIds = new Set(prepared.map((item) => item.entry.id));
   for (const item of prepared) {
     for (const relatedId of item.entry.relatedEntryIds) {
-      if (!entryIds.has(relatedId) && !(mode === "production" && /^okf:\/\/[a-z0-9][a-z0-9.-]*@[a-zA-Z0-9][a-zA-Z0-9.+-]*\/[^\\?#]+(?:#[^\s]+)?$/.test(relatedId))) {
+      if (!entryIds.has(relatedId) && !(nativeMode && /^okf:\/\/[a-z0-9][a-z0-9.-]*@[a-zA-Z0-9][a-zA-Z0-9.+-]*\/[^\\?#]+(?:#[^\s]+)?$/.test(relatedId))) {
         throw new Error(`efb_related_entry_missing:${item.entry.id}:${relatedId}`);
       }
     }
@@ -167,7 +186,10 @@ export async function exportEfbRelease(input: {
   artifacts.set("retrieval.jsonl", buildKeywordIndex(prepared));
   assertPreparedArtifactParity(prepared, artifacts.get("retrieval.jsonl") as string);
 
-  if (mode === "production") {
+  if (mode === "poc-cloud") validatePreparedAgainstRegistry(prepared, input.contractRegistry!);
+  if (nativeMode) assertNativeSourceParity(prepared, nativeEntries, input.config);
+
+  if (nativeMode) {
     const assets = input.supportingAssets ?? [];
     assertUnique(assets.map(asset => asset.nativePath), "efb_asset_path_duplicate");
     for (const asset of assets) {
@@ -175,6 +197,7 @@ export async function exportEfbRelease(input: {
       if (!entryIds.has(asset.entryId)) throw new Error(`efb_asset_owner_missing:${asset.entryId}`);
       const bytes = await readFile(asset.sourcePath);
       if (!bytes.length || bytes.length > 3000000) throw new Error(`efb_asset_size_limit:${assetPath}`);
+      validateSupportingAssetBytes(bytes, asset.mediaType, assetPath);
       artifacts.set(`native/assets/${assetPath}`, bytes);
     }
     for (const native of nativeEntries) artifacts.set(`native/tree/${native.path}`, native.markdown);
@@ -208,15 +231,15 @@ export async function exportEfbRelease(input: {
     throw new Error("efb_release_signature_invalid");
   }
   const manifest: EfbReleaseResult["manifest"] = {
-    schemaVersion: mode === "production" ? "2.1" : "2.0",
-    ...(mode === "production" ? { nativeArtifacts: [...artifacts.keys()].filter((artifactPath) => artifactPath.startsWith("native/")).sort() } : {}),
+    schemaVersion: nativeMode ? "2.1" : "2.0",
+    ...(nativeMode ? { nativeArtifacts: [...artifacts.keys()].filter((artifactPath) => artifactPath.startsWith("native/")).sort() } : {}),
     id: packageVersionId,
     packageId: input.config.packageId,
     version: input.config.version,
     format: { name: "open-knowledge-format", version: "0.2" },
     license: input.config.license,
     provenance: {
-      source: mode === "poc"
+      source: mode === "poc" || mode === "poc-cloud"
         ? input.config.source
         : `${input.config.source}@${input.config.sourceCommit}`,
       curator: input.config.curator,
@@ -269,6 +292,32 @@ export async function exportEfbRelease(input: {
     if (input.validateStagedPackage) {
       await input.validateStagedPackage(path.join(stagingDirectory, "manifest.json"));
     }
+    if (mode === "poc-cloud") {
+      await writeFile(path.join(stagingDirectory, "acceptance-report.json"), stableJson({
+        contractVersion: "1.0",
+        packageVersionId,
+        result: "pass",
+        entryCount: prepared.length,
+        retrievalRecordCount: prepared.length,
+        displayArtifactCount: prepared.length,
+        agentArtifactCount: prepared.length,
+        nativeEntryCount: nativeEntries.length,
+        assetCount: input.supportingAssets?.length ?? 0,
+        packageChecksum,
+        signatureKeyId: signature!.keyId,
+        validatedAt: input.config.validatedAt,
+        checks: {
+          okf02: "pass",
+          efbSchema21: "pass",
+          artifactCoverage: "pass",
+          metadataParity: "pass",
+          placementCoverage: "pass",
+          relationshipResolution: "pass",
+          assetValidation: "pass",
+          consumerValidator: "pass",
+        },
+      }));
+    }
     await rename(stagingDirectory, releaseDirectory);
   } catch (error) {
     await rm(stagingDirectory, { recursive: true, force: true });
@@ -296,12 +345,16 @@ export function buildPackageSignaturePayload(input: {
 
 function prepareEntry(input: {
   config: EfbReleaseConfig;
-  mode: "poc" | "production";
+  mode: "poc" | "poc-cloud" | "production";
   packageVersionId: string;
   parsed: ReturnType<typeof parseOkfMarkdown>;
   relative: string;
 }): PreparedEntry {
   const { frontmatter, body } = input.parsed;
+  if (input.mode !== "poc") {
+    const issues = validateOkfV02Frontmatter(frontmatter);
+    if (issues.length > 0) throw new Error(`efb_native_okf_invalid:${input.relative}:${issues.join(",")}`);
+  }
   if (frontmatter.status !== "stable") {
     throw new Error(`efb_entry_must_be_stable:${input.relative}`);
   }
@@ -319,7 +372,7 @@ function prepareEntry(input: {
   if (!ENTRY_ID_PATTERN.test(id)) throw new Error(`efb_entry_id_invalid:${id}`);
   const title = requiredScalar(frontmatter, "title", input.relative);
   const summary = requiredScalar(frontmatter, "description", input.relative);
-  const authorityLabel = input.mode === "poc"
+  const authorityLabel = input.mode === "poc" || input.mode === "poc-cloud"
     ? EFB_POC_AUTHORITY_LABEL
     : requiredScalar(frontmatter, "efb_authority_label", input.relative);
   const sourceClassification = input.mode === "production"
@@ -336,6 +389,17 @@ function prepareEntry(input: {
     }
     requiredScalar(frontmatter, "efb_license_reviewed_by", input.relative);
     requiredIsoDate(frontmatter, "efb_license_reviewed_at", input.relative);
+  }
+  if (input.mode === "poc-cloud") {
+    if (frontmatter.efb_license_identifier !== EFB_UNREVIEWED_LICENSE_IDENTIFIER) {
+      throw new Error(`efb_entry_license_mismatch:${id}`);
+    }
+    if (frontmatter.efb_authority_label !== EFB_POC_AUTHORITY_LABEL) {
+      throw new Error(`efb_entry_authority_mismatch:${id}`);
+    }
+    if (frontmatter.efb_inclusion_status !== "approved-for-inclusion") {
+      throw new Error(`efb_inclusion_status_invalid:${input.relative}`);
+    }
   }
   const audiences = requiredStringArrayWithFallback(
     frontmatter,
@@ -371,7 +435,7 @@ function prepareEntry(input: {
   if (sourceReferences.length === 0) {
     throw new Error(`efb_entry_requires_source_reference:${id}`);
   }
-  const displayBody = input.mode === "poc"
+  const displayBody = input.mode === "poc" || input.mode === "poc-cloud"
     ? buildPocDisplayBody(title, body)
     : `${body.trimEnd()}\n`;
   validateContentQuality({
@@ -429,7 +493,7 @@ function parsePlacement(spec: string, entryId: string): EfbPlacement {
   const match = /^(ata|qrh|quick-access):([^:]+):(\d+)$/.exec(spec);
   if (!match) throw new Error(`efb_placement_invalid:${entryId}:${spec}`);
   const [, kind, targetId, order] = match;
-  if (kind === "ata" && normalizeProjectEfbAtaChapter(targetId) !== targetId) {
+  if (kind === "ata" && !/^\d{2}$/.test(targetId!)) {
     throw new Error(`efb_ata_target_invalid:${entryId}:${targetId}`);
   }
   const displayOrder = Number(order);
@@ -487,6 +551,92 @@ function assertPreparedArtifactParity(prepared: PreparedEntry[], retrievalJsonl:
   }
 }
 
+function validatePreparedAgainstRegistry(
+  prepared: PreparedEntry[],
+  registry: EfbContractRegistry,
+): void {
+  const familyById = new Map(registry.aircraftFamilies.map((family) => [family.id, family]));
+  const typeIds = new Set(registry.aircraftFamilies.flatMap((family) => family.aircraftTypeIds));
+  const ataIds = new Set(registry.placements.ataChapterIds);
+  const qrhIds = new Set(registry.placements.qrhTargetIds);
+  const quickAccessIds = new Set(registry.placements.quickAccessTargetIds);
+  for (const { entry, placements } of prepared) {
+    for (const familyId of entry.applicability.aircraftFamilyIds) {
+      if (!familyById.has(familyId)) throw new Error(`efb_aircraft_family_unsupported:${entry.id}:${familyId}`);
+    }
+    for (const typeId of entry.applicability.aircraftTypeIds) {
+      if (!typeIds.has(typeId)) throw new Error(`efb_aircraft_type_unsupported:${entry.id}:${typeId}`);
+      if (entry.applicability.aircraftFamilyIds.length > 0 && !entry.applicability.aircraftFamilyIds.some(
+        (familyId) => familyById.get(familyId)?.aircraftTypeIds.includes(typeId),
+      )) throw new Error(`efb_aircraft_family_type_mismatch:${entry.id}:${typeId}`);
+    }
+    if (placements.length === 0) throw new Error(`efb_entry_placement_required:${entry.id}`);
+    for (const placement of placements) {
+      const allowed = placement.kind === "ata"
+        ? ataIds.has(placement.targetId)
+        : placement.kind === "qrh"
+          ? qrhIds.has(placement.targetId)
+          : quickAccessIds.has(placement.targetId);
+      if (!allowed) throw new Error(`efb_placement_target_unsupported:${entry.id}:${placement.kind}:${placement.targetId}`);
+    }
+    if (entry.audiences.includes("maintenance") && !placements.some(({ kind }) => kind === "ata")) {
+      throw new Error(`efb_maintenance_ata_required:${entry.id}`);
+    }
+    if (entry.audiences.includes("pilot") && !placements.some(({ kind }) => kind === "qrh")) {
+      throw new Error(`efb_pilot_qrh_required:${entry.id}`);
+    }
+  }
+}
+
+function assertNativeSourceParity(
+  prepared: PreparedEntry[],
+  nativeEntries: Array<{ id: string; path: string; markdown: string }>,
+  config: EfbReleaseConfig,
+): void {
+  for (const item of prepared) {
+    const native = nativeEntries.find(({ id }) => id === item.entry.id);
+    if (!native) throw new Error(`efb_native_entry_missing:${item.entry.id}`);
+    const { frontmatter, body } = parseOkfMarkdown(native.markdown);
+    const expectedPlacements = item.placements
+      .map(({ kind, targetId, displayOrder }) => `${kind}:${targetId}:${displayOrder}`)
+      .sort();
+    const checks = [
+      ["audiences", getFrontmatterStringArray(frontmatter, "efb_audiences").sort(), [...item.entry.audiences].sort()],
+      ["aircraft_families", getFrontmatterStringArray(frontmatter, "efb_aircraft_family_ids").sort(), [...item.entry.applicability.aircraftFamilyIds].sort()],
+      ["aircraft_types", getFrontmatterStringArray(frontmatter, "efb_aircraft_type_ids").sort(), [...item.entry.applicability.aircraftTypeIds].sort()],
+      ["placements", getFrontmatterStringArray(frontmatter, "efb_placements").sort(), expectedPlacements],
+    ] as const;
+    if (!body.trim()) throw new Error(`efb_native_body_required:${item.entry.id}`);
+    if (frontmatter.efb_entry_id !== item.entry.id ||
+      frontmatter.efb_license_identifier !== config.license.identifier ||
+      frontmatter.efb_authority_label !== item.entry.authorityLabel ||
+      frontmatter.efb_inclusion_status !== item.entry.inclusionStatus) {
+      throw new Error(`efb_native_metadata_mismatch:${item.entry.id}`);
+    }
+    for (const [field, actual, expected] of checks) {
+      if (stableJsonValue(actual) !== stableJsonValue(expected)) {
+        throw new Error(`efb_native_metadata_mismatch:${item.entry.id}:${field}`);
+      }
+    }
+  }
+}
+
+function validateSupportingAssetBytes(
+  bytes: Uint8Array,
+  mediaType: "application/pdf" | "image/png" | "image/jpeg" | "image/webp",
+  assetPath: string,
+): void {
+  const data = Buffer.from(bytes);
+  const valid = mediaType === "application/pdf"
+    ? data.subarray(0, 5).toString() === "%PDF-"
+    : mediaType === "image/png"
+      ? data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+      : mediaType === "image/jpeg"
+        ? data[0] === 255 && data[1] === 216 && data[2] === 255
+        : data.subarray(0, 4).toString() === "RIFF" && data.subarray(8, 12).toString() === "WEBP";
+  if (!valid) throw new Error(`efb_asset_signature_invalid:${assetPath}`);
+}
+
 async function listMarkdownFiles(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
@@ -506,10 +656,15 @@ async function loadMarkdownEntries(root: string): Promise<EfbReleaseSourceEntry[
 }
 
 function normalizeSourceRelativePath(value: string): string {
-  const normalized = path.posix.normalize(value.replaceAll("\\", "/"));
+  const normalized = path.posix.normalize(value);
   if (
     !value.trim() ||
     path.isAbsolute(value) ||
+    value.startsWith("/") ||
+    value.includes("\\") ||
+    /[\u0000-\u001f:?%]/.test(value) ||
+    value.split("/").some((part) => !part || part === "." || part === "..") ||
+    normalized !== value ||
     normalized === ".." ||
     normalized.startsWith("../")
   ) {
@@ -579,7 +734,10 @@ function buildPocPlacementSpecs(
 ): string[] {
   const explicit = getFrontmatterStringArray(frontmatter, "efb_placements");
   if (explicit.length > 0) return explicit;
-  const ata = normalizeProjectEfbAtaChapter(frontmatter.ata);
+  const rawAta = typeof frontmatter.ata === "string" ? frontmatter.ata.trim() : null;
+  const ata = rawAta && /^\d{2}$/.test(rawAta)
+    ? rawAta
+    : normalizeProjectEfbAtaChapter(frontmatter.ata);
   if (!ata) return [];
   const page = Array.isArray(frontmatter.source_pages)
     ? frontmatter.source_pages.find((value) => Number.isInteger(value) && Number(value) > 0)
@@ -625,7 +783,7 @@ function validateContentQuality(input: {
   body: string;
   frontmatter: Record<string, unknown>;
   id: string;
-  mode: "poc" | "production";
+  mode: "poc" | "poc-cloud" | "production";
   placementSpecs: string[];
   sourceClassification: EfbSourceClassification;
   summary: string;
@@ -647,12 +805,18 @@ function validateContentQuality(input: {
   if (!Array.isArray(sourcePages) || sourcePages.length === 0 || sourcePages.some((page) => !Number.isInteger(page) || Number(page) < 1)) {
     throw new Error(`efb_entry_source_pages_invalid:${input.id}`);
   }
-  const ata = normalizeProjectEfbAtaChapter(input.frontmatter.ata);
+  const ataValue = typeof input.frontmatter.ata === "string" ? input.frontmatter.ata.trim() : null;
+  const ata = ataValue && /^\d{2}$/.test(ataValue)
+    ? ataValue
+    : normalizeProjectEfbAtaChapter(input.frontmatter.ata);
   const ataPlacements = input.placementSpecs
     .filter((placement) => placement.startsWith("ata:"))
     .map((placement) => placement.split(":")[1]!.padStart(2, "0"));
   if (input.frontmatter.ata !== undefined && !ata) {
     throw new Error(`efb_entry_ata_invalid:${input.id}`);
+  }
+  if (/<script\b|javascript:|\bon[a-z]+\s*=|\b(?:s3|minio):\/\//i.test(normalizedBody)) {
+    throw new Error(`efb_entry_unsafe_display_content:${input.id}`);
   }
   if (ata && (ataPlacements.length === 0 || ataPlacements.some((target) => target !== ata))) {
     throw new Error(`efb_entry_ata_contradiction:${input.id}`);
@@ -666,7 +830,7 @@ function validateContentQuality(input: {
     ? requiredScalar(input.frontmatter, "effectivity", input.id)
     : "";
   for (const aircraftTypeId of input.aircraftTypeIds) {
-    if (input.mode === "poc") {
+    if (input.mode !== "production") {
       if (!/^[a-z0-9][a-z0-9-]{1,11}$/.test(aircraftTypeId)) {
         throw new Error(`efb_aircraft_type_invalid:${input.id}:${aircraftTypeId}`);
       }
@@ -679,7 +843,7 @@ function validateContentQuality(input: {
       });
     }
   }
-  if (input.mode === "poc") return;
+  if (input.mode !== "production") return;
   const sourceAuthority = requiredScalar(input.frontmatter, "source_authority", input.id);
   if (
     input.sourceClassification === "training-reference" &&

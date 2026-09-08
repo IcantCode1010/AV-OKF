@@ -52,8 +52,9 @@ export default async function EfbSelections() {
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold">EFB selections</h1>
       <p>
-        Choose the aircraft and audience for each selected article. Export
-        creates a validated prototype package; it does not activate it in EFB.
+        Choose aircraft, audience, and the matching Project EFB placement for
+        each article. Export creates a signed prototype cloud package; it does
+        not activate it in EFB.
       </p>
       <Link className="underline" href="/articles">
         Choose articles
@@ -72,7 +73,7 @@ export default async function EfbSelections() {
             </Link>
             <p>
               {available
-                ? "Approved · Selected for EFB"
+                ? `${revision?.approval ? "Approved" : "Draft"} · Selected for prototype EFB package`
                 : "Source changed or unavailable — export blocked"}
             </p>
             {metadata ? (
@@ -84,8 +85,13 @@ export default async function EfbSelections() {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">ATA chapter</dt>
-                  <dd className="font-medium">ATA {metadata.ataChapter}</dd>
+                  <dt className="text-muted-foreground">Placement</dt>
+                  <dd className="font-medium">
+                    {[
+                      metadata.ataChapter ? `ATA ${metadata.ataChapter}` : null,
+                      metadata.qrhTargetId ? `QRH ${formatTarget(metadata.qrhTargetId)}` : null,
+                    ].filter(Boolean).join(" · ")}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">Audience</dt>
@@ -151,4 +157,8 @@ function formatAircraft(familyId: string, typeIds: string[]) {
 
 function capitalize(value: string) {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function formatTarget(value: string) {
+  return value.split("-").map(capitalize).join(" ");
 }

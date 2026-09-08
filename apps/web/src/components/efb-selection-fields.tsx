@@ -1,17 +1,25 @@
 "use client";
 import { useState } from "react";
 import { EFB_AIRCRAFT_FAMILIES } from "@/lib/efb-aircraft-catalog";
-export function EfbSelectionFields() {
+type SelectionRegistry = {
+  aircraftFamilies: Array<{ id: string; aircraftTypeIds: string[] }>;
+  placements: { ataChapterIds: string[]; qrhTargetIds: string[] };
+};
+
+export function EfbSelectionFields({ registry }: { registry: SelectionRegistry }) {
   const [aircraft, setAircraft] = useState<string[]>([]),
     [audiences, setAudiences] = useState<string[]>([]),
     [family, setFamily] = useState(""),
-    [ataChapter, setAtaChapter] = useState("");
+    [ataChapter, setAtaChapter] = useState(""),
+    [qrhTargetId, setQrhTargetId] = useState("");
   const metadata = {
     aircraftTypeIds: aircraft,
     aircraftFamily: family,
-    ataChapter,
+    ataChapter: audiences.includes("maintenance") ? ataChapter : null,
     audiences,
+    qrhTargetId: audiences.includes("pilot") ? qrhTargetId : null,
   };
+  const selectedFamily = registry.aircraftFamilies.find((item) => item.id === family);
   return (
     <>
       <label className="block">
@@ -23,22 +31,26 @@ export function EfbSelectionFields() {
           className="block w-full rounded border bg-background p-2"
         >
           <option value="">Choose an aircraft family…</option>
-          {EFB_AIRCRAFT_FAMILIES.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          {registry.aircraftFamilies.map((item) => (
+            <option key={item.id} value={item.id}>{familyLabel(item.id)}</option>
+          ))}
         </select>
       </label>
       <input type="hidden" name="metadata" value={JSON.stringify(metadata)} />
       <label className="block">
         Aircraft type
         <select
-          required={aircraft.length === 0}
           disabled={!family}
           value=""
           onChange={(e) => { if (e.target.value) setAircraft((current) => [...new Set([...current, e.target.value])]); }}
           className="block w-full rounded border bg-background p-2"
         >
           <option value="">{family ? (aircraft.length ? "Add another aircraft type…" : "Choose an aircraft type…") : "Choose a family first"}</option>
-          {EFB_AIRCRAFT_FAMILIES.find((item) => item.id === family)?.types.map((type) =>
-            <option key={type.id} value={type.id} disabled={aircraft.includes(type.id)}>{type.label} ({type.model})</option>)}
+          {selectedFamily?.aircraftTypeIds.map((typeId) => (
+            <option key={typeId} value={typeId} disabled={aircraft.includes(typeId)}>
+              {aircraftTypeLabel(typeId)}
+            </option>
+          ))}
         </select>
       </label>
       <ul className="space-y-1">
@@ -47,23 +59,7 @@ export function EfbSelectionFields() {
           <button type="button" className="underline" onClick={() => setAircraft((current) => current.filter((item) => item !== id))} aria-label={`Remove ${EFB_AIRCRAFT_FAMILIES.flatMap((item) => [...item.types]).find((type) => type.id === id)?.label}`}>Remove</button>
         </li>)}
       </ul>
-      <p className="text-sm text-muted-foreground">Choose only the variants supported by the article’s sources. This list shows aircraft currently supported by EFB; selecting a family does not select every variant.</p>
-      <label className="block">
-        ATA chapter
-        <input
-          required
-          inputMode="numeric"
-          pattern="[0-9]{2}"
-          maxLength={2}
-          placeholder="36"
-          value={ataChapter}
-          onChange={(event) => setAtaChapter(event.target.value.replace(/\D/g, "").slice(0, 2))}
-          className="block w-full rounded border bg-background p-2"
-        />
-        <span className="mt-1 block text-sm text-muted-foreground">
-          Enter the two-digit ATA chapter used to place this article in Project EFB.
-        </span>
-      </label>
+      <p className="text-sm text-muted-foreground">Leave aircraft type empty when the source applies to the entire selected family.</p>
       <fieldset className="space-y-2">
         <legend className="font-medium">Audience</legend>
         <div className="flex gap-4">
@@ -88,10 +84,51 @@ export function EfbSelectionFields() {
           <p className="text-sm text-muted-foreground">Select pilot, maintenance, or both.</p>
         )}
       </fieldset>
+      {audiences.includes("maintenance") && (
+        <label className="block">
+          Maintenance placement
+          <select
+            required
+            value={ataChapter}
+            onChange={(event) => setAtaChapter(event.target.value)}
+            className="block w-full rounded border bg-background p-2"
+          >
+            <option value="">Choose an ATA chapter…</option>
+            {registry.placements.ataChapterIds.map((id) => <option key={id} value={id}>ATA {id}</option>)}
+          </select>
+        </label>
+      )}
+      {audiences.includes("pilot") && (
+        <label className="block">
+          Pilot placement
+          <select
+            required
+            value={qrhTargetId}
+            onChange={(event) => setQrhTargetId(event.target.value)}
+            className="block w-full rounded border bg-background p-2"
+          >
+            <option value="">Choose a QRH category…</option>
+            {registry.placements.qrhTargetIds.map((id) => <option key={id} value={id}>{formatTarget(id)}</option>)}
+          </select>
+        </label>
+      )}
       <p className="text-sm">
         The exported package is labeled as unreviewed prototype knowledge. It
         is validated for Project EFB import but is not activated automatically.
       </p>
     </>
   );
+}
+
+function familyLabel(id: string) {
+  return EFB_AIRCRAFT_FAMILIES.find((item) => item.id === id)?.label ?? id;
+}
+
+function aircraftTypeLabel(id: string) {
+  const type = EFB_AIRCRAFT_FAMILIES.flatMap((item) => [...item.types]).find((item) => item.id === id);
+  return type ? `${type.label} (${type.model})` : id;
+}
+
+function formatTarget(value: string) {
+  return value.split("-").map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ");
 }

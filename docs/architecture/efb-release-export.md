@@ -2,12 +2,13 @@
 
 AV-OKF remains the authoring authority. Project EFB remains the runtime authority for identity, authorization, active-release selection, article display, retrieval, and agent access. The projects exchange immutable release artifacts; they do not share a database or read each other's mutable working directories.
 
-The exporter has two explicit modes:
+The shared exporter has three explicit modes:
 
-- **PoC:** automatically packages every completed aviation article after document authoring. It does not require topic approval, license review, reviewer identity, or a digital signature. Every article is labeled `Unreviewed prototype knowledge — not approved instructions`, and `approved-for-inclusion` means only that the article is included in the prototype package.
+- **PoC:** retains the legacy unsigned automatic package generated after aviation document authoring. It does not require topic approval, license review, reviewer identity, or a digital signature.
+- **PoC cloud:** packages explicitly selected draft or approved revisions as signed schema 2.1 native OKF. It does not require technical approval, license review, or a clean worktree. Every article is labeled `Prototype knowledge — not approved operational data`, and `approved-for-inclusion` means only that the article is included in the prototype package.
 - **Production:** retains the strict human-review, license-review, clean-commit, and Ed25519-signing requirements documented below.
 
-PoC mode is enabled in the local Docker stack with `AV_OKF_EFB_EXPORT_MODE=poc`. Set the value to `disabled` to stop automatic package generation. Production publication remains an explicit signed CLI operation.
+Legacy PoC mode is enabled in the local Docker stack with `AV_OKF_EFB_EXPORT_MODE=poc`. Set the value to `disabled` to stop automatic package generation. PoC cloud export is initiated from EFB selections. Production publication remains an explicit signed CLI operation.
 
 ## Automated PoC package
 
@@ -60,7 +61,26 @@ The exporter ignores ordinary OKF articles that have no `efb_inclusion_status`. 
 
 ## Immutable output
 
-`export:efb-release` creates:
+Both EFB export modes use the shared release exporter. Selected-article export
+uses `poc-cloud`; the release CLI retains the stricter production mode.
+
+`poc-cloud` creates a schema 2.1 package in `<package-id>@<version>/` with:
+
+- native OKF 0.2 entries and catalog metadata;
+- display and agent articles plus `retrieval.jsonl`;
+- a consumer-registry placement for every entry;
+- an Ed25519 package signature;
+- `checksums.sha256`, `release.json`, and `acceptance-report.json`.
+
+It does not require AV-OKF technical approval, license review, or a clean Git
+worktree. Every entry is labeled `Prototype knowledge — not approved
+operational data`. Maintenance selections require a Project EFB-registry ATA
+chapter; pilot selections require a registry QRH category; selections for both
+audiences require both placements. AV-OKF reads aircraft and placement choices
+from Project EFB's versioned registry and never derives a QRH category from an
+ATA number.
+
+The stricter `export:efb-release` production command creates:
 
 - `manifest.json`: Project EFB knowledge-package contract v2.0.
 - `display/<entry-id>.md`: display-ready article content.
@@ -69,7 +89,19 @@ The exporter ignores ordinary OKF articles that have no `efb_inclusion_status`. 
 - `checksums.sha256`: content checksums for transport verification.
 - `release.json`: source commit, package checksum, and retrieval build metadata.
 
-The command requires an Ed25519 release private key and the Project EFB contract root. It signs a domain-separated payload containing the immutable package ID and artifact checksum, then validates the generated manifest with Project EFB's own JSON Schema before reporting success. The release config pins the AV-OKF Git commit; exporting from a different commit or a dirty worktree fails. A package ID and version can be written only once, and output is staged before an atomic directory rename so a failed build cannot appear as a complete release.
+The command requires an Ed25519 release private key and the Project EFB contract root. It signs a domain-separated payload containing the immutable package ID and artifact checksum, then validates the generated manifest with Project EFB's own JSON Schema before reporting success. Production release config pins the AV-OKF Git commit; exporting from a different commit or a dirty worktree fails. A package ID and version can be written only once, and output is staged before an atomic directory rename so a failed build cannot appear as a complete release.
+
+The selected-article `poc-cloud` path requires these server settings:
+
+```text
+PROJECT_EFB_ROOT=<Project EFB checkout or mounted contract root>
+AV_OKF_EFB_SIGNING_KEY_PATH=<backend-readable Ed25519 private key>
+AV_OKF_EFB_SIGNING_KEY_ID=<Project EFB trusted publisher key id>
+AV_OKF_EFB_RELEASE_ROOT=<immutable release output root>
+```
+
+Project EFB must trust the corresponding public key. Private key material is
+never copied into a package, report, repository, or validator invocation.
 
 ## Example command
 

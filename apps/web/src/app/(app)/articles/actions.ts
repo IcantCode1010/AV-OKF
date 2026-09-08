@@ -14,9 +14,14 @@ export async function knowledgeAction(
   } catch (error) {
     const message = error instanceof Error ? error.message : "request_failed";
     return {
-      error: /^[a-z_]+$/.test(message)
-        ? message.replaceAll("_", " ")
-        : "Unable to complete this action. Check the inputs and source availability.",
+      error: formatKnowledgeActionError(message),
     };
   }
+}
+
+function formatKnowledgeActionError(message: string): string {
+  if (/^(?:article_(?:sources_changed|unavailable)|configure_[a-z_]+|efb_[a-z0-9_:-]+|project_efb_[a-z0-9_:-]+|select_[a-z_]+|selected_[a-z_]+)$/i.test(message)) {
+    return message.replaceAll("_", " ").replaceAll(":", " · ");
+  }
+  return "Unable to complete this action. Check the inputs and source availability.";
 }

@@ -7,7 +7,8 @@ import { createTopicRecipe, refreshTopicRecipe } from "../topic-builder.ts";
 import { knowledgeFeature } from "./contracts.ts";
 import { assertArticleSourcesCurrent, backfillEditorial } from "./editorial.ts";
 import { addArticleVisual } from "./media.ts";
-import { exportSelectedArticles, selectionMetadataSchema } from "./export.ts";
+import { assertSelectionMetadataAllowed, exportSelectedArticles, selectionMetadataSchema } from "./export.ts";
+import { loadProjectEfbContractRegistry } from "../project-efb-contract-registry.ts";
 import { activeArticleVisuals } from "./visual-revisions.ts";
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
@@ -179,11 +180,11 @@ export async function executeEditorialAction(
       });
   } else if (action === "select") {
     const r = await assertArticleSourcesCurrent(context, id);
-    if (!r.approval) throw Error("approve_revision_before_efb_selection");
     if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
     const metadata = selectionMetadataSchema.parse(
       JSON.parse(String(form.get("metadata"))),
     );
+    assertSelectionMetadataAllowed(metadata, await loadProjectEfbContractRegistry());
     await db.knowledgeEfbSelection.upsert({
       where: {
         workspaceId_articleId: {
