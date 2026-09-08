@@ -35,8 +35,10 @@ export async function ArticleEfbClassification({
       {result?.metadata && (
         <p>
           {result.metadata.aircraftFamily}{" "}
-          {result.metadata.aircraftTypeIds.join(", ")} ·{" "}
-          {result.metadata.audiences.join(" / ")} ·{" "}
+          {result.metadata.aircraftTypeIds.length
+            ? result.metadata.aircraftTypeIds.join(", ")
+            : "· any type in family"}{" "}
+          · {result.metadata.audiences.join(" / ")} ·{" "}
           {result.metadata.ataChapter
             ? `ATA ${result.metadata.ataChapter}`
             : ""}{" "}

@@ -36,6 +36,22 @@ test("type evidence resolves its registered family", () => {
   assert.deepEqual(result.aircraftTypeIds, ["b738"]);
   assert.deepEqual(result.issues, []);
 });
+test("accepted document applicability overrides aircraft mentions in topic evidence", () => {
+  const result = deterministicClassification(
+    registry,
+    evidence("A comparison paragraph mentions an A320-251N in ATA 24."),
+    [
+      {
+        aircraftFamilyIds: ["737-ng"],
+        aircraftTypeIds: [],
+        applicabilityStatus: "accepted",
+      },
+    ],
+  );
+  assert.deepEqual(result.aircraftFamilyIds, ["737-ng"]);
+  assert.deepEqual(result.aircraftTypeIds, []);
+  assert(!result.issues.includes("conflicting_aircraft_families"));
+});
 test("competing aircraft and chapters need review", () => {
   const result = deterministicClassification(
     registry,

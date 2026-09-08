@@ -118,8 +118,9 @@ export function EfbSelectionFields({
         ))}
       </ul>
       <p className="text-sm text-muted-foreground">
-        Leave aircraft type empty when the source applies to the entire selected
-        family.
+        {family && aircraft.length === 0
+          ? `Any aircraft type in ${familyLabel(family)} — inherited from the source document's entire-family applicability.`
+          : "Aircraft types are inherited from the source document. An editor may adjust them during review."}
       </p>
       <fieldset className="space-y-2">
         <legend className="font-medium">Audience</legend>

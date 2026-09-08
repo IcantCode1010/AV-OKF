@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Made accepted source-document applicability authoritative for automatic EFB
+  aircraft assignment. Topics now inherit exact source aircraft types, while an
+  entire-family source is shown explicitly as “Any aircraft type” and cannot be
+  narrowed by incidental aircraft mentions in the topic text.
+
 - Connected revision-bound EFB classification to article creation, review,
   approval-triggered selection, and batch controls. The model selects registered
   ATA/QRH placements with exact evidence checks; aircraft applicability comes

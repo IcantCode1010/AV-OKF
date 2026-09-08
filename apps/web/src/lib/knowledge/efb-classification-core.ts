@@ -45,12 +45,16 @@ export function deterministicClassification(
     document.aircraftFamilyIds.forEach((id) => families.add(id));
     document.aircraftTypeIds.forEach((id) => types.add(id.toLowerCase()));
   }
+  const hasAuthoritativeApplicability = families.size > 0 || types.size > 0;
   for (const e of evidence) {
-    for (const family of registry.aircraftFamilies) {
-      if (mentions(e.quote, family.id)) families.add(family.id);
-      for (const type of family.aircraftTypeIds)
-        if (mentions(e.quote, type)) types.add(type);
-    }
+    // Accepted document applicability is the authority. Evidence text is only
+    // a fallback for older documents that have not been classified yet.
+    if (!hasAuthoritativeApplicability)
+      for (const family of registry.aircraftFamilies) {
+        if (mentions(e.quote, family.id)) families.add(family.id);
+        for (const type of family.aircraftTypeIds)
+          if (mentions(e.quote, type)) types.add(type);
+      }
     for (const match of e.quote.matchAll(/\bATA[\s-]*(\d{2})(?:-\d{2})?\b/gi))
       ata.add(match[1]);
   }
@@ -72,8 +76,6 @@ export function deterministicClassification(
       )
     )
       issues.push("conflicting_source_type_applicability");
-    if (!d.aircraftTypeIds.length && d.aircraftFamilyIds.length && types.size)
-      issues.push("family_source_with_type_specific_mentions");
   }
   if (
     [...families].some(
