@@ -3,6 +3,13 @@
 Date: 2026-09-05
 Status: local implementation checkpoint; see the current delivery notes below. Historical review findings follow.
 
+The next publication workflow increment is the
+[automatic EFB classification and bulk export plan](automatic-efb-classification-and-bulk-export.md).
+It classifies article audience, aircraft applicability, ATA/QRH placement, and
+effectivity against the versioned Project EFB registry, automatically selects
+eligible approved revisions, and exports validated selections as one immutable
+signed release.
+
 ## Local delivery checkpoint — 2026-09-06
 
 The additive shared schema and idempotent legacy import are applied locally. Document processing now stops at topic proposals under the shared flag. Chat and Topic builder use a shared bounded research service; articles, source visuals, controlled editable diagrams, manual approval, explicit EFB selection and signed selected-package export are connected.
