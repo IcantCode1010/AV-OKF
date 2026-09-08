@@ -47,7 +47,7 @@ export default async function ArticlesPage() {
               {b?.title ?? a.originId}
             </Link>
             <p className="text-sm text-muted-foreground">
-              {r?.approval ? "Approved revision" : "Draft"} · {a.originKind} ·{" "}
+              Version {r?.version} · {r?.approval ? "Approved revision" : "Draft"} · {a.originKind} ·{" "}
               {r?.legacy ? "Legacy snapshot" : "Structured evidence"}
             </p>
           </article>

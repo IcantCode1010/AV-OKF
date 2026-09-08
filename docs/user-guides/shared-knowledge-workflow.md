@@ -15,6 +15,34 @@ AV-OKF holds the document library and knowledge graph. EFB receives only article
 
 ## Choosing aircraft for an EFB selection
 
+### Automatic classification and topic versions
+
+Articles have numbered immutable revisions. Editing creates a new draft version,
+records its parent and change reason, and leaves older versions available.
+Approval and EFB export reference the exact revision; exported Markdown includes
+the article version and revision ID.
+
+With `AV_OKF_EFB_CLASSIFICATION_ENABLED=true`, article creation schedules aircraft,
+audience and ATA/QRH classification. Open the article's **EFB classification**
+section to inspect its status, evidence and suggested values. Queued work appears
+in Activity. Retry failed work or cancel queued classification from the article.
+Confirm or correct placement with a review reason before selecting it for EFB.
+
+With `AV_OKF_EFB_AUTO_SELECT_ENABLED=true`, approval selects ready classifications
+automatically. Human-reviewed placements are preserved. This switch should stay
+off until the reviewed real-aviation evaluation passes.
+
+**EFB selections** supports batch classification, selecting ready approved
+revisions, filtering, and exporting a checked subset. With
+`AV_OKF_EFB_BULK_EXPORT_ENABLED=true`, exports run on the worker from a fixed
+snapshot. A failed article stops the package and appears in the failure report;
+remove it or resolve its classification before submitting another batch. Queued
+exports can be cancelled before validation begins. Export history reports the
+result and provides the signed download. It does not activate EFB content.
+
+All three switches default off and are passed to web and worker by Compose.
+The database migrations must be applied before running the updated application.
+
 In an approved article, open **Select this revision for EFB**. Choose an aircraft family, then add the applicable aircraft type from the dropdown. Selected types appear below with a Remove action. Changing family clears the previous types so they cannot accidentally carry into another family. Family choice alone does not assert applicability to every variant.
 
 The current connected EFB registry supports Boeing 737-800 under Boeing 737 Next Generation, and Airbus A320neo (A320-251N) under the Airbus A320 family. The form saves EFB application identifiers automatically; these are not necessarily ICAO codes. Additional aircraft must first be supported by the EFB registry and added to the matching AV-OKF catalog. Configuration/effectivity remains a separate source-grounded entry. Server validation rejects unsupported or mismatched family/type combinations; recognized older family labels such as “Boeing 737NG” are normalized.

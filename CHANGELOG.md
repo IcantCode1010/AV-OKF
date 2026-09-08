@@ -6,17 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-- Began automatic EFB classification Phase 1 with canonical consumer-registry
-  hashing, deterministic evidence-based aircraft/ATA extraction, and additive
-  registry snapshot, classification, and decision-history tables. Database
-  acceptance is pending; automatic classification/selection is not enabled.
-- Added article revision version numbers, parent revision and change reason,
-  visible version history, and exported article-version metadata. The pending
-  migration backfills existing history and serializes concurrent version
-  allocation. PostgreSQL migration/concurrency verification is blocked by local
-  Docker startup failure.
+- Connected revision-bound EFB classification to article creation, review,
+  approval-triggered selection, and batch controls. The model selects registered
+  ATA/QRH placements with exact evidence checks; aircraft applicability comes
+  from source metadata/passages. Decisions retain registry/model provenance,
+  human overrides and source invalidation. Independent rollout switches default
+  off pending real-aviation evaluation.
+- Added durable classification retries/reconciliation and queued bulk signed
+  export with explicit revision/visual snapshots, article-specific preflight
+  failures, reviewed PNG assets, and version metadata. Selected export now
+  requires approved current revisions. Fixed YAML aliases that caused valid
+  selected packages to fail frontmatter validation.
+- Verified PostgreSQL version allocation, approval/selection and versioned edits,
+  Redis retries, signed fixture export through Project EFB's validator, and
+  metadata drift rejection. Added a reviewed-corpus precision report command.
 
-- Added signed Project EFB `poc-cloud` export through the existing release exporter. Selected draft or approved articles now produce schema 2.1 native OKF, display, agent, and retrieval artifacts with consumer-registry aircraft and ATA/QRH placements, exact prototype authority labeling, Ed25519 integrity, structural consumer validation, and a non-secret acceptance report. Invalid, missing, mismatched, orphaned, or silently dropped placements fail the export; generic OKF export remains independent.
+- Added article revision version numbers, parent revision and change reason,
+  visible version history, and exported article-version metadata. Migrations
+  backfill existing history and serialize concurrent version allocation; the
+  PostgreSQL migration/concurrency verification now passes.
+
+- Added signed Project EFB `poc-cloud` export through the existing release exporter. Selected current approved articles now produce schema 2.1 native OKF, display, agent, and retrieval artifacts with consumer-registry aircraft and ATA/QRH placements, exact prototype authority labeling, Ed25519 integrity, structural consumer validation, and a non-secret acceptance report. Invalid, missing, mismatched, orphaned, or silently dropped placements fail the export; generic OKF export remains independent.
 - Simplified the legacy unsigned Project EFB prototype package workflow while retaining it for automatic post-ingestion builds. The newer selected-article path now uses signed schema 2.1 `poc-cloud` export; strict production export remains available separately.
 - Added a shared, evidence-grounded knowledge workflow with topic recipes, immutable article revisions, review and approval, source-change detection, visual authoring, explicit EFB selection, signed export support, activity tracking, and durable background processing. Topic recipes can use either bounded agentic research or checkpointed full-document scans and export approved native OKF bundles.
 - Added scoped graph-assisted agent research over published OKF relationships. The agent can search topics, traverse incoming and outgoing links, inspect original passages, retain directed connection provenance through final citations, invalidate stale graph results, and show an answer-specific 3D or 2D graph without treating graph discovery as source proof.

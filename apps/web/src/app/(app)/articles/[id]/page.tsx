@@ -8,6 +8,7 @@ import { getPrisma } from "@/lib/prisma";
 import { KnowledgeActionForm } from "@/components/knowledge-action-form";
 import { ArticleVisualFields } from "@/components/article-visual-fields";
 import { EfbSelectionFields } from "@/components/efb-selection-fields";
+import { ArticleEfbClassification } from "@/components/article-efb-classification";
 import { loadProjectEfbContractRegistry } from "@/lib/project-efb-contract-registry";
 import type { BuilderResult } from "@/lib/topic-builder-core";
 export const dynamic = "force-dynamic";
@@ -61,6 +62,7 @@ export default async function ArticlePage({
               {r.createdAt.toLocaleString()}
             </summary>
             <ArticleSourceStatus context={context} revisionId={r.id} />
+            {process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" && <ArticleEfbClassification context={context} revisionId={r.id} approved={!!r.approval}/>}
             <p className="text-sm text-muted-foreground">{r.changeReason}{r.parentRevisionId ? ` · Based on revision ${r.parentRevisionId}` : ""}</p>
             <p>{b.answer}</p>
             {b.markdown && (
@@ -202,7 +204,7 @@ export default async function ArticlePage({
                 </KnowledgeActionForm>
               </>
             )}
-            {knowledgeFeature("export") && (
+            {knowledgeFeature("export") && r.approval && process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED!=="true" && (
               <details>
                 <summary>Select this revision for EFB</summary>
                 <KnowledgeActionForm>

@@ -7,7 +7,11 @@ import { createTopicRecipe, refreshTopicRecipe } from "../topic-builder.ts";
 import { knowledgeFeature } from "./contracts.ts";
 import { assertArticleSourcesCurrent, backfillEditorial } from "./editorial.ts";
 import { addArticleVisual } from "./media.ts";
-import { assertSelectionMetadataAllowed, exportSelectedArticles, selectionMetadataSchema } from "./export.ts";
+import {
+  assertSelectionMetadataAllowed,
+  exportSelectedArticles,
+  selectionMetadataSchema,
+} from "./export.ts";
 import { loadProjectEfbContractRegistry } from "../project-efb-contract-registry.ts";
 import { activeArticleVisuals } from "./visual-revisions.ts";
 const json = (v: unknown) =>
@@ -21,7 +25,70 @@ export async function executeEditorialAction(
     action = String(form.get("action")),
     id = String(form.get("revisionId") ?? "");
   if (action === "backfill") await backfillEditorial(context.workspaceId);
-  else if (action === "draft-topic") {
+  else if (action === "cancel-classification") {
+    await assertArticleSourcesCurrent(context, id);
+    await db.knowledgeEfbClassification.updateMany({
+      where: {
+        workspaceId: context.workspaceId,
+        revisionId: id,
+        status: "queued",
+      },
+      data: { status: "cancelled" },
+    });
+  } else if (action === "cancel-export") {
+    const result = await db.knowledgeExportRelease.updateMany({
+      where: {
+        id: String(form.get("releaseId")),
+        workspaceId: context.workspaceId,
+        status: "queued",
+      },
+      data: { status: "cancelled" },
+    });
+    if (!result.count) throw Error("export_already_started_or_unavailable");
+  } else if (action === "classify-batch" || action === "select-ready-batch") {
+    if (process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED !== "true")
+      throw Error("efb_classification_not_enabled");
+    const ids = [...new Set(form.getAll("revisionId").map(String))];
+    if (!ids.length || ids.length > 500)
+      throw Error("select_up_to_500_revisions");
+    const { requestClassification, selectClassifiedRevision } = await import(
+      "./efb-classification.ts"
+    );
+    for (const revisionId of ids)
+      await assertArticleSourcesCurrent(context, revisionId);
+    if (action === "select-ready-batch") {
+      if (!knowledgeFeature("export"))
+        throw Error("selected_export_not_enabled");
+      const { currentClassification } = await import("./efb-classification.ts");
+      for (const revisionId of ids) {
+        const revision = await assertArticleSourcesCurrent(context, revisionId);
+        if (
+          !revision.approval ||
+          revision.article.approvedRevisionId !== revisionId ||
+          (await currentClassification(context, revisionId))?.status !== "ready"
+        )
+          throw Error("revision_not_ready_review_classification");
+      }
+      for (const revisionId of ids)
+        if (!(await selectClassifiedRevision(context, revisionId)))
+          throw Error("revision_not_ready_review_classification");
+    } else
+      for (const revisionId of ids)
+        await requestClassification(context, revisionId);
+  } else if (action === "classify") {
+    if (process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED !== "true")
+      throw Error("efb_classification_not_enabled");
+    const { requestClassification } = await import("./efb-classification.ts");
+    const job = await requestClassification(context, id);
+    if (job.status === "failed" || job.status === "cancelled")
+      await db.knowledgeEfbClassification.update({
+        where: { id: job.id },
+        data: {
+          status: "queued",
+          result: json({ ...(job.result as object), attempts: 0 }),
+        },
+      });
+  } else if (action === "draft-topic") {
     const topic = await db.topicRecord.findFirstOrThrow({
       where: {
         id: String(form.get("topicId")),
@@ -108,6 +175,15 @@ export async function executeEditorialAction(
         data: { approvedRevisionId: id },
       });
     });
+    if (
+      process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED === "true" &&
+      knowledgeFeature("export")
+    ) {
+      const { selectClassifiedRevision } = await import(
+        "./efb-classification.ts"
+      );
+      await selectClassifiedRevision(context, id);
+    }
   } else if (action === "edit") {
     const r = await assertArticleSourcesCurrent(context, id);
     const body = r.body as Record<string, unknown>;
@@ -156,7 +232,9 @@ export async function executeEditorialAction(
         articleId: r.articleId,
         workspaceId: r.workspaceId,
         parentRevisionId: r.id,
-        changeReason: String(form.get("changeReason") ?? "Editorial edit").trim() || "Editorial edit",
+        changeReason:
+          String(form.get("changeReason") ?? "Editorial edit").trim() ||
+          "Editorial edit",
         body: json({ ...body, title, answer, keyPoints, details, markdown }),
         evidence: r.evidence as Prisma.InputJsonValue,
         sourceFingerprint: r.sourceFingerprint,
@@ -180,28 +258,77 @@ export async function executeEditorialAction(
           altText: v.altText,
         },
       });
+    if (process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED === "true") {
+      const { requestClassification } = await import("./efb-classification.ts");
+      await requestClassification(context, next.id);
+    }
   } else if (action === "select") {
     const r = await assertArticleSourcesCurrent(context, id);
     if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
+    if (!r.approval || r.article.approvedRevisionId !== id)
+      throw Error("approve_current_revision_before_selection");
     const metadata = selectionMetadataSchema.parse(
       JSON.parse(String(form.get("metadata"))),
     );
-    assertSelectionMetadataAllowed(metadata, await loadProjectEfbContractRegistry());
-    await db.knowledgeEfbSelection.upsert({
-      where: {
-        workspaceId_articleId: {
+    assertSelectionMetadataAllowed(
+      metadata,
+      await loadProjectEfbContractRegistry(),
+    );
+    const { currentClassification } = await import("./efb-classification.ts");
+    const classification = await currentClassification(context, id);
+    const reason = String(form.get("classificationReason") ?? "").trim();
+    if (classification && !reason)
+      throw Error("classification_review_reason_required");
+    const registryHash = (
+      await import("../project-efb-contract-registry.ts")
+    ).registryFingerprint(await loadProjectEfbContractRegistry());
+    await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "KnowledgeArticle" WHERE id=${r.articleId} FOR UPDATE`;
+      const current = await tx.knowledgeArticle.findUniqueOrThrow({
+        where: { id: r.articleId },
+      });
+      if (current.approvedRevisionId !== id)
+        throw Error("approve_current_revision_before_selection");
+      if (classification)
+        await tx.knowledgeEfbClassificationDecision.create({
+          data: {
+            workspaceId: context.workspaceId,
+            classificationId: classification.id,
+            previous: classification.result as Prisma.InputJsonValue,
+            result: json(metadata),
+            reason,
+            createdBy: context.userId,
+          },
+        });
+      await tx.knowledgeEfbSelection.upsert({
+        where: {
+          workspaceId_articleId: {
+            workspaceId: context.workspaceId,
+            articleId: r.articleId,
+          },
+        },
+        create: {
           workspaceId: context.workspaceId,
           articleId: r.articleId,
+          revisionId: id,
+          metadata: json({
+            ...metadata,
+            classificationId: classification?.id,
+            selectionMode: "reviewed",
+            registryHash,
+          }),
+          createdBy: context.userId,
         },
-      },
-      create: {
-        workspaceId: context.workspaceId,
-        articleId: r.articleId,
-        revisionId: id,
-        metadata: json(metadata),
-        createdBy: context.userId,
-      },
-      update: { revisionId: id, metadata: json(metadata) },
+        update: {
+          revisionId: id,
+          metadata: json({
+            ...metadata,
+            classificationId: classification?.id,
+            selectionMode: "reviewed",
+            registryHash,
+          }),
+        },
+      });
     });
   } else if (action === "unselect")
     await db.knowledgeEfbSelection.deleteMany({
@@ -212,6 +339,8 @@ export async function executeEditorialAction(
     });
   else if (action === "export") {
     if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
-    await exportSelectedArticles(context);
+    const selectionIds = form.getAll("selectionId").map(String);
+    if (!selectionIds.length) throw Error("select_articles_first");
+    await exportSelectedArticles(context, selectionIds);
   } else throw Error("unknown_action");
 }

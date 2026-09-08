@@ -7,6 +7,7 @@ import { assertArticleSourcesCurrent } from "@/lib/knowledge/editorial";
 import { KnowledgeActionForm } from "@/components/knowledge-action-form";
 import { EFB_AIRCRAFT_FAMILIES } from "@/lib/efb-aircraft-catalog";
 import { selectionMetadataSchema } from "@/lib/knowledge/export";
+import { EfbBulkControls } from "@/components/efb-bulk-controls";
 export default async function EfbSelections() {
   if (!knowledgeFeature("shared") || !knowledgeFeature("export")) notFound();
   const context = await requireAuthWorkspaceContext(),
@@ -31,6 +32,7 @@ export default async function EfbSelections() {
       } catch {
         available = false;
       }
+      available=available && !!revision?.approval;
       const visuals = await db.knowledgeVisual.findMany({
         where: {
           workspaceId: context.workspaceId,
@@ -48,6 +50,12 @@ export default async function EfbSelections() {
       };
     }),
   );
+  const candidates=await db.knowledgeArticle.findMany({where:{workspaceId:context.workspaceId},include:{revisions:{orderBy:{version:"desc"},take:1}},take:500});
+  const classifications=process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true"?await db.knowledgeEfbClassification.findMany({where:{workspaceId:context.workspaceId,revisionId:{in:candidates.flatMap(a=>a.revisions.map(r=>r.id))}},orderBy:{createdAt:"desc"}}):[];
+  const candidateRows=candidates.flatMap(a=>a.revisions.map(r=>{
+    const c=classifications.find(c=>c.revisionId===r.id),result=c?.result as {metadata?:{aircraftFamily:string;audiences:string[];ataChapter:string|null;qrhTargetId:string|null}}|undefined;
+    return {id:r.id,title:(r.body as {title:string}).title,version:r.version,aircraft:result?.metadata?.aircraftFamily??"",audience:result?.metadata?.audiences.join(" / ")??"",placement:[result?.metadata?.ataChapter,result?.metadata?.qrhTargetId,c?.status??"Not classified"].filter(Boolean).join(" · "),eligible:true,ready:!!r.approval && c?.status==="ready"};
+  }));
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold">EFB selections</h1>
@@ -59,6 +67,8 @@ export default async function EfbSelections() {
       <Link className="underline" href="/articles">
         Choose articles
       </Link>
+      {process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" && <EfbBulkControls rows={candidateRows} action="classify-batch" label="Classify selected revisions"/>}
+      {process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" && <EfbBulkControls rows={candidateRows.map(r=>({...r,eligible:r.ready}))} action="select-ready-batch" label="Add classified ready revisions to EFB selections"/>}
       {rows.length === 0 ? (
         <p>No articles selected.</p>
       ) : (
@@ -121,14 +131,7 @@ export default async function EfbSelections() {
           </section>
         ))
       )}
-      {rows.length > 0 && rows.every((r) => r.available && r.metadata) && (
-        <KnowledgeActionForm>
-          <input type="hidden" name="action" value="export" />
-          <button className="rounded bg-primary px-4 py-2 text-primary-foreground">
-            Validate and export topic package
-          </button>
-        </KnowledgeActionForm>
-      )}
+      {rows.length>0 && <EfbBulkControls rows={rows.map(r=>({id:r.s.id,title:(r.revision?.body as {title?:string})?.title??"Unavailable",version:r.revision?.version??0,aircraft:r.metadata?.aircraftFamily??"",audience:r.metadata?.audiences.join(" / ")??"",placement:[r.metadata?.ataChapter,r.metadata?.qrhTargetId].filter(Boolean).join(" / "),eligible:r.available && !!r.metadata}))} action="export" label="Validate and export selected revisions"/>}
       <h2 className="text-xl font-semibold">Export history</h2>
       {releases.map((r) => (
         <div key={r.id} className="rounded border p-3">
@@ -136,6 +139,8 @@ export default async function EfbSelections() {
             {r.createdAt.toISOString()} · {r.status}
           </p>
           {r.error && <p role="alert">{r.error.replaceAll("_", " ")}</p>}
+          {r.status==="queued" && <KnowledgeActionForm><input type="hidden" name="action" value="cancel-export"/><input type="hidden" name="releaseId" value={r.id}/><button className="rounded border p-2">Cancel queued export</button></KnowledgeActionForm>}
+          {(r.result as {failures?:Array<{articleId:string;reason:string}>}|null)?.failures?.map(f=><p key={f.articleId}><Link href={`/articles/${f.articleId}`}>Review article</Link>: {f.reason.replaceAll("_"," ")}</p>)}
           {r.status === "exported" && (
             <a className="underline" href={`/api/knowledge-exports/${r.id}`}>
               Download validated package

@@ -62,9 +62,15 @@ export async function importBuilderRevision(runId: string) {
           data: { approvedRevisionId: revisionId },
         });
     });
+    if(process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true") {
+      const {requestClassification,selectClassifiedRevision}=await import("./efb-classification.ts");
+      const context={workspaceId:run.workspaceId,userId:run.recipe.createdBy,role:"member" as const};
+      await requestClassification(context,revisionId);
+      if(approval && process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED==="true" && process.env.AV_OKF_EXPORT_ENABLED==="true") await selectClassifiedRevision(context,revisionId);
+    }
   }
 }
-export async function importLegacyTopic(topicId: string) {
+export async function importLegacyTopic(topicId: string, context?: AuthWorkspaceContext) {
   const db = getPrisma();
   const t = await db.topicRecord.findUniqueOrThrow({
     where: { id: topicId },
@@ -133,6 +139,11 @@ export async function importLegacyTopic(topicId: string) {
         data: { approvedRevisionId: revisionId },
       });
   });
+  if(context && process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true") {
+    const {requestClassification,selectClassifiedRevision}=await import("./efb-classification.ts");
+    await requestClassification(context,revisionId);
+    if(approval && process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED==="true" && process.env.AV_OKF_EXPORT_ENABLED==="true") await selectClassifiedRevision(context,revisionId);
+  }
 }
 export async function backfillEditorial(workspaceId: string) {
   const db = getPrisma();

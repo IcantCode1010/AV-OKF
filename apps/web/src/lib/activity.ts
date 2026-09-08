@@ -227,6 +227,10 @@ export async function getActivity(
       startedAt: r.createdAt.toISOString(),
     });
   if(!documentId){
+    if(process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true") {
+      const classifications=await db.knowledgeEfbClassification.findMany({where:{workspaceId:context.workspaceId,createdAt:{gte:since}},include:{revision:true},take:50,orderBy:{createdAt:"desc"}});
+      for(const r of classifications) items.push({id:r.id,label:`EFB classification · v${r.revision.version}`,status:r.status==="needs_review"||r.status==="blocked"?"completed":r.status,detail:r.status.replaceAll("_"," "),href:`/articles/${r.revision.articleId}`,startedAt:r.createdAt.toISOString()});
+    }
     const approvals=await db.bulkTopicApprovalRun.findMany({where:{workspaceId:context.workspaceId,createdAt:{gte:since}},include:{items:true},orderBy:{createdAt:"desc"},take:15});
     for(const r of approvals)items.push({id:r.id,label:"Bulk topic approval and export",status:r.status,detail:r.status==="awaiting_confirmation"?"Waiting for your confirmation":"Approving selected topics and preparing their exports",href:`/knowledge/${r.knowledgeBundleId}/review/${r.id}`,startedAt:r.createdAt.toISOString(),finishedAt:r.completedAt?.toISOString(),total:r.items.length,completed:r.items.filter(i=>["succeeded","failed","skipped"].includes(i.status)).length,failed:r.items.filter(i=>i.status==="failed").length});
     const exports=await db.knowledgeExportRelease.findMany({where:{workspaceId:context.workspaceId,createdAt:{gte:since}},orderBy:{createdAt:"desc"},take:10});

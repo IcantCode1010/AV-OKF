@@ -119,6 +119,7 @@ let relationVerificationWorker: Worker<OkfRelationVerificationJobPayload> | null
 let entityGraphWorker: Worker<EntityGraphJobPayload> | null = null;
 let topicExpansionWorker: Worker<TopicExpansionJobPayload> | null = null;
 let efbReleaseWorker: Worker<EfbReleaseJobPayload> | null = null;
+let classificationWorker: {close():Promise<void>} | null = null;
 let uploadCleanupTimer: ReturnType<typeof setInterval> | null = null;
 let ragBudgetResumeTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -132,6 +133,10 @@ async function main() {
   }
 
   selectedEnrichmentWorker=new Worker<SelectedEnrichmentJob>(BULK_ENRICHMENT_QUEUE,job=>runSelectedTopicEnrichment(job.data),{concurrency:1,connection:{url:redisUrl}});
+  if(process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" || process.env.AV_OKF_EFB_BULK_EXPORT_ENABLED==="true") {
+    const {startClassificationWorker}=await import("../lib/knowledge/efb-classification-queue.ts");
+    classificationWorker=startClassificationWorker(redisUrl);
+  }
   selectedEnrichmentWorker.on("error",()=>console.error("Selected topic enrichment queue unavailable"));
   const repository = createPostgresDocumentRepository();
   topicBuilderWorker = new Worker<{id:string}>(TOPIC_BUILDER_QUEUE, job => runTopicBuilder(job.data.id), {concurrency:1,connection:{url:redisUrl}});
@@ -503,6 +508,7 @@ async function reconcileQueuedKnowledgeAuthoringRuns(
 }
 
 async function shutdown() {
+  await classificationWorker?.close();
   await selectedEnrichmentWorker?.close();
   await topicBuilderWorker?.close();
   if (uploadCleanupTimer) clearInterval(uploadCleanupTimer);

@@ -1,6 +1,7 @@
 import { generateText, Output } from "ai";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import {loadProjectEfbContractRegistry,type ProjectEfbContractRegistry} from "./project-efb-contract-registry.ts";
 
 import { getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
@@ -22,7 +23,7 @@ export const PROJECT_EFB_ATA_TAXONOMY = {
   "73": "Engine Fuel and Control",
 } as const;
 
-export type ProjectEfbAtaChapter = keyof typeof PROJECT_EFB_ATA_TAXONOMY;
+export type ProjectEfbAtaChapter = string;
 export type ProjectEfbAudience = "pilot" | "maintenance";
 
 const classifierSchema = z.object({
@@ -67,10 +68,10 @@ type TopicClassificationInput = {
   title: string;
 };
 
-export function normalizeProjectEfbAtaChapter(value: unknown): ProjectEfbAtaChapter | null {
+export function normalizeProjectEfbAtaChapter(value: unknown, allowed:readonly string[]=Object.keys(PROJECT_EFB_ATA_TAXONOMY)): ProjectEfbAtaChapter | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim().replace(/^ATA[\s-]*/i, "").split("-")[0]?.padStart(2, "0");
-  return normalized && normalized in PROJECT_EFB_ATA_TAXONOMY
+  return normalized && allowed.includes(normalized)
     ? normalized as ProjectEfbAtaChapter
     : null;
 }
@@ -90,14 +91,15 @@ export function normalizeProjectEfbArticleClassification(input: {
   output: ProjectEfbClassifierOutput;
   provider: LlmProviderId;
   sourceText: string;
+  registry?: ProjectEfbContractRegistry;
 }): ProjectEfbArticleClassification {
   const canonicalSource = canonicalizeProjectEfbEvidence(input.sourceText);
   const proposedEvidence = unique(input.output.evidence.map(canonicalizeProjectEfbEvidence).filter(Boolean));
   const evidence = proposedEvidence.filter((quote) => canonicalSource.includes(quote));
   const evidenceValid = evidence.length > 0;
   const requestedAta = input.output.ataChapter?.trim() ?? null;
-  const classifiedAta = normalizeProjectEfbAtaChapter(requestedAta);
-  const documentAta = normalizeProjectEfbAtaChapter(input.documentDefaults.classificationCode);
+  const classifiedAta = normalizeProjectEfbAtaChapter(requestedAta,input.registry?.placements.ataChapterIds);
+  const documentAta = normalizeProjectEfbAtaChapter(input.documentDefaults.classificationCode,input.registry?.placements.ataChapterIds);
   const invalidAta = requestedAta !== null && classifiedAta === null;
   const ataChapter = classifiedAta ?? (!invalidAta ? documentAta : null);
 
@@ -118,7 +120,8 @@ export function normalizeProjectEfbArticleClassification(input: {
     ? input.output.audiences
     : input.documentDefaults.intendedAudiences);
 
-  const accepted = input.output.confidence >= PROJECT_EFB_CLASSIFICATION_CONFIDENCE_THRESHOLD &&
+  const registryValid=!input.registry || (resolvedFamilyIds.every(id=>input.registry!.aircraftFamilies.some(f=>f.id===id)) && resolvedTypeIds.every(id=>input.registry!.aircraftFamilies.some(f=>f.aircraftTypeIds.includes(id) && (!resolvedFamilyIds.length || resolvedFamilyIds.includes(f.id)))));
+  const accepted = registryValid && input.output.confidence >= PROJECT_EFB_CLASSIFICATION_CONFIDENCE_THRESHOLD &&
     evidenceValid &&
     !invalidAta &&
     !invalidFamilyAsType &&
@@ -234,8 +237,9 @@ export async function classifyProjectEfbArticle(input: {
   topic: TopicClassificationInput;
 }) {
   const sourceText = buildProjectEfbArticleSource(input.topic);
-  const taxonomy = Object.entries(PROJECT_EFB_ATA_TAXONOMY)
-    .map(([chapter, title]) => `${chapter}: ${title}`)
+  const registry=await loadProjectEfbContractRegistry();
+  const taxonomy = registry.placements.ataChapterIds
+    .map(chapter => `${chapter}: ${(PROJECT_EFB_ATA_TAXONOMY as Record<string,string>)[chapter]??`ATA ${chapter}`}`)
     .join("\n");
   const result = await generateText({
     model: getSdkModel(input.provider, input.apiKey),
@@ -252,6 +256,7 @@ export async function classifyProjectEfbArticle(input: {
       "Audiences may contain pilot, maintenance, or both.",
       "SUPPORTED PROJECT EFB ATA TAXONOMY:",
       taxonomy,
+      JSON.stringify(registry.aircraftFamilies),
       "<ARTICLE_DATA>",
       sourceText,
       "</ARTICLE_DATA>",
@@ -264,6 +269,7 @@ export async function classifyProjectEfbArticle(input: {
     output,
     provider: input.provider,
     sourceText,
+    registry,
   });
 }
 
@@ -290,7 +296,7 @@ function normalizeFamilyId(value: string): string {
 }
 
 function normalizeTypeId(value: string): string {
-  const normalized = value.trim().toLowerCase().replace(/[_\s-]+/g, "");
+  const normalized = value.trim().toLowerCase().replace(/[_\s]+/g, "");
   return normalized === "737ng" ? "" : normalized;
 }
 

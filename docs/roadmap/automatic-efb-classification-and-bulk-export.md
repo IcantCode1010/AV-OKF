@@ -1,30 +1,58 @@
 # Automatic EFB classification and bulk export plan
 
 Date: 2026-09-08  
-Status: planned
+Status: implementation connected; production rollout acceptance pending
 
 ## Implementation checkpoint — 2026-09-08
 
-Phase 1 is in progress; later phases have not passed their entry gate.
-Added canonical registry hashing, registry-constrained deterministic aircraft
-and ATA extraction, additive classification/snapshot/decision tables, and
-article revision versioning. Topic history displays a stable version number and
-change reason; edits retain their parent revision and exports retain version
-metadata. Existing history is backfilled chronologically, and a database trigger
-serializes new version allocation per article.
+Docker is available again. The PostgreSQL migration test preserves old history
+and proves eight concurrent inserts allocate versions 3–10 without collisions.
+All 51 migrations apply successfully to an isolated PostgreSQL database.
+Both additive migrations are also applied to the local application database
+after a verified backup; all 328 retained revisions remain and have versions.
 
-Six focused registry/classifier tests pass. Prisma validation and client
-generation pass. The opt-in PostgreSQL migration/concurrency test requires
-`EFB_MIGRATION_TEST_DATABASE_URL`; it uses an isolated temporary schema.
-Docker Desktop startup failed with an inaccessible Secrets Engine socket, so
-database migration and concurrency verification have not run. No migration was
-applied to the user's database. Full TypeScript checking reports existing test
-fixture errors; the changed source files did not appear in those diagnostics.
+Implemented registry snapshots, registry-constrained aircraft/ATA extraction,
+constrained model audience/placement output, exact-quote checks, durable BullMQ
+processing with database reconciliation, bounded retries, review forms and
+decision history, approval-triggered selection, batch classification/selection,
+queued signed export, source/registry/selection invalidation, and Activity items.
+The legacy classifier's generation path now loads the consumer registry; its
+historical metadata reader retains the old vocabulary for compatibility.
 
-Before Phase 2, run the database migration test, finish registry descriptions
-and aliases and migrate all classification consumers away from the legacy fixed
-ATA vocabulary. Model classification, durable jobs, override UI, automatic
-selection, bulk preflight and evaluation rollout are still outstanding.
+Version numbers are visible in article history, the article list, and batch
+controls. New edits retain their parent and reason. Generated successors also
+receive a parent automatically. EFB Markdown retains revision/version metadata.
+Selected export now requires the current approved revision; earlier prototype
+behavior that allowed drafts is superseded for this selected-article workflow.
+
+The PostgreSQL/Redis integration fixture exercises prediction processing,
+idempotency, approval-triggered selection, versioned editing, two transient
+failures followed by successful retry, signed export with a reviewed PNG,
+consumer validation, repeated delivery of an exported job, source-metadata
+invalidation, and workspace isolation. Prediction responses and object storage
+are fixture-backed; the database, queue, signature, and consumer validator are
+real. This does not establish real-model aviation accuracy. The Docker
+production build passes; the host's broad standalone TypeScript check retains
+existing test-fixture diagnostics.
+
+Rollout switches (default off): `AV_OKF_EFB_CLASSIFICATION_ENABLED`,
+`AV_OKF_EFB_AUTO_SELECT_ENABLED`, and `AV_OKF_EFB_BULK_EXPORT_ENABLED`.
+Classification and export workers are started by the existing worker process.
+Use batch classification to backfill retained revisions. Review ambiguous rows
+in each article; confirmed values are recorded separately from model output.
+
+Remaining acceptance: assemble a reviewed representative real-aviation corpus,
+run live-model precision evaluation, verify the complete browser/device workflow,
+and exercise abrupt process termination during package writing. The precision
+report command is `tsx scripts/evaluate-efb-classification.mts corpus.json`.
+Each corpus row supplies `id`, `reviewedBy`, `expected`, `predicted`, and `status`;
+metadata fields are audiences, aircraftFamily, aircraftTypeIds, ataChapter, and
+qrhTargetId. It reports field precision and false-ready count. Passing precision
+alone does not establish representative coverage or authorize rollout.
+
+No activation in Project EFB is performed. Release retries fail closed if an
+interrupted immutable output already exists; operator recovery of that case
+remains an acceptance item. The release feature is not declared production-ready.
 
 ## Objective
 

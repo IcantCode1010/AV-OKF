@@ -1005,7 +1005,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         const { scheduleEntityExtractionForTopic } = await import("./entity-graph.ts");
         await scheduleEntityExtractionForTopic(topic.id).catch(() => undefined);
       }
-      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id);
+      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id,input.context);
       return mapTopicRecord(topic);
     },
     async failTopicEnrichment(input: {
@@ -1101,7 +1101,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         },
         where: { id: input.topicId },
       });
-      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id);
+      if(knowledgeFeature("shared"))await importLegacyTopic(topic.id,input.context);
       return mapTopicRecord(topic);
     },
     async startExtractionJob(input: {

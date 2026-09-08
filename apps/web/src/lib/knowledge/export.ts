@@ -1,5 +1,10 @@
-import { matchesEfbAircraftFamily, normalizeEfbAircraftFamily } from "../efb-aircraft-catalog.ts";
-import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
+import { normalizeEfbAircraftFamily } from "../efb-aircraft-catalog.ts";
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  sign,
+} from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -20,61 +25,233 @@ import {
   type ProjectEfbContractRegistry,
 } from "../project-efb-contract-registry.ts";
 import { assertArticleSourcesCurrent } from "./editorial.ts";
+import { activeArticleVisuals } from "./visual-revisions.ts";
+import { getObjectStorage } from "../production-storage.ts";
+import { fingerprint } from "../topic-builder-core.ts";
 const exec = promisify(execFile),
   json = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
-export const selectionMetadataSchema = z.object({
-  aircraftTypeIds: z.array(z.string().regex(/^[a-z0-9-]+$/)),
-  aircraftFamily: z.string().min(1).transform(normalizeEfbAircraftFamily),
-  ataChapter: z.string().trim().regex(/^\d{2}$/).nullable(),
-  audiences: z.array(z.enum(["pilot", "maintenance"])).min(1),
-  qrhTargetId: z.string().trim().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).nullable(),
-}).refine((metadata) => matchesEfbAircraftFamily(metadata.aircraftFamily, metadata.aircraftTypeIds), {
-  message: "Choose supported aircraft types from the selected family.", path: ["aircraftTypeIds"],
-}).superRefine((metadata, context) => {
-  if (metadata.audiences.includes("maintenance") && !metadata.ataChapter) {
-    context.addIssue({ code: "custom", message: "Choose an ATA placement for maintenance content.", path: ["ataChapter"] });
-  }
-  if (metadata.audiences.includes("pilot") && !metadata.qrhTargetId) {
-    context.addIssue({ code: "custom", message: "Choose a QRH placement for pilot content.", path: ["qrhTargetId"] });
-  }
-});
+export const selectionMetadataSchema = z
+  .object({
+    aircraftTypeIds: z.array(z.string().regex(/^[a-z0-9-]+$/)),
+    aircraftFamily: z.string().min(1).transform(normalizeEfbAircraftFamily),
+    ataChapter: z
+      .string()
+      .trim()
+      .regex(/^\d{2}$/)
+      .nullable(),
+    audiences: z.array(z.enum(["pilot", "maintenance"])).min(1),
+    qrhTargetId: z
+      .string()
+      .trim()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .nullable(),
+    effectivity: z.string().max(2000).nullable().optional(),
+  })
+  .superRefine((metadata, context) => {
+    if (metadata.audiences.includes("maintenance") && !metadata.ataChapter) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose an ATA placement for maintenance content.",
+        path: ["ataChapter"],
+      });
+    }
+    if (metadata.audiences.includes("pilot") && !metadata.qrhTargetId) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose a QRH placement for pilot content.",
+        path: ["qrhTargetId"],
+      });
+    }
+  });
 
 export type SelectionMetadata = z.infer<typeof selectionMetadataSchema>;
+function canonicalSnapshot(value: unknown): string {
+  const normalize = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(normalize)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.entries(v)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, item]) => [key, normalize(item)]),
+          )
+        : v;
+  return JSON.stringify(normalize(value));
+}
+async function visualSnapshot(workspaceId: string, revisionId: string) {
+  return activeArticleVisuals(
+    await getPrisma().knowledgeVisual.findMany({
+      where: { workspaceId, articleRevisionId: revisionId },
+      orderBy: { id: "asc" },
+    }),
+  ).map((v) => ({
+    id: v.id,
+    provenance: v.provenance,
+    caption: v.caption,
+    altText: v.altText,
+    reviewedAt: v.reviewedAt?.toISOString() ?? null,
+  }));
+}
 
 export function assertSelectionMetadataAllowed(
   metadata: SelectionMetadata,
   registry: ProjectEfbContractRegistry,
 ): void {
-  const family = registry.aircraftFamilies.find(({ id }) => id === metadata.aircraftFamily);
-  if (!family || metadata.aircraftTypeIds.some((id) => !family.aircraftTypeIds.includes(id))) {
+  const family = registry.aircraftFamilies.find(
+    ({ id }) => id === metadata.aircraftFamily,
+  );
+  if (
+    !family ||
+    metadata.aircraftTypeIds.some((id) => !family.aircraftTypeIds.includes(id))
+  ) {
     throw new Error("selected_aircraft_not_supported_by_project_efb");
   }
-  if (metadata.ataChapter && !registry.placements.ataChapterIds.includes(metadata.ataChapter)) {
+  if (
+    metadata.ataChapter &&
+    !registry.placements.ataChapterIds.includes(metadata.ataChapter)
+  ) {
     throw new Error("selected_ata_not_supported_by_project_efb");
   }
-  if (metadata.qrhTargetId && !registry.placements.qrhTargetIds.includes(metadata.qrhTargetId)) {
+  if (
+    metadata.qrhTargetId &&
+    !registry.placements.qrhTargetIds.includes(metadata.qrhTargetId)
+  ) {
     throw new Error("selected_qrh_not_supported_by_project_efb");
   }
 }
 export async function exportSelectedArticles(
   context: AuthWorkspaceContext,
   selectionIds?: string[],
+  queuedReleaseId?: string,
 ) {
   const db = getPrisma();
   const contractRoot = process.env.PROJECT_EFB_ROOT,
     signingKeyPath = process.env.AV_OKF_EFB_SIGNING_KEY_PATH,
     signingKeyId = process.env.AV_OKF_EFB_SIGNING_KEY_ID;
   if (!contractRoot) throw Error("configure_project_efb_validator_first");
-  if (!signingKeyPath || !signingKeyId) throw Error("configure_poc_cloud_signing_first");
+  if (!signingKeyPath || !signingKeyId)
+    throw Error("configure_poc_cloud_signing_first");
   const registry = await loadProjectEfbContractRegistry(contractRoot);
-  const selections = await db.knowledgeEfbSelection.findMany({
-    where: {
-      workspaceId: context.workspaceId,
-      ...(selectionIds ? { id: { in: selectionIds } } : {}),
-    },
-    orderBy: { articleId: "asc" },
-  });
+  const queued = queuedReleaseId
+    ? await db.knowledgeExportRelease.findFirstOrThrow({
+        where: { id: queuedReleaseId, workspaceId: context.workspaceId },
+      })
+    : null;
+  if (queued?.status === "exported") return queued.id;
+  if (queued && !["queued", "validating"].includes(queued.status))
+    throw Error("release_not_queued");
+  const selections = queued
+    ? (queued.selectionSnapshot as unknown as Awaited<
+        ReturnType<typeof db.knowledgeEfbSelection.findMany>
+      >)
+    : await db.knowledgeEfbSelection.findMany({
+        where: {
+          workspaceId: context.workspaceId,
+          ...(selectionIds ? { id: { in: selectionIds } } : {}),
+        },
+        orderBy: { articleId: "asc" },
+      });
   if (!selections.length) throw Error("select_articles_first");
+  if (selectionIds && selections.length !== new Set(selectionIds).size)
+    throw Error("selection_scope_changed");
+  if (!queued && process.env.AV_OKF_EFB_BULK_EXPORT_ENABLED === "true") {
+    const pinned = await Promise.all(
+      selections.map(async (s) => ({
+        ...s,
+        visualSnapshot: await visualSnapshot(context.workspaceId, s.revisionId),
+      })),
+    );
+    const release = await db.knowledgeExportRelease.create({
+      data: {
+        workspaceId: context.workspaceId,
+        createdBy: context.userId,
+        status: "queued",
+        selectionSnapshot: json(pinned),
+      },
+    });
+    return release.id;
+  }
+  const failures: Array<{
+    articleId: string;
+    revisionId: string;
+    reason: string;
+  }> = [];
+  for (const s of selections) {
+    try {
+      const pinnedVisuals = (s as typeof s & { visualSnapshot?: unknown })
+        .visualSnapshot;
+      if (
+        pinnedVisuals &&
+        canonicalSnapshot(pinnedVisuals) !==
+          canonicalSnapshot(
+            await visualSnapshot(context.workspaceId, s.revisionId),
+          )
+      )
+        throw Error("visuals_changed_after_snapshot");
+      const r = await assertArticleSourcesCurrent(context, s.revisionId);
+      if (!r.approval || r.article.approvedRevisionId !== r.id)
+        throw Error("approved_current_revision_required");
+      const current = await db.knowledgeEfbSelection.findFirst({
+        where: { id: s.id, workspaceId: context.workspaceId },
+      });
+      if (
+        !current ||
+        current.revisionId !== s.revisionId ||
+        JSON.stringify(current.metadata) !== JSON.stringify(s.metadata)
+      )
+        throw Error("selection_changed_after_snapshot");
+      assertSelectionMetadataAllowed(
+        selectionMetadataSchema.parse(s.metadata),
+        registry,
+      );
+      const extended = s.metadata as {
+        classificationId?: string;
+        registryHash?: string;
+        selectionMode?: string;
+      };
+      const { registryFingerprint } = await import(
+        "../project-efb-contract-registry.ts"
+      );
+      if (
+        extended.registryHash &&
+        extended.registryHash !== registryFingerprint(registry)
+      )
+        throw Error("registry_changed_review_selection");
+      if (extended.classificationId) {
+        const { currentClassification } = await import(
+          "./efb-classification.ts"
+        );
+        const classification = await currentClassification(
+          context,
+          s.revisionId,
+        );
+        if (
+          classification?.id !== extended.classificationId ||
+          (extended.selectionMode === "automatic" &&
+            classification.status !== "ready")
+        )
+          throw Error("classification_changed_review_selection");
+      }
+    } catch (error) {
+      failures.push({
+        articleId: s.articleId,
+        revisionId: s.revisionId,
+        reason: error instanceof Error ? error.message : "preflight_failed",
+      });
+    }
+  }
+  if (failures.length) {
+    if (queued)
+      await db.knowledgeExportRelease.update({
+        where: { id: queued.id },
+        data: {
+          status: "validation_failed",
+          error: "article_preflight_failed",
+          result: json({ failures }),
+        },
+      });
+    throw Error("article_preflight_failed");
+  }
   const records = await Promise.all(
     selections.map((s) => assertArticleSourcesCurrent(context, s.revisionId)),
   );
@@ -82,21 +259,37 @@ export async function exportSelectedArticles(
     selectionMetadataSchema.parse(s.metadata),
   );
   for (const item of metadata) assertSelectionMetadataAllowed(item, registry);
-  const release = await db.knowledgeExportRelease.create({
-    data: {
-      workspaceId: context.workspaceId,
-      createdBy: context.userId,
-      status: "validating",
-      selectionSnapshot: json(selections),
-    },
-  });
+  const release =
+    queued ??
+    (await db.knowledgeExportRelease.create({
+      data: {
+        workspaceId: context.workspaceId,
+        createdBy: context.userId,
+        status: "validating",
+        selectionSnapshot: json(selections),
+      },
+    }));
+  if (queued) {
+    const claimed = await db.knowledgeExportRelease.updateMany({
+      where: { id: queued.id, status: { in: ["queued", "validating"] } },
+      data: { status: "validating" },
+    });
+    if (!claimed.count) throw Error("release_not_queued");
+  }
   const scratch = await mkdtemp(path.join(tmpdir(), "av-okf-poc-cloud-"));
   try {
     const privateKey = createPrivateKey(await readFile(signingKeyPath, "utf8"));
-    if (privateKey.asymmetricKeyType !== "ed25519") throw Error("efb_signing_key_must_be_ed25519");
+    if (privateKey.asymmetricKeyType !== "ed25519")
+      throw Error("efb_signing_key_must_be_ed25519");
     const publicKeyPath = path.join(scratch, "signer-public.pem");
-    await writeFile(publicKeyPath, createPublicKey(privateKey).export({ format: "pem", type: "spki" }));
+    await writeFile(
+      publicKeyPath,
+      createPublicKey(privateKey).export({ format: "pem", type: "spki" }),
+    );
     const sourceEntries: Array<{ markdown: string; relativePath: string }> = [];
+    const supportingAssets: NonNullable<
+      Parameters<typeof exportEfbRelease>[0]["supportingAssets"]
+    > = [];
     for (let i = 0; i < records.length; i++) {
       const r = records[i],
         m = metadata[i],
@@ -125,7 +318,9 @@ export async function exportSelectedArticles(
         const target = records.find(
           (other) => (other.body as { id: string }).id === link.target,
         )?.articleId;
-        return target ? [{ relation: link.relation ?? "related_to", target }] : [];
+        return target
+          ? [{ relation: link.relation ?? "related_to", target }]
+          : [];
       });
       const e = r.evidence as
         | Array<{
@@ -168,7 +363,9 @@ export async function exportSelectedArticles(
         description: b.answer,
         status: "stable",
         generated: { by: "av-okf", at: r.createdAt.toISOString() },
-        ...(approval.by && approval.at ? { verified: [{ by: `human:${approval.by}`, at: approval.at }] } : {}),
+        ...(approval.by && approval.at
+          ? { verified: [{ by: `human:${approval.by}`, at: approval.at }] }
+          : {}),
         sources: passages.map((p) => ({
           id: `${p.documentId}-${p.page}`,
           resource: `urn:av-okf:document:${p.documentId}:page:${p.page}`,
@@ -177,6 +374,7 @@ export async function exportSelectedArticles(
         source_pages: sourcePages,
         aircraft_family_ids: [m.aircraftFamily],
         aircraft_type_ids: m.aircraftTypeIds,
+        effectivity: m.effectivity,
         ...(m.ataChapter ? { ata: m.ataChapter } : {}),
         efb_entry_id: entryId,
         intended_audiences: m.audiences,
@@ -200,12 +398,46 @@ export async function exportSelectedArticles(
             )
             .join("\n\n")
         : "";
-      const relationLinks = related.length > 0
-        ? `\n\n## Related topics\n\n${related.map(({ target }) => `- [${target}](${target}.md)`).join("\n")}`
-        : "";
+      const relationLinks =
+        related.length > 0
+          ? `\n\n## Related topics\n\n${related.map(({ target }) => `- [${target}](${target}.md)`).join("\n")}`
+          : "";
+      const visuals = activeArticleVisuals(
+        await db.knowledgeVisual.findMany({
+          where: { workspaceId: context.workspaceId, articleRevisionId: r.id },
+        }),
+      );
+      let visualMarkdown = "";
+      for (const visual of visuals) {
+        if (!visual.reviewedAt) throw Error("review_visuals_before_export");
+        const provenance = visual.provenance as {
+          objectKey: string;
+          hash: string;
+        };
+        if (
+          !provenance.objectKey.startsWith(
+            `workspaces/${context.workspaceId}/article-visuals/`,
+          )
+        )
+          throw Error("visual_scope_mismatch");
+        const bytes = await getObjectStorage().getObject(provenance.objectKey);
+        if (fingerprint([...bytes]) !== provenance.hash)
+          throw Error("visual_checksum_mismatch");
+        const nativePath = `${visual.id}.png`,
+          sourcePath = path.join(scratch, nativePath);
+        await writeFile(sourcePath, bytes);
+        supportingAssets.push({
+          nativePath,
+          sourcePath,
+          entryId,
+          title: visual.caption,
+          mediaType: "image/png",
+        });
+        visualMarkdown += `\n\n![${visual.altText.replace(/[\[\]\r\n]/g, " ")}](../assets/${nativePath})\n\n${visual.caption}`;
+      }
       sourceEntries.push({
         relativePath: `topics/${entryId}.md`,
-        markdown: `---\n${stringify(frontmatter)}---\n\n${body}${relationLinks}\n\n${footnotes}`,
+        markdown: `---\n${stringify(frontmatter, { aliasDuplicateObjects: false })}---\n\n${body}${relationLinks}${visualMarkdown}\n\n${footnotes}`,
       });
     }
     const now = new Date().toISOString();
@@ -218,7 +450,7 @@ export async function exportSelectedArticles(
         schemaVersion: "1.0",
         mode: "poc-cloud",
         packageId: `selected-${context.workspaceId.toLowerCase()}`,
-        version: `0.1.${Date.now()}`,
+        version: `0.1.${release.createdAt.getTime()}`,
         source: "av-okf",
         sourceCommit,
         curator: "av-okf-poc-export",
@@ -233,10 +465,45 @@ export async function exportSelectedArticles(
       },
       contractRegistry: registry,
       sourceEntries,
+      supportingAssets,
       outputRoot: process.env.AV_OKF_EFB_RELEASE_ROOT ?? "/data/efb-releases",
       validateStagedPackage: async (manifest) => {
-        for (const r of records)
-          await assertArticleSourcesCurrent(context, r.id);
+        const { registryFingerprint } = await import(
+          "../project-efb-contract-registry.ts"
+        );
+        if (
+          registryFingerprint(await loadProjectEfbContractRegistry()) !==
+          registryFingerprint(registry)
+        )
+          throw Error("registry_changed_during_export");
+        for (const selection of selections) {
+          const latest = await db.knowledgeEfbSelection.findFirst({
+            where: { id: selection.id, workspaceId: context.workspaceId },
+          });
+          if (
+            !latest ||
+            latest.revisionId !== selection.revisionId ||
+            JSON.stringify(latest.metadata) !==
+              JSON.stringify(selection.metadata)
+          )
+            throw Error("selection_changed_during_export");
+          const saved = selection.metadata as { classificationId?: string };
+          if (saved.classificationId) {
+            const { currentClassification } = await import(
+              "./efb-classification.ts"
+            );
+            if (
+              (await currentClassification(context, selection.revisionId))
+                ?.id !== saved.classificationId
+            )
+              throw Error("classification_changed_during_export");
+          }
+        }
+        for (const r of records) {
+          const current = await assertArticleSourcesCurrent(context, r.id);
+          if (!current.approval || current.article.approvedRevisionId !== r.id)
+            throw Error("approval_changed_during_export");
+        }
         await exec(
           process.execPath,
           [
@@ -254,7 +521,9 @@ export async function exportSelectedArticles(
       signer: async (payload) => ({
         algorithm: "ed25519",
         keyId: signingKeyId,
-        value: sign(null, Buffer.from(payload, "utf8"), privateKey).toString("base64"),
+        value: sign(null, Buffer.from(payload, "utf8"), privateKey).toString(
+          "base64",
+        ),
       }),
     });
     await db.knowledgeExportRelease.update({
@@ -269,12 +538,17 @@ export async function exportSelectedArticles(
     });
     return release.id;
   } catch (error) {
-    const errorCode = error instanceof Error ? error.message.split(":", 1)[0]! : "export_validation_failed";
+    const errorCode =
+      error instanceof Error
+        ? error.message.split(":", 1)[0]!
+        : "export_validation_failed";
     await db.knowledgeExportRelease.update({
       where: { id: release.id },
       data: {
         status: "failed",
-        error: /^[a-z_]+$/.test(errorCode) ? errorCode : "export_validation_failed",
+        error: /^[a-z_]+$/.test(errorCode)
+          ? errorCode
+          : "export_validation_failed",
       },
     });
     throw error;
