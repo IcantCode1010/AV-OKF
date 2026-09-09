@@ -5,6 +5,37 @@ import { fingerprint, type BuilderResult } from "../topic-builder-core.ts";
 import { EDITORIAL_POLICY_VERSION } from "./contracts.ts";
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
+
+async function applyInheritedEfbMetadata(
+  context: AuthWorkspaceContext,
+  revisionId: string,
+) {
+  if (process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED !== "true") return;
+  try {
+    const { synchronizeInheritedClassification } = await import(
+      "./efb-classification.ts"
+    );
+    const classification = await synchronizeInheritedClassification(
+      context,
+      revisionId,
+    );
+    if (classification.status === "needs_review") {
+      const { requestClassification } = await import("./efb-classification.ts");
+      await requestClassification(context, revisionId);
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "aviation_source_metadata_required"
+    )
+      return;
+    console.error("article_inherited_efb_metadata_failed", {
+      revisionId,
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
+}
+
 export async function importBuilderRevision(runId: string) {
   const db = getPrisma();
   const run = await db.topicBuilderRun.findUniqueOrThrow({
@@ -63,9 +94,9 @@ export async function importBuilderRevision(runId: string) {
         });
     });
     if(process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true") {
-      const {requestClassification,selectClassifiedRevision}=await import("./efb-classification.ts");
+      const {selectClassifiedRevision}=await import("./efb-classification.ts");
       const context={workspaceId:run.workspaceId,userId:run.recipe.createdBy,role:"member" as const};
-      await requestClassification(context,revisionId);
+      await applyInheritedEfbMetadata(context,revisionId);
       if(approval && process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED==="true" && process.env.AV_OKF_EXPORT_ENABLED==="true") await selectClassifiedRevision(context,revisionId);
     }
   }
@@ -83,6 +114,7 @@ export async function importLegacyTopic(topicId: string, context?: AuthWorkspace
     title: t.enrichedTitle ?? t.title,
     answer: t.enrichedSummary ?? t.summary,
     markdown: t.enrichedBody,
+    okfMetadata: t.okfMetadata,
     exportedFilePath: t.exportedFilePath,
     keyPoints: [],
     details: [],
@@ -140,18 +172,21 @@ export async function importLegacyTopic(topicId: string, context?: AuthWorkspace
       });
   });
   if(context && process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true") {
-    const {requestClassification,selectClassifiedRevision}=await import("./efb-classification.ts");
-    await requestClassification(context,revisionId);
+    const {selectClassifiedRevision}=await import("./efb-classification.ts");
+    await applyInheritedEfbMetadata(context,revisionId);
     if(approval && process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED==="true" && process.env.AV_OKF_EXPORT_ENABLED==="true") await selectClassifiedRevision(context,revisionId);
   }
 }
-export async function backfillEditorial(workspaceId: string) {
+export async function backfillEditorial(
+  workspaceId: string,
+  context?: AuthWorkspaceContext,
+) {
   const db = getPrisma();
   for (const t of await db.topicRecord.findMany({
     where: { workspaceId, enrichedBody: { not: null } },
     select: { id: true },
   }))
-    await importLegacyTopic(t.id);
+    await importLegacyTopic(t.id, context);
   for (const r of await db.topicBuilderRun.findMany({
     where: { workspaceId, status: { in: ["ready", "approved"] } },
     select: { id: true },

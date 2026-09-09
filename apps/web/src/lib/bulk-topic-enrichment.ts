@@ -57,6 +57,7 @@ export async function queueSelectedTopicEnrichment(
     connection: { url: process.env.REDIS_URL },
   });
   const batchId = randomUUID();
+  let queued = 0;
   try {
     for (const topic of topics) {
       const jobId = `enrich-${topic.id}`;
@@ -84,20 +85,23 @@ export async function queueSelectedTopicEnrichment(
           removeOnFail: { age: 604800, count: 10000 },
         },
       );
+      queued++;
+      await recordEnrichmentProgress({ topicId: topic.id, workspaceId: context.workspaceId,
+        bundleId, batchId, status: "queued", queuedAt: new Date() });
     }
-    return topics.length;
+    return queued;
   } finally {
     await queue.close();
   }
 }
-export async function runSelectedTopicEnrichment(job: SelectedEnrichmentJob) {
+export async function runSelectedTopicEnrichment(job: SelectedEnrichmentJob, recovering = false) {
   const db = getPrisma();
   const member = await db.workspaceMember.findUniqueOrThrow({
     where: {
       workspaceId_userId: { workspaceId: job.workspaceId, userId: job.userId },
     },
   });
-  const topic = await db.topicRecord.findFirstOrThrow({
+  let topic = await db.topicRecord.findFirstOrThrow({
     where: {
       id: job.topicId,
       workspaceId: job.workspaceId,
@@ -105,6 +109,10 @@ export async function runSelectedTopicEnrichment(job: SelectedEnrichmentJob) {
       document: { deletedAt: null },
     },
   });
+  if (recovering && topic.enrichmentStatus === "pending" && !["approved", "rejected"].includes(topic.reviewStatus)) {
+    await db.topicRecord.updateMany({ where: { id: topic.id, workspaceId: job.workspaceId, enrichmentStatus: "pending", reviewStatus: { notIn: ["approved", "rejected"] } }, data: { enrichmentStatus: "failed" } });
+    topic = await db.topicRecord.findUniqueOrThrow({ where: { id: topic.id } });
+  }
   if (!canEnrichSelectedTopic(topic)) return;
   const progress = {
     topicId: topic.id,
@@ -116,7 +124,7 @@ export async function runSelectedTopicEnrichment(job: SelectedEnrichmentJob) {
   const startedAt = new Date();
   await recordEnrichmentProgress({ ...progress, status: "running", startedAt });
   try {
-    await enrichTopic(topic.id, {
+    const result = await enrichTopic(topic.id, {
       repository: createPostgresDocumentRepository(),
       context: {
         workspaceId: job.workspaceId,
@@ -124,6 +132,7 @@ export async function runSelectedTopicEnrichment(job: SelectedEnrichmentJob) {
         role: member.role === "admin" ? "admin" : "member",
       },
     });
+    assertEnrichmentSucceeded(result);
     await recordEnrichmentProgress({
       ...progress,
       status: "completed",
@@ -139,4 +148,9 @@ export async function runSelectedTopicEnrichment(job: SelectedEnrichmentJob) {
     });
     throw error;
   }
+}
+
+export function assertEnrichmentSucceeded(result: { enrichmentStatus: string }) {
+  if (result.enrichmentStatus === "failed") throw new Error("topic_enrichment_failed_see_topic_details");
+  if (!["completed", "review_required"].includes(result.enrichmentStatus)) throw new Error("topic_enrichment_incomplete");
 }

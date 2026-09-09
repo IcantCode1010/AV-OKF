@@ -5,7 +5,7 @@ import type { AuthWorkspaceContext } from "../auth-workspace.ts";
 import { getPrisma } from "../prisma.ts";
 import { createTopicRecipe, refreshTopicRecipe } from "../topic-builder.ts";
 import { knowledgeFeature } from "./contracts.ts";
-import { assertArticleSourcesCurrent, backfillEditorial } from "./editorial.ts";
+import { assertArticleSourcesCurrent, backfillEditorial, importLegacyTopic } from "./editorial.ts";
 import { addArticleVisual } from "./media.ts";
 import {
   assertSelectionMetadataAllowed,
@@ -14,8 +14,67 @@ import {
 } from "./export.ts";
 import { loadProjectEfbContractRegistry } from "../project-efb-contract-registry.ts";
 import { activeArticleVisuals } from "./visual-revisions.ts";
+import { getObjectStorage } from "../production-storage.ts";
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
+
+export async function approveArticleRevision(
+  context: AuthWorkspaceContext,
+  revisionId: string,
+) {
+  const db = getPrisma();
+  const revision = await assertArticleSourcesCurrent(context, revisionId);
+  if (revision.approval) {
+    if (revision.article.approvedRevisionId === revisionId) return "already_approved" as const;
+    throw Error("revision_already_approved");
+  }
+  const unreviewed = activeArticleVisuals(
+    await db.knowledgeVisual.findMany({
+      where: { workspaceId: context.workspaceId, articleRevisionId: revisionId },
+    }),
+  ).some((visual) => !visual.reviewedAt);
+  if (unreviewed) throw Error("review_visuals_before_approval");
+
+  await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "KnowledgeArticleRevision" WHERE id = ${revisionId} FOR UPDATE`;
+    const current = await tx.knowledgeArticleRevision.findFirstOrThrow({
+      where: { id: revisionId, workspaceId: context.workspaceId },
+      select: { approval: true },
+    });
+    if (current.approval) return;
+    if (
+      activeArticleVisuals(
+        await tx.knowledgeVisual.findMany({
+          where: { workspaceId: context.workspaceId, articleRevisionId: revisionId },
+        }),
+      ).some((visual) => !visual.reviewedAt)
+    ) throw Error("review_visuals_before_approval");
+    await tx.knowledgeArticleRevision.update({
+      where: { id: revisionId },
+      data: {
+        approval: json({
+          by: context.userId,
+          at: new Date().toISOString(),
+          source: "editorial",
+        }),
+      },
+    });
+    await tx.knowledgeArticle.update({
+      where: { id: revision.articleId },
+      data: { approvedRevisionId: revisionId },
+    });
+  });
+
+  if (
+    process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED === "true" &&
+    knowledgeFeature("export")
+  ) {
+    const { selectClassifiedRevision } = await import("./efb-classification.ts");
+    await selectClassifiedRevision(context, revisionId);
+  }
+  return "approved" as const;
+}
+
 export async function executeEditorialAction(
   context: AuthWorkspaceContext,
   form: FormData,
@@ -24,7 +83,135 @@ export async function executeEditorialAction(
   const db = getPrisma(),
     action = String(form.get("action")),
     id = String(form.get("revisionId") ?? "");
-  if (action === "backfill") await backfillEditorial(context.workspaceId);
+  if (action === "backfill")
+    await backfillEditorial(context.workspaceId, context);
+  else if (action === "delete-articles") {
+    const revisionIds = [...new Set(form.getAll("revisionId").map(String).filter(Boolean))];
+    if (!revisionIds.length || revisionIds.length > 500) throw Error("select_up_to_500_revisions");
+    const articles = await db.knowledgeArticle.findMany({
+      where: { workspaceId: context.workspaceId, revisions: { some: { id: { in: revisionIds } } } },
+      select: { id: true, revisions: { select: { id: true } } },
+      orderBy: { id: "asc" },
+    });
+    if (articles.length !== revisionIds.length) throw Error("article_delete_scope_changed");
+    const articleIds = articles.map((article) => article.id);
+    const allRevisionIds = articles.flatMap((article) => article.revisions.map((revision) => revision.id));
+    const [classifications, visuals] = await Promise.all([
+      db.knowledgeEfbClassification.findMany({
+        where: { workspaceId: context.workspaceId, revisionId: { in: allRevisionIds } },
+        select: { id: true },
+      }),
+      db.knowledgeVisual.findMany({
+        where: { workspaceId: context.workspaceId, articleRevisionId: { in: allRevisionIds } },
+        select: { provenance: true },
+      }),
+    ]);
+    const classificationIds = classifications.map((classification) => classification.id);
+    await db.$transaction(async (tx) => {
+      if (classificationIds.length) await tx.knowledgeEfbClassificationDecision.deleteMany({ where: { workspaceId: context.workspaceId, classificationId: { in: classificationIds } } });
+      await tx.knowledgeEfbClassification.deleteMany({ where: { workspaceId: context.workspaceId, revisionId: { in: allRevisionIds } } });
+      await tx.knowledgeVisual.deleteMany({ where: { workspaceId: context.workspaceId, articleRevisionId: { in: allRevisionIds } } });
+      await tx.knowledgeEfbSelection.deleteMany({ where: { workspaceId: context.workspaceId, articleId: { in: articleIds } } });
+      await tx.knowledgeArticleRevision.deleteMany({ where: { workspaceId: context.workspaceId, articleId: { in: articleIds } } });
+      const deleted = await tx.knowledgeArticle.deleteMany({ where: { workspaceId: context.workspaceId, id: { in: articleIds } } });
+      if (deleted.count !== articleIds.length) throw Error("article_delete_scope_changed");
+    });
+    const objectKeys = visuals.flatMap((visual) => {
+      const key = (visual.provenance as { objectKey?: unknown } | null)?.objectKey;
+      return typeof key === "string" ? [key] : [];
+    });
+    const storage = getObjectStorage();
+    await Promise.allSettled(objectKeys.map((objectKey) => storage.deleteObject(objectKey)));
+    return `${articleIds.length} articles were deleted. Source documents, topics, OKF bundles, and completed EFB releases were preserved.`;
+  }
+  else if (action === "approve-articles") {
+    const revisionIds = [...new Set(form.getAll("revisionId").map(String).filter(Boolean))];
+    if (!revisionIds.length || revisionIds.length > 500) throw Error("select_up_to_500_revisions");
+    let approved = 0;
+    let alreadyApproved = 0;
+    const failed: string[] = [];
+    for (const revisionId of revisionIds) {
+      try {
+        const result = await approveArticleRevision(context, revisionId);
+        if (result === "approved") approved++;
+        else alreadyApproved++;
+      } catch {
+        failed.push(revisionId);
+      }
+    }
+    return `${approved} articles approved${alreadyApproved ? `, ${alreadyApproved} already approved` : ""}${failed.length ? `, and ${failed.length} blocked by source or visual review checks` : ""}.`;
+  }
+  else if (action === "prepare-and-export-efb") {
+    if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
+    const revisionIds = [...new Set(form.getAll("revisionId").map(String).filter(Boolean))];
+    if (!revisionIds.length || revisionIds.length > 500) throw Error("select_up_to_500_revisions");
+    const { synchronizeInheritedClassification, selectClassifiedRevision } = await import("./efb-classification.ts");
+    const activeClassificationCount = await db.knowledgeEfbClassification.count({
+      where: {
+        workspaceId: context.workspaceId,
+        status: { in: ["queued", "running"] },
+      },
+    });
+    if (activeClassificationCount)
+      return `EFB metadata classification is already processing ${activeClassificationCount} articles. Wait for it to finish before starting another package build.`;
+    const failures: string[] = [];
+    for (const revisionId of revisionIds) {
+      try {
+        const revision = await assertArticleSourcesCurrent(context, revisionId);
+        if (!revision.approval || revision.article.approvedRevisionId !== revisionId) throw Error("approved_current_revision_required");
+        const classification = await synchronizeInheritedClassification(context, revisionId);
+        if (classification.status !== "ready") throw Error("efb_metadata_needs_correction");
+      } catch {
+        failures.push(revisionId);
+      }
+    }
+    if (failures.length) {
+      const { requestClassification } = await import("./efb-classification.ts");
+      for (const revisionId of failures)
+        await requestClassification(context, revisionId);
+      return `${failures.length} articles need article-specific placement. Metadata classification has started; build the package again after they become Metadata ready.`;
+    }
+    for (const revisionId of revisionIds) {
+      if (!(await selectClassifiedRevision(context, revisionId))) throw Error("efb_selection_failed");
+    }
+    const selections = await db.knowledgeEfbSelection.findMany({
+      where: { workspaceId: context.workspaceId, revisionId: { in: revisionIds } },
+      select: { id: true },
+      orderBy: { articleId: "asc" },
+    });
+    if (selections.length !== revisionIds.length) throw Error("efb_selection_scope_changed");
+    const releaseId = await exportSelectedArticles(context, selections.map((selection) => selection.id));
+    return `EFB package ${releaseId} was created or queued. Open Package history to download it when validation completes.`;
+  }
+  else if (action === "prepare-efb-workspace") {
+    if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
+    const topics = await db.topicRecord.findMany({
+      where: { workspaceId: context.workspaceId, reviewStatus: "approved", enrichedBody: { not: null }, document: { deletedAt: null, sourceType: "aviation" } },
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    let selected = 0;
+    let needsAttention = 0;
+    const { synchronizeInheritedClassification, selectClassifiedRevision } = await import("./efb-classification.ts");
+    for (const topic of topics) {
+      try {
+        await importLegacyTopic(topic.id);
+        const article = await db.knowledgeArticle.findUnique({
+          where: { workspaceId_originKind_originId: { workspaceId: context.workspaceId, originKind: "topic", originId: topic.id } },
+        });
+        if (!article?.approvedRevisionId) {
+          needsAttention++;
+          continue;
+        }
+        const classification = await synchronizeInheritedClassification(context, article.approvedRevisionId);
+        if (classification.status === "ready" && await selectClassifiedRevision(context, article.approvedRevisionId)) selected++;
+        else needsAttention++;
+      } catch {
+        needsAttention++;
+      }
+    }
+    return `${selected} approved articles are ready for package export. ${needsAttention} require metadata correction. Topic proposals retain inherited metadata but are not exportable until enriched and approved.`;
+  }
   else if (action === "cancel-classification") {
     await assertArticleSourcesCurrent(context, id);
     await db.knowledgeEfbClassification.updateMany({
@@ -51,6 +238,16 @@ export async function executeEditorialAction(
     const ids = [...new Set(form.getAll("revisionId").map(String))];
     if (!ids.length || ids.length > 500)
       throw Error("select_up_to_500_revisions");
+    if (
+      action === "classify-batch" &&
+      (await db.knowledgeEfbClassification.count({
+        where: {
+          workspaceId: context.workspaceId,
+          status: { in: ["queued", "running"] },
+        },
+      })) > 0
+    )
+      return "EFB metadata classification is already running. Wait for the active batch to finish before starting another one.";
     const { requestClassification, selectClassifiedRevision } = await import(
       "./efb-classification.ts"
     );
@@ -142,48 +339,7 @@ export async function executeEditorialAction(
       data: { reviewedBy: context.userId, reviewedAt: new Date() },
     });
   } else if (action === "approve") {
-    const r = await assertArticleSourcesCurrent(context, id);
-    if (r.approval) throw Error("revision_already_approved");
-    const unreviewed = activeArticleVisuals(
-      await db.knowledgeVisual.findMany({
-        where: { workspaceId: context.workspaceId, articleRevisionId: id },
-      }),
-    ).some((v) => !v.reviewedAt);
-    if (unreviewed) throw Error("review_visuals_before_approval");
-    await db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "KnowledgeArticleRevision" WHERE id = ${id} FOR UPDATE`;
-      if (
-        activeArticleVisuals(
-          await tx.knowledgeVisual.findMany({
-            where: { workspaceId: context.workspaceId, articleRevisionId: id },
-          }),
-        ).some((v) => !v.reviewedAt)
-      )
-        throw Error("review_visuals_before_approval");
-      await tx.knowledgeArticleRevision.update({
-        where: { id },
-        data: {
-          approval: json({
-            by: context.userId,
-            at: new Date().toISOString(),
-            source: "editorial",
-          }),
-        },
-      });
-      await tx.knowledgeArticle.update({
-        where: { id: r.articleId },
-        data: { approvedRevisionId: id },
-      });
-    });
-    if (
-      process.env.AV_OKF_EFB_AUTO_SELECT_ENABLED === "true" &&
-      knowledgeFeature("export")
-    ) {
-      const { selectClassifiedRevision } = await import(
-        "./efb-classification.ts"
-      );
-      await selectClassifiedRevision(context, id);
-    }
+    await approveArticleRevision(context, id);
   } else if (action === "edit") {
     const r = await assertArticleSourcesCurrent(context, id);
     const body = r.body as Record<string, unknown>;
@@ -259,8 +415,19 @@ export async function executeEditorialAction(
         },
       });
     if (process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED === "true") {
-      const { requestClassification } = await import("./efb-classification.ts");
-      await requestClassification(context, next.id);
+      const { synchronizeInheritedClassification } = await import("./efb-classification.ts");
+      try {
+        await synchronizeInheritedClassification(context, next.id);
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          error.message !== "aviation_source_metadata_required"
+        )
+          console.error("article_inherited_efb_metadata_failed", {
+            revisionId: next.id,
+            error: error instanceof Error ? error.message : "unknown_error",
+          });
+      }
     }
   } else if (action === "select") {
     const r = await assertArticleSourcesCurrent(context, id);

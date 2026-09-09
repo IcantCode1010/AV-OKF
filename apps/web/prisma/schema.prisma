@@ -213,6 +213,8 @@ model Document {
   applicabilityOverriddenAt DateTime?
   documentType             String?
   classificationCode       String?
+  maintenanceAtaChapterIds String[]                       @default([])
+  pilotQrhTargetIds        String[]                       @default([])
   effectivity              String?
   sourceAuthority          String?
   revision                 String?

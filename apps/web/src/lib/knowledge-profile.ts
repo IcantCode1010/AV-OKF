@@ -204,6 +204,10 @@ export const AVIATION_PROFILE_TEMPLATE: KnowledgeProfileSchema = {
     source_classification: { type: "string" },
     license_identifier: { type: "string" },
     intended_audiences: { type: "string_array" },
+    maintenance_ata_chapter_ids: { type: "string_array" },
+    pilot_qrh_target_ids: { type: "string_array" },
+    maintenance_ata_chapter: { type: "string" },
+    pilot_qrh_target_id: { type: "string" },
     content_purpose: { type: "string" },
     revision: { type: "string" },
     source_authority: { type: "string" },
@@ -270,6 +274,10 @@ export function normalizeKnowledgeProfile(
     normalized.fields.source_classification ??= { type: "string" };
     normalized.fields.license_identifier ??= { type: "string" };
     normalized.fields.intended_audiences ??= { type: "string_array" };
+    normalized.fields.maintenance_ata_chapter_ids ??= { type: "string_array" };
+    normalized.fields.pilot_qrh_target_ids ??= { type: "string_array" };
+    normalized.fields.maintenance_ata_chapter ??= { type: "string" };
+    normalized.fields.pilot_qrh_target_id ??= { type: "string" };
     normalized.fields.content_purpose ??= { type: "string" };
   }
   if (["generic", "aviation"].includes(normalized.id)) {

@@ -26,6 +26,7 @@ export async function recordEnrichmentProgress(input: {
     completedAt: input.completedAt,
   };
   const prior=await db.topicEnrichmentJob.findUnique({where:{topicId_revisionFingerprint:{topicId:input.topicId,revisionFingerprint:input.batchId}}});
+  if (input.status === "queued" && prior && ["running", "completed"].includes(prior.status)) return prior;
   if(prior&&prior.status===input.status&&(!input.startedAt||prior.startedAt?.getTime()===input.startedAt.getTime())&&(!input.completedAt||prior.completedAt?.getTime()===input.completedAt.getTime()))return prior;
   return db.topicEnrichmentJob.upsert({
     where: {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,8 @@ import type { Document, SourceType } from "@/lib/document-vault";
 const selectClassName = "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm";
 
 type InitialValues = Pick<Document,
+  | "maintenanceAtaChapterIds"
+  | "pilotQrhTargetIds"
   | "aircraftFamilyIds"
   | "aircraftTypeIds"
   | "applicabilityScope"
@@ -43,6 +45,26 @@ export function AviationDocumentMetadataFields({
   const [sourceType, setSourceType] = useState<SourceType>(initialSourceType);
   const showMapped = sourceType === "aviation" || showMappedFieldsForGeneral;
   const aviation = sourceType === "aviation";
+  const [registry, setRegistry] = useState<{
+    ataChapterIds: string[];
+    documentAtaChapterIds: string[];
+    qrhTargetIds: string[];
+  } | null>(null);
+  useEffect(() => {
+    if (!aviation) return;
+    const controller = new AbortController();
+    void fetch("/api/efb-placement-registry", { signal: controller.signal }).then(async r => {
+      if (!r.ok) return;
+      const data = await r.json();
+      if (
+        Array.isArray(data.ataChapterIds) &&
+        Array.isArray(data.documentAtaChapterIds) &&
+        Array.isArray(data.qrhTargetIds)
+      )
+        setRegistry(data);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [aviation]);
   const classificationCode = initialValues?.classificationCode?.trim() ?? "";
   const ataCode = /^\d{2}(?:-\d{2}){0,2}$/.test(classificationCode)
     ? classificationCode
@@ -98,6 +120,10 @@ export function AviationDocumentMetadataFields({
             <TextField disabled={disabled || !showMapped || !aviation} id="aircraftTypeIds" label="Aircraft type IDs" placeholder="B738, B739" value={initialValues?.aircraftTypeIds?.join(", ")} hidden={!aviation} />
           )}
           <TextField disabled={disabled || !showMapped} id="classificationCode" label={aviation ? "ATA" : "Classification code"} placeholder={aviation ? "24 or 24-00-00" : undefined} value={aviation ? ataCode : initialValues?.classificationCode} />
+          {aviation && <>
+            <PlacementOptions disabled={disabled} name="maintenanceAtaChapterIds" label="Maintenance ATA chapters" options={registry?.documentAtaChapterIds} initial={initialValues?.maintenanceAtaChapterIds} />
+            <PlacementOptions disabled={disabled} name="pilotQrhTargetIds" label="Pilot QRH categories" options={registry?.qrhTargetIds} initial={initialValues?.pilotQrhTargetIds} />
+          </>}
           {sourceIdentifier ? (
             <TextField disabled id="sourceIdentifierDisplay" label="Source identifier" value={sourceIdentifier} />
           ) : null}
@@ -144,6 +170,20 @@ export function AviationDocumentMetadataFields({
 
 function Field({ children, htmlFor, label }: { children: React.ReactNode; htmlFor: string; label: string }) {
   return <div className="space-y-2"><Label htmlFor={htmlFor}>{label}</Label>{children}</div>;
+}
+
+function PlacementOptions({name, label, options, initial = [], disabled}: {name: string; label: string; options?: string[]; initial?: string[]; disabled: boolean}) {
+  const [selected, setSelected] = useState(initial);
+  return <fieldset className="space-y-2"><legend className="text-sm font-medium">{label}</legend>
+    <input type="hidden" name={name} value={selected.join(",")} disabled={disabled} />
+    {!options && <p className="text-xs text-muted-foreground">Placement registry unavailable. Saved selections are retained.</p>}
+    <div className="max-h-40 space-y-1 overflow-auto">
+      {[...new Set([...(options ?? []), ...selected])].map(id => <label key={id} className="flex items-center gap-2 text-sm">
+        <input type="checkbox" disabled={disabled} checked={selected.includes(id)} onChange={e => setSelected(current => e.target.checked ? [...current, id] : current.filter(v => v !== id))} />
+        {id.replaceAll("-", " ")}
+      </label>)}
+    </div>
+  </fieldset>;
 }
 
 function TextField({ hidden, id, label, value, ...props }: {

@@ -2,10 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AVIATION_DOCUMENT_ATA_CHAPTER_IDS,
   buildInheritedAviationOkfMetadata,
   normalizeAviationDocumentMetadata,
   replaceInheritedAviationOkfMetadata,
 } from "./aviation-document-metadata.ts";
+
+test("aviation document ingestion exposes every two-digit ATA chapter", () => {
+  assert.equal(AVIATION_DOCUMENT_ATA_CHAPTER_IDS.length, 100);
+  assert.equal(AVIATION_DOCUMENT_ATA_CHAPTER_IDS[0], "00");
+  assert.ok(AVIATION_DOCUMENT_ATA_CHAPTER_IDS.includes("23"));
+  assert.ok(AVIATION_DOCUMENT_ATA_CHAPTER_IDS.includes("25"));
+  assert.equal(AVIATION_DOCUMENT_ATA_CHAPTER_IDS[99], "99");
+});
 
 test("aviation metadata normalizes aircraft ids, both audiences, and ATA", () => {
   const metadata = normalizeAviationDocumentMetadata({
@@ -67,6 +76,8 @@ test("document metadata produces protected aviation OKF inheritance", () => {
     subjectFamily: "Boeing 737NG",
   };
   assert.deepEqual(buildInheritedAviationOkfMetadata(document), {
+    maintenance_ata_chapter_ids: ["24"],
+    pilot_qrh_target_ids: [],
     aircraft_family: "Boeing 737NG",
     aircraft_family_ids: ["737-ng"],
     aircraft_type_ids: ["B738"],

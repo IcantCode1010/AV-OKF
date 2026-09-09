@@ -113,13 +113,25 @@ export async function enrichSelectedTopicsAction(
     );
     return {
       error: null,
-      message: `${count} topics submitted for enrichment. The worker processes them one at a time. Nothing is approved or exported.`,
+      message: count ? `${count} topics queued for enrichment. Progress appears below as each draft finishes.` : "These topics are already queued. Follow their progress below.",
     };
-  } catch {
+  } catch (error) {
     return {
       error:
-        "Could not queue all selected topics. Refresh to check progress and retry remaining topics.",
+        enrichmentQueueError(error),
       message: null,
     };
   }
+}
+
+function enrichmentQueueError(error: unknown) {
+  const code = error instanceof Error ? error.message : "";
+  const messages: Record<string, string> = {
+    select_between_1_and_1000_topics: "Select between 1 and 1,000 topics for enrichment.",
+    topic_selection_scope_mismatch: "Some topics are no longer available in this bundle. Update your selection.",
+    selection_contains_topics_not_ready_for_enrichment: "Some selected topics are already enriched, approved, or processing. Select the remaining unenriched topics.",
+    worker_queue_unavailable: "The enrichment queue is unavailable. Start the worker services and retry.",
+    llm_enrichment_requires_api_key: "Configure the workspace AI provider before enriching topics.",
+  };
+  return messages[code] ?? "Enrichment could not be queued. Check Activity for any submitted topics, then retry the remaining selection.";
 }

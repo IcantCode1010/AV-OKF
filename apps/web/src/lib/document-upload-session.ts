@@ -28,6 +28,8 @@ export type DocumentUploadMetadata = {
   aircraftTypeIds?: string[];
   classificationCode?: string | null;
   contentPurpose?: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   description: string;
   documentType?: string | null;
   effectivity?: string | null;
@@ -247,6 +249,8 @@ export async function finalizeDocumentUploadSession(input: {
         aircraftTypeIds: metadata.aircraftTypeIds,
         classificationCode: metadata.classificationCode,
         contentPurpose: metadata.contentPurpose,
+        maintenanceAtaChapterIds: metadata.maintenanceAtaChapterIds ?? [],
+        pilotQrhTargetIds: metadata.pilotQrhTargetIds ?? [],
         documentType: metadata.documentType,
         effectivity: metadata.effectivity,
         fileType: "PDF",
@@ -460,6 +464,8 @@ export function validateDocumentUploadDeclaration(input: CreateDocumentUploadSes
       aircraftTypeIds: input.metadata.aircraftTypeIds,
       ata: input.metadata.classificationCode,
       contentPurpose: input.metadata.contentPurpose,
+      maintenanceAtaChapterIds: input.metadata.maintenanceAtaChapterIds ?? [],
+      pilotQrhTargetIds: input.metadata.pilotQrhTargetIds ?? [],
       effectivity: input.metadata.effectivity,
       intendedAudiences: input.metadata.intendedAudiences,
       licenseIdentifier: input.metadata.licenseIdentifier,
@@ -486,6 +492,8 @@ function normalizeStoredMetadata(value: Prisma.JsonValue): DocumentUploadMetadat
         aircraftTypeIds: input.aircraftTypeIds,
         ata: input.classificationCode,
         contentPurpose: input.contentPurpose,
+        maintenanceAtaChapterIds: input.maintenanceAtaChapterIds ?? [],
+        pilotQrhTargetIds: input.pilotQrhTargetIds ?? [],
         effectivity: input.effectivity,
         intendedAudiences: input.intendedAudiences,
         licenseIdentifier: input.licenseIdentifier,

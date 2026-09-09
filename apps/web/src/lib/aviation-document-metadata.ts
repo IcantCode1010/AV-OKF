@@ -10,7 +10,16 @@ export const AVIATION_INTENDED_AUDIENCES = ["pilot", "maintenance"] as const;
 export type AviationSourceClassification = (typeof AVIATION_SOURCE_CLASSIFICATIONS)[number];
 export type IntendedAudience = (typeof AVIATION_INTENDED_AUDIENCES)[number];
 
+// Source metadata may use any two-digit ATA chapter even when a downstream
+// EFB installation currently accepts only a smaller configured subset.
+export const AVIATION_DOCUMENT_ATA_CHAPTER_IDS = Array.from(
+  { length: 100 },
+  (_, chapter) => String(chapter).padStart(2, "0"),
+);
+
 export type AviationDocumentMetadata = {
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   aircraftTypeIds: string[];
   sourceClassification: AviationSourceClassification;
   licenseIdentifier: string | null;
@@ -19,6 +28,8 @@ export type AviationDocumentMetadata = {
 };
 
 export type AviationDocumentMetadataInput = {
+  maintenanceAtaChapterIds?: unknown;
+  pilotQrhTargetIds?: unknown;
   aircraftFamily?: unknown;
   aircraftTypeIds?: unknown;
   ata?: unknown;
@@ -69,6 +80,8 @@ export function normalizeAviationDocumentMetadata(
   }
 
   return {
+    maintenanceAtaChapterIds: normalizePlacementList(input.maintenanceAtaChapterIds, /^\d{2}$/, "invalid_aviation_ata"),
+    pilotQrhTargetIds: normalizePlacementList(input.pilotQrhTargetIds, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, "invalid_aviation_qrh"),
     aircraftTypeIds,
     classificationCode,
     contentPurpose,
@@ -85,6 +98,8 @@ export function normalizeAviationDocumentMetadata(
 
 export function emptyAviationDocumentMetadata() {
   return {
+    maintenanceAtaChapterIds: [] as string[],
+    pilotQrhTargetIds: [] as string[],
     aircraftTypeIds: [] as string[],
     contentPurpose: null as string | null,
     intendedAudiences: [] as IntendedAudience[],
@@ -107,6 +122,8 @@ export function normalizeStoredIntendedAudiences(values: string[] | null | undef
 }
 
 export function buildInheritedAviationOkfMetadata(document: {
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   aircraftFamilyIds?: string[];
   aircraftTypeIds?: string[];
   applicabilityConfidence?: number | null;
@@ -129,9 +146,16 @@ export function buildInheritedAviationOkfMetadata(document: {
   if (document.sourceType !== "aviation") return {};
 
   const metadata: Record<string, unknown> = {};
+  const ata = document.maintenanceAtaChapterIds?.length
+    ? document.maintenanceAtaChapterIds
+    : /^\d{2}(?:-\d{2}){0,2}$/.test(document.classificationCode ?? "")
+      ? [document.classificationCode!.slice(0, 2)] : [];
+  metadata.maintenance_ata_chapter_ids = [...ata];
+  metadata.pilot_qrh_target_ids = [...(document.pilotQrhTargetIds ?? [])];
   addString(metadata, "aircraft_family", document.subjectFamily);
   if (document.aircraftFamilyIds?.length) metadata.aircraft_family_ids = [...document.aircraftFamilyIds];
-  if (document.aircraftTypeIds?.length) metadata.aircraft_type_ids = [...document.aircraftTypeIds];
+  metadata.aircraft_type_ids = document.applicabilityScope === "entire-family"
+    ? [] : [...(document.aircraftTypeIds ?? [])];
   addString(metadata, "applicability_scope", document.applicabilityScope);
   addString(metadata, "applicability_status", document.applicabilityStatus);
   if (typeof document.applicabilityConfidence === "number") {
@@ -152,6 +176,8 @@ export function buildInheritedAviationOkfMetadata(document: {
 }
 
 export const AVIATION_INHERITED_OKF_FIELDS = new Set([
+  "maintenance_ata_chapter_ids",
+  "pilot_qrh_target_ids",
   "aircraft_family",
   "aircraft_family_ids",
   "aircraft_type_ids",
@@ -180,6 +206,23 @@ export function replaceInheritedAviationOkfMetadata(
   return { ...next, ...buildInheritedAviationOkfMetadata(document) };
 }
 
+export function resolveTopicPlacementMetadata(metadata: Record<string, unknown>, pages: Array<{pageNumber: number; text: string}>) {
+  const result = { ...metadata };
+  for (const [scopeKey, targetKey] of [["maintenance_ata_chapter_ids", "maintenance_ata_chapter"], ["pilot_qrh_target_ids", "pilot_qrh_target_id"]]) {
+    const scope = normalizeStringList(metadata[scopeKey]);
+    if (!scope.length || result[targetKey]) continue;
+    const matched = scope.filter(id => pages.some(p => p.text.split(/\r?\n/).some(line => {
+      const heading = line.trim().toLowerCase();
+      return scopeKey === "maintenance_ata_chapter_ids"
+        ? new RegExp(`^(?:ata\\s+)?${id}-\\d{2}-\\d{2}(?:\\s|$)`, "i").test(heading)
+        : heading === id.replaceAll("-", " ");
+    })));
+    if (scope.length === 1) result[targetKey] = scope[0];
+    else if (matched.length === 1) result[targetKey] = matched[0];
+  }
+  return result;
+}
+
 function normalizeAircraftTypeIds(value: unknown) {
   const values = normalizeStringList(value).map((item) => item.toUpperCase());
   for (const item of values) {
@@ -204,6 +247,14 @@ function normalizeStringList(value: unknown) {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizePlacementList(value: unknown, pattern: RegExp, error: string) {
+  if (value !== undefined && value !== null && typeof value !== "string" && !Array.isArray(value)) throw new Error(error);
+  if (Array.isArray(value) && value.some(item => typeof item !== "string")) throw new Error(error);
+  const values = [...new Set(normalizeStringList(value))];
+  if (values.length > 100 || values.some(item => !pattern.test(item))) throw new Error(error);
+  return values.sort();
 }
 
 function normalizeOptionalString(value: unknown) {

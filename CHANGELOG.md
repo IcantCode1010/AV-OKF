@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added bulk approval of selected article drafts using the individual approval
+  checks and partial-success reporting. The Articles list exposes the selected
+  draft count and explains why unapproved drafts cannot be packaged.
+- Added unsigned native schema 2.1 `poc-local` export when signing configuration
+  is absent, retaining structural and placement validation and reporting the
+  omitted signature check. Signed `poc-cloud` remains supported.
+- Recorded the navigation compiler requirements, receiver-contract comparison,
+  and next-phase handoff in the EFB publisher roadmap.
+
+- Added navigation compiler Phase A: a validated versioned profile contract,
+  safe immutable configuration loading, and the configuration-only ATA 27 root
+  and nine subsystem hubs. Placements and object types use supplied registries;
+  profile tests also cover another ATA chapter and QRH.
+
+- Separated aviation document ingestion metadata from the narrower Project EFB
+  placement registry. Aviation upload and metadata-edit forms now expose every
+  two-digit ATA chapter from `00` through `99`, including ATA 23 and ATA 25,
+  while EFB package validation remains limited to receiver-supported chapters.
+
+- Applied inherited aviation and Project EFB metadata when article revisions are
+  created from enriched topics, topic-builder output, backfills, or editorial
+  edits. New articles now show their source-derived aircraft, audience, and
+  placement status immediately; classification does not select, approve, or
+  export an article automatically.
+- Added an automatic grounded classification fallback when a multi-section
+  aviation document supplies several allowed ATA or QRH placements. Bulk EFB
+  package creation now queues article-specific placement work and reports the
+  required next step instead of returning only an aggregate metadata error.
+- Prevented duplicate EFB classification batches and revision jobs. Classification
+  requests are now idempotent for queued, running, ready, and reviewed results;
+  workers atomically claim one revision, and repeated bulk actions report the
+  active batch instead of restarting completed or in-flight work.
+
+- Fixed OpenAI strict structured-output validation for metadata discovery by requiring `placementEvidence` and representing unavailable placement evidence as an empty array.
+
+- Condensed the Articles workspace into a searchable, selectable table with direct editing and one-step metadata preparation plus validated Project EFB package creation.
+- Added confirmed bulk article deletion that removes article-owned revisions, visuals, classifications, and active EFB selections while preserving source documents, topics, OKF bundles, and completed export history.
+- Moved bulk article deletion into the top selection toolbar so the confirmed action appears immediately after selecting articles.
+- Allowed draft articles to participate in list selection and bulk deletion while continuing to exclude them from EFB package export.
+
+- Added a source-metadata-first EFB article preparation workflow. It creates
+  immutable metadata-aware revisions for approved enriched aviation topics,
+  validates inherited aircraft, audience, ATA and QRH placement against the
+  Project EFB registry, and adds only ready revisions to a bulk package. The EFB
+  selections page now exposes a clear package build and download handoff; topic
+  proposals remain non-exportable until enrichment and approval.
+
+- Made bulk enrichment the first Review action. Queue failures now reflect failed
+  topic output, retry interrupted work, and expose actionable errors and queued
+  progress instead of reporting failed enrichment as completed.
+- Added document Maintenance ATA and Pilot QRH scope lists to both storage
+  backends, upload and editing. Aviation metadata discovery proposes registered
+  targets with exact heading evidence; entered values are preserved.
+- Carry source aircraft, audience and placement metadata through topic enrichment
+  and article revisions. Aviation EFB classification now uses that saved scope,
+  not a late model guess. Ambiguous sections, conflicting applicability, stale
+  snapshots and unsupported receiver targets require correction. Generic OKF,
+  approval/signing gates and existing released packages remain independent.
+
 - Made accepted source-document applicability authoritative for automatic EFB
   aircraft assignment. Topics now inherit exact source aircraft types, while an
   entire-family source is shown explicitly as “Any aircraft type” and cannot be

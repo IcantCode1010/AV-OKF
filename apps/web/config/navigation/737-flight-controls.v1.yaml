@@ -1,0 +1,54 @@
+profile_id: 737-flight-controls
+profile_version: 1
+placement:
+  kind: ata
+  target_id: "27"
+root:
+  entry_id: ata-27-flight-controls
+  title: ATA 27 - Flight Controls
+  type: index
+hubs:
+  - entry_id: ata-27-general
+    title: General and Hydraulic Interfaces
+    type: index
+    match: { field: topic_group, values: [general] }
+  - entry_id: ata-27-ailerons
+    title: Aileron Control
+    type: index
+    match: { field: topic_group, values: [aileron] }
+  - entry_id: ata-27-flight-spoilers
+    title: Flight Spoilers
+    type: index
+    match: { field: topic_group, values: [flight-spoiler] }
+  - entry_id: ata-27-speedbrakes
+    title: Speedbrake and Ground Spoilers
+    type: index
+    match: { field: topic_group, values: [speedbrake] }
+  - entry_id: ata-27-elevator
+    title: Elevator Control
+    type: index
+    match: { field: topic_group, values: [elevator] }
+  - entry_id: ata-27-stabilizer-trim
+    title: Stabilizer Trim
+    type: index
+    match: { field: topic_group, values: [stabilizer-trim] }
+  - entry_id: ata-27-rudder
+    title: Rudder Control
+    type: index
+    match: { field: topic_group, values: [rudder] }
+  - entry_id: ata-27-trailing-edge-flaps
+    title: Trailing-Edge Flaps
+    type: index
+    match: { field: topic_group, values: [trailing-edge-flaps] }
+  - entry_id: ata-27-leading-edge-devices
+    title: Leading-Edge Flaps and Slats
+    type: index
+    match: { field: topic_group, values: [leading-edge-devices] }
+applicable_types: [system_topic]
+display_order:
+  start: 10
+  increment: 10
+  articles: source-order
+  tie_breaker: entry-id
+  hubs: profile-order
+standalone: explicit-approved-only

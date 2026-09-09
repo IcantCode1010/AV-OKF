@@ -38,6 +38,7 @@ test("document authoring does not include the separate knowledge-wide crawl", ()
 
 test("metadata proposals are trimmed, deduplicated, and preserve unknown values as null", () => {
   assert.deepEqual(normalizeMetadataProposal({
+    placementEvidence: [],
     classificationCode: "  SEC-14 ",
     contentPurpose: " technical-reference ",
     description: "  General operations guide. ",
@@ -53,6 +54,8 @@ test("metadata proposals are trimmed, deduplicated, and preserve unknown values 
     tags: [" safety ", "safety", "operations"],
     title: "  Operations Manual ",
   }), {
+    maintenanceAtaChapterIds: [],
+    pilotQrhTargetIds: [],
     classificationCode: "SEC-14",
     contentPurpose: "technical-reference",
     description: "General operations guide.",
@@ -71,6 +74,7 @@ test("metadata proposals are trimmed, deduplicated, and preserve unknown values 
 
 test("aviation metadata discovery fills blanks without overwriting entered values", () => {
   const proposal = normalizeMetadataProposal({
+    placementEvidence: [],
     classificationCode: "32",
     contentPurpose: "model-purpose",
     description: "Model description",
@@ -104,6 +108,8 @@ test("aviation metadata discovery fills blanks without overwriting entered value
     title: "Entered title",
   }), {
     aircraftTypeIds: ["B738"],
+    maintenanceAtaChapterIds: [],
+    pilotQrhTargetIds: [],
     classificationCode: "24",
     contentPurpose: "technical-reference",
     description: "Entered description",

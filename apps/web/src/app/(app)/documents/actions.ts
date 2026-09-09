@@ -511,6 +511,8 @@ export async function updateDocumentMetadataAction(formData: FormData) {
         ? aviation.classificationCode ?? preservedSourceIdentifier
         : normalizeClassificationCode(getNullableFormString(formData, "classificationCode")),
       contentPurpose: aviation.contentPurpose,
+      maintenanceAtaChapterIds: aviation.maintenanceAtaChapterIds ?? [],
+      pilotQrhTargetIds: aviation.pilotQrhTargetIds ?? [],
       customProperties: parseCustomProperties(
         getFormString(formData, "customProperties"),
       ),
@@ -614,6 +616,8 @@ function getAviationMetadata(formData: FormData, sourceType: SourceType) {
     aircraftTypeIds: getFormString(formData, "aircraftTypeIds"),
     ata: getNullableFormString(formData, "classificationCode"),
     contentPurpose: getNullableFormString(formData, "contentPurpose"),
+    maintenanceAtaChapterIds: String(formData.get("maintenanceAtaChapterIds") ?? " ").split(",").map(v => v.trim()).filter(Boolean),
+    pilotQrhTargetIds: String(formData.get("pilotQrhTargetIds") ?? " ").split(",").map(v => v.trim()).filter(Boolean),
     effectivity: getNullableFormString(formData, "effectivity"),
     intendedAudiences: formData.getAll("intendedAudiences"),
     licenseIdentifier: getNullableFormString(formData, "licenseIdentifier"),

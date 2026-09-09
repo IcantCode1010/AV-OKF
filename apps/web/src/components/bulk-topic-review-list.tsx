@@ -132,23 +132,23 @@ export function BulkTopicReviewList({
       <div className="flex flex-wrap gap-2" aria-label="Bulk action">
         <Button
           type="button"
-          variant={mode === "approval" ? "secondary" : "outline"}
-          onClick={() => {
-            setMode("approval");
-            setSelected(new Set());
-          }}
-        >
-          Bulk approval
-        </Button>
-        <Button
-          type="button"
           variant={mode === "enrichment" ? "secondary" : "outline"}
           onClick={() => {
             setMode("enrichment");
             setSelected(new Set());
           }}
         >
-          Bulk enrichment
+          1. Bulk enrichment
+        </Button>
+        <Button
+          type="button"
+          variant={mode === "approval" ? "secondary" : "outline"}
+          onClick={() => {
+            setMode("approval");
+            setSelected(new Set());
+          }}
+        >
+          2. Review and approve
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">{mode === "enrichment"
@@ -505,5 +505,5 @@ function formatEnrichmentLevel(level: BulkReviewTopic["enrichmentLevel"]) {
 }
 
 export function initialBulkMode(topics: BulkReviewTopic[]): "approval" | "enrichment" {
- return !topics.some(t=>t.eligible) && topics.some(t=>!["approved","rejected"].includes(t.reviewStatus)&&["none","failed"].includes(t.enrichmentStatus)) ? "enrichment" : "approval";
+ return topics.some(t=>!["approved","rejected"].includes(t.reviewStatus)&&["none","failed"].includes(t.enrichmentStatus)) ? "enrichment" : "approval";
 }

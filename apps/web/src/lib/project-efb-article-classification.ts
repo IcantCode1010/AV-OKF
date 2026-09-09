@@ -5,6 +5,7 @@ import {loadProjectEfbContractRegistry,type ProjectEfbContractRegistry} from "./
 
 import { getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
+import { evaluateInheritedEfbMetadata } from "./knowledge/efb-inherited-metadata.ts";
 
 export const PROJECT_EFB_CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.85;
 
@@ -43,8 +44,9 @@ export type ProjectEfbArticleClassification = {
   ataChapter: ProjectEfbAtaChapter | null;
   audiences: ProjectEfbAudience[];
   classificationModel: string;
-  classificationProvider: LlmProviderId;
-  classificationSource: "llm";
+  classificationProvider: LlmProviderId | "deterministic";
+  classificationSource: "llm" | "document-metadata";
+  qrhTargetId?: string | null;
   confidence: number;
   evidence: string[];
   status: "accepted" | "needs_review";
@@ -148,15 +150,18 @@ export function getProjectEfbArticleClassification(
   const root = asRecord(okfMetadata);
   const extension = asRecord(asRecord(root.extensions).projectEfb);
   if (Object.keys(extension).length === 0) return null;
-  const ataChapter = extension.ataChapter === null
-    ? null
+  // Persisted document classifications were checked against the consumer registry.
+  // Do not erase newer registered chapters with the legacy fallback taxonomy.
+  const ataChapter = extension.classificationSource === "document-metadata"
+    ? typeof extension.ataChapter === "string" && /^\d{2}$/.test(extension.ataChapter)
+      ? extension.ataChapter : null
     : normalizeProjectEfbAtaChapter(extension.ataChapter);
   const provider = extension.classificationProvider;
   const status = extension.status;
   if (
     typeof extension.confidence !== "number" ||
     typeof extension.classificationModel !== "string" ||
-    (provider !== "openai" && provider !== "anthropic" && provider !== "kimi") ||
+    (provider !== "openai" && provider !== "anthropic" && provider !== "kimi" && provider !== "deterministic") ||
     (status !== "accepted" && status !== "needs_review")
   ) return null;
   return {
@@ -166,7 +171,8 @@ export function getProjectEfbArticleClassification(
     audiences: uniqueAudience(stringArray(extension.audiences)),
     classificationModel: extension.classificationModel,
     classificationProvider: provider,
-    classificationSource: "llm",
+    classificationSource: extension.classificationSource === "document-metadata" ? "document-metadata" : "llm",
+    ...(extension.qrhTargetId === null || typeof extension.qrhTargetId === "string" ? { qrhTargetId: extension.qrhTargetId as string | null } : {}),
     confidence: extension.confidence,
     evidence: stringArray(extension.evidence),
     status,
@@ -197,32 +203,24 @@ export async function classifyAndPersistProjectEfbArticle(input: {
 }) {
   const db = getPrisma();
   const topic = await db.topicRecord.findFirstOrThrow({
-    include: {
-      document: {
-        include: { extractedPages: { orderBy: { pageNumber: "asc" } } },
-      },
-    },
+    include: { document: true },
     where: { id: input.topicId, workspaceId: input.workspaceId },
   });
   if (topic.document.sourceType !== "aviation") return null;
-  const sourcePages = topic.document.extractedPages.filter((page) =>
-    topic.sourcePageNumbers.includes(page.pageNumber)
-  );
-  const classification = await classifyProjectEfbArticle({
-    apiKey: input.apiKey,
-    model: input.model,
-    provider: input.provider,
-    topic: {
-      document: topic.document,
-      enrichedBody: topic.enrichedBody,
-      enrichedSummary: topic.enrichedSummary,
-      enrichedTitle: topic.enrichedTitle,
-      sourcePages,
-      sourcePageNumbers: topic.sourcePageNumbers,
-      summary: topic.summary,
-      title: topic.title,
-    },
-  });
+  const result = evaluateInheritedEfbMetadata(await loadProjectEfbContractRegistry(), [topic.document], asRecord(topic.okfMetadata));
+  const classification: ProjectEfbArticleClassification = {
+    aircraftFamilyIds: result.detected.aircraftFamilyIds,
+    aircraftTypeIds: result.metadata.aircraftTypeIds,
+    audiences: uniqueAudience(result.metadata.audiences),
+    ataChapter: result.metadata.ataChapter,
+    qrhTargetId: result.metadata.qrhTargetId,
+    classificationModel: "document-metadata-v1",
+    classificationProvider: "deterministic",
+    classificationSource: "document-metadata",
+    confidence: result.status === "ready" ? 1 : 0,
+    evidence: topic.document.applicabilityEvidence,
+    status: result.status === "ready" ? "accepted" : "needs_review",
+  };
   await db.topicRecord.update({
     data: { okfMetadata: setProjectEfbArticleClassification(topic.okfMetadata, classification) },
     where: { id: topic.id },

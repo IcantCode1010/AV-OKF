@@ -82,6 +82,17 @@ test("round-trips classification in the optional Project EFB extension", () => {
   assert.deepEqual(getProjectEfbArticleClassification(metadata), classification);
 });
 
+test("saved document classification preserves registered chapters beyond the legacy taxonomy", () => {
+  const extension = {
+    aircraftFamilyIds: ["737-ng"], aircraftTypeIds: [], audiences: ["maintenance"],
+    ataChapter: "28", qrhTargetId: null, classificationSource: "document-metadata",
+    classificationProvider: "deterministic", classificationModel: "document-metadata-v1",
+    confidence: 1, evidence: [], status: "accepted",
+  };
+  assert.equal(getProjectEfbArticleClassification({ extensions: { projectEfb: extension } })?.ataChapter, "28");
+  assert.equal(getProjectEfbArticleClassification({ extensions: { projectEfb: { ...extension, ataChapter: "737SAR" } } })?.ataChapter, null);
+});
+
 test("article classification source includes hierarchy defaults and raw source pages", () => {
   const source = buildProjectEfbArticleSource({
     document: { ...documentDefaults, classificationCode: "29" },

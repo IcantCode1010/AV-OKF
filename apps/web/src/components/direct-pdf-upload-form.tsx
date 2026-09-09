@@ -80,6 +80,8 @@ export function DirectPdfUploadForm({
       aircraftTypeIds: String(form.get("aircraftTypeIds") ?? "").split(",").map((value) => value.trim()).filter(Boolean),
       classificationCode: nullableFormValue(form, "classificationCode"),
       contentPurpose: nullableFormValue(form, "contentPurpose"),
+      maintenanceAtaChapterIds: String(form.get("maintenanceAtaChapterIds") ?? " ").split(",").map(v => v.trim()).filter(Boolean),
+      pilotQrhTargetIds: String(form.get("pilotQrhTargetIds") ?? " ").split(",").map(v => v.trim()).filter(Boolean),
       description: String(form.get("description") ?? ""),
       documentType: nullableFormValue(form, "documentType"),
       effectivity: nullableFormValue(form, "effectivity"),

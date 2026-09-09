@@ -40,6 +40,7 @@ import {
 import { deriveDocumentLibraryStatus } from "./document-library-status.ts";
 import {
   buildInheritedAviationOkfMetadata,
+  resolveTopicPlacementMetadata,
   normalizeStoredAviationSourceClassification,
   normalizeStoredIntendedAudiences,
   replaceInheritedAviationOkfMetadata,
@@ -50,6 +51,8 @@ type UploadRecordInput = {
   classificationCode: string | null;
   contentSha256: string;
   contentPurpose: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   context: AuthWorkspaceContext;
   description: string;
   documentType: string | null;
@@ -83,6 +86,8 @@ type UpdateMetadataInput = {
   customProperties: CustomProperty[];
   description: string;
   contentPurpose: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   documentId: string;
   effectivity: string | null;
   documentType: string | null;
@@ -177,6 +182,8 @@ type DbDocumentRecord = {
   applicabilityStatus: string | null;
   contentSha256: string | null;
   contentPurpose: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   subjectFamily: string | null;
   classificationCode: string | null;
   customProperties?: DbCustomProperty[];
@@ -490,6 +497,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             classificationCode: input.classificationCode,
             contentSha256: input.contentSha256,
             contentPurpose: input.contentPurpose,
+            maintenanceAtaChapterIds: input.maintenanceAtaChapterIds ?? [],
+            pilotQrhTargetIds: input.pilotQrhTargetIds ?? [],
             description: input.description.trim(),
             documentType: input.documentType,
             effectivity: input.effectivity,
@@ -953,6 +962,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           title: input.enrichedTitle,
         });
         const diff = buildTopicEnrichmentDiff(baseline, candidate);
+        const sourcePages = await tx.extractedPage.findMany({ where: { workspaceId: input.context.workspaceId, documentId: existingTopic.documentId, pageNumber: { in: existingTopic.sourcePageNumbers } }, select: { pageNumber: true, text: true } });
+        const placementMetadata = resolveTopicPlacementMetadata(normalizeOkfMetadata(existingTopic.okfMetadata), sourcePages);
         const disposition = !hasExistingTopicEnrichment(existingTopic)
           ? "applied"
           : diff.changed
@@ -986,6 +997,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             ...(disposition === "applied"
               ? {
                   enrichedBody: candidate.body,
+                  okfMetadata: placementMetadata as Prisma.InputJsonValue,
                   enrichedSummary: candidate.summary,
                   enrichedTitle: candidate.title,
                   proposedSourcePageNumbers: candidate.proposedSourcePageNumbers,
@@ -1177,6 +1189,8 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
             aircraftTypeIds: input.aircraftTypeIds,
             classificationCode: normalizeOptionalMetadata(input.classificationCode),
             contentPurpose: normalizeOptionalMetadata(input.contentPurpose),
+            maintenanceAtaChapterIds: input.maintenanceAtaChapterIds ?? [],
+            pilotQrhTargetIds: input.pilotQrhTargetIds ?? [],
             customProperties: { create: input.customProperties },
             description: input.description.trim(),
             documentType: normalizeOptionalMetadata(input.documentType),
@@ -1578,6 +1592,8 @@ function mapDocument(record: DbDocumentRecord): Document {
     })),
     description: record.description,
     contentPurpose: record.contentPurpose,
+    maintenanceAtaChapterIds: record.maintenanceAtaChapterIds ?? [],
+    pilotQrhTargetIds: record.pilotQrhTargetIds ?? [],
     effectivity: record.effectivity,
     extraction: {
       completedAt: latestJob?.completedAt ? formatTimestamp(latestJob.completedAt) : null,

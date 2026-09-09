@@ -13,7 +13,7 @@ import { normalizeProjectEfbAtaChapter } from "./project-efb-article-classificat
 
 export type EfbReleaseConfig = {
   schemaVersion: "1.0";
-  mode?: "poc" | "poc-cloud" | "production";
+  mode?: "poc" | "poc-local" | "poc-cloud" | "production";
   packageId: string;
   version: string;
   source: string;
@@ -135,8 +135,14 @@ export async function exportEfbRelease(input: {
       throw new Error("efb_poc_cloud_license_invalid");
     }
   }
+  if (mode === "poc-local") {
+    if (!input.contractRegistry) throw new Error("project_efb_registry_required");
+    if (input.config.license.identifier !== EFB_UNREVIEWED_LICENSE_IDENTIFIER) {
+      throw new Error("efb_poc_local_license_invalid");
+    }
+  }
   const packageVersionId = `${input.config.packageId}@${input.config.version}`;
-  const releaseDirectory = mode === "poc" || mode === "poc-cloud"
+  const releaseDirectory = mode === "poc" || mode === "poc-local" || mode === "poc-cloud"
     ? path.join(input.outputRoot, packageVersionId)
     : path.join(input.outputRoot, input.config.packageId, input.config.version);
   if (await exists(releaseDirectory)) {
@@ -186,7 +192,7 @@ export async function exportEfbRelease(input: {
   artifacts.set("retrieval.jsonl", buildKeywordIndex(prepared));
   assertPreparedArtifactParity(prepared, artifacts.get("retrieval.jsonl") as string);
 
-  if (mode === "poc-cloud") validatePreparedAgainstRegistry(prepared, input.contractRegistry!);
+  if (mode === "poc-local" || mode === "poc-cloud") validatePreparedAgainstRegistry(prepared, input.contractRegistry!);
   if (nativeMode) assertNativeSourceParity(prepared, nativeEntries, input.config);
 
   if (nativeMode) {
@@ -239,7 +245,7 @@ export async function exportEfbRelease(input: {
     format: { name: "open-knowledge-format", version: "0.2" },
     license: input.config.license,
     provenance: {
-      source: mode === "poc" || mode === "poc-cloud"
+      source: mode === "poc" || mode === "poc-local" || mode === "poc-cloud"
         ? input.config.source
         : `${input.config.source}@${input.config.sourceCommit}`,
       curator: input.config.curator,
@@ -292,7 +298,7 @@ export async function exportEfbRelease(input: {
     if (input.validateStagedPackage) {
       await input.validateStagedPackage(path.join(stagingDirectory, "manifest.json"));
     }
-    if (mode === "poc-cloud") {
+    if (mode === "poc-local" || mode === "poc-cloud") {
       await writeFile(path.join(stagingDirectory, "acceptance-report.json"), stableJson({
         contractVersion: "1.0",
         packageVersionId,
@@ -304,7 +310,7 @@ export async function exportEfbRelease(input: {
         nativeEntryCount: nativeEntries.length,
         assetCount: input.supportingAssets?.length ?? 0,
         packageChecksum,
-        signatureKeyId: signature!.keyId,
+        signatureKeyId: signature?.keyId ?? null,
         validatedAt: input.config.validatedAt,
         checks: {
           okf02: "pass",
@@ -315,6 +321,7 @@ export async function exportEfbRelease(input: {
           relationshipResolution: "pass",
           assetValidation: "pass",
           consumerValidator: "pass",
+          signature: signature ? "pass" : "not_required_for_unsigned_prototype",
         },
       }));
     }
@@ -345,7 +352,7 @@ export function buildPackageSignaturePayload(input: {
 
 function prepareEntry(input: {
   config: EfbReleaseConfig;
-  mode: "poc" | "poc-cloud" | "production";
+  mode: "poc" | "poc-local" | "poc-cloud" | "production";
   packageVersionId: string;
   parsed: ReturnType<typeof parseOkfMarkdown>;
   relative: string;
@@ -372,7 +379,7 @@ function prepareEntry(input: {
   if (!ENTRY_ID_PATTERN.test(id)) throw new Error(`efb_entry_id_invalid:${id}`);
   const title = requiredScalar(frontmatter, "title", input.relative);
   const summary = requiredScalar(frontmatter, "description", input.relative);
-  const authorityLabel = input.mode === "poc" || input.mode === "poc-cloud"
+  const authorityLabel = input.mode === "poc" || input.mode === "poc-local" || input.mode === "poc-cloud"
     ? EFB_POC_AUTHORITY_LABEL
     : requiredScalar(frontmatter, "efb_authority_label", input.relative);
   const sourceClassification = input.mode === "production"
@@ -390,7 +397,7 @@ function prepareEntry(input: {
     requiredScalar(frontmatter, "efb_license_reviewed_by", input.relative);
     requiredIsoDate(frontmatter, "efb_license_reviewed_at", input.relative);
   }
-  if (input.mode === "poc-cloud") {
+  if (input.mode === "poc-local" || input.mode === "poc-cloud") {
     if (frontmatter.efb_license_identifier !== EFB_UNREVIEWED_LICENSE_IDENTIFIER) {
       throw new Error(`efb_entry_license_mismatch:${id}`);
     }
@@ -435,7 +442,7 @@ function prepareEntry(input: {
   if (sourceReferences.length === 0) {
     throw new Error(`efb_entry_requires_source_reference:${id}`);
   }
-  const displayBody = input.mode === "poc" || input.mode === "poc-cloud"
+  const displayBody = input.mode === "poc" || input.mode === "poc-local" || input.mode === "poc-cloud"
     ? buildPocDisplayBody(title, body)
     : `${body.trimEnd()}\n`;
   validateContentQuality({
@@ -783,7 +790,7 @@ function validateContentQuality(input: {
   body: string;
   frontmatter: Record<string, unknown>;
   id: string;
-  mode: "poc" | "poc-cloud" | "production";
+  mode: "poc" | "poc-local" | "poc-cloud" | "production";
   placementSpecs: string[];
   sourceClassification: EfbSourceClassification;
   summary: string;

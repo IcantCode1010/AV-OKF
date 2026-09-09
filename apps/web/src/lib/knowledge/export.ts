@@ -129,8 +129,7 @@ export async function exportSelectedArticles(
     signingKeyPath = process.env.AV_OKF_EFB_SIGNING_KEY_PATH,
     signingKeyId = process.env.AV_OKF_EFB_SIGNING_KEY_ID;
   if (!contractRoot) throw Error("configure_project_efb_validator_first");
-  if (!signingKeyPath || !signingKeyId)
-    throw Error("configure_poc_cloud_signing_first");
+  const signedPrototype = Boolean(signingKeyPath && signingKeyId);
   const registry = await loadProjectEfbContractRegistry(contractRoot);
   const queued = queuedReleaseId
     ? await db.knowledgeExportRelease.findFirstOrThrow({
@@ -278,14 +277,18 @@ export async function exportSelectedArticles(
   }
   const scratch = await mkdtemp(path.join(tmpdir(), "av-okf-poc-cloud-"));
   try {
-    const privateKey = createPrivateKey(await readFile(signingKeyPath, "utf8"));
-    if (privateKey.asymmetricKeyType !== "ed25519")
+    const privateKey = signingKeyPath
+      ? createPrivateKey(await readFile(signingKeyPath, "utf8"))
+      : null;
+    if (privateKey && privateKey.asymmetricKeyType !== "ed25519")
       throw Error("efb_signing_key_must_be_ed25519");
-    const publicKeyPath = path.join(scratch, "signer-public.pem");
-    await writeFile(
-      publicKeyPath,
-      createPublicKey(privateKey).export({ format: "pem", type: "spki" }),
-    );
+    const publicKeyPath = privateKey ? path.join(scratch, "signer-public.pem") : null;
+    if (privateKey && publicKeyPath) {
+      await writeFile(
+        publicKeyPath,
+        createPublicKey(privateKey).export({ format: "pem", type: "spki" }),
+      );
+    }
     const sourceEntries: Array<{ markdown: string; relativePath: string }> = [];
     const supportingAssets: NonNullable<
       Parameters<typeof exportEfbRelease>[0]["supportingAssets"]
@@ -448,7 +451,7 @@ export async function exportSelectedArticles(
     const result = await exportEfbRelease({
       config: {
         schemaVersion: "1.0",
-        mode: "poc-cloud",
+        mode: signedPrototype ? "poc-cloud" : "poc-local",
         packageId: `selected-${context.workspaceId.toLowerCase()}`,
         version: `0.1.${release.createdAt.getTime()}`,
         source: "av-okf",
@@ -504,27 +507,28 @@ export async function exportSelectedArticles(
           if (!current.approval || current.article.approvedRevisionId !== r.id)
             throw Error("approval_changed_during_export");
         }
-        await exec(
-          process.execPath,
-          [
-            path.join(contractRoot, "scripts/validate-knowledge-package.mjs"),
-            manifest,
+        const validatorArgs = [
+          path.join(contractRoot, "scripts/validate-knowledge-package.mjs"),
+          manifest,
+        ];
+        if (signedPrototype && publicKeyPath && signingKeyId) {
+          validatorArgs.push(
             "--require-signature",
             "--public-key",
             publicKeyPath,
             "--expected-key-id",
             signingKeyId,
-          ],
-          { cwd: contractRoot },
-        );
+          );
+        }
+        await exec(process.execPath, validatorArgs, { cwd: contractRoot });
       },
-      signer: async (payload) => ({
-        algorithm: "ed25519",
-        keyId: signingKeyId,
-        value: sign(null, Buffer.from(payload, "utf8"), privateKey).toString(
-          "base64",
-        ),
-      }),
+      signer: privateKey && signingKeyId
+        ? async (payload) => ({
+            algorithm: "ed25519" as const,
+            keyId: signingKeyId,
+            value: sign(null, Buffer.from(payload, "utf8"), privateKey).toString("base64"),
+          })
+        : undefined,
     });
     await db.knowledgeExportRelease.update({
       where: { id: release.id },

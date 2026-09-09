@@ -22,6 +22,8 @@ export async function POST(request: Request) {
           aircraftTypeIds: stringArrayField(metadata.aircraftTypeIds),
           classificationCode: nullableStringField(metadata.classificationCode),
           contentPurpose: nullableStringField(metadata.contentPurpose),
+          maintenanceAtaChapterIds: stringArrayField(metadata.maintenanceAtaChapterIds),
+          pilotQrhTargetIds: stringArrayField(metadata.pilotQrhTargetIds),
           description: stringField(metadata.description),
           documentType: nullableStringField(metadata.documentType),
           effectivity: nullableStringField(metadata.effectivity),

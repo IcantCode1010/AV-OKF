@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   buildInheritedAviationOkfMetadata,
+  resolveTopicPlacementMetadata,
   emptyAviationDocumentMetadata,
   replaceInheritedAviationOkfMetadata,
   type AviationSourceClassification,
@@ -269,6 +270,8 @@ export type Document = {
   licenseIdentifier?: string | null;
   intendedAudiences?: IntendedAudience[];
   contentPurpose?: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   extraction: DocumentExtraction;
   topicDiscovery?: DocumentTopicDiscovery;
 };
@@ -300,6 +303,8 @@ type UploadMetadata = {
   bytes: Buffer;
   classificationCode: string | null;
   contentPurpose?: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   description: string;
   documentType: string | null;
   effectivity: string | null;
@@ -341,6 +346,8 @@ type UpdateMetadata = {
   title: string;
   customProperties: CustomProperty[];
   contentPurpose?: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
 };
 
 type CompleteExtractionInput = {
@@ -770,6 +777,8 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         licenseIdentifier: input.licenseIdentifier ?? null,
         intendedAudiences: input.intendedAudiences ?? [],
         contentPurpose: input.contentPurpose ?? null,
+        maintenanceAtaChapterIds: input.maintenanceAtaChapterIds ?? [],
+        pilotQrhTargetIds: input.pilotQrhTargetIds ?? [],
         extraction: {
           status: "queued",
           startedAt: null,
@@ -821,6 +830,8 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
       document.licenseIdentifier = normalizeOptionalMetadata(input.licenseIdentifier ?? null);
       document.intendedAudiences = [...(input.intendedAudiences ?? [])];
       document.contentPurpose = normalizeOptionalMetadata(input.contentPurpose ?? null);
+      document.maintenanceAtaChapterIds = [...(input.maintenanceAtaChapterIds ?? [])];
+      document.pilotQrhTargetIds = [...(input.pilotQrhTargetIds ?? [])];
       document.owner = input.owner.trim() || "Unassigned";
       document.sourceType = input.sourceType;
       document.status = input.status;
@@ -1214,6 +1225,8 @@ export function createLocalDocumentVault(dataRoot = getDefaultDataRoot()) {
         topicId,
       });
       if (disposition === "applied") {
+        const document = getStoreDocument(store, topic.documentId);
+        topic.okfMetadata = resolveTopicPlacementMetadata(topic.okfMetadata, document.extraction.pageRecords.filter(p => topic.sourcePageNumbers.includes(p.pageNumber)));
         topic.enrichedTitle = candidate.title;
         topic.enrichedSummary = candidate.summary;
         topic.enrichedBody = candidate.body;
@@ -1739,6 +1752,8 @@ function normalizeDocument(document: Document): Document {
   document.licenseIdentifier ??= emptyAviation.licenseIdentifier;
   document.intendedAudiences ??= emptyAviation.intendedAudiences;
   document.contentPurpose ??= emptyAviation.contentPurpose;
+  document.maintenanceAtaChapterIds ??= [];
+  document.pilotQrhTargetIds ??= [];
   return document;
 }
 

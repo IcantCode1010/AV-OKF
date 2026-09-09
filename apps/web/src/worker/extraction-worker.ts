@@ -132,7 +132,7 @@ async function main() {
     throw new Error("missing_env_REDIS_URL");
   }
 
-  selectedEnrichmentWorker=new Worker<SelectedEnrichmentJob>(BULK_ENRICHMENT_QUEUE,job=>runSelectedTopicEnrichment(job.data),{concurrency:1,connection:{url:redisUrl}});
+  selectedEnrichmentWorker=new Worker<SelectedEnrichmentJob>(BULK_ENRICHMENT_QUEUE,job=>runSelectedTopicEnrichment(job.data,job.attemptsStarted > 1),{concurrency:1,connection:{url:redisUrl}});
   if(process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" || process.env.AV_OKF_EFB_BULK_EXPORT_ENABLED==="true") {
     const {startClassificationWorker}=await import("../lib/knowledge/efb-classification-queue.ts");
     classificationWorker=startClassificationWorker(redisUrl);

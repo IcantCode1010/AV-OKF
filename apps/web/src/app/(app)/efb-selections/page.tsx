@@ -51,11 +51,14 @@ export default async function EfbSelections() {
     }),
   );
   const candidates=await db.knowledgeArticle.findMany({where:{workspaceId:context.workspaceId},include:{revisions:{orderBy:{version:"desc"},take:1}},take:500});
-  const classifications=process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true"?await db.knowledgeEfbClassification.findMany({where:{workspaceId:context.workspaceId,revisionId:{in:candidates.flatMap(a=>a.revisions.map(r=>r.id))}},orderBy:{createdAt:"desc"}}):[];
+  const classifications=await db.knowledgeEfbClassification.findMany({where:{workspaceId:context.workspaceId,revisionId:{in:candidates.flatMap(a=>a.revisions.map(r=>r.id))}},orderBy:{createdAt:"desc"}});
   const candidateRows=candidates.flatMap(a=>a.revisions.map(r=>{
     const c=classifications.find(c=>c.revisionId===r.id),result=c?.result as {metadata?:{aircraftFamily:string;audiences:string[];ataChapter:string|null;qrhTargetId:string|null}}|undefined;
     return {id:r.id,title:(r.body as {title:string}).title,version:r.version,aircraft:result?.metadata?.aircraftFamily??"",audience:result?.metadata?.audiences.join(" / ")??"",placement:[result?.metadata?.ataChapter,result?.metadata?.qrhTargetId,c?.status??"Not classified"].filter(Boolean).join(" · "),eligible:true,ready:!!r.approval && c?.status==="ready"};
   }));
+  const metadataReady = candidateRows.filter((row) => row.ready).length;
+  const metadataNeedsAttention = candidateRows.filter((row) => row.placement.includes("needs_review") || row.placement.includes("blocked") || row.placement.includes("failed")).length;
+  const metadataNotApplied = candidateRows.length - metadataReady - metadataNeedsAttention;
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold">EFB selections</h1>
@@ -67,6 +70,21 @@ export default async function EfbSelections() {
       <Link className="underline" href="/articles">
         Choose articles
       </Link>
+      <section className="space-y-3 rounded border p-4">
+        <h2 className="font-semibold">Prepare article metadata</h2>
+        <p className="text-sm text-muted-foreground">
+          Copy aircraft, audience, Maintenance ATA and Pilot QRH metadata from approved aviation topics into immutable article revisions. Ready articles are added to the package selection; ambiguous or unsupported placements remain blocked for correction.
+        </p>
+        <dl className="grid gap-2 text-sm sm:grid-cols-3">
+          <div><dt className="text-muted-foreground">Ready</dt><dd className="font-medium">{metadataReady}</dd></div>
+          <div><dt className="text-muted-foreground">Needs correction</dt><dd className="font-medium">{metadataNeedsAttention}</dd></div>
+          <div><dt className="text-muted-foreground">Not yet applied</dt><dd className="font-medium">{metadataNotApplied}</dd></div>
+        </dl>
+        <KnowledgeActionForm>
+          <input type="hidden" name="action" value="prepare-efb-workspace" />
+          <button className="rounded border px-3 py-2">Apply metadata to approved articles</button>
+        </KnowledgeActionForm>
+      </section>
       {process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" && <EfbBulkControls rows={candidateRows} action="classify-batch" label="Classify selected revisions"/>}
       {process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED==="true" && <EfbBulkControls rows={candidateRows.map(r=>({...r,eligible:r.ready}))} action="select-ready-batch" label="Add classified ready revisions to EFB selections"/>}
       {rows.length === 0 ? (
@@ -131,7 +149,8 @@ export default async function EfbSelections() {
           </section>
         ))
       )}
-      {rows.length>0 && <EfbBulkControls rows={rows.map(r=>({id:r.s.id,title:(r.revision?.body as {title?:string})?.title??"Unavailable",version:r.revision?.version??0,aircraft:r.metadata?.aircraftFamily??"",audience:r.metadata?.audiences.join(" / ")??"",placement:[r.metadata?.ataChapter,r.metadata?.qrhTargetId].filter(Boolean).join(" / "),eligible:r.available && !!r.metadata}))} action="export" label="Validate and export selected revisions"/>}
+      {rows.length>0 && <EfbBulkControls rows={rows.map(r=>({id:r.s.id,title:(r.revision?.body as {title?:string})?.title??"Unavailable",version:r.revision?.version??0,aircraft:r.metadata?.aircraftFamily??"",audience:r.metadata?.audiences.join(" / ")??"",placement:[r.metadata?.ataChapter,r.metadata?.qrhTargetId].filter(Boolean).join(" / "),eligible:r.available && !!r.metadata}))} action="export" label="Build EFB import package"/>}
+      <p className="text-sm text-muted-foreground">The package is validated here and downloaded as a separate artifact. AV-OKF does not activate or publish it inside Project EFB.</p>
       <h2 className="text-xl font-semibold">Export history</h2>
       {releases.map((r) => (
         <div key={r.id} className="rounded border p-3">

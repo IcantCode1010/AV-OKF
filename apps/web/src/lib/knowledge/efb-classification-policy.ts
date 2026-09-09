@@ -6,7 +6,7 @@ import {
   type ApplicabilitySource,
 } from "./efb-classification-core.ts";
 
-export const CLASSIFICATION_POLICY = "efb-classification-v2";
+export const CLASSIFICATION_POLICY = "efb-classification-v3-document-metadata";
 export const predictionSchema = z
   .object({
     audiences: z.array(z.enum(["pilot", "maintenance"])).max(2),

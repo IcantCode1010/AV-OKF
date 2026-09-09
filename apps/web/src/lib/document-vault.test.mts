@@ -74,6 +74,8 @@ test("local vault stores PDF bytes under an opaque key and atomic JSON store", a
     const uploaded = await vault.createUploadedDocument({
       bytes: Buffer.from("%PDF-1.7\n"),
       description: "Uploaded for Stage 1 test coverage.",
+      maintenanceAtaChapterIds: ["28", "29"],
+      pilotQrhTargetIds: ["fuel", "hydraulics"],
       originalFilename: "../../manual.pdf",
       owner: "Maintenance Control",
       sourceType: "aviation",
@@ -93,6 +95,9 @@ test("local vault stores PDF bytes under an opaque key and atomic JSON store", a
     assert.equal(storedBytes, "%PDF-1.7\n");
 
     const documents = await vault.getDocuments();
+    const reloaded = documents.find((document) => document.id === uploaded.id)!;
+    assert.deepEqual(reloaded.maintenanceAtaChapterIds, ["28", "29"]);
+    assert.deepEqual(reloaded.pilotQrhTargetIds, ["fuel", "hydraulics"]);
     assert.equal(documents.some((document) => document.id === uploaded.id), true);
   } finally {
     await rm(root, { force: true, recursive: true });

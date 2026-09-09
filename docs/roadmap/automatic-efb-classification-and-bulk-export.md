@@ -5,6 +5,48 @@ Status: implementation connected; production rollout acceptance pending
 
 ## Implementation checkpoint — 2026-09-08
 
+### Source-metadata-first follow-up
+
+The EFB selections workspace now includes **Apply metadata to approved
+articles**. This idempotently synchronizes approved enriched aviation topics to
+immutable article revisions, evaluates their saved source metadata against the
+consumer-owned registry, and selects only ready revisions. The subsequent
+**Build EFB import package** action uses the existing signed, validated exporter;
+the resulting artifact is downloaded for import into the separate Project EFB
+application and is not activated by AV-OKF. Missing, ambiguous, stale or
+unsupported placement remains visible as a correction requirement.
+
+Aviation now uses document metadata for aircraft, audiences and placement scope.
+Metadata discovery inspects a bounded first-12-page view for registry-valid ATA
+and QRH headings, retaining exact evidence in the proposal audit. It does not
+overwrite entered values. Metadata editing exposes separate receiver-registry
+checkbox lists. A singleton scope or unique exact source heading resolves the
+topic section; multi-section ambiguity requires explicit topic metadata selection.
+Enrichment retains these fields and article revisions snapshot them. Generic
+classification remains on its existing path; aviation does not call another
+model to guess placements during EFB classification.
+
+Review opens on bulk enrichment when unenriched topics exist. Failed enrichment
+output now fails the queue job and retries instead of recording a false completion.
+Existing approved topics and immutable packages are not re-exported by this change.
+
+Verification: full Node/component suite, lint, Docker production build, compatibility
+corpus and local PostgreSQL additive migration passed. Browser inspection confirmed
+the Review controls and live registry-backed document fields. PostgreSQL array
+round-trip was tested in a rolled-back transaction. No real-topic batch or EFB
+release was submitted during verification. A new-provider ingestion-to-export run
+remains an acceptance step, not a completed evaluation.
+
+Current data attention: the retained 20 FUEL source has contradictory entire-family
+and explicit-variant metadata. The mounted EFB registry also lacks ATA 28. Correct
+the source applicability and intentionally update the receiver registry before
+expecting that document's articles to export. Do not silently remap fuel to another
+chapter. The earlier model-placement description below is superseded for aviation.
+
+Migration: `20260908150000_document_placement_scope` adds empty array columns only.
+It was applied after a verified custom PostgreSQL backup. Rolling application code
+back can leave these additive columns in place; no destructive rollback is needed.
+
 Docker is available again. The PostgreSQL migration test preserves old history
 and proves eight concurrent inserts allocate versions 3–10 without collisions.
 All 51 migrations apply successfully to an isolated PostgreSQL database.

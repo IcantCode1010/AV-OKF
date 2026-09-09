@@ -30,8 +30,8 @@ export default async function ArticlePage({
     : null;
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl space-y-6 break-words">
-      <Link href="/articles" className="underline">
-        All articles
+      <Link href="/articles" className="inline-flex rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted">
+        Back to articles
       </Link>
       {article.revisions.map((r, index) => {
         const b = r.body as unknown as BuilderResult["articles"][number] & {

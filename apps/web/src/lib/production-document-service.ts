@@ -36,6 +36,8 @@ type UploadMetadata = {
   bytes: Buffer;
   classificationCode: string | null;
   contentPurpose?: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
   description: string;
   documentType: string | null;
   effectivity: string | null;
@@ -77,6 +79,8 @@ type UpdateMetadata = {
   title: string;
   customProperties: ReturnType<typeof parseCustomProperties>;
   contentPurpose?: string | null;
+  maintenanceAtaChapterIds?: string[];
+  pilotQrhTargetIds?: string[];
 };
 
 export type ProductionDocumentService = {
@@ -217,6 +221,8 @@ export function createProductionDocumentService(
         classificationCode: input.classificationCode,
         contentSha256: createHash("sha256").update(input.bytes).digest("hex"),
         contentPurpose: input.contentPurpose ?? null,
+        maintenanceAtaChapterIds: input.maintenanceAtaChapterIds ?? [],
+        pilotQrhTargetIds: input.pilotQrhTargetIds ?? [],
         context,
         description: input.description,
         documentType: input.documentType,
@@ -316,6 +322,8 @@ export function createProductionDocumentService(
         customProperties: input.customProperties,
         description: input.description,
         contentPurpose: input.contentPurpose ?? null,
+        maintenanceAtaChapterIds: input.maintenanceAtaChapterIds ?? [],
+        pilotQrhTargetIds: input.pilotQrhTargetIds ?? [],
         documentId,
         effectivity: input.effectivity,
         documentType: input.documentType,

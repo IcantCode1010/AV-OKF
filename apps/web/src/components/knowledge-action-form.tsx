@@ -3,14 +3,17 @@ import { useState, useTransition, type ReactNode } from "react";
 import { knowledgeAction } from "@/app/(app)/articles/actions";
 export function KnowledgeActionForm({ children }: { children: ReactNode }) {
   const [pending, start] = useTransition(),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [message, setMessage] = useState("");
   return (
     <form
       action={(form) =>
         start(async () => {
           setError("");
+          setMessage("");
           const result = await knowledgeAction(form);
           setError(result.error ?? "");
+          setMessage(result.message ?? "");
         })
       }
       className="space-y-3"
@@ -19,6 +22,7 @@ export function KnowledgeActionForm({ children }: { children: ReactNode }) {
         {children}
       </fieldset>
       {pending && <p role="status">Working…</p>}
+      {message && <p role="status">{message}</p>}
       {error && (
         <p role="alert" className="text-destructive">
           {error}
