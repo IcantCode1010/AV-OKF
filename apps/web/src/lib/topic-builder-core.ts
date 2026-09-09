@@ -38,14 +38,35 @@ export const resultSchema = z.object({
 export type BuilderResult = z.infer<typeof resultSchema> & { evidence: Evidence[] };
 export const fingerprint = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
-// PostgreSQL JSONB reorders object keys. Compare persisted recipe content,
-// preserving array order and values, rather than its serialization order.
+const RECIPE_SNAPSHOT_KEYS = [
+  "topic",
+  "audience",
+  "applicability",
+  "instructions",
+  "maxWords",
+  "researchMode",
+  "collectionIds",
+  "documentIds",
+  "writingPolicy",
+  "researchPolicy",
+] as const;
+
+function comparableRecipeSnapshot(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const source = value as Record<string, unknown>;
+  return Object.fromEntries(RECIPE_SNAPSHOT_KEYS.flatMap((key) =>
+    Object.hasOwn(source, key) ? [[key, source[key]]] : []));
+}
+
+// PostgreSQL JSONB reorders object keys, and Prisma recipe records also carry
+// database-owned fields that are irrelevant to generation. Compare only the
+// author-controlled recipe and the policy versions captured for the run.
 export function recipeSnapshotsEqual(left: unknown, right: unknown): boolean {
   const canonical = (value: unknown) => JSON.stringify(value, (_key, item) =>
     item && typeof item === "object" && !Array.isArray(item)
       ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
       : item);
-  return canonical(left) === canonical(right);
+  return canonical(comparableRecipeSnapshot(left)) === canonical(comparableRecipeSnapshot(right));
 }
 export const normalizeQuote = (s: string) => s.replace(/\s+/g," ").trim();
 export function splitSource(text: string, size = 10000): string[] {

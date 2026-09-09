@@ -39,7 +39,20 @@ export async function createTopicRecipe(context:AuthWorkspaceContext,raw:unknown
   if(!await getWorkspaceLlmApiKeyForEnrichment(context.workspaceId))throw new Error("configure_workspace_ai_provider_first");
   return getPrisma().topicBuilderRecipe.create({data:{...input,collectionIds:[...new Set(input.collectionIds)],workspaceId:context.workspaceId,createdBy:context.userId}});
 }
-function recipeSnapshot(recipe:{topic:string;audience:string;applicability:string;instructions:string;maxWords:number;researchMode:string;collectionIds:string[];documentIds:string[]}){return {...recipe, id:undefined,createdAt:undefined,updatedAt:undefined,approvedRunId:undefined,writingPolicy:EDITORIAL_POLICY_VERSION,researchPolicy:RESEARCH_POLICY_VERSION};}
+function recipeSnapshot(recipe:{topic:string;audience:string;applicability:string;instructions:string;maxWords:number;researchMode:string;collectionIds:string[];documentIds:string[]}){
+  return {
+    topic:recipe.topic,
+    audience:recipe.audience,
+    applicability:recipe.applicability,
+    instructions:recipe.instructions,
+    maxWords:recipe.maxWords,
+    researchMode:recipe.researchMode,
+    collectionIds:recipe.collectionIds,
+    documentIds:recipe.documentIds,
+    writingPolicy:EDITORIAL_POLICY_VERSION,
+    researchPolicy:RESEARCH_POLICY_VERSION,
+  };
+}
 export async function updateTopicRecipe(context:AuthWorkspaceContext,id:string,raw:unknown){
  const input=recipeSchema.parse(raw),db=getPrisma();await getBuilderCorpus(context.workspaceId,input.collectionIds,input.documentIds);
  if(await db.topicBuilderRun.count({where:{recipeId:id,workspaceId:context.workspaceId,status:{in:["queued","running"]}}}))throw Error("cancel_active_generation_before_editing_recipe");
