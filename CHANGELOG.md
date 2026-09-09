@@ -11,7 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and approval fields can no longer produce a false `recipe changed` failure;
   real recipe, source-selection, and policy changes remain guarded.
 - Allowed the two locked native web dependencies required by pnpm 11 so clean
-  CI installs can reach the OKF compatibility and relation validation gates.
+  CI installs can reach the OKF compatibility and relation validation gates;
+  aligned the pinned upstream corpus checkout bytes with its CRLF integrity
+  manifest so the same compatibility check passes on Windows and Linux.
 
 - Standardized Airbus educational applicability on the existing `a320` family
   ID for both A319 and A320 sources. New automatic topics remain family-scoped
