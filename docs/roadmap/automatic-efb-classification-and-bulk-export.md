@@ -18,6 +18,13 @@ The Project EFB registry now recognizes `737-max`. This vocabulary change does
 not activate a package or bypass the existing approval, selection, signing,
 delivery, or receiver activation boundaries.
 
+The Airbus educational group uses the existing canonical ID `a320` and covers
+A319 and A320 source material. Automatic topics carry no Airbus type IDs.
+Generic Airbus references, other Airbus series, and mixed Airbus/737 sources
+remain review cases. The receiver's current A320-251N profile consumes this
+family-scoped content intentionally; legacy and manual `a320-251n` applicability
+continues to work.
+
 ### ATA 28 receiver support — 2026-09-09
 
 Project EFB now registers and displays ATA 28 Fuel as an Airframe Systems

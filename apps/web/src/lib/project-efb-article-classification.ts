@@ -253,6 +253,8 @@ export async function classifyProjectEfbArticle(input: {
       "Classify 737-700, -800, -900, and -900ER as family 737-ng. Classify clearly identified MAX material as 737-max.",
       "Never narrow automated applicability to a variant: aircraftTypeIds must always be empty.",
       "A bare 737 or material covering both NG and MAX is ambiguous and must not be guessed.",
+      "Classify explicit Airbus A319 or A320 material as family a320 with an empty aircraftTypeIds list.",
+      "Generic Airbus or other Airbus series must not be guessed as a320.",
       "Audiences may contain pilot, maintenance, or both.",
       "SUPPORTED PROJECT EFB ATA TAXONOMY:",
       taxonomy,

@@ -40,6 +40,27 @@ test("accepts MAX as a separate whole-generation group", () => {
   assert.deepEqual(result.aircraftTypeIds, []);
 });
 
+test("maps A319 and A320 to one family-level educational group", () => {
+  for (const evidence of ["Airbus A319 systems", "Airbus A320neo systems"]) {
+    const result = normalizeAircraftApplicability({
+      aircraftFamilyIds: ["a320"], aircraftTypeIds: ["a320-251n"], confidence: 0.95,
+      evidence: [evidence], scope: "specific-variants",
+    }, evidence);
+    assert.equal(result.status, "accepted");
+    assert.deepEqual(result.aircraftFamilyIds, ["a320"]);
+    assert.deepEqual(result.aircraftTypeIds, []);
+  }
+});
+
+test("other Airbus series do not leak into the A319/A320 group", () => {
+  const result = normalizeAircraftApplicability({
+    aircraftFamilyIds: ["a320"], aircraftTypeIds: [], confidence: 0.95,
+    evidence: ["Airbus A319 and A321 comparison"], scope: "entire-family",
+  }, "Airbus A319 and A321 comparison");
+  assert.equal(result.status, "needs_review");
+  assert(result.issues.includes("other_airbus_family_evidence_requires_review"));
+});
+
 test("rejects 737-ng as an aircraft type and ambiguous guesses", () => {
   const result = normalizeAircraftApplicability({
     aircraftFamilyIds: ["737-ng"],

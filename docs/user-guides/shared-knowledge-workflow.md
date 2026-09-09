@@ -45,7 +45,12 @@ The database migrations must be applied before running the updated application.
 
 In an approved article, open **Select this revision for EFB**. Choose an aircraft family, then add the applicable aircraft type from the dropdown. Selected types appear below with a Remove action. Changing family clears the previous types so they cannot accidentally carry into another family. Family choice alone does not assert applicability to every variant.
 
-The current connected EFB registry supports Boeing 737-800 under Boeing 737 Next Generation, and Airbus A320neo (A320-251N) under the Airbus A320 family. The form saves EFB application identifiers automatically; these are not necessarily ICAO codes. Additional aircraft must first be supported by the EFB registry and added to the matching AV-OKF catalog. Configuration/effectivity remains a separate source-grounded entry. Server validation rejects unsupported or mismatched family/type combinations; recognized older family labels such as “Boeing 737NG” are normalized.
+The connected EFB registry supports the 737 NG and 737 MAX educational groups,
+plus one Airbus A319/A320 group. Automatic topics are assigned to one of these
+groups without variant IDs. The current Airbus receiver profile is A320-251N,
+but it intentionally displays family-scoped A319/A320 educational content.
+Manual editors can narrow applicability in a later version. Configuration and
+effectivity remain separate source-grounded fields.
 
 ## Chat and evidence
 

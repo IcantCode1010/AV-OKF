@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Standardized Airbus educational applicability on the existing `a320` family
+  ID for both A319 and A320 sources. New automatic topics remain family-scoped
+  with no type IDs; generic Airbus and other Airbus series require review, while
+  existing manual and A320-251N applicability remains supported.
+
 - Added end-to-end ATA 28 Fuel support against the Project EFB registry. The
   classifier now presents the correct Fuel label, inherited maintenance
   placement accepts registered ATA 28, and export tests prove it remains

@@ -16,7 +16,7 @@ const aliases: Record<string, string[]> = {
   "737-ng": ["737ng", "737 ng", "737 next generation", "737-700", "737-800", "737-900", "737-900er"],
   "737-max": ["737 max", "737max", "max 7", "max 8", "max 9", "max 10", "737-7", "737-8", "737-9", "737-10"],
   b738: ["b738", "737-800"],
-  a320: ["a320 family"],
+  a320: ["a319", "airbus a319", "a320", "airbus a320", "a320 family", "a320-251n", "a320neo"],
   "a320-251n": ["a320-251n"],
 };
 function mentions(text: string, id: string) {
@@ -57,6 +57,7 @@ export function deterministicClassification(
       }
     for (const match of e.quote.matchAll(/\bATA[\s-]*(\d{2})(?:-\d{2})?\b/gi))
       ata.add(match[1]);
+    if (/\bA(?:318|321|330|350)\b/i.test(e.quote)) issues.push("other_airbus_family_evidence_requires_review");
   }
   if (
     [...families].some(

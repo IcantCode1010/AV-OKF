@@ -49,6 +49,17 @@ test("bare 737 is not guessed as NG or MAX", () => {
   assert.deepEqual(result.aircraftFamilyIds, []);
   assert(result.issues.includes("aircraft_evidence_missing"));
 });
+test("A319 and A320 evidence share the Airbus educational family", () => {
+  for (const quote of ["Airbus A319 electrical power ATA 24", "A320neo electrical power ATA 24"]) {
+    const result = deterministicClassification(registry, evidence(quote), []);
+    assert.deepEqual(result.aircraftFamilyIds, ["a320"]);
+    assert.deepEqual(result.aircraftTypeIds, []);
+  }
+});
+test("other Airbus series require review", () => {
+  const result = deterministicClassification(registry, evidence("A319 and A321 electrical differences ATA 24"), []);
+  assert(result.issues.includes("other_airbus_family_evidence_requires_review"));
+});
 test("accepted document applicability overrides aircraft mentions in topic evidence", () => {
   const result = deterministicClassification(
     registry,

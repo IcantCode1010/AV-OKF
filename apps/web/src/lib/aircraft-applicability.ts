@@ -99,8 +99,11 @@ export function normalizeAircraftApplicability(
       issues.push("ambiguous_scope_must_not_guess");
     }
   } else if (aircraftFamilyIds.length !== 1 ||
-    !["737-ng", "737-max"].includes(aircraftFamilyIds[0] ?? "")) {
+    !["737-ng", "737-max", "a320"].includes(aircraftFamilyIds[0] ?? "")) {
     issues.push("aircraft_generation_missing_or_conflicting");
+  }
+  if (aircraftFamilyIds.includes("a320") && /\bA(?:318|321|330|350)\b/i.test(canonicalSource)) {
+    issues.push("other_airbus_family_evidence_requires_review");
   }
   const status = output.confidence >= AIRCRAFT_APPLICABILITY_CONFIDENCE_THRESHOLD && issues.length === 0
     ? "accepted"
@@ -160,6 +163,8 @@ export async function classifyAircraftApplicability(input: {
       "- For either group return scope entire-family and aircraftTypeIds []. Individual variants never narrow automated applicability.",
       "- Generic 737 without NG or MAX evidence: empty family and type arrays, scope ambiguous.",
       "- A source explicitly covering both NG and MAX is ambiguous and requires editorial handling; do not merge them.",
+      "- Airbus A319 and A320 material uses aircraftFamilyIds [a320], scope entire-family, and aircraftTypeIds [].",
+      "- Generic Airbus or material mentioning A318, A321, A330, or A350 is not the A319/A320 group and requires review.",
       "- Family IDs must never appear in aircraftTypeIds.",
       "- Do not infer applicability from examples, incidental mentions, or unrelated procedures.",
       "- Confidence is 0 through 1.",
