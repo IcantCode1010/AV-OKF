@@ -260,17 +260,17 @@ async function verifyCorpusIntegrity(
   }
   for (const file of manifest.files) {
     try {
-      const digest = sha256(await readFile(path.join(corpusRoot, ...file.path.split("/"))));
-      if (digest !== file.sha256) mismatches.push(`hash:${file.path}`);
+      const hashes = hashOkfV02CorpusText(await readFile(path.join(corpusRoot, ...file.path.split("/"))));
+      if (!hashes.includes(file.sha256)) mismatches.push(`hash:${file.path}`);
     } catch {
       mismatches.push(`missing:${file.path}`);
     }
   }
   try {
-    const licenseDigest = sha256(await readFile(
+    const licenseHashes = hashOkfV02CorpusText(await readFile(
       path.join(corpusRoot, ...manifest.source.license.path.split("/")),
     ));
-    if (licenseDigest !== manifest.source.license.sha256) {
+    if (!licenseHashes.includes(manifest.source.license.sha256)) {
       mismatches.push(`hash:${manifest.source.license.path}`);
     }
   } catch {
@@ -345,8 +345,13 @@ function normalizeBody(body: string) {
   return body.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
 }
 
-function sha256(value: Buffer) {
-  return createHash("sha256").update(value).digest("hex");
+export function hashOkfV02CorpusText(value: Buffer | string) {
+  // The pinned upstream manifest contains text captured with both LF and CRLF.
+  // Git may materialize either form, so accept only hashes for those two byte
+  // representations while preserving every non-line-ending character.
+  const lf = value.toString().replace(/\r\n?/g, "\n");
+  const digest = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+  return [...new Set([digest(lf), digest(lf.replace(/\n/g, "\r\n"))])];
 }
 
 function sortedRecord(values: Map<string, number>) {

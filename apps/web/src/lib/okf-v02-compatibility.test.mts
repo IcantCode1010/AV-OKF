@@ -6,11 +6,17 @@ import test from "node:test";
 import {
   buildOkfV02CompatibilityReport,
   evaluateOkfMarkdownRoundTrip,
+  hashOkfV02CorpusText,
 } from "./okf-v02-compatibility.ts";
 
 const corpusRoot = fileURLToPath(
   new URL("../../test-fixtures/okf-v02-upstream/", import.meta.url),
 );
+
+test("pinned corpus integrity is stable across Git line-ending materialization", () => {
+  assert.deepEqual(hashOkfV02CorpusText("alpha\nbeta\n"), hashOkfV02CorpusText("alpha\r\nbeta\r\n"));
+  assert.notDeepEqual(hashOkfV02CorpusText("alpha\nbeta\n"), hashOkfV02CorpusText("alpha\ngamma\n"));
+});
 
 test("pinned upstream corpus has exact integrity and deterministic round trips", async () => {
   const report = await buildOkfV02CompatibilityReport({ corpusRoot });
