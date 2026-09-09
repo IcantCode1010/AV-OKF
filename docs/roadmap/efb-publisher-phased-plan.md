@@ -33,6 +33,25 @@ See [contract status](../architecture/efb-publisher-contract-status.md) for
 receiver mapping and [navigation requirements](../architecture/modular-okf-navigation-compiler-requirements.md)
 for the authoritative next implementation.
 
+## Implementation update: 2026-09-09
+
+- Re-verified the current Project EFB receiver and recorded the complete HTTP,
+  authentication, table, import, activation, and rollback contract. External
+  publisher-account and signing-key provisioning remain deployment tasks.
+- Implemented navigation compiler phases B-E as reusable modules. Automated
+  fixtures prove ATA 27-style maintenance, ATA 29 maintenance, and QRH pilot
+  profiles compile through the same code with deterministic membership and
+  complete root reachability.
+- Added the additive `KnowledgeReleaseRun` schema and ordered resumable stage
+  engine. The existing article exporter can now persist package output directly
+  on this run without creating a second export-status record.
+- Added a local package inspector, accurate dry-run plan, resumable receiver
+  action client, explicit activation, and pointer-only rollback command.
+- Remaining integration work is to materialize generated root/hub pages and
+  structural relations into the signed package, connect all default run-stage
+  handlers, redirect the legacy queue entry point, and execute the controlled
+  six-topic acceptance run before Claude's implementation review.
+
 ## Publisher Purpose
 
 Build an occasional-use publisher in the OKF project that validates an immutable EFB knowledge package, uploads it to Supabase, imports its wiki content, and activates the new version safely.

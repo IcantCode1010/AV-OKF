@@ -77,6 +77,7 @@ export type EfbReleaseResult = {
     signature?: { algorithm: "ed25519"; keyId: string; value: string };
     entries: EfbEntry[];
     placements: EfbPlacement[];
+    navigation?: EfbNavigationMetadata;
     createdAt: string;
   };
 };
@@ -87,6 +88,19 @@ type PreparedEntry = {
   body: string;
   content: string;
   agent: string;
+};
+
+export type EfbNavigationMetadata = {
+  compilerVersion: string;
+  profileId: string;
+  profileVersion: number;
+  rootEntryId: string;
+  rootCount: number;
+  hubCount: number;
+  technicalArticleCount: number;
+  reachableTechnicalArticleCount: number;
+  navigationEdgeCount: number;
+  technicalRelationCount: number;
 };
 
 export type EfbReleaseSourceEntry = {
@@ -123,6 +137,7 @@ export async function exportEfbRelease(input: {
     value: string;
   }>;
   contractRegistry?: EfbContractRegistry;
+  navigation?: EfbNavigationMetadata & { report: unknown };
   validateStagedPackage?: (manifestPath: string) => Promise<void>;
 }): Promise<EfbReleaseResult> {
   validateConfig(input.config);
@@ -219,6 +234,7 @@ export async function exportEfbRelease(input: {
         return asset;
       }),
     }));
+    if (input.navigation) artifacts.set("native/navigation-report.json", stableJson(input.navigation.report));
   }
 
   const artifactChecksums = [...artifacts]
@@ -261,6 +277,18 @@ export async function exportEfbRelease(input: {
     entries: prepared.map((item) => item.entry),
     placements: prepared.flatMap((item) => item.placements)
       .sort((a, b) => a.displayOrder - b.displayOrder || a.id.localeCompare(b.id)),
+    ...(input.navigation ? { navigation: {
+      compilerVersion: input.navigation.compilerVersion,
+      profileId: input.navigation.profileId,
+      profileVersion: input.navigation.profileVersion,
+      rootEntryId: input.navigation.rootEntryId,
+      rootCount: input.navigation.rootCount,
+      hubCount: input.navigation.hubCount,
+      technicalArticleCount: input.navigation.technicalArticleCount,
+      reachableTechnicalArticleCount: input.navigation.reachableTechnicalArticleCount,
+      navigationEdgeCount: input.navigation.navigationEdgeCount,
+      technicalRelationCount: input.navigation.technicalRelationCount,
+    } } : {}),
     createdAt: input.config.validatedAt,
   };
   const manifestContent = stableJson(manifest);
@@ -809,7 +837,12 @@ function validateContentQuality(input: {
   }
 
   const sourcePages = input.frontmatter.source_pages;
-  if (!Array.isArray(sourcePages) || sourcePages.length === 0 || sourcePages.some((page) => !Number.isInteger(page) || Number(page) < 1)) {
+  const generated = input.frontmatter.generated as { by?: unknown } | undefined;
+  const sources = getFrontmatterSources(input.frontmatter);
+  const generatedNavigation = input.frontmatter.type === "index" &&
+    typeof generated?.by === "string" && generated.by.startsWith("av-okf-navigation-") &&
+    sources.some((source) => source.resource.startsWith("urn:av-okf:navigation-profile:"));
+  if (!generatedNavigation && (!Array.isArray(sourcePages) || sourcePages.length === 0 || sourcePages.some((page) => !Number.isInteger(page) || Number(page) < 1))) {
     throw new Error(`efb_entry_source_pages_invalid:${input.id}`);
   }
   const ataValue = typeof input.frontmatter.ata === "string" ? input.frontmatter.ata.trim() : null;

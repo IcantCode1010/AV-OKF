@@ -54,7 +54,7 @@ if (queueRelease && needsReview === 0) {
   const queue = createEfbReleaseQueue();
   try {
     const release = await createAutomaticPocEfbReleaseJob({ authoringRunId: run.id, queue });
-    console.log(`Queued immutable release ${release?.packageId}@${release?.version}.`);
+    console.log(`Queued unified release ${release?.id ?? "none"}${release?.packageId && release.packageVersion ? ` (${release.packageId}@${release.packageVersion})` : ""}.`);
   } finally {
     await queue.close();
   }

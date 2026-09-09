@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Began the unified OKF release pipeline: automatic authoring now routes EFB
+  classification through immutable article revisions and the shared
+  `KnowledgeEfbClassification` service; an additive `KnowledgeReleaseRun`
+  records resumable stages from selection gating through explicit activation.
+- Added the profile-driven navigation compiler for root and hub generation,
+  deterministic article membership, portable links, allowed `part_of` and
+  approved technical relations, graph reachability validation, and a
+  machine-readable report. The same modules are tested with ATA 27, ATA 29,
+  and QRH profiles.
+- Added navigation provenance support to native OKF packages and a dry-run-first
+  Project EFB publisher client/CLI that follows the existing authenticated
+  `/api/publish` saga. Rollback activates a retained receiver revision without
+  deleting or re-importing package content.
+
 - Limited Topic Builder generation snapshots to author-controlled recipe fields
   and generation policy versions. Database-owned workspace, creator, timestamp,
   and approval fields can no longer produce a false `recipe changed` failure;

@@ -4,6 +4,7 @@
   "private": true,
   "packageManager": "pnpm@11.7.0",
   "scripts": {
+    "publish:efb": "tsx scripts/publish-efb-package.mts",
     "dev": "next dev",
     "build": "next build",
     "db:generate": "prisma generate",

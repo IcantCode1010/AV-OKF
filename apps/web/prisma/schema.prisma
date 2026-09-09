@@ -148,6 +148,7 @@ model Workspace {
   topicMediaReferences        TopicMediaReference[]
   mediaAnalysisAudits         MediaAnalysisAudit[]
   efbReleaseJobs              EfbReleaseJob[]
+  knowledgeReleaseRuns       KnowledgeReleaseRun[]
   createdAt                   DateTime                        @default(now())
   updatedAt                   DateTime                        @updatedAt
 }
@@ -1915,4 +1916,32 @@ model KnowledgeExportRelease {
  createdAt DateTime @default(now())
  updatedAt DateTime @updatedAt
  @@index([workspaceId, createdAt])
+}
+
+model KnowledgeReleaseRun {
+ id String @id @default(cuid())
+ triggerKey String? @unique
+ workspaceId String
+ workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+ createdBy String
+ status String @default("queued")
+ currentStage String @default("gate_selection")
+ completedStages String[] @default([])
+ selectionSnapshot Json
+ registryHash String
+ packageId String?
+ packageVersion String?
+ releaseDirectory String?
+ receiverRevisionId String?
+ previousReceiverRevisionId String?
+ result Json?
+ errorCode String?
+ errorMessage String?
+ attempts Int @default(0)
+ startedAt DateTime?
+ completedAt DateTime?
+ createdAt DateTime @default(now())
+ updatedAt DateTime @updatedAt
+ @@index([workspaceId, status, createdAt])
+ @@index([workspaceId, packageId, packageVersion])
 }

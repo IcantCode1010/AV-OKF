@@ -20,6 +20,7 @@ export const navigationProfileSchema = z.object({
     match: z.object({
       field: z.string().regex(/^[a-z][a-z0-9_]*$/),
       values: z.array(z.string().trim().min(1)).min(1),
+      title_keywords: z.array(z.string().trim().min(2)).default([]),
     }).strict(),
   })).max(100),
   applicable_types: z.array(objectType).min(1),
@@ -40,11 +41,17 @@ export const navigationProfileSchema = z.object({
   if (profile.placement.kind === "ata" && !/^\d{2}$/.test(profile.placement.target_id))
     issue("navigation_invalid_ata_target");
   const matches = new Set<string>();
+  const titleMatches = new Set<string>();
   for (const hub of profile.hubs) {
     for (const value of hub.match.values) {
       const key = JSON.stringify([hub.match.field, value]);
       if (matches.has(key)) issue("navigation_ambiguous_match_rule");
       matches.add(key);
+    }
+    for (const keyword of hub.match.title_keywords) {
+      const normalized = keyword.toLocaleLowerCase();
+      if (titleMatches.has(normalized)) issue("navigation_ambiguous_title_keyword");
+      titleMatches.add(normalized);
     }
   }
 });

@@ -38,7 +38,7 @@ import {
   runDocumentMediaDiscovery,
 } from "./topic-media-discovery.ts";
 import { classifyAircraftApplicability } from "./aircraft-applicability.ts";
-import { classifyAndPersistProjectEfbArticle } from "./project-efb-article-classification.ts";
+import { importLegacyTopic } from "./knowledge/editorial.ts";
 
 export const AUTHORING_STAGES = [
   "metadata_discovery",
@@ -494,13 +494,10 @@ export async function runKnowledgeAuthoringJob(payload: KnowledgeAuthoringJobPay
       if (document.sourceType === "aviation") {
         for (const topic of enrichmentTopics) {
           try {
-            await classifyAndPersistProjectEfbArticle({
-              apiKey: key.apiKey,
-              model: provider.model,
-              provider: key.provider,
-              topicId: topic.id,
-              workspaceId: run.workspaceId,
-            });
+            // The editorial revision is the sole input to EFB classification.
+            // Importing legacy topics here keeps automatic authoring on the
+            // same persisted KnowledgeEfbClassification path as manual work.
+            await importLegacyTopic(topic.id, context);
           } catch (error) {
             classificationWarnings.push(`${topic.id}:${error instanceof Error ? error.message : "efb_classification_failed"}`);
           }

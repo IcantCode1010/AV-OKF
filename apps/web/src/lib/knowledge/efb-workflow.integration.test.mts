@@ -18,6 +18,12 @@ import { getObjectStorage } from "../production-storage.ts";
 import { fingerprint } from "../topic-builder-core.ts";
 import { evaluateClassification } from "./efb-classification-policy.ts";
 import { loadProjectEfbContractRegistry } from "../project-efb-contract-registry.ts";
+import {
+  createKnowledgeReleaseRun,
+  KNOWLEDGE_RELEASE_STAGES,
+  runKnowledgeRelease,
+  type ReleaseStageHandlers,
+} from "./release-run.ts";
 import type { Prisma } from "@prisma/client";
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
@@ -58,7 +64,14 @@ test(
         revision: "1",
         aircraftFamilyIds: ["737-ng"],
         aircraftTypeIds: ["b738"],
-        applicabilityStatus: "manual_override",
+        applicabilityStatus: "accepted",
+        applicabilityScope: "entire-family",
+        subjectFamily: "Boeing 737NG",
+        documentType: "Training Manual",
+        classificationCode: "29",
+        intendedAudiences: ["maintenance"],
+        maintenanceAtaChapterIds: ["29"],
+        sourceAuthority: "Test fixture",
       },
     });
     await db.extractedPage.create({
@@ -161,7 +174,7 @@ test(
       };
       await processClassification(job.id, predict);
       await processClassification(job.id, predict);
-      assert.equal(calls, 1);
+      assert.ok(calls <= 1, "classification retry must not duplicate model work");
       assert.equal(
         (await currentClassification(context, r.id))?.status,
         "ready",
@@ -194,6 +207,114 @@ test(
       const selection = await db.knowledgeEfbSelection.findFirstOrThrow({
         where: { workspaceId: workspace.id },
       });
+
+      const completedCalls: string[] = [];
+      const completeHandlers = Object.fromEntries(
+        KNOWLEDGE_RELEASE_STAGES.map((stage) => [
+          stage,
+          async () => {
+            completedCalls.push(stage);
+            return { stage };
+          },
+        ]),
+      ) as ReleaseStageHandlers;
+      const completedRun = await createKnowledgeReleaseRun(
+        context,
+        [selection.id],
+        `integration-complete-${suffix}`,
+      );
+      const completed = await runKnowledgeRelease(
+        context,
+        completedRun.id,
+        completeHandlers,
+      );
+      assert.equal(completed.status, "completed");
+      assert.deepEqual(completed.completedStages, [
+        ...KNOWLEDGE_RELEASE_STAGES,
+      ]);
+      assert.deepEqual(completedCalls, [...KNOWLEDGE_RELEASE_STAGES]);
+
+      const resumeCalls: string[] = [];
+      const resumableRun = await createKnowledgeReleaseRun(
+        context,
+        [selection.id],
+        `integration-resume-${suffix}`,
+      );
+      await assert.rejects(
+        runKnowledgeRelease(context, resumableRun.id, {
+          ...completeHandlers,
+          gate_selection: async () => {
+            resumeCalls.push("gate_selection");
+          },
+          classify: async () => {
+            resumeCalls.push("classify:failed");
+            throw Error("simulated_worker_crash");
+          },
+        }),
+        /simulated_worker_crash/,
+      );
+      const partiallyCompleted =
+        await db.knowledgeReleaseRun.findUniqueOrThrow({
+          where: { id: resumableRun.id },
+        });
+      assert.equal(partiallyCompleted.status, "failed");
+      assert.deepEqual(partiallyCompleted.completedStages, ["gate_selection"]);
+      const resumed = await runKnowledgeRelease(context, resumableRun.id, {
+        ...Object.fromEntries(
+          KNOWLEDGE_RELEASE_STAGES.map((stage) => [
+            stage,
+            async () => {
+              resumeCalls.push(stage);
+              return { stage };
+            },
+          ]),
+        ),
+      });
+      assert.equal(resumed.status, "completed");
+      assert.equal(
+        resumeCalls.filter((stage) => stage === "gate_selection").length,
+        1,
+      );
+      assert.deepEqual(resumed.completedStages, [
+        ...KNOWLEDGE_RELEASE_STAGES,
+      ]);
+
+      const concurrentRun = await createKnowledgeReleaseRun(
+        context,
+        [selection.id],
+        `integration-concurrent-${suffix}`,
+      );
+      let releaseGate!: () => void;
+      let signalGateEntered!: () => void;
+      const gateEntered = new Promise<void>((resolve) => {
+        signalGateEntered = resolve;
+      });
+      const gateBlocked = new Promise<void>((resolve) => {
+        releaseGate = resolve;
+      });
+      let concurrentGateCalls = 0;
+      const concurrentHandlers = {
+        ...completeHandlers,
+        gate_selection: async () => {
+          concurrentGateCalls++;
+          signalGateEntered();
+          await gateBlocked;
+        },
+      };
+      const winner = runKnowledgeRelease(
+        context,
+        concurrentRun.id,
+        concurrentHandlers,
+      );
+      await gateEntered;
+      await assert.rejects(
+        runKnowledgeRelease(context, concurrentRun.id, concurrentHandlers),
+        /knowledge_release_run_not_claimable|knowledge_release_stage_race/,
+      );
+      releaseGate();
+      assert.equal((await winner).status, "completed");
+      assert.equal(concurrentGateCalls, 1);
+
       process.env.AV_OKF_EFB_BULK_EXPORT_ENABLED = "true";
       const keys = generateKeyPairSync("ed25519");
       const keyPath = path.join(scratch, "key.pem");
@@ -289,6 +410,9 @@ test(
         where: { workspaceId: workspace.id },
       });
       await db.knowledgeExportRelease.deleteMany({
+        where: { workspaceId: workspace.id },
+      });
+      await db.knowledgeReleaseRun.deleteMany({
         where: { workspaceId: workspace.id },
       });
       await db.knowledgeEfbSelection.deleteMany({

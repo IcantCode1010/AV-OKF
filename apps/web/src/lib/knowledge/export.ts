@@ -28,6 +28,11 @@ import { assertArticleSourcesCurrent } from "./editorial.ts";
 import { activeArticleVisuals } from "./visual-revisions.ts";
 import { getObjectStorage } from "../production-storage.ts";
 import { fingerprint } from "../topic-builder-core.ts";
+import { parseOkfMarkdown } from "../okf-frontmatter.ts";
+import { getAllowedRelations } from "../okf-relations.ts";
+import { loadNavigationProfile } from "../navigation/load-profile.ts";
+import { compileNavigation } from "../navigation/compiler.ts";
+import { materializeCompiledNavigation } from "../navigation/materialize-package.ts";
 const exec = promisify(execFile),
   json = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 export const selectionMetadataSchema = z
@@ -123,6 +128,7 @@ export async function exportSelectedArticles(
   context: AuthWorkspaceContext,
   selectionIds?: string[],
   queuedReleaseId?: string,
+  unifiedRunId?: string,
 ) {
   const db = getPrisma();
   const contractRoot = process.env.PROJECT_EFB_ROOT,
@@ -131,15 +137,25 @@ export async function exportSelectedArticles(
   if (!contractRoot) throw Error("configure_project_efb_validator_first");
   const signedPrototype = Boolean(signingKeyPath && signingKeyId);
   const registry = await loadProjectEfbContractRegistry(contractRoot);
-  const queued = queuedReleaseId
+  const unifiedRun = unifiedRunId
+    ? await db.knowledgeReleaseRun.findFirstOrThrow({
+        where: { id: unifiedRunId, workspaceId: context.workspaceId },
+      })
+    : null;
+  const queued = !unifiedRun && queuedReleaseId
     ? await db.knowledgeExportRelease.findFirstOrThrow({
         where: { id: queuedReleaseId, workspaceId: context.workspaceId },
       })
     : null;
   if (queued?.status === "exported") return queued.id;
+  if (unifiedRun?.releaseDirectory) return unifiedRun.id;
   if (queued && !["queued", "validating"].includes(queued.status))
     throw Error("release_not_queued");
-  const selections = queued
+  const selections = unifiedRun
+    ? (unifiedRun.selectionSnapshot as unknown as Awaited<
+        ReturnType<typeof db.knowledgeEfbSelection.findMany>
+      >)
+    : queued
     ? (queued.selectionSnapshot as unknown as Awaited<
         ReturnType<typeof db.knowledgeEfbSelection.findMany>
       >)
@@ -153,7 +169,7 @@ export async function exportSelectedArticles(
   if (!selections.length) throw Error("select_articles_first");
   if (selectionIds && selections.length !== new Set(selectionIds).size)
     throw Error("selection_scope_changed");
-  if (!queued && process.env.AV_OKF_EFB_BULK_EXPORT_ENABLED === "true") {
+  if (!queued && !unifiedRun && process.env.AV_OKF_EFB_BULK_EXPORT_ENABLED === "true") {
     const pinned = await Promise.all(
       selections.map(async (s) => ({
         ...s,
@@ -259,7 +275,7 @@ export async function exportSelectedArticles(
   );
   for (const item of metadata) assertSelectionMetadataAllowed(item, registry);
   const release =
-    queued ??
+    unifiedRun ?? queued ??
     (await db.knowledgeExportRelease.create({
       data: {
         workspaceId: context.workspaceId,
@@ -443,6 +459,63 @@ export async function exportSelectedArticles(
         markdown: `---\n${stringify(frontmatter, { aliasDuplicateObjects: false })}---\n\n${body}${relationLinks}${visualMarkdown}\n\n${footnotes}`,
       });
     }
+    let navigation: Parameters<typeof exportEfbRelease>[0]["navigation"];
+    const navigationProfileId = process.env.AV_OKF_NAVIGATION_PROFILE_ID;
+    if (navigationProfileId) {
+      const navigationProfileVersion = Number(process.env.AV_OKF_NAVIGATION_PROFILE_VERSION ?? "1");
+      const loaded = await loadNavigationProfile({
+        directory: path.resolve(process.cwd(), "config", "navigation"),
+        profileId: navigationProfileId,
+        version: navigationProfileVersion,
+        registry: { placements: registry.placements, objectTypes: ["index", "system_topic"] },
+      });
+      const compiled = compileNavigation({
+        profile: JSON.parse(JSON.stringify(loaded.profile)),
+        allowedRelations: await getAllowedRelations(),
+        articles: sourceEntries.map((sourceEntry, index) => {
+          const parsed = parseOkfMarkdown(sourceEntry.markdown);
+          const entryId = String(parsed.frontmatter.efb_entry_id ?? "");
+          const sourceRecord = records.find((record) => record.articleId === entryId);
+          const body = sourceRecord?.body as { okfMetadata?: Record<string, unknown> } | undefined;
+          return {
+            id: entryId,
+            title: String(parsed.frontmatter.title ?? entryId),
+            type: String(parsed.frontmatter.type ?? "system_topic"),
+            relativePath: sourceEntry.relativePath,
+            sourceOrder: index,
+            metadata: body?.okfMetadata ?? {},
+          };
+        }),
+      });
+      const familyIds = [...new Set(metadata.map((item) => item.aircraftFamily))].sort();
+      const typeIds = [...new Set(metadata.flatMap((item) => item.aircraftTypeIds))].sort();
+      const audiences = [...new Set(metadata.flatMap((item) => item.audiences))].sort() as Array<"pilot" | "maintenance">;
+      sourceEntries.splice(0, sourceEntries.length, ...materializeCompiledNavigation({
+        compiled,
+        sourceEntries,
+        context: {
+          aircraftFamilyIds: familyIds,
+          aircraftTypeIds: typeIds,
+          audiences,
+          authorityLabel: EFB_POC_AUTHORITY_LABEL,
+          licenseIdentifier: EFB_UNREVIEWED_LICENSE_IDENTIFIER,
+          placement: { kind: loaded.profile.placement.kind, targetId: loaded.profile.placement.target_id },
+        },
+      }));
+      navigation = {
+        compilerVersion: compiled.compilerVersion,
+        profileId: compiled.profile.profile_id,
+        profileVersion: compiled.profile.profile_version,
+        rootEntryId: compiled.root.id,
+        rootCount: compiled.report.rootCount,
+        hubCount: compiled.report.hubCount,
+        technicalArticleCount: compiled.report.technicalArticleCount,
+        reachableTechnicalArticleCount: compiled.report.reachableTechnicalArticleCount,
+        navigationEdgeCount: compiled.report.navigationEdgeCount,
+        technicalRelationCount: compiled.report.technicalRelationCount,
+        report: compiled.report,
+      };
+    }
     const now = new Date().toISOString();
     const sourceCommit = createHash("sha256")
       .update(JSON.stringify(sourceEntries), "utf8")
@@ -468,6 +541,7 @@ export async function exportSelectedArticles(
       },
       contractRegistry: registry,
       sourceEntries,
+      navigation,
       supportingAssets,
       outputRoot: process.env.AV_OKF_EFB_RELEASE_ROOT ?? "/data/efb-releases",
       validateStagedPackage: async (manifest) => {
@@ -530,31 +604,45 @@ export async function exportSelectedArticles(
           })
         : undefined,
     });
-    await db.knowledgeExportRelease.update({
-      where: { id: release.id },
-      data: {
-        status: "exported",
-        result: json({
+    if (unifiedRun) {
+      await db.knowledgeReleaseRun.update({
+        where: { id: unifiedRun.id },
+        data: {
+          packageId: result.manifest.packageId,
+          packageVersion: result.manifest.version,
           releaseDirectory: result.releaseDirectory,
-          manifest: result.manifest,
-        }),
-      },
-    });
+          result: json({ ...((unifiedRun.result as Record<string, unknown> | null) ?? {}), package: { manifest: result.manifest } }),
+        },
+      });
+    } else {
+      await db.knowledgeExportRelease.update({
+        where: { id: release.id },
+        data: {
+          status: "exported",
+          result: json({
+            releaseDirectory: result.releaseDirectory,
+            manifest: result.manifest,
+          }),
+        },
+      });
+    }
     return release.id;
   } catch (error) {
     const errorCode =
       error instanceof Error
         ? error.message.split(":", 1)[0]!
         : "export_validation_failed";
-    await db.knowledgeExportRelease.update({
-      where: { id: release.id },
-      data: {
-        status: "failed",
-        error: /^[a-z_]+$/.test(errorCode)
-          ? errorCode
-          : "export_validation_failed",
-      },
-    });
+    if (!unifiedRun) {
+      await db.knowledgeExportRelease.update({
+        where: { id: release.id },
+        data: {
+          status: "failed",
+          error: /^[a-z_]+$/.test(errorCode)
+            ? errorCode
+            : "export_validation_failed",
+        },
+      });
+    }
     throw error;
   } finally {
     await rm(scratch, { recursive: true, force: true });

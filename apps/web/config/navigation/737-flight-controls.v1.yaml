@@ -11,39 +11,39 @@ hubs:
   - entry_id: ata-27-general
     title: General and Hydraulic Interfaces
     type: index
-    match: { field: topic_group, values: [general] }
+    match: { field: topic_group, values: [general], title_keywords: [general, hydraulic interface, flight control system] }
   - entry_id: ata-27-ailerons
     title: Aileron Control
     type: index
-    match: { field: topic_group, values: [aileron] }
+    match: { field: topic_group, values: [aileron], title_keywords: [aileron] }
   - entry_id: ata-27-flight-spoilers
     title: Flight Spoilers
     type: index
-    match: { field: topic_group, values: [flight-spoiler] }
+    match: { field: topic_group, values: [flight-spoiler], title_keywords: [flight spoiler] }
   - entry_id: ata-27-speedbrakes
     title: Speedbrake and Ground Spoilers
     type: index
-    match: { field: topic_group, values: [speedbrake] }
+    match: { field: topic_group, values: [speedbrake], title_keywords: [speedbrake, ground spoiler] }
   - entry_id: ata-27-elevator
     title: Elevator Control
     type: index
-    match: { field: topic_group, values: [elevator] }
+    match: { field: topic_group, values: [elevator], title_keywords: [elevator] }
   - entry_id: ata-27-stabilizer-trim
     title: Stabilizer Trim
     type: index
-    match: { field: topic_group, values: [stabilizer-trim] }
+    match: { field: topic_group, values: [stabilizer-trim], title_keywords: [stabilizer, trim] }
   - entry_id: ata-27-rudder
     title: Rudder Control
     type: index
-    match: { field: topic_group, values: [rudder] }
+    match: { field: topic_group, values: [rudder], title_keywords: [rudder] }
   - entry_id: ata-27-trailing-edge-flaps
     title: Trailing-Edge Flaps
     type: index
-    match: { field: topic_group, values: [trailing-edge-flaps] }
+    match: { field: topic_group, values: [trailing-edge-flaps], title_keywords: [trailing-edge flap, trailing edge flap] }
   - entry_id: ata-27-leading-edge-devices
     title: Leading-Edge Flaps and Slats
     type: index
-    match: { field: topic_group, values: [leading-edge-devices] }
+    match: { field: topic_group, values: [leading-edge-devices], title_keywords: [leading-edge, leading edge, slat] }
 applicable_types: [system_topic]
 display_order:
   start: 10

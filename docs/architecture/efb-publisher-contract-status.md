@@ -19,13 +19,13 @@ Inspected local package: `selected-cmr2lf3s0000101suuz8cz5mn@0.1.1788914818819`.
 
 These are inventory observations, not a completed checksum, graph, or publisher validation. No root entry was identifiable by the expected ATA 27/root naming; inspect native links and node roles before concluding whether a root exists. Reachability for all 79 technical articles is not established. Root and hub nodes must be counted separately from technical articles if added.
 
-## Contract Decisions Still Required
+## External Provisioning Still Required
 
-- Identify the development Supabase destination and authorized activation/rollback operators without storing credentials in this document.
-- Assign ownership and location of Supabase migrations; coordinate with Project EFB's existing database contract before creating parallel tables.
-- Define explicit root and subsystem node roles and supported native internal-link resolution, including fragments and package boundaries.
-- Define how `contains`, `parent`, and `related` publishing links map to existing OKF relations without altering their meaning.
-- Define unsigned prototype acceptance in development. Existing signed cloud acceptance remains a separate receiver requirement; an unsigned package must not be advertised as cloud-approved.
+- Provision a real Project EFB user with an enabled `okf_publishers` row for development publication.
+- Add AV-OKF's Ed25519 public signing key to Project EFB's `EFB_OKF_TRUSTED_KEYS` configuration.
+- Configure the development `EFB_PUBLISHER_URL` and short-lived publisher bearer token outside the repository.
+
+These are deployment prerequisites, not unresolved application-contract decisions. They block remote publication and activation only; local classification, navigation compilation, package construction, validation, and dry-run planning remain available without them.
 
 ## Required Publisher Behavior
 
@@ -62,6 +62,32 @@ Do not create conflicting `okf_packages` definitions or a second activation poin
 Source references: Project EFB migrations `20260904000300_okf_catalog.sql`, `20260904000500_okf_evidence.sql`, `20260904000900_okf_publication.sql`, and `20260907000100_vector_storage.sql`. Inspect the latest replacement activation function, not only the initial definition, before implementing activation.
 
 Receiver-contract alignment is resolved by the newer navigation requirements: use Project EFB's existing receiver and publication RPC, without parallel tables or activation pointers. The development publication destination remains unconfirmed. No Phase 1 migration has been applied. Existing package files remain untouched.
+
+## Receiver Contract Re-verification (2026-09-09)
+
+The current `Project-EFB-MX` checkout confirms that AV-OKF must treat `POST /api/publish` as the sole publication boundary. The Vercel function accepts Bearer authentication, verifies the caller with Supabase Auth, and requires `require_okf_publisher()` before dispatching any action. AV-OKF must not connect directly to Project EFB's Supabase tables or RPCs.
+
+The publication saga is resumable and action based:
+
+| Stage | `/api/publish` action | Receiver behavior |
+| --- | --- | --- |
+| Register | `initialize` | Verifies the schema 2.1 manifest and Ed25519 signature, then creates the immutable package and artifact inventory. |
+| Transfer | `upload` | Returns a signed upload URL for one declared artifact in the private `okf-artifacts` bucket. |
+| Import | `validate` | Downloads and hashes uploaded artifacts, parses native OKF content, and imports entries, sources, and links while marking artifacts verified. |
+| Complete | `complete` | Builds retrieval-document and asset rows, then calls service-role-only `complete_okf_package`. |
+| Candidate | `prepare` | Calls `prepare_okf_release`; rejects invalid package sets and unresolved cross-package links and returns a candidate release UUID. |
+| Inspect | `inspect` | Returns the candidate release inventory for pre-activation verification. |
+| Activate | `activate` | Calls the latest `activate_okf_release` definition and atomically changes `okf_catalog.release_id`. |
+| Roll back | `activate` with a retained revision | Restores a prior catalog by pointer change only; it does not upload, import, or copy content again. |
+| Retire | `retire` | Retires a non-active release. This is lifecycle cleanup, not rollback. |
+
+The authoritative receiver consists of 16 tables across the current migrations: `okf_packages`, `okf_assignments`, `okf_entries`, `okf_links`, `okf_releases`, `okf_release_packages`, `okf_catalog`, `okf_withdrawals`, `okf_publishers`, `okf_sources`, `okf_artifacts`, `okf_assets`, `okf_retrieval_documents`, `retrieval_builds`, `retrieval_chunks`, and `retrieval_embeddings`. Project EFB owns these tables and their migrations. AV-OKF will create no parallel publication schema.
+
+The latest activation contract is the `create or replace function public.activate_okf_release(target_revision uuid)` definition in `20260907000100_vector_storage.sql`. It preserves the validated-release checks from the original catalog migration and also prevents a catalog release from retaining a retrieval build belonging to another release. Publisher implementation must follow this latest definition rather than the superseded initial function body.
+
+Project EFB's runtime validator requires `schemaVersion: "2.1"`, `format.name: "open-knowledge-format"`, SHA-256 artifact checksums, and an Ed25519 manifest signature whose key ID is trusted by `EFB_OKF_TRUSTED_KEYS`. This matches AV-OKF's existing `poc-cloud` exporter contract. Unsigned prototype packages remain local-only and cannot enter the receiver.
+
+This re-verification completes the receiver-mapping portion of Stage 1. No remote call, schema migration, publication, or activation was performed.
 
 ## Accepted Navigation Direction
 

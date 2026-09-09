@@ -20,6 +20,8 @@ import {
   getProjectEfbArticleClassification,
   normalizeProjectEfbAtaChapter,
 } from "./project-efb-article-classification.ts";
+import { importLegacyTopic } from "./knowledge/editorial.ts";
+import { configuredKnowledgeReleaseHandlers, createKnowledgeReleaseRun, runKnowledgeRelease } from "./knowledge/release-run.ts";
 
 const execFileAsync = promisify(execFile);
 const POC_LICENSE_IDENTIFIER = "POC-NOT-REVIEWED";
@@ -48,55 +50,31 @@ export async function createAutomaticPocEfbReleaseJob(input: {
   const topics = await loadPocTopics(run.knowledgeBundleId, run.workspaceId);
   if (topics.length === 0) return null;
   const corpusHash = buildPocCorpusHash(topics);
-  const existing = await db.efbReleaseJob.findUnique({
-    where: {
-      knowledgeBundleId_corpusHash_mode: {
-        corpusHash,
-        knowledgeBundleId: run.knowledgeBundleId,
-        mode: "poc",
-      },
-    },
+  const context = { workspaceId: run.workspaceId, userId: run.requestedBy ?? "av-okf-automation", role: "member" as const };
+  for (const topic of topics) await importLegacyTopic(topic.id, context);
+  const articles = await db.knowledgeArticle.findMany({
+    where: { workspaceId: run.workspaceId, originKind: "topic", originId: { in: topics.map((topic) => topic.id) } },
+    select: { id: true },
   });
-  if (existing) {
-    if (["queued", "running", "failed"].includes(existing.status)) {
-      await input.queue.enqueue({ jobId: existing.id, workspaceId: existing.workspaceId });
-    }
-    return existing;
+  const selections = await db.knowledgeEfbSelection.findMany({
+    where: { workspaceId: run.workspaceId, articleId: { in: articles.map((article) => article.id) } },
+    select: { id: true },
+  });
+  if (!selections.length) return null;
+  const unified = await createKnowledgeReleaseRun(context, selections.map((selection) => selection.id), `authoring:${run.id}:${corpusHash}`);
+  if (["queued", "failed", "awaiting_publication"].includes(unified.status)) {
+    await input.queue.enqueue({ jobId: unified.id, workspaceId: unified.workspaceId });
   }
-
-  const packageId = `${slug(run.knowledgeBundle.slug || run.knowledgeBundle.name)}-poc`;
-  const version = await nextPocPackageVersion(packageId);
-  const created = await db.efbReleaseJob.create({
-    data: {
-      articleCount: topics.length,
-      authoringRunId: run.id,
-      corpusHash,
-      documentId: run.documentId,
-      knowledgeBundleId: run.knowledgeBundleId,
-      mode: "poc",
-      packageId,
-      version,
-      workspaceId: run.workspaceId,
-    },
-  }).catch(async (error) => {
-    const raced = await db.efbReleaseJob.findUnique({
-      where: {
-        knowledgeBundleId_corpusHash_mode: {
-          corpusHash,
-          knowledgeBundleId: run.knowledgeBundleId,
-          mode: "poc",
-        },
-      },
-    });
-    if (raced) return raced;
-    throw error;
-  });
-  await input.queue.enqueue({ jobId: created.id, workspaceId: created.workspaceId });
-  return created;
+  return unified;
 }
 
 export async function runPocEfbReleaseJob(jobId: string) {
   const db = getPrisma();
+  const unified = await db.knowledgeReleaseRun.findUnique({ where: { id: jobId } });
+  if (unified) {
+    const context = { workspaceId: unified.workspaceId, userId: unified.createdBy, role: "member" as const };
+    return runKnowledgeRelease(context, jobId, configuredKnowledgeReleaseHandlers(context));
+  }
   const claimed = await db.efbReleaseJob.updateMany({
     data: {
       attempts: { increment: 1 },
@@ -194,6 +172,18 @@ export async function runPocEfbReleaseJob(jobId: string) {
 export async function reconcilePocEfbReleaseJobs(queue: EfbReleaseQueue) {
   if (getAutomaticEfbExportMode() !== "poc") return 0;
   const db = getPrisma();
+  const unifiedRuns = await db.knowledgeReleaseRun.findMany({
+    select: { id: true, workspaceId: true, status: true },
+    where: { status: { in: ["queued", "running", "failed", "awaiting_publication"] } },
+  });
+  const interrupted = unifiedRuns.filter((run) => run.status === "running");
+  if (interrupted.length) {
+    await db.knowledgeReleaseRun.updateMany({
+      data: { status: "queued" },
+      where: { id: { in: interrupted.map((run) => run.id) }, status: "running" },
+    });
+  }
+  for (const run of unifiedRuns) await queue.enqueue({ jobId: run.id, workspaceId: run.workspaceId });
   const jobs = await db.efbReleaseJob.findMany({
     select: { id: true, workspaceId: true },
     where: { mode: "poc", status: { in: ["queued", "running"] } },
@@ -222,7 +212,7 @@ export async function reconcilePocEfbReleaseJobs(queue: EfbReleaseQueue) {
     const release = await createAutomaticPocEfbReleaseJob({ authoringRunId: run.id, queue });
     if (release) createdOrReused += 1;
   }
-  return jobs.length + createdOrReused;
+  return unifiedRuns.length + jobs.length + createdOrReused;
 }
 
 export function buildPocCorpusHash(topics: PocTopic[]): string {
@@ -462,10 +452,6 @@ function errorCode(message: string) {
 
 function sha256(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function slug(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "knowledge";
 }
 
 function unique(values: string[]) {
