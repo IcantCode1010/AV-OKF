@@ -16,6 +16,21 @@ Tools/APIs = live state and actions
 
 Read `docs/roadmap/mvp-stages.md` before working on any feature — it defines what each numbered "Stage" (0 through 8) delivers, its exit criteria, and known limitations. Check `CHANGELOG.md`'s Unreleased section for what's currently in flight and which pieces are deliberately still stubs (e.g. chat currently returns a stubbed placeholder reply — the query router exists but real OKF/RAG retrieval wiring is a later stage).
 
+## Claude-Codex change workflow
+
+For substantial changes, use the structured workflow documented in
+`.ai/README.md`. Claude is the proposal and independent-review agent; Codex is
+the implementation agent. Invoke `/propose-change <objective>`, approve the
+resulting `.ai/handoffs/change-proposal.md`, let Codex implement it with its
+repository skill, and then invoke `/review-implementation`.
+
+When adopting the workflow in an existing checkout, run `/baseline-codebase`
+first to record the current validation state in `.ai/baseline.md`.
+
+During proposal and initial review, Claude must not edit application code.
+Existing failures must be separated from regressions introduced by the current
+branch.
+
 ## Repository layout
 
 - `apps/web/` — the Next.js 16 / React 19 product (all active engineering happens here)
