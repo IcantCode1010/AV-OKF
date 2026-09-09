@@ -43,13 +43,24 @@ Both are reported as external rollout gates rather than represented as passing.
 | Command or check | Result | Evidence or notes |
 |---|---|---|
 | `pnpm --dir apps/web lint` | PASS | ESLint completed with no findings. |
-| `pnpm --dir apps/web test` | PASS | 861 Node tests passed, 3 skipped; 19 component tests passed, including the database-backed release-run scenarios. |
+| `pnpm --dir apps/web test` | PASS | 860 Node tests passed, 5 skipped; 19 component tests passed, including the database-backed release-run scenarios. |
 | `pnpm --dir apps/web build` | PASS | Next.js production build and TypeScript check completed. |
 | `python -m unittest discover -s tests -p test_okf_relation_lint.py` | PASS | 5 tests passed. |
 | `python tools/okf_relation_lint.py --manifest okf-base.yaml` | PASS | Zero violations. |
 | Six-topic integration test | PASS | Six classifications, 6/6 reachability, nine-entry schema 2.1 package, mocked activation. |
 | Database-backed release-run integration | PASS | Full eight-stage completion, partial failure/resume with the completed gate executed once, and concurrent claim rejection with the gate executed once. |
-| Live Project EFB development publication | NOT RUN | Receiver URL/token and trusted publisher identity are not configured. |
+| Live Project EFB controlled staging | PASS | Signed 15-article package validated and imported; candidate inspected and intentionally left inactive pending explicit activation. |
+
+## Controlled publication follow-up
+
+The deployed receiver accepted and validated a 15-article ATA 27 package after
+two receiver-discovered compatibility corrections: generated empty hubs now
+meet content-quality limits, and navigation summary data remains in
+`native/navigation-report.json` instead of an unsupported top-level manifest
+property. Supabase contains 25 entries, 78/78 verified artifacts, 63 links, and
+25 retrieval documents. Candidate release
+`686d1fee-bf97-4ba4-9787-de87924bb81f` remains inactive; retained release
+`305e7ff4-ae3e-45ea-a452-94e935be1752` is still active.
 
 ## Baseline comparison
 

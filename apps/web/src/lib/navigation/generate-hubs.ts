@@ -6,6 +6,7 @@ export function generateNavigationHubs(profile: NavigationProfile, memberships: 
   return profile.hubs.map((hub) => {
     const relativePath = `indexes/${hub.entry_id}.md`;
     const children = memberships.filter((item) => item.parentEntryId === hub.entry_id).sort((a, b) => a.displayOrder - b.displayOrder || a.articleId.localeCompare(b.articleId)).map((item) => articles.find((article) => article.id === item.articleId)!);
-    return { id: hub.entry_id, title: hub.title, type: hub.type, relativePath, childIds: children.map((child) => child.id), markdown: `# ${hub.title}\n\n${children.map((child) => `- ${markdownLink(relativePath, child.relativePath, child.title)}`).join("\n")}\n` };
+    const introduction = `This generated navigation page groups approved knowledge entries for ${hub.title} within ${profile.root.title}.`;
+    return { id: hub.entry_id, title: hub.title, type: hub.type, relativePath, childIds: children.map((child) => child.id), markdown: `# ${hub.title}\n\n${introduction}\n\n${children.map((child) => `- ${markdownLink(relativePath, child.relativePath, child.title)}`).join("\n")}\n` };
   });
 }

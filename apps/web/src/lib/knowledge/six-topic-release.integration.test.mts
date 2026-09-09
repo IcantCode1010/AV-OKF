@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { deterministicClassification } from "./efb-classification-core.ts";
@@ -78,7 +78,14 @@ standalone: reject
       signer: async () => ({ algorithm: "ed25519", keyId: "fixture-key", value: "fixture-signature" }),
     });
     assert.equal(exported.manifest.entries.length, 9);
-    assert.equal(exported.manifest.navigation?.technicalArticleCount, 6);
+    assert.equal("navigation" in exported.manifest, false);
+    const navigationReport = JSON.parse(
+      await readFile(
+        path.join(exported.releaseDirectory, "native/navigation-report.json"),
+        "utf8",
+      ),
+    ) as { technicalArticleCount: number };
+    assert.equal(navigationReport.technicalArticleCount, 6);
     const actions: string[] = [];
     const published = await publishEfbPackage({ packageDirectory: exported.releaseDirectory, dryRun: false, activate: true, upload: async () => new Response(null, { status: 200 }), api: async (body) => {
       actions.push(String(body.action));

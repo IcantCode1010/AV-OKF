@@ -77,7 +77,6 @@ export type EfbReleaseResult = {
     signature?: { algorithm: "ed25519"; keyId: string; value: string };
     entries: EfbEntry[];
     placements: EfbPlacement[];
-    navigation?: EfbNavigationMetadata;
     createdAt: string;
   };
 };
@@ -277,18 +276,6 @@ export async function exportEfbRelease(input: {
     entries: prepared.map((item) => item.entry),
     placements: prepared.flatMap((item) => item.placements)
       .sort((a, b) => a.displayOrder - b.displayOrder || a.id.localeCompare(b.id)),
-    ...(input.navigation ? { navigation: {
-      compilerVersion: input.navigation.compilerVersion,
-      profileId: input.navigation.profileId,
-      profileVersion: input.navigation.profileVersion,
-      rootEntryId: input.navigation.rootEntryId,
-      rootCount: input.navigation.rootCount,
-      hubCount: input.navigation.hubCount,
-      technicalArticleCount: input.navigation.technicalArticleCount,
-      reachableTechnicalArticleCount: input.navigation.reachableTechnicalArticleCount,
-      navigationEdgeCount: input.navigation.navigationEdgeCount,
-      technicalRelationCount: input.navigation.technicalRelationCount,
-    } } : {}),
     createdAt: input.config.validatedAt,
   };
   const manifestContent = stableJson(manifest);

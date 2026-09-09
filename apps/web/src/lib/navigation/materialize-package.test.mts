@@ -28,4 +28,27 @@ standalone: reject
   assert.deepEqual(parsed.frontmatter.relations, [{ relation: "part_of", target: "../indexes/test-hub.md", target_type: "index", reason: "This article is part of Test Hub." }]);
   assert.match(output.find((entry) => entry.relativePath === "indexes/test-root.md")!.markdown, /\.\/test-hub\.md/);
   assert.match(output.find((entry) => entry.relativePath === "indexes/test-hub.md")!.markdown, /\.\.\/topics\/article-one\.md/);
+  assert.ok(parseOkfMarkdown(output.find((entry) => entry.relativePath === "indexes/test-hub.md")!.markdown).body.trim().length >= 80);
+});
+
+test("generated empty hubs still satisfy package content quality", () => {
+  const profile = parseNavigationProfile(`
+profile_id: empty-hub-nav
+profile_version: 1
+placement: { kind: ata, target_id: "27" }
+root: { entry_id: empty-root, title: Flight Controls, type: index }
+hubs:
+  - entry_id: empty-hub
+    title: Flight Spoilers
+    type: index
+    match: { field: topic_group, values: [flight-spoiler] }
+applicable_types: [system_topic]
+display_order: { start: 10, increment: 10, articles: entry-id, tie_breaker: entry-id, hubs: profile-order }
+standalone: reject
+`, { placements: { ataChapterIds: ["27"], qrhTargetIds: [], quickAccessTargetIds: [] }, objectTypes: ["index", "system_topic"] });
+  const compiled = compileNavigation({ profile, allowedRelations: ["part_of"], articles: [] });
+  const output = materializeCompiledNavigation({ compiled, sourceEntries: [], context: { aircraftFamilyIds: ["737-ng"], aircraftTypeIds: [], audiences: ["maintenance"], authorityLabel: "Prototype knowledge — not approved operational data", licenseIdentifier: "POC-NOT-REVIEWED", placement: { kind: "ata", targetId: "27" } } });
+  const hub = output.find((entry) => entry.relativePath === "indexes/empty-hub.md");
+  assert.ok(hub);
+  assert.ok(parseOkfMarkdown(hub.markdown).body.trim().length >= 80);
 });

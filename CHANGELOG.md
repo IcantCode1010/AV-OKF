@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Project EFB publisher client/CLI that follows the existing authenticated
   `/api/publish` saga. Rollback activates a retained receiver revision without
   deleting or re-importing package content.
+- Kept navigation reports in the declared native artifact inventory instead of
+  adding an unsupported top-level schema 2.1 manifest property, and ensured
+  generated empty navigation hubs meet Project EFB content-quality requirements.
 
 - Limited Topic Builder generation snapshots to author-controlled recipe fields
   and generation policy versions. Database-owned workspace, creator, timestamp,
