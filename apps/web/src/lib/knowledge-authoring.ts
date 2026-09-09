@@ -651,21 +651,17 @@ async function runAircraftApplicabilityClassification(input: {
   runId: string;
 }) {
   await stageAudit(input.runId, "applicability_classification", "running", undefined, input.provider, input.model);
+  if ((input.document as { applicabilityStatus?: string | null }).applicabilityStatus === "manual_override") {
+    await stageAudit(input.runId, "applicability_classification", "completed", "manual_override_preserved");
+    return;
+  }
   const result = await classifyAircraftApplicability(input);
   const classifiedAt = new Date();
-  const enteredTypeIds = [...input.document.aircraftTypeIds].map((value) => value.toLowerCase()).sort();
-  const classifiedTypeIds = [...result.normalized.aircraftTypeIds].sort();
-  const enteredApplicabilityContradictsClassification = enteredTypeIds.length > 0 &&
-    JSON.stringify(enteredTypeIds) !== JSON.stringify(classifiedTypeIds);
-  const status = enteredApplicabilityContradictsClassification
-    ? "needs_review"
-    : result.normalized.status;
+  const status = result.normalized.status;
   await getPrisma().document.update({
     data: {
       aircraftFamilyIds: result.normalized.aircraftFamilyIds,
-      aircraftTypeIds: enteredTypeIds.length > 0
-        ? input.document.aircraftTypeIds
-        : result.normalized.aircraftTypeIds.map((value) => value.toUpperCase()),
+      aircraftTypeIds: [],
       applicabilityClassifiedAt: classifiedAt,
       applicabilityConfidence: result.normalized.confidence,
       applicabilityEvidence: result.normalized.evidence,
@@ -680,7 +676,7 @@ async function runAircraftApplicabilityClassification(input: {
     input.runId,
     "applicability_classification",
     "completed",
-    [...result.normalized.issues, ...(enteredApplicabilityContradictsClassification ? ["entered_applicability_conflicts_with_classifier"] : [])].join(",") || undefined,
+    result.normalized.issues.join(",") || undefined,
     input.provider,
     input.model,
     undefined,

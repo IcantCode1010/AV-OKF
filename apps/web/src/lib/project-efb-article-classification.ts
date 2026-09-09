@@ -106,18 +106,17 @@ export function normalizeProjectEfbArticleClassification(input: {
   const ataChapter = classifiedAta ?? (!invalidAta ? documentAta : null);
 
   const aircraftFamilyIds = unique(input.output.aircraftFamilyIds.map(normalizeFamilyId).filter(Boolean));
-  const aircraftTypeIds = unique(input.output.aircraftTypeIds.map(normalizeTypeId).filter(Boolean));
-  const invalidFamilyAsType = input.output.aircraftTypeIds.some((value) => normalizeFamilyId(value) === "737-ng");
+  const invalidFamilyAsType = input.output.aircraftTypeIds.some((value) =>
+    input.registry
+      ? input.registry.aircraftFamilies.some((family) => family.id === normalizeFamilyId(value))
+      : ["737-ng", "737-max"].includes(normalizeFamilyId(value))
+  );
   const resolvedFamilyIds = aircraftFamilyIds.length > 0
     ? aircraftFamilyIds
     : input.documentDefaults.applicabilityStatus === "accepted" || input.documentDefaults.applicabilityStatus === "manual_override"
       ? unique(input.documentDefaults.aircraftFamilyIds.map(normalizeFamilyId).filter(Boolean))
       : [];
-  const resolvedTypeIds = aircraftTypeIds.length > 0
-    ? aircraftTypeIds
-    : input.documentDefaults.applicabilityStatus === "accepted" || input.documentDefaults.applicabilityStatus === "manual_override"
-      ? unique(input.documentDefaults.aircraftTypeIds.map(normalizeTypeId).filter(Boolean))
-      : [];
+  const resolvedTypeIds: string[] = [];
   const audiences = uniqueAudience(input.output.audiences.length > 0
     ? input.output.audiences
     : input.documentDefaults.intendedAudiences);
@@ -250,7 +249,9 @@ export async function classifyProjectEfbArticle(input: {
       "Never use a source identifier, filename code, revision, or publication code as an ATA chapter.",
       "737SAR is a source/provenance identifier and is never an ATA chapter.",
       "Use null for ataChapter when the supported taxonomy does not establish one. Do not guess.",
-      "Use aircraft family 737-ng for the entire 737 NG family. Never put 737-ng in aircraftTypeIds.",
+      "Classify 737-700, -800, -900, and -900ER as family 737-ng. Classify clearly identified MAX material as 737-max.",
+      "Never narrow automated applicability to a variant: aircraftTypeIds must always be empty.",
+      "A bare 737 or material covering both NG and MAX is ambiguous and must not be guessed.",
       "Audiences may contain pilot, maintenance, or both.",
       "SUPPORTED PROJECT EFB ATA TAXONOMY:",
       taxonomy,

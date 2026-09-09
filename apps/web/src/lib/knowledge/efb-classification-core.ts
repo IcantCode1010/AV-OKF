@@ -13,7 +13,8 @@ export type ApplicabilitySource = {
 };
 // Aliases translate evidence; only registry membership grants eligibility.
 const aliases: Record<string, string[]> = {
-  "737-ng": ["737ng", "737 ng", "737 next generation"],
+  "737-ng": ["737ng", "737 ng", "737 next generation", "737-700", "737-800", "737-900", "737-900er"],
+  "737-max": ["737 max", "737max", "max 7", "max 8", "max 9", "max 10", "737-7", "737-8", "737-9", "737-10"],
   b738: ["b738", "737-800"],
   a320: ["a320 family"],
   "a320-251n": ["a320-251n"],
@@ -43,7 +44,8 @@ export function deterministicClassification(
     )
       continue;
     document.aircraftFamilyIds.forEach((id) => families.add(id));
-    document.aircraftTypeIds.forEach((id) => types.add(id.toLowerCase()));
+    // Type IDs are retained on source records for provenance only. Automated
+    // topic applicability is the NG or MAX educational group.
   }
   const hasAuthoritativeApplicability = families.size > 0 || types.size > 0;
   for (const e of evidence) {
@@ -52,30 +54,9 @@ export function deterministicClassification(
     if (!hasAuthoritativeApplicability)
       for (const family of registry.aircraftFamilies) {
         if (mentions(e.quote, family.id)) families.add(family.id);
-        for (const type of family.aircraftTypeIds)
-          if (mentions(e.quote, type)) types.add(type);
       }
     for (const match of e.quote.matchAll(/\bATA[\s-]*(\d{2})(?:-\d{2})?\b/gi))
       ata.add(match[1]);
-  }
-  for (const type of types) {
-    const family = registry.aircraftFamilies.find((f) =>
-      f.aircraftTypeIds.includes(type),
-    );
-    if (!family) issues.push("unsupported_aircraft_type");
-    else families.add(family.id);
-  }
-  const authoritative = documents.filter((d) =>
-    ["accepted", "manual_override"].includes(d.applicabilityStatus ?? ""),
-  );
-  for (const d of authoritative) {
-    if (
-      d.aircraftTypeIds.length &&
-      [...types].some(
-        (id) => !d.aircraftTypeIds.map((t) => t.toLowerCase()).includes(id),
-      )
-    )
-      issues.push("conflicting_source_type_applicability");
   }
   if (
     [...families].some(
@@ -94,7 +75,7 @@ export function deterministicClassification(
     issues.push("unsupported_ata");
   return {
     aircraftFamilyIds: [...families].sort(),
-    aircraftTypeIds: [...types].sort(),
+    aircraftTypeIds: [],
     ataChapters: [...ata].sort(),
     issues: [...new Set(issues)],
   };

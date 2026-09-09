@@ -21,8 +21,12 @@ test("multi-section scope resolves only an exact source heading",()=>{
   assert.equal(evaluateInheritedEfbMetadata(registry,[d]).status,"needs_review");
   assert.equal(evaluateInheritedEfbMetadata(registry,[d],{maintenance_ata_chapter:"52"}).status,"needs_review");
 });
-test("metadata changes, applicability contradictions, and unsupported targets require correction",()=>{
-  assert.equal(evaluateInheritedEfbMetadata(registry,[{...document,aircraftTypeIds:["B738"]}]).status,"needs_review");
+test("variant mentions do not narrow inherited educational applicability",()=>{
+  const result = evaluateInheritedEfbMetadata(registry,[{...document,aircraftTypeIds:["B738"]}]);
+  assert.equal(result.status,"ready");
+  assert.deepEqual(result.metadata.aircraftTypeIds, []);
+});
+test("metadata changes and unsupported targets require correction",()=>{
   assert.equal(evaluateInheritedEfbMetadata(registry,[{...document,classificationCode:"737SAR"}]).status,"needs_review");
   assert.equal(evaluateInheritedEfbMetadata(registry,[document],{intended_audiences:["pilot"]}).status,"needs_review");
   assert.equal(evaluateInheritedEfbMetadata(registry,[{...document,applicabilityStatus:"needs_review"}]).status,"needs_review");

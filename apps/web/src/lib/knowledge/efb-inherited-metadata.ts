@@ -17,14 +17,13 @@ export function evaluateInheritedEfbMetadata(
     return values.length ? [...new Set(values[0])].filter(v => values.every(a => a.includes(v))).sort() : [];
   };
   const families = common("aircraft_family_ids");
-  const sourceTypes = inherited.map(m => list(m.aircraft_type_ids).map(v => v.toLowerCase()).sort());
-  if (sourceTypes.some(v => JSON.stringify(v) !== JSON.stringify(sourceTypes[0]))) issues.push("conflicting_document_aircraft_types");
-  const types = sourceTypes[0] ?? [];
+  // Generated educational topics apply to the evidenced NG or MAX group.
+  // Source-level type IDs are provenance and do not narrow automation.
+  const types: string[] = [];
   if (documents.some(d => !["accepted", "manual_override"].includes(d.applicabilityStatus ?? ""))) issues.push("document_applicability_needs_review");
-  if (documents.some(d => d.applicabilityScope === "entire-family" && d.aircraftTypeIds?.length)) issues.push("conflicting_document_aircraft_scope");
   const family = families.length === 1 ? families[0] : "";
   const registered = registry.aircraftFamilies.find(f => f.id === family);
-  if (!registered || types.some(t => !registered.aircraftTypeIds.includes(t))) issues.push("document_aircraft_missing_or_unsupported");
+  if (!registered) issues.push("document_aircraft_missing_or_unsupported");
   const audiences = common("intended_audiences");
   if (!audiences.length || audiences.some(a => !["pilot", "maintenance"].includes(a))) issues.push("document_audience_missing_or_conflicting");
   const pick = (key: string, selectedKey: string, allowed: string[], required: boolean) => {
@@ -41,7 +40,7 @@ export function evaluateInheritedEfbMetadata(
   const ataChapter = pick("maintenance_ata_chapter_ids", "maintenance_ata_chapter", registry.placements.ataChapterIds, audiences.includes("maintenance"));
   const qrhTargetId = pick("pilot_qrh_target_ids", "pilot_qrh_target_id", registry.placements.qrhTargetIds, audiences.includes("pilot"));
   // Revisions retain their metadata snapshot. A changed document requires a fresh revision/decision.
-  for (const key of ["aircraft_family_ids", "aircraft_type_ids", "intended_audiences", "maintenance_ata_chapter_ids", "pilot_qrh_target_ids"]) {
+  for (const key of ["aircraft_family_ids", "intended_audiences", "maintenance_ata_chapter_ids", "pilot_qrh_target_ids"]) {
     if (saved[key] !== undefined && documents.length === 1 &&
       JSON.stringify(list(saved[key]).map(v => v.toLowerCase()).sort()) !==
       JSON.stringify(list(inherited[0][key]).map(v => v.toLowerCase()).sort())) issues.push("inherited_metadata_changed");

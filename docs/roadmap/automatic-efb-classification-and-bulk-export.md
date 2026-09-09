@@ -3,6 +3,21 @@
 Date: 2026-09-08  
 Status: implementation connected; production rollout acceptance pending
 
+## Aircraft applicability simplification — 2026-09-09
+
+Automatic educational classification now operates at the 737 generation level:
+`737-ng` covers the configured NG group (-700, -800, -900 and -900ER), while
+`737-max` is a distinct group. Individual variant mentions remain source
+provenance and never narrow a generated topic; automatic topic metadata and EFB
+exports carry an empty aircraft-type list. A bare `737` or a source that mixes NG
+and MAX without an explicit supported multi-group decision remains in review.
+Accepted manual refinements continue through new topic versions and are not
+overwritten by automated reruns.
+
+The Project EFB registry now recognizes `737-max`. This vocabulary change does
+not activate a package or bypass the existing approval, selection, signing,
+delivery, or receiver activation boundaries.
+
 ## Implementation checkpoint — 2026-09-08
 
 ### Source-metadata-first follow-up
@@ -37,11 +52,12 @@ round-trip was tested in a rolled-back transaction. No real-topic batch or EFB
 release was submitted during verification. A new-provider ingestion-to-export run
 remains an acceptance step, not a completed evaluation.
 
-Current data attention: the retained 20 FUEL source has contradictory entire-family
-and explicit-variant metadata. The mounted EFB registry also lacks ATA 28. Correct
-the source applicability and intentionally update the receiver registry before
-expecting that document's articles to export. Do not silently remap fuel to another
-chapter. The earlier model-placement description below is superseded for aviation.
+Current data attention: individual variant IDs on the retained 20 FUEL source no
+longer restrict automatic educational applicability; a new topic version inherits
+the evidenced 737 generation with no type IDs. The mounted EFB registry still
+lacks ATA 28, so maintenance fuel content remains blocked. Do not silently remap
+fuel to another chapter. The earlier model-placement description below is
+superseded for aviation.
 
 Migration: `20260908150000_document_placement_scope` adds empty array columns only.
 It was applied after a verified custom PostgreSQL backup. Rolling application code

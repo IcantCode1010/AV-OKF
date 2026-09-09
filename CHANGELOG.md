@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Simplified automatic aircraft applicability to the educational generation
+  groups `737-ng` and `737-max`. Mentions of individual NG or MAX variants no
+  longer narrow generated topics or block inherited classification; automated
+  exports use an empty aircraft-type list. Bare `737` and mixed NG/MAX sources
+  still require review, and accepted manual applicability remains authoritative.
+
 - Added bulk approval of selected article drafts using the individual approval
   checks and partial-success reporting. The Articles list exposes the selected
   draft count and explains why unapproved drafts cannot be packaged.

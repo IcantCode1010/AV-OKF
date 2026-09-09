@@ -20,6 +20,26 @@ test("accepts an exact-evidence entire-family classification", () => {
   assert.deepEqual(result.issues, []);
 });
 
+test("normalizes an NG variant classification to the whole NG group", () => {
+  const result = normalizeAircraftApplicability({
+    aircraftFamilyIds: ["737-ng"], aircraftTypeIds: ["b738"], confidence: 0.95,
+    evidence: ["This applies only to the 737-800."], scope: "specific-variants",
+  }, "This applies only to the 737-800.");
+  assert.equal(result.status, "accepted");
+  assert.equal(result.scope, "entire-family");
+  assert.deepEqual(result.aircraftTypeIds, []);
+});
+
+test("accepts MAX as a separate whole-generation group", () => {
+  const result = normalizeAircraftApplicability({
+    aircraftFamilyIds: ["737-max"], aircraftTypeIds: ["b38m"], confidence: 0.95,
+    evidence: ["737 MAX flight controls"], scope: "specific-variants",
+  }, "737 MAX flight controls");
+  assert.equal(result.status, "accepted");
+  assert.deepEqual(result.aircraftFamilyIds, ["737-max"]);
+  assert.deepEqual(result.aircraftTypeIds, []);
+});
+
 test("rejects 737-ng as an aircraft type and ambiguous guesses", () => {
   const result = normalizeAircraftApplicability({
     aircraftFamilyIds: ["737-ng"],

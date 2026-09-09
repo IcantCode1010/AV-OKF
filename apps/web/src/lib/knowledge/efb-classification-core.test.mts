@@ -6,6 +6,7 @@ const registry = {
   schemaVersion: "1.0" as const,
   aircraftFamilies: [
     { id: "737-ng", aircraftTypeIds: ["b738"] },
+    { id: "737-max", aircraftTypeIds: [] },
     { id: "a320", aircraftTypeIds: ["a320-251n"] },
   ],
   placements: {
@@ -27,14 +28,26 @@ test("family evidence does not imply a specific type", () => {
   assert.deepEqual(result.aircraftTypeIds, []);
   assert.deepEqual(result.ataChapters, ["29"]);
 });
-test("type evidence resolves its registered family", () => {
+test("NG variant evidence resolves the group without narrowing to a type", () => {
   const result = deterministicClassification(
     registry,
     evidence("Boeing 737-800 ATA 24-00"),
     [],
   );
-  assert.deepEqual(result.aircraftTypeIds, ["b738"]);
+  assert.deepEqual(result.aircraftFamilyIds, ["737-ng"]);
+  assert.deepEqual(result.aircraftTypeIds, []);
   assert.deepEqual(result.issues, []);
+});
+test("MAX evidence remains distinct from NG", () => {
+  const result = deterministicClassification(registry, evidence("737 MAX 8 flight controls ATA 29"), []);
+  assert.deepEqual(result.aircraftFamilyIds, ["737-max"]);
+  assert.deepEqual(result.aircraftTypeIds, []);
+  assert(!result.issues.includes("conflicting_aircraft_families"));
+});
+test("bare 737 is not guessed as NG or MAX", () => {
+  const result = deterministicClassification(registry, evidence("Boeing 737 hydraulic system ATA 29"), []);
+  assert.deepEqual(result.aircraftFamilyIds, []);
+  assert(result.issues.includes("aircraft_evidence_missing"));
 });
 test("accepted document applicability overrides aircraft mentions in topic evidence", () => {
   const result = deterministicClassification(
