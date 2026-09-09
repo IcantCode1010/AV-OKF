@@ -18,6 +18,19 @@ The Project EFB registry now recognizes `737-max`. This vocabulary change does
 not activate a package or bypass the existing approval, selection, signing,
 delivery, or receiver activation boundaries.
 
+### ATA 28 receiver support — 2026-09-09
+
+Project EFB now registers and displays ATA 28 Fuel as an Airframe Systems
+maintenance chapter. AV-OKF uses the mounted registry for eligibility, labels
+ATA 28 explicitly as Fuel, and exports the placement unchanged. ATA 28 remains
+separate from ATA 73 Engine Fuel and Control and from the pilot QRH `fuel`
+target. An older receiver registry without ATA 28 continues to reject it.
+
+Flat ATA 28 articles are now supported. A richer root-and-hub fuel navigation
+profile is intentionally deferred until an approved fuel corpus provides an
+evidence-backed subsystem taxonomy. No retained fuel topic was imported,
+published, approved, or activated as part of this structural change.
+
 ## Implementation checkpoint — 2026-09-08
 
 ### Source-metadata-first follow-up
@@ -53,11 +66,10 @@ release was submitted during verification. A new-provider ingestion-to-export ru
 remains an acceptance step, not a completed evaluation.
 
 Current data attention: individual variant IDs on the retained 20 FUEL source no
-longer restrict automatic educational applicability; a new topic version inherits
-the evidenced 737 generation with no type IDs. The mounted EFB registry still
-lacks ATA 28, so maintenance fuel content remains blocked. Do not silently remap
-fuel to another chapter. The earlier model-placement description below is
-superseded for aviation.
+longer restrict automatic educational applicability, and the receiver now
+supports ATA 28. The retained topic still requires a new current source-backed
+article version and the normal review workflow before selection or export. The
+earlier model-placement description below is superseded for aviation.
 
 Migration: `20260908150000_document_placement_scope` adds empty array columns only.
 It was applied after a verified custom PostgreSQL backup. Rolling application code

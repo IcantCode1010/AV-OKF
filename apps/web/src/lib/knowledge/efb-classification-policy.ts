@@ -32,6 +32,7 @@ export const ATA_LABELS: Record<string, string> = {
   "21": "Air conditioning",
   "24": "Electrical power",
   "27": "Flight controls",
+  "28": "Fuel",
   "29": "Hydraulic power",
   "32": "Landing gear",
   "34": "Navigation",

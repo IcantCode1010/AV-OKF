@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added end-to-end ATA 28 Fuel support against the Project EFB registry. The
+  classifier now presents the correct Fuel label, inherited maintenance
+  placement accepts registered ATA 28, and export tests prove it remains
+  separate from ATA 73 Engine Fuel and Control and the pilot QRH fuel target.
+
 - Simplified automatic aircraft applicability to the educational generation
   groups `737-ng` and `737-max`. Mentions of individual NG or MAX variants no
   longer narrow generated topics or block inherited classification; automated

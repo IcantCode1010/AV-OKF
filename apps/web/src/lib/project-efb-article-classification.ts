@@ -16,6 +16,7 @@ export const PROJECT_EFB_ATA_TAXONOMY = {
   "21": "Air Conditioning",
   "24": "Electrical Power",
   "27": "Flight Controls",
+  "28": "Fuel",
   "29": "Hydraulic Power",
   "32": "Landing Gear",
   "34": "Navigation",

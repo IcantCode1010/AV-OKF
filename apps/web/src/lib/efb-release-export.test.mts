@@ -429,6 +429,43 @@ This grounded prototype article describes hydraulic pumps, reservoirs, and syste
   assert.equal(result.manifest.placements.some(({ targetId }) => targetId === "737SAR"), false);
 });
 
+test("exports airframe fuel as ATA 28 without remapping to ATA 73", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-fuel-"));
+  const result = await exportEfbRelease({
+    config: { ...config, license: { identifier: "POC-NOT-REVIEWED" }, mode: "poc" },
+    contractRegistry: {
+      aircraftFamilies: [{ id: "737-ng", aircraftTypeIds: ["b738"] }],
+      placements: { ataChapterIds: ["28", "73"], qrhTargetIds: ["fuel"], quickAccessTargetIds: [] },
+    },
+    outputRoot: path.join(root, "release"),
+    sourceEntries: [{
+      markdown: `---
+type: system_topic
+title: Fuel Distribution
+description: Grounded airframe fuel distribution reference.
+status: stable
+sources: [{ id: source-fuel, resource: "urn:sha256:${"f".repeat(64)}", title: "Fuel manual" }]
+source_pages: [28]
+aircraft_family_ids: [737-ng]
+aircraft_type_ids: []
+intended_audiences: [maintenance]
+ata: "28"
+efb_entry_id: fuel-distribution
+---
+
+# Fuel Distribution
+
+This source-grounded educational article describes airframe fuel storage and distribution with sufficient detail for package validation.
+`,
+      relativePath: "topics/fuel-distribution.md",
+    }],
+  });
+  assert.deepEqual(result.manifest.placements.map(({ kind, targetId }) => ({ kind, targetId })), [
+    { kind: "ata", targetId: "28" },
+  ]);
+  assert.equal(result.manifest.placements.some(({ targetId }) => targetId === "73" || targetId === "fuel"), false);
+});
+
 test("exports every article in a hydraulic corpus to ATA 29 with identical EFB metadata", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-efb-hydraulic-corpus-"));
   const sourceEntries = Array.from({ length: 23 }, (_, index) => {

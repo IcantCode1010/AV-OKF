@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  classificationVocabulary,
   evaluateClassification,
   type Prediction,
 } from "./efb-classification-policy.ts";
@@ -46,6 +47,16 @@ test("dual-audience classification requires grounded placements for both", () =>
     }).status,
     "ready",
   );
+});
+test("registered ATA 28 is labeled Fuel without changing ATA 73", () => {
+  const vocabulary = classificationVocabulary({
+    ...registry,
+    placements: { ...registry.placements, ataChapterIds: ["28", "73"] },
+  });
+  assert.deepEqual(vocabulary.ata, [
+    { id: "28", label: "Fuel" },
+    { id: "73", label: "Engine fuel and control" },
+  ]);
 });
 test("invented quote blocks readiness", () => {
   assert.equal(

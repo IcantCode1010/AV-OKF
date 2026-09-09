@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { evaluateInheritedEfbMetadata } from "./efb-inherited-metadata.ts";
 import { buildInheritedAviationOkfMetadata, resolveTopicPlacementMetadata, normalizeAviationDocumentMetadata } from "../aviation-document-metadata.ts";
-const registry = { schemaVersion: "1.0", aircraftFamilies: [{id:"737-ng", aircraftTypeIds:["b738"]}], placements: { ataChapterIds:["27","29"], qrhTargetIds:["hydraulics","flight-controls"] } };
+const registry = { schemaVersion: "1.0", aircraftFamilies: [{id:"737-ng", aircraftTypeIds:["b738"]}], placements: { ataChapterIds:["27","28","29"], qrhTargetIds:["fuel","hydraulics","flight-controls"] } };
 const document = {sourceType:"aviation", subjectFamily:"Boeing 737 NG", aircraftFamilyIds:["737-ng"], aircraftTypeIds:[], applicabilityStatus:"accepted", applicabilityScope:"entire-family", classificationCode:"29", documentType:"Training", intendedAudiences:["maintenance"], effectivity:null, revision:"1", sourceAuthority:"Publisher"};
 test("maintenance inherits family scope and ATA with no prediction",()=>{
   const r=evaluateInheritedEfbMetadata(registry,[document]);
@@ -13,6 +13,19 @@ test("pilot QRH placement comes only from the document list",()=>{
   const r=evaluateInheritedEfbMetadata(registry,[{...document,intendedAudiences:["pilot"],pilotQrhTargetIds:["hydraulics"]}]);
   assert.equal(r.status,"ready"); assert.equal(r.metadata.ataChapter,null); assert.equal(r.metadata.qrhTargetId,"hydraulics");
   assert.notEqual(evaluateInheritedEfbMetadata(registry,[{...document,intendedAudiences:["pilot"]}]).status,"ready");
+});
+test("ATA 28 maintenance placement stays separate from QRH fuel",()=>{
+  const result = evaluateInheritedEfbMetadata(registry,[{
+    ...document,
+    classificationCode:"28",
+    maintenanceAtaChapterIds:["28"],
+    pilotQrhTargetIds:["fuel"],
+  }]);
+  assert.equal(result.status,"ready");
+  assert.equal(result.metadata.ataChapter,"28");
+  assert.equal(result.metadata.qrhTargetId,null);
+  const oldRegistry={...registry,placements:{...registry.placements,ataChapterIds:["27","29"]}};
+  assert.equal(evaluateInheritedEfbMetadata(oldRegistry,[{...document,classificationCode:"28",maintenanceAtaChapterIds:["28"]}]).status,"needs_review");
 });
 test("multi-section scope resolves only an exact source heading",()=>{
   const d={...document,maintenanceAtaChapterIds:["27","29"]};
