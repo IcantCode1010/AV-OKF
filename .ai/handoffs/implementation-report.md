@@ -58,9 +58,10 @@ two receiver-discovered compatibility corrections: generated empty hubs now
 meet content-quality limits, and navigation summary data remains in
 `native/navigation-report.json` instead of an unsupported top-level manifest
 property. Supabase contains 25 entries, 78/78 verified artifacts, 63 links, and
-25 retrieval documents. Candidate release
-`686d1fee-bf97-4ba4-9787-de87924bb81f` remains inactive; retained release
-`305e7ff4-ae3e-45ea-a452-94e935be1752` is still active.
+25 retrieval documents. Release `686d1fee-bf97-4ba4-9787-de87924bb81f` was
+explicitly activated after inspection. An authenticated B738 maintenance search
+through `/api/efb` returned newly published content from that release. Prior
+release `305e7ff4-ae3e-45ea-a452-94e935be1752` remains the rollback target.
 
 ## Baseline comparison
 

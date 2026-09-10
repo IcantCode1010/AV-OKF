@@ -99,13 +99,16 @@ EFB receiver and prepared as an inactive candidate:
 - Retained active release: `305e7ff4-ae3e-45ea-a452-94e935be1752`
 - Inventory: 15 technical articles, one root, nine hubs, 78 verified artifacts,
   25 retrieval documents, and 63 resolved link rows
-- Receiver state: package `validated`, release `candidate`, activated `false`
+- Receiver state: package `validated`, release `retained`, activated `true`
 
-The candidate preserves the previously active package in its two-package
-catalog. Project EFB's current source table contains no rows for either the
-existing or candidate package; article source references remain embedded in
-the immutable manifest, agent artifacts, and native OKF metadata. Activation
-remains a separate explicit operation.
+The activated release preserves the previously active package in its
+two-package catalog. Project EFB's current source table contains no rows for
+either package; article source references remain embedded in the immutable
+manifest, agent artifacts, and native OKF metadata. The prior release
+`305e7ff4-ae3e-45ea-a452-94e935be1752` remains available for pointer-only
+rollback. An authenticated B738 maintenance search confirmed the active release
+and returned newly published topic `Elevator Balance Panels` through the live
+`/api/efb` boundary.
 
 ## Accepted Navigation Direction
 
