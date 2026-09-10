@@ -121,4 +121,51 @@ First complete demonstration: a supported 737 system topic using two complementa
 
 ## Immediate priorities
 
+### Pinned next step: active EFB hybrid retrieval
+
+Build and activate a hybrid retrieval index for the currently active Project
+EFB release. The published agent currently searches active OKF entries with
+exact identifiers, tags, PostgreSQL full-text ranking, title similarity, and
+authorized graph traversal. Supabase has the pgvector-ready retrieval schema,
+but the active catalog has no attached retrieval build, chunks, or embeddings.
+
+Keep the existing deterministic search path and add semantic similarity as a
+complement. The resulting hybrid ranker must combine exact/keyword matches,
+vector similarity, and OKF graph context without allowing the model to expand
+the user's aircraft, audience, organization, package, or active-release scope.
+Only immutable retrieval documents belonging to the exact active release may
+be chunked and embedded.
+
+Complete the work through the existing release boundary:
+
+1. Create a versioned retrieval build for one immutable active release and
+   record its embedding provider, model revision, dimensions, chunking policy,
+   source checksums, and expected coverage.
+2. Chunk all eligible retrieval documents deterministically, generate complete
+   embeddings, and fail the build when coverage or dimension validation is
+   incomplete.
+3. Evaluate exact, keyword, semantic, and hybrid retrieval on direct wording,
+   paraphrases, multi-topic questions, ambiguous questions, and missing
+   evidence. Record recall, citation support, latency, and cost against the
+   current search baseline.
+4. Attach the ready build to the catalog with the separate retrieval-build
+   activation operation. Refuse attachment when its release differs from the
+   active release; catalog publication must remain independent from retrieval
+   activation.
+5. Make the agent use hybrid ranking while preserving exact entry reads,
+   evidence-bound quotations, visible-reference validation, insufficient-
+   evidence behavior, audit records, rollback, and the current keyword path as
+   a safe fallback.
+6. Verify the authenticated EFB flow end to end, then prove that rollback or a
+   new catalog activation cannot leak results from the previously indexed
+   release.
+
+Acceptance requires complete chunk and embedding coverage, an attached ready
+build for the exact active release, no cross-scope or cross-release results,
+supported citations for technical answers, measurable retrieval improvement on
+paraphrased questions, and clean fallback when semantic retrieval is
+unavailable. This is the next EFB agent capability after the controlled package
+activation; it does not merge the unpublished AV-OKF research index with the
+published EFB catalog.
+
 Do not expand the page-by-page Topic builder into another independent document platform. Its topic-first experience is useful; its evidence collection, media handling and publication should converge on shared services. Keep source selection, writing depth and editorial control visible, while hiding queue mechanics and internal evidence IDs from article prose. Preserve the current working system during this migration.
