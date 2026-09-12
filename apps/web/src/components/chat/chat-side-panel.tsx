@@ -69,10 +69,8 @@ export function ChatSidePanelContent({
             })
           )}
           {relatedEvidence.length > 0 ? (
-            <div className="mt-3 border-t border-border pt-3">
-              <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-wide text-muted-foreground">
-                Related, not used
-              </p>
+            <details className="mt-3 border-t border-border pt-3">
+              <summary className="mb-2 cursor-pointer text-xs font-medium text-muted-foreground">Related, not used</summary>
               <div className="space-y-2">
                 {relatedEvidence.map((evidence) => (
                   <div
@@ -86,15 +84,13 @@ export function ChatSidePanelContent({
                   </div>
                 ))}
               </div>
-            </div>
+            </details>
           ) : null}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Trace</CardTitle>
-        </CardHeader>
+      <details className="rounded-lg border border-border p-4">
+        <summary className="cursor-pointer text-sm font-medium">How this answer was produced</summary>
         <CardContent className="space-y-3">
           {trace ? (
             <>
@@ -236,7 +232,7 @@ export function ChatSidePanelContent({
             </p>
           )}
         </CardContent>
-      </Card>
+      </details>
     </div>
   );
 }

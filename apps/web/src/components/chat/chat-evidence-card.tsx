@@ -246,10 +246,10 @@ function evidenceCardCopy(profile: ChatAnswerEvidenceProfile) {
     return {
       Icon: ShieldCheck,
       containerClass: "border-emerald-500/40 bg-emerald-500/5",
-      description: "Evidence from human-reviewed OKF topics - highest trust",
+      description: "Sources were reviewed; this answer is AI-generated",
       detailTitle: "Human-approved OKF sources",
       iconClass: "text-emerald-400",
-      label: "Human-approved - OKF",
+      label: "Based on reviewed sources",
       labelClass: "text-emerald-300",
       noticeClass: "bg-emerald-500/10 text-emerald-100",
     };

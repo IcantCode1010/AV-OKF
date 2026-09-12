@@ -1,3 +1,5 @@
+> Latest chat-cleanup implementation: [report](chat-cleanup-implementation-report.md). The earlier pipeline report below is preserved.
+
 # Implementation report: Unified OKF Release Pipeline (PoC)
 
 ## Outcome

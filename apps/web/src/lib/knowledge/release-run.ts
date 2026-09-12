@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import type { AuthWorkspaceContext } from "../auth-workspace.ts";
-import { createPublisherApi, loadPublisherConfig } from "../efb-publisher/config.ts";
+import { createPublisherApi, loadPublisherConfig, publisherIsConfigured } from "../efb-publisher/config.ts";
 import { importEfbPackage, initializeAndUploadEfbPackage, verifyEfbRelease } from "../efb-publisher/publish-package.ts";
 import type { PublisherApi } from "../efb-publisher/types.ts";
 import { getPrisma } from "../prisma.ts";
@@ -14,6 +14,37 @@ export type KnowledgeReleaseStage = typeof KNOWLEDGE_RELEASE_STAGES[number];
 export type ReleaseStageResult = Record<string, unknown> | void;
 export type ReleaseStageHandlers = Partial<Record<KnowledgeReleaseStage, (runId: string) => Promise<ReleaseStageResult>>>;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+
+// Only an explicit package-screen action creates this activation-authorized run.
+export async function requestExportPublication(context: AuthWorkspaceContext, exportId: string) {
+  loadPublisherConfig();
+  const db = getPrisma();
+  const exported = await db.knowledgeExportRelease.findFirstOrThrow({ where: { id: exportId, workspaceId: context.workspaceId, status: "exported" } });
+  const result = asRecord(exported.result);
+  if (typeof result.releaseDirectory !== "string") throw Error("efb_package_directory_missing");
+  const { inspectPublishablePackage } = await import("../efb-publisher/validate-package.ts");
+  await inspectPublishablePackage(result.releaseDirectory);
+  for (const selection of selectionSnapshot(exported.selectionSnapshot)) await assertApprovedSelection(context, selection.revisionId);
+  const registryHash = registryFingerprint(await loadProjectEfbContractRegistry());
+  for (const selection of selectionSnapshot(exported.selectionSnapshot)) {
+    const metadata = asRecord(selection.metadata);
+    if (metadata.registryHash && metadata.registryHash !== registryHash) throw Error("efb_package_registry_changed_rebuild_required");
+  }
+  const run = await db.knowledgeReleaseRun.upsert({
+    where: { triggerKey: `efb-export:${context.workspaceId}:${exportId}` },
+    create: {
+      triggerKey: `efb-export:${context.workspaceId}:${exportId}`, workspaceId: context.workspaceId, createdBy: context.userId,
+      selectionSnapshot: json(exported.selectionSnapshot), registryHash, releaseDirectory: result.releaseDirectory,
+      completedStages: ["compile_navigation", "build_package"],
+      result: json({ exportId, activationRequested: true }),
+    },
+    update: {},
+  });
+  if (["failed", "awaiting_publication", "awaiting_activation"].includes(run.status)) {
+    await db.knowledgeReleaseRun.updateMany({ where: { id: run.id, workspaceId: context.workspaceId, status: run.status }, data: { status: "queued", errorCode: null, errorMessage: null } });
+  }
+  return run;
+}
 
 export function nextKnowledgeReleaseStage(completedStages: readonly string[]): KnowledgeReleaseStage | null {
   return KNOWLEDGE_RELEASE_STAGES.find((stage) => !completedStages.includes(stage)) ?? null;
@@ -67,9 +98,10 @@ export async function runKnowledgeRelease(context: AuthWorkspaceContext, runId: 
   }
 }
 
-export function configuredKnowledgeReleaseHandlers(context: AuthWorkspaceContext, options: { activate?: boolean; api?: PublisherApi } = {}): ReleaseStageHandlers {
-  const publishConfigured = Boolean(options.api || (process.env.EFB_PUBLISHER_URL && process.env.EFB_PUBLISHER_TOKEN));
-  const api = () => options.api ?? createPublisherApi(loadPublisherConfig());
+export function configuredKnowledgeReleaseHandlers(context: AuthWorkspaceContext, options: { activate?: boolean; api?: PublisherApi; preserveCatalog?: boolean } = {}): ReleaseStageHandlers {
+  const publishConfigured = Boolean(options.api || publisherIsConfigured());
+  let publisherApi = options.api;
+  const api = () => publisherApi ??= createPublisherApi(loadPublisherConfig());
   return {
     gate_selection: async (runId) => {
       const selections = selectionSnapshot((await releaseRun(context, runId)).selectionSnapshot);
@@ -106,17 +138,31 @@ export function configuredKnowledgeReleaseHandlers(context: AuthWorkspaceContext
     }, verify: async (runId: string) => {
       const imported = asRecord(asRecord((await releaseRun(context, runId)).result).import);
       if (typeof imported.packageVersionId !== "string") throw Error("knowledge_release_import_result_missing");
-      const verified = await verifyEfbRelease(api(), imported.packageVersionId);
+      const verified = options.preserveCatalog
+        ? await verifyAdditiveEfbRelease(api(), imported.packageVersionId)
+        : await verifyEfbRelease(api(), imported.packageVersionId);
       await getPrisma().knowledgeReleaseRun.update({ where: { id: runId }, data: { receiverRevisionId: verified.revisionId } });
       return verified;
     } } : {}),
     ...(options.activate ? { activate: async (runId: string) => {
       const run = await releaseRun(context, runId);
       if (!run.receiverRevisionId) throw Error("knowledge_release_receiver_revision_missing");
-      await api()({ action: "activate", revision: run.receiverRevisionId });
+      if (options.preserveCatalog) {
+        const verified = asRecord(asRecord(run.result).verify);
+        if (!("previousRevisionId" in verified)) throw Error("efb_previous_catalog_missing");
+        await api()({ action: "activate-if-current", revision: run.receiverRevisionId, previousRevision: verified.previousRevisionId });
+      } else await api()({ action: "activate", revision: run.receiverRevisionId });
       return { revisionId: run.receiverRevisionId, activated: true };
     } } : {}),
   };
+}
+
+export async function verifyAdditiveEfbRelease(api: PublisherApi, packageVersionId: string) {
+  const prepared = asRecord(await api({ action: "prepare-additive", id: packageVersionId }));
+  if (typeof prepared.revisionId !== "string" || !(prepared.previousRevisionId === null || typeof prepared.previousRevisionId === "string")) throw Error("efb_publisher_revision_missing");
+  const inspection = asRecord(await api({ action: "inspect", revision: prepared.revisionId }));
+  if (!Array.isArray(inspection.packages) || !inspection.packages.some(p => asRecord(p).package_version_id === packageVersionId)) throw Error("efb_publisher_inspection_mismatch");
+  return { revisionId: prepared.revisionId, previousRevisionId: prepared.previousRevisionId, inspection };
 }
 
 async function assertApprovedSelection(context: AuthWorkspaceContext, revisionId: string) {

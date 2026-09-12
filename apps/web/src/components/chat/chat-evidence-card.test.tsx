@@ -13,10 +13,15 @@ test("evidence card separates cited authority from related unused results", () =
   }));
 
   assert.match(markup, /1 cited source/);
+  assert.match(markup, /Based on reviewed sources/);
+  assert.doesNotMatch(markup, /highest trust/);
   const sidePanel = renderToStaticMarkup(createElement(ChatSidePanelContent, {
     latestAssistantMessage: message(),
   }));
   assert.match(sidePanel, /Related, not used/);
+  assert.match(sidePanel, /How this answer was produced/);
+  assert.equal((sidePanel.match(/<details/g) ?? []).length, 2);
+  assert.doesNotMatch(sidePanel, /<details[^>]* open/);
   assert.match(sidePanel, /not cited by the answer/);
 });
 

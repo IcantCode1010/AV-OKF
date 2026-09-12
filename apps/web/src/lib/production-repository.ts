@@ -1376,6 +1376,7 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
     },
     async createKnowledgeAuthoringRunAfterExtraction(input: {
       documentId: string;
+      extractionJobId: string;
       workspaceId: string;
     }) {
       const document = await db.document.findFirst({
@@ -1396,15 +1397,24 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
         select: { userId: true },
         where: { workspaceId: input.workspaceId },
       });
-      return db.knowledgeAuthoringRun.create({
-        data: {
+      return db.knowledgeAuthoringRun.upsert({
+        where: {
+          workspaceId_documentId_extractionJobId: {
+            workspaceId: input.workspaceId,
+            documentId: input.documentId,
+            extractionJobId: input.extractionJobId,
+          },
+        },
+        create: {
           ...automation,
           documentId: input.documentId,
+          extractionJobId: input.extractionJobId,
           knowledgeBundleId: document.knowledgeBundleId,
           profileVersion: document.knowledgeBundle.activeProfileVersion.version,
           requestedBy: member?.userId,
           workspaceId: input.workspaceId,
         },
+        update: {},
         select: { documentId: true, id: true, workspaceId: true },
       });
     },
@@ -1424,6 +1434,33 @@ export function createPostgresDocumentRepository(prisma = getPrisma()) {
           ],
         },
       });
+    },
+    async getCompletedExtractionsMissingKnowledgeAuthoringRuns(limit = 100) {
+      const completed = await db.extractionJob.findMany({
+        where: {
+          status: "completed",
+          document: {
+            deletedAt: null,
+            knowledgeBundleId: { not: null },
+            knowledgeBundle: {
+              status: "active",
+              activeProfileVersion: { isNot: null },
+            },
+          },
+        },
+        include: {
+          document: {
+            select: {
+              knowledgeAuthoringRuns: { select: { extractionJobId: true } },
+            },
+          },
+        },
+        orderBy: { completedAt: "asc" },
+        take: limit,
+      });
+      return completed
+        .filter((job) => !job.document.knowledgeAuthoringRuns.some((run) => run.extractionJobId === job.id))
+        .map((job) => ({ documentId: job.documentId, extractionJobId: job.id, workspaceId: job.workspaceId }));
     },
     async getQueuedTopicDiscoveryJobs(limit = 100) {
       return db.topicDiscoveryJob.findMany({

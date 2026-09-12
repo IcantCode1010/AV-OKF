@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ProjectEfbContractRegistry } from "../project-efb-contract-registry.ts";
+import { evaluateClassificationEvidence } from "./efb-classification-evidence.ts";
 import {
   deterministicClassification,
   type ClassificationEvidence,
@@ -26,6 +27,20 @@ export const predictionSchema = z
   })
   .strict();
 export type Prediction = z.infer<typeof predictionSchema>;
+export const placementEvidenceRepairSchema = z
+  .object({
+    evidence: z
+      .array(
+        z.object({
+          field: z.enum(["ata", "qrh"]),
+          id: z.string(),
+          quote: z.string().min(10).max(2000),
+        }),
+      )
+      .max(2),
+    unavailable: z.boolean(),
+  })
+  .strict();
 export const ATA_LABELS: Record<string, string> = {
   "05": "Time limits and maintenance checks",
   "12": "Servicing",
@@ -62,16 +77,20 @@ export function evaluateClassification(
 ) {
   const detected = deterministicClassification(registry, evidence, documents);
   const issues = [...detected.issues];
-  const citations = prediction.evidence.filter((ref) =>
-    evidence.some(
-      (e) =>
-        e.id === ref.id &&
-        e.quote.replace(/\s+/g, " ").includes(ref.quote.replace(/\s+/g, " ")),
-    ),
+  const evidenceEvaluation = evaluateClassificationEvidence(
+    evidence,
+    prediction.evidence,
   );
-  if (citations.length !== prediction.evidence.length)
-    issues.push("invalid_evidence_quote");
-  const has = (field: string) => citations.some((e) => e.field === field);
+  const citations = evidenceEvaluation.valid;
+  const has = (field: "audience" | "ata" | "qrh") =>
+    evidenceEvaluation.byField(field).length > 0;
+  const invalidRequiredEvidence = evidenceEvaluation.discarded.some(
+    (reference) =>
+      (reference.field === "audience" && !has("audience")) ||
+      (reference.field === "ata" && prediction.audiences.includes("maintenance") && !has("ata")) ||
+      (reference.field === "qrh" && prediction.audiences.includes("pilot") && !has("qrh")),
+  );
+  if (invalidRequiredEvidence) issues.push("invalid_evidence_quote");
   if (!has("audience") || !prediction.audiences.length)
     issues.push("audience_evidence_missing");
   let ataChapter =
@@ -123,6 +142,8 @@ export function evaluateClassification(
     },
     detected,
     evidence: citations,
+    discardedEvidence: evidenceEvaluation.discarded,
+    warnings: evidenceEvaluation.warnings,
     rationale: prediction.rationale,
   };
 }

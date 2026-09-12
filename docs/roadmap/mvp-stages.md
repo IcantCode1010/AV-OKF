@@ -12,6 +12,32 @@ The [aircraft article pipeline review and delivery plan](efb-content-platform-pl
 
 ## Current Implementation Status
 
+### Chat readability — 2026-09-11
+
+- Implemented Markdown answer rendering with evidence-bound citation links, concise answer formatting guidance, and collapsed secondary details.
+- Retrieval, validation, and stored conversation schemas remain unchanged. Docker rollout and live-conversation desktop/mobile acceptance remain pending; see the chat implementation report.
+
+### Pinned follow-up: EFB publication file counter — 2026-09-11
+
+- Schedule after the current EFB publish finishes; do not interrupt that run.
+- Show actual uploaded files / total package files alongside the current stage
+  on the EFB packages page, with automatic refresh and last-progress time.
+- Persist progress so refreshing the page or retrying a push preserves accurate
+  counts. Count successfully transferred or verified existing files, not attempts.
+- Keep upload, verification, and activation distinct: finishing the file count
+  must not imply the package is already active for users.
+- Acceptance: a multi-file publish visibly advances within the upload stage;
+  refresh/retry does not double-count files, and completion reflects activation.
+- Status: planned, not implemented.
+
+2026-09-11: completed package delivery now has a Push to EFB app action using
+the resumable publisher. This means Supabase upload/import, verification, and
+activation. The companion EFB receiver migration/API and local Docker publisher connection
+are now configured and authenticated inspection passes. Existing unsigned
+packages require rebuilding with the configured signing key; an end-to-end
+push is still pending. See
+[Push to EFB deployment](../deployment/push-to-efb.md).
+
 Large-PDF processing is implemented: direct storage upload, streamed inspection/hash, selective OCR, resumable extraction and discovery, complete batched RAG indexing, and portable citations. A bounded non-blocking entity stage now follows enrichment, and topic publication schedules bundle-local incremental relation expansion. A separate manually initiated Topic expansion workflow can inspect approved bundle knowledge and return up to 10 grounded missing-topic proposals to normal enrichment and review. Structural entity projections remain separate from trusted exported OKF relations. Production rollout at the 250 MB/5,000-page ceiling and automatic relation publication remain gated on their documented evaluations.
 
 As of 2026-07-26:

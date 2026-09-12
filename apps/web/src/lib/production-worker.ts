@@ -28,6 +28,7 @@ type ProductionExtractionRepository = {
   }>;
   createKnowledgeAuthoringRunAfterExtraction?(input: {
     documentId: string;
+    extractionJobId: string;
     workspaceId: string;
   }): Promise<{ documentId: string; id: string; workspaceId: string }>;
   failExtractionJob(input: {

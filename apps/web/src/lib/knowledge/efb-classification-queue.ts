@@ -11,7 +11,16 @@ export function startClassificationWorker(
   const worker = new Worker<{ id: string }>(
     name,
     async (job) => {
-      if (job.name === "export") {
+      if (job.name === "publish") {
+        const db = getPrisma();
+        const run = await db.knowledgeReleaseRun.findUniqueOrThrow({ where: { id: job.data.id } });
+        if (!run.triggerKey?.startsWith(`efb-export:${run.workspaceId}:`)) throw Error("efb_publication_not_authorized");
+        // BullMQ owns execution; a recovered stalled job resumes persisted stages.
+        if (run.status === "running") await db.knowledgeReleaseRun.updateMany({ where: { id: run.id, status: "running" }, data: { status: "queued" } });
+        const context = { workspaceId: run.workspaceId, userId: run.createdBy, role: "member" as const };
+        const { runKnowledgeRelease, configuredKnowledgeReleaseHandlers } = await import("./release-run.ts");
+        await runKnowledgeRelease(context, run.id, configuredKnowledgeReleaseHandlers(context, { activate: true, preserveCatalog: true }));
+      } else if (job.name === "export") {
         const db = getPrisma(),
           release = await db.knowledgeExportRelease.findUniqueOrThrow({
             where: { id: job.data.id },
@@ -49,6 +58,9 @@ export function startClassificationWorker(
     if (reconciling) return;
     reconciling = true;
     try {
+      for (const row of await getPrisma().knowledgeReleaseRun.findMany({ where: { triggerKey: { startsWith: "efb-export:" }, status: { in: ["queued", "running"] } }, take: 20, orderBy: { createdAt: "asc" } })) {
+        await queue.add("publish", { id: row.id }, { jobId: `publish-${row.id}`, attempts: 1, removeOnComplete: true, removeOnFail: true });
+      }
       if (process.env.AV_OKF_EFB_CLASSIFICATION_ENABLED === "true")
         for (const row of await getPrisma().knowledgeEfbClassification.findMany(
           {

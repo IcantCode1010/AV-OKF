@@ -67,6 +67,18 @@ test("invented quote blocks readiness", () => {
     "blocked",
   );
 });
+test("invalid extra evidence does not block grounded required fields", () => {
+  const result = evaluateClassification(registry, evidence, [], {
+    ...prediction,
+    evidence: [
+      ...prediction.evidence,
+      { field: "audience", id: "e", quote: "fabricated extra quotation" },
+    ],
+  });
+  assert.equal(result.status, "ready");
+  assert.deepEqual(result.warnings, ["discarded_invalid_evidence"]);
+  assert.equal(result.discardedEvidence.length, 1);
+});
 test("model cannot override explicit ATA evidence", () => {
   const r = evaluateClassification(registry, evidence, [], {
     ...prediction,

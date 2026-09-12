@@ -167,6 +167,7 @@ async function main() {
   if (continuationDocuments > 0) {
     console.log(`Queued continuation reconciliation for ${continuationDocuments} documents.`);
   }
+  await reconcileMissingKnowledgeAuthoringRuns(repository, knowledgeAuthoringQueue);
   await reconcileQueuedKnowledgeAuthoringRuns(repository, knowledgeAuthoringQueue);
   await reconcileOkfConceptEmbeddings({
     queue: okfEmbeddingQueue,
@@ -505,6 +506,18 @@ async function reconcileQueuedKnowledgeAuthoringRuns(
     await queue.enqueue({ documentId: job.documentId, runId: job.id, workspaceId: job.workspaceId });
   }
   if (jobs.length > 0) console.log(`Re-enqueued ${jobs.length} knowledge authoring runs.`);
+}
+
+async function reconcileMissingKnowledgeAuthoringRuns(
+  repository: ReturnType<typeof createPostgresDocumentRepository>,
+  queue: ReturnType<typeof createBullMqKnowledgeAuthoringQueue>,
+) {
+  const missing = await repository.getCompletedExtractionsMissingKnowledgeAuthoringRuns();
+  for (const extraction of missing) {
+    const run = await repository.createKnowledgeAuthoringRunAfterExtraction(extraction);
+    await queue.enqueue({ documentId: run.documentId, runId: run.id, workspaceId: run.workspaceId });
+  }
+  if (missing.length > 0) console.log(`Recovered ${missing.length} missing knowledge authoring runs.`);
 }
 
 async function shutdown() {

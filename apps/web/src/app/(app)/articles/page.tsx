@@ -4,6 +4,7 @@ import { getPrisma } from "@/lib/prisma";
 import { knowledgeFeature } from "@/lib/knowledge/contracts";
 import { KnowledgeActionForm } from "@/components/knowledge-action-form";
 import { ArticleLibrary, type ArticleLibraryRow } from "@/components/article-library";
+import { presentEfbClassification } from "@/lib/knowledge/efb-classification-presentation";
 export const dynamic = "force-dynamic";
 export default async function ArticlesPage() {
   const context = await requireAuthWorkspaceContext();
@@ -27,7 +28,7 @@ export default async function ArticlesPage() {
     }),
     db.knowledgeEfbClassification.findMany({
       where: { workspaceId: context.workspaceId },
-      select: { revisionId: true, status: true },
+      select: { revisionId: true, status: true, result: true },
       orderBy: { createdAt: "desc" },
     }),
     db.knowledgeEfbSelection.findMany({
@@ -35,15 +36,19 @@ export default async function ArticlesPage() {
       select: { articleId: true, revisionId: true },
     }),
   ]);
-  const classificationsByRevision = new Map<string, string>();
+  const classificationsByRevision = new Map<string, { status: string; issues: string[] }>();
   for (const item of classifications) {
-    if (!classificationsByRevision.has(item.revisionId)) classificationsByRevision.set(item.revisionId, item.status);
+    if (!classificationsByRevision.has(item.revisionId)) {
+      const result = item.result as { issues?: string[] };
+      classificationsByRevision.set(item.revisionId, { status: item.status, issues: result.issues ?? [] });
+    }
   }
   const selectionsByArticle = new Map(selections.map((item) => [item.articleId, item.revisionId]));
   const articleRows: ArticleLibraryRow[] = articles.map((article) => {
     const revision = article.revisions[0];
     const body = revision?.body as { title?: string } | undefined;
-    const classificationStatus = revision ? classificationsByRevision.get(revision.id) : undefined;
+    const classification = revision ? classificationsByRevision.get(revision.id) : undefined;
+    const metadataPresentation = presentEfbClassification(classification?.status, classification?.issues);
     return {
       articleId: article.id,
       revisionId: revision?.id ?? null,
@@ -51,7 +56,8 @@ export default async function ArticlesPage() {
       version: revision?.version ?? null,
       origin: article.originKind === "topic" ? "Document topic" : article.originKind,
       approved: Boolean(revision?.approval && article.approvedRevisionId === revision.id),
-      metadataStatus: classificationStatus === "ready" ? "ready" : classificationStatus ? "needs_correction" : "not_applied",
+      metadataStatus: metadataPresentation.key === "ready" ? "ready" : metadataPresentation.key === "classifying" ? "classifying" : metadataPresentation.key === "not_applied" ? "not_applied" : "needs_correction",
+      metadataLabel: metadataPresentation.label,
       selectedForEfb: revision ? selectionsByArticle.get(article.id) === revision.id : false,
     };
   });

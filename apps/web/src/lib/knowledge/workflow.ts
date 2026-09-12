@@ -192,7 +192,11 @@ export async function executeEditorialAction(
     });
     let selected = 0;
     let needsAttention = 0;
-    const { synchronizeInheritedClassification, selectClassifiedRevision } = await import("./efb-classification.ts");
+    const {
+      requestClassification,
+      synchronizeInheritedClassification,
+      selectClassifiedRevision,
+    } = await import("./efb-classification.ts");
     for (const topic of topics) {
       try {
         await importLegacyTopic(topic.id);
@@ -204,13 +208,17 @@ export async function executeEditorialAction(
           continue;
         }
         const classification = await synchronizeInheritedClassification(context, article.approvedRevisionId);
-        if (classification.status === "ready" && await selectClassifiedRevision(context, article.approvedRevisionId)) selected++;
-        else needsAttention++;
+        if (classification.status === "ready" && await selectClassifiedRevision(context, article.approvedRevisionId)) {
+          selected++;
+        } else {
+          await requestClassification(context, article.approvedRevisionId);
+          needsAttention++;
+        }
       } catch {
         needsAttention++;
       }
     }
-    return `${selected} approved articles are ready for package export. ${needsAttention} require metadata correction. Topic proposals retain inherited metadata but are not exportable until enriched and approved.`;
+    return `${selected} approved articles are ready for package export. ${needsAttention} require article-specific metadata; classification has been queued where possible. Topic proposals retain inherited metadata but are not exportable until enriched and approved.`;
   }
   else if (action === "cancel-classification") {
     await assertArticleSourcesCurrent(context, id);
@@ -504,10 +512,16 @@ export async function executeEditorialAction(
         id: String(form.get("selectionId")),
       },
     });
-  else if (action === "export") {
+  else if (action === "publish-export") {
+    if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
+    const { requestExportPublication } = await import("./release-run.ts");
+    const run = await requestExportPublication(context, String(form.get("releaseId") ?? ""));
+    return run.status === "completed" ? "This package has already been pushed to EFB." : "Push to EFB queued. Upload, import, verification and activation progress appear below.";
+  } else if (action === "export") {
     if (!knowledgeFeature("export")) throw Error("selected_export_not_enabled");
     const selectionIds = form.getAll("selectionId").map(String);
     if (!selectionIds.length) throw Error("select_articles_first");
-    await exportSelectedArticles(context, selectionIds);
+    const releaseId = await exportSelectedArticles(context, selectionIds);
+    return `EFB package ${releaseId} queued. Progress appears below.`;
   } else throw Error("unknown_action");
 }

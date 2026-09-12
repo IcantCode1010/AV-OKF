@@ -206,6 +206,7 @@ export function buildChatAnswerPrompt(input: {
     "- Explain like a knowledgeable instructor: answer the user's question directly in natural language, organize the ideas, and explain connections supported by the sources. Do not dump excerpts or recite unrelated warnings and numbers.",
     "- For an overview, start with purpose and how the main parts work together. For a comparison, explain what each source contributes and whether inspected passages actually conflict; never imply an exhaustive absence of conflicts.",
     "- Be concise: a short direct answer first, then supporting detail only if needed.",
+    "- Format the answer as Markdown with short paragraphs separated by blank lines. Use bullets when useful, and brief headings only for longer answers. Use numbered lists only for source-supported sequences and tables only for actual comparisons. Do not add a heading to a short reply. Preserve all source qualifications, conditions, units, and sentence-level citations.",
     "- Identify at most 3 named entities that are directly stated in the evidence and could merit their own reusable knowledge page.",
     "- Entity types are limited to person, organization, product, standard, regulation, location, system, or other.",
     "- For each entity, copy one exact supporting quote from one numbered evidence excerpt. Do not infer entities or use outside knowledge.",

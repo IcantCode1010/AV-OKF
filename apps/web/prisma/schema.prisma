@@ -446,6 +446,7 @@ model KnowledgeAuthoringRun {
   workspaceId                      String
   knowledgeBundleId                String
   documentId                       String
+  extractionJobId                 String?
   requestedBy                      String?
   profileVersion                   Int                            @default(1)
   automaticTopicApprovalEnabled    Boolean                        @default(false)
@@ -478,6 +479,7 @@ model KnowledgeAuthoringRun {
 
   @@index([workspaceId, status, createdAt])
   @@index([documentId, createdAt])
+  @@unique([workspaceId, documentId, extractionJobId])
 }
 
 model KnowledgeAuthoringStageAudit {

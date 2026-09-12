@@ -1,7 +1,9 @@
 "use client";
 import { useState, useTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { knowledgeAction } from "@/app/(app)/articles/actions";
 export function KnowledgeActionForm({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [pending, start] = useTransition(),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -14,6 +16,7 @@ export function KnowledgeActionForm({ children }: { children: ReactNode }) {
           const result = await knowledgeAction(form);
           setError(result.error ?? "");
           setMessage(result.message ?? "");
+          router.refresh();
         })
       }
       className="space-y-3"

@@ -6,6 +6,7 @@ import {
 import { KnowledgeActionForm } from "./knowledge-action-form";
 import { EfbSelectionFields } from "./efb-selection-fields";
 import { loadProjectEfbContractRegistry } from "@/lib/project-efb-contract-registry";
+import { presentEfbClassification } from "@/lib/knowledge/efb-classification-presentation";
 export async function ArticleEfbClassification({
   context,
   revisionId,
@@ -24,12 +25,13 @@ export async function ArticleEfbClassification({
       "Source or registry unavailable. Refresh classification when resolved.";
   }
   const result = record?.result as unknown as ClassificationResult | undefined;
+  const presentation = presentEfbClassification(record?.status, result?.issues);
   const registry = await loadProjectEfbContractRegistry().catch(() => null);
   return (
     <section className="space-y-3 rounded border p-4">
       <h3 className="font-semibold">
         EFB classification ·{" "}
-        {record?.status.replaceAll("_", " ") ?? "Not classified"}
+        {presentation.label}
       </h3>
       {problem && <p role="alert">{problem}</p>}
       {result?.metadata && (
@@ -53,12 +55,9 @@ export async function ArticleEfbClassification({
           <button className="rounded border p-2">Cancel classification</button>
         </KnowledgeActionForm>
       )}
-      {result?.issues?.length ? (
-        <ul>
-          {result.issues.map((issue) => (
-            <li key={issue}>{issue.replaceAll("_", " ")}</li>
-          ))}
-        </ul>
+      {presentation.actionable && <p role="alert">{presentation.label}. Review or retry only the unresolved metadata field.</p>}
+      {result?.warnings?.length ? (
+        <details><summary>Classification diagnostics</summary><p>{result.warnings.length} unused or invalid evidence item(s) were discarded.</p></details>
       ) : null}
       {result?.evidence?.length ? (
         <details>

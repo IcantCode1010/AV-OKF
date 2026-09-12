@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Added aviation knowledge and EFB agent infographic drafts covering manual ingestion, curated/versioned topics, custom topic creation, signed package publication, activation, and source-linked answers.
+
+- AV-OKF chat now renders Markdown paragraphs, lists, headings, and tables with preserved source links. Entity suggestions and diagnostics are collapsed; reviewed-source labels distinguish source review from generated answers.
+
+- Configured the EFB publisher with automatic server sign-in and session renewal,
+  preserving temporary bearer-token support. Unsigned packages now show a clear
+  rebuild requirement instead of a push button.
+
+- Simplified EFB Selections into a latest-packages view with direct push actions,
+  build/delivery progress, and an article-library link. Removed the long topic
+  lists and metadata/reclassification controls from this page.
+
+- Added Push to EFB app on completed packages: queue a resumable Supabase
+  upload, import, verification, and explicit activation; show delivery status
+  and retry failed pushes. Reuse the built signed OKF artifact. The matching
+  EFB receiver update preserves unrelated active packages and rejects activation
+  if another publisher changed the catalog meanwhile.
+
+- Show live queued/building progress for EFB package exports, refresh release
+  history automatically while an export runs, and confirm the created package
+  job ID when the build action is submitted.
+
+- Made the bulk EFB metadata preparation action queue article-specific ATA or
+  QRH classification whenever deterministic source inheritance cannot choose a
+  single placement. The EFB selections page now explains that classification
+  follows inherited aircraft and audience metadata automatically.
+- Tightened article placement classification so inherited aircraft and audience
+  metadata are not reclassified or cited. The model now returns only exact ATA
+  or QRH placement evidence, avoiding false correction flags caused by extra
+  unsupported quotations. Explicit reruns now refresh needs-review model
+  decisions while preserving ready classifications.
+- Validated EFB classification evidence per required field, retained exact
+  placement citations when unrelated model evidence is discarded, and added
+  one bounded exact-quote repair attempt for otherwise valid ATA/QRH targets.
+- Replaced the generic EFB metadata correction label with field-specific
+  actions, exposed compact automation metrics, made extraction-triggered
+  authoring idempotent per extraction job, and added worker-start recovery for
+  completed extractions missing their authoring run.
+
 - Began the unified OKF release pipeline: automatic authoring now routes EFB
   classification through immutable article revisions and the shared
   `KnowledgeEfbClassification` service; an additive `KnowledgeReleaseRun`

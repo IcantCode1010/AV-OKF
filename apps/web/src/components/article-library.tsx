@@ -14,14 +14,9 @@ export type ArticleLibraryRow = {
   version: number | null;
   origin: string;
   approved: boolean;
-  metadataStatus: "ready" | "needs_correction" | "not_applied";
+  metadataStatus: "ready" | "classifying" | "needs_correction" | "not_applied";
+  metadataLabel: string;
   selectedForEfb: boolean;
-};
-
-const metadataLabels: Record<ArticleLibraryRow["metadataStatus"], string> = {
-  ready: "Metadata ready",
-  needs_correction: "Needs correction",
-  not_applied: "Metadata not applied",
 };
 
 export function ArticleLibrary({ rows }: { rows: ArticleLibraryRow[] }) {
@@ -32,7 +27,7 @@ export function ArticleLibrary({ rows }: { rows: ArticleLibraryRow[] }) {
   const visible = useMemo(
     () =>
       rows.filter((row) =>
-        `${row.title} ${row.origin} ${metadataLabels[row.metadataStatus]}`
+        `${row.title} ${row.origin} ${row.metadataLabel}`
           .toLowerCase()
           .includes(filter.trim().toLowerCase()),
       ),
@@ -164,7 +159,7 @@ export function ArticleLibrary({ rows }: { rows: ArticleLibraryRow[] }) {
                   </td>
                   <td className="px-2 py-3">
                     <span className={row.metadataStatus === "ready" ? "text-emerald-700 dark:text-emerald-400" : row.metadataStatus === "needs_correction" ? "text-destructive" : "text-muted-foreground"}>
-                      {metadataLabels[row.metadataStatus]}
+                      {row.metadataLabel}
                     </span>
                     {row.selectedForEfb && <p className="text-xs text-muted-foreground">In package selection</p>}
                   </td>
