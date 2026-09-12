@@ -550,6 +550,19 @@ test("supported-false completion is preserved and captured as a related-evidence
     appendCalls[0]?.knowledgeGap?.reason,
     "related_evidence_not_answering",
   );
+  assert.deepEqual(result.assistantMessage.citations, []);
+  assert.equal(result.assistantMessage.trace?.finalEvidenceStatus, "no_evidence");
+  assert.deepEqual(result.assistantMessage.trace?.evidenceSufficiency, {
+    reason: "related_evidence_not_answering",
+    status: "weak",
+  });
+  assert.equal(result.assistantMessage.trace?.relatedEvidence?.length, 1);
+  assert.deepEqual(result.assistantMessage.trace?.citationProjection, {
+    citedCount: 0,
+    relatedCount: 1,
+    remapped: false,
+    retrievedCount: 1,
+  });
 });
 
 test("metadata clarification never reaches answer generation or evidence validation", async () => {
@@ -692,6 +705,45 @@ test("sendMessage stores the LLM answer and records answer mode in the trace", a
   );
 });
 
+test("sendMessage stores only answer-used citations and separates related retrievals", async () => {
+  const { appendCalls, repository } = createRepositoryStub();
+  const first = citedRetrievalResult();
+  const secondCitation: ChatCitation = {
+    documentTitle: "Generator Operations Manual",
+    index: 2,
+    pageEnd: 40,
+    pageStart: 40,
+    sourceType: "okf",
+    text: "The generator inspection interval is defined here.",
+  };
+  const service = createProductionChatService(repository, {
+    generateAnswer: async () => ({
+      content: "Use the inspection interval from the operations manual [2].",
+      mode: "llm",
+      outcome: "answered",
+      provider: "openai",
+      model: "test-model",
+    }),
+    getContext: async () => context,
+    retrieve: async () => ({
+      ...first,
+      citations: [...first.citations, secondCitation],
+      evidence: [...first.evidence, secondCitation],
+    }),
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the official generator inspection interval?",
+  );
+
+  assert.match(result.assistantMessage.content, /\[1\]/);
+  assert.equal(result.assistantMessage.citations.length, 1);
+  assert.equal(result.assistantMessage.citations[0]?.documentTitle, "Generator Operations Manual");
+  assert.equal(appendCalls[0]?.assistantTrace.relatedEvidence?.length, 1);
+  assert.equal(appendCalls[0]?.assistantTrace.citationProjection?.remapped, true);
+});
+
 test("sendMessage falls back when a generated answer violates the evidence contract", async () => {
   const { appendCalls, repository } = createRepositoryStub();
   const service = createProductionChatService(repository, {
@@ -711,9 +763,9 @@ test("sendMessage falls back when a generated answer violates the evidence contr
   );
 
   assert.equal(appendCalls[0]?.assistantTrace.answerMode, "deterministic");
-  assert.equal(appendCalls[0]?.assistantTrace.answerValidation?.status, "fail");
+  assert.equal(appendCalls[0]?.assistantTrace.answerValidation?.status, "pass");
   assert.ok(
-    appendCalls[0]?.assistantTrace.answerValidation?.violations.includes(
+    appendCalls[0]?.assistantTrace.answerProjectionFallback?.reasonCodes.includes(
       "answer_missing_valid_citation_marker",
     ),
   );
@@ -975,6 +1027,48 @@ test("a clear later question skips optimization and assumption disclosure", asyn
   assert.equal(result.assistantMessage.trace?.queryUnderstanding?.rewriteMode, "not_needed");
   assert.deepEqual(result.assistantMessage.trace?.queryUnderstanding?.assumptions, []);
   assert.doesNotMatch(result.assistantMessage.content, /Assumptions used/);
+});
+
+test("unsupported live-state questions skip query understanding after clarification", async () => {
+  const history = [
+    historyMessage({ content: "What should I do?", id: "u1", role: "user" }),
+    historyMessage({
+      content: "Which subject applies?",
+      id: "a1",
+      role: "assistant",
+      route: "missing_context",
+    }),
+  ];
+  const { repository } = createRepositoryStub(history);
+  const service = createProductionChatService(repository, {
+    getContext: async () => context,
+    retrieve: async () => {
+      throw new Error("retrieve_should_not_run");
+    },
+    routeQuestion: async () => ({
+      confidence: "high",
+      constraints: { approvedOnly: false, includeUnreviewed: false },
+      queryCategory: "live_or_fresh_data",
+      rationale: "Live state is unsupported.",
+      requiredContext: [],
+      route: "unsupported",
+    }),
+    understandQuery: async () => {
+      throw new Error("query_understanding_should_not_run");
+    },
+  });
+
+  const result = await service.sendMessage(
+    "session_1",
+    "What is the live generator status right now?",
+  );
+
+  assert.equal(result.assistantMessage.trace?.route, "unsupported");
+  assert.equal(
+    result.assistantMessage.trace?.queryUnderstanding?.rewriteMode,
+    "not_needed",
+  );
+  assert.deepEqual(result.assistantMessage.citations, []);
 });
 
 test("complete clarification follow-up routes normally without assumption text", async () => {

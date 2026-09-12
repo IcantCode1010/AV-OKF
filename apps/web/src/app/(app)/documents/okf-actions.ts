@@ -17,6 +17,7 @@ import { resolveKnowledgeBundleRoot } from "@/lib/knowledge-bundles";
 import { isRecoverableOkfExportError } from "@/lib/okf-export-errors";
 import { markOkfConceptLifecycle } from "@/lib/okf-lifecycle";
 import type { TopicRelation } from "@/lib/okf-relation-types";
+import { getPrisma } from "@/lib/prisma";
 
 export async function exportTopicToOkfAction(formData: FormData) {
   const documentId = getFormString(formData, "documentId");
@@ -51,6 +52,13 @@ export async function exportTopicToOkfAction(formData: FormData) {
       topics,
     });
     await updateTopicExportedFilePath(topicId, exported.filename);
+    const { reconcileAutomaticAuthoringRelationsForDocument } = await import(
+      "@/lib/knowledge-authoring"
+    );
+    await reconcileAutomaticAuthoringRelationsForDocument({
+      documentId,
+      workspaceId: context.workspaceId,
+    });
   } catch (error) {
     if (isRecoverableOkfExportError(error)) {
       redirect(
@@ -210,6 +218,80 @@ export async function markOkfConceptLifecycleAction(formData: FormData) {
   redirect(
     `/documents/${documentId}?panel=topics&topic=${topicId}&lifecycleUpdated=${status}`,
   );
+}
+
+export async function reviewTopicMediaAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const referenceId = getFormString(formData, "referenceId");
+  const decision = getFormString(formData, "decision");
+  if (decision !== "approve" && decision !== "reject") {
+    throw new Error("topic_media_decision_invalid");
+  }
+  const context = await requireAuthWorkspaceContext();
+  if (!isProductionBackend()) throw new Error("topic_media_requires_production_backend");
+  const reference = await getPrisma().topicMediaReference.findFirst({
+    where: {
+      documentId,
+      id: referenceId,
+      topicId,
+      workspaceId: context.workspaceId,
+    },
+  });
+  if (!reference) throw new Error("topic_media_reference_not_found");
+  await getPrisma().topicMediaReference.update({
+    data: {
+      reviewedAt: new Date(),
+      reviewedBy: context.userId,
+      status: decision === "approve" ? "approved" : "rejected",
+    },
+    where: { id: reference.id },
+  });
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=topics&topic=${topicId}`);
+}
+
+export async function updateTopicMediaAction(formData: FormData) {
+  const documentId = getFormString(formData, "documentId");
+  const topicId = getFormString(formData, "topicId");
+  const targetTopicId = getFormString(formData, "targetTopicId") || topicId;
+  const referenceId = getFormString(formData, "referenceId");
+  const context = await requireAuthWorkspaceContext();
+  if (!isProductionBackend()) throw new Error("topic_media_requires_production_backend");
+  const db = getPrisma();
+  const reference = await db.topicMediaReference.findFirst({
+    include: { mediaAsset: true },
+    where: { documentId, id: referenceId, topicId, workspaceId: context.workspaceId },
+  });
+  if (!reference) throw new Error("topic_media_reference_not_found");
+  const targetTopic = await db.topicRecord.findFirst({
+    where: { documentId, id: targetTopicId, workspaceId: context.workspaceId },
+  });
+  if (!targetTopic) throw new Error("topic_media_target_not_found");
+  const pageNumber = Number.parseInt(getFormString(formData, "pageNumber"), 10);
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) throw new Error("topic_media_page_invalid");
+  await db.$transaction([
+    db.documentMediaAsset.update({
+      data: {
+        altText: getFormString(formData, "altText").trim(),
+        pageNumber,
+        sourceCaption: getFormString(formData, "sourceCaption").trim() || null,
+        visualContext: getFormString(formData, "visualContext").trim(),
+      },
+      where: { id: reference.mediaAssetId },
+    }),
+    db.topicMediaReference.update({
+      data: {
+        reviewedAt: new Date(),
+        reviewedBy: context.userId,
+        status: "pending_review",
+        topicId: targetTopic.id,
+      },
+      where: { id: reference.id },
+    }),
+  ]);
+  revalidatePath(`/documents/${documentId}`);
+  redirect(`/documents/${documentId}?panel=topics&topic=${targetTopic.id}`);
 }
 
 function getFormString(formData: FormData, key: string) {

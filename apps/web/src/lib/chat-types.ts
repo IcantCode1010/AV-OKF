@@ -9,6 +9,7 @@ export type ChatOkfApprovalProvenance = "automated" | "human" | "legacy";
 // text is a short excerpt sized for citation chips and stored trace JSON,
 // not the full retrieved chunk (see ChatRetrievalEvidence for that).
 export type ChatCitation = {
+  researchEvidenceId?: string;
   approvalProvenance?: ChatOkfApprovalProvenance;
   // Approved OKF concepts governing this chunk via coverage links; optional
   // because citations persisted before coverage threading lack it. Stage 7
@@ -27,6 +28,11 @@ export type ChatCitation = {
   sourceFile?: string;
   sourceType: "okf" | "rag";
   text: string;
+};
+
+export type ChatRelatedEvidence = Omit<ChatCitation, "index"> & {
+  rank: number;
+  reason: "related_not_answering" | "retrieved_not_cited";
 };
 
 export type ChatMessage = {

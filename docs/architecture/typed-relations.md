@@ -37,6 +37,14 @@ The relation vocabulary lives in `okf-base.yaml` under `relations.allowed`. The 
 | `supersedes` | Source object replaces the target. | Target should be treated as stale unless explicitly requested for history. |
 | `conflicts_with` | Source object contradicts the target. | Validator should flag conflict and prefer approved, current, authoritative source. |
 | `depends_on` | Source object requires the target before it can be safely used. | Missing target should produce missing-context or missing-evidence handling. |
+| `part_of` | Source is explicitly a component or subordinate part of the target. | Structural navigation signal. |
+| `applies_to` | Source explicitly applies to the target entity, system, product, or scope. | Scope signal; does not grant authority by itself. |
+| `implements` | Source puts the target policy, requirement, or design into practice. | Implementation context requiring source evidence. |
+| `requires` | Source explicitly requires the target as an input, prerequisite, component, or condition. | Operational relation requiring human review. |
+| `triggers` | Source initiates the target procedure, event, or response. | Operational relation requiring human review. |
+| `affects` | Source has a stated effect on the target. | Context relation requiring human review. |
+| `mitigates` | Source reduces or controls the target risk, condition, or effect. | Safety-sensitive relation requiring human review. |
+| `governs` | Source establishes an authoritative rule or policy for the target. | Authority-sensitive relation requiring human review. |
 
 Do not use a generic relation when the intent is operational. A fault route that sends the user to the MEL should use `routes_to`; a training topic that merely provides background should use `references`.
 
@@ -57,14 +65,29 @@ target_type matches the resolved target file's frontmatter type
 
 Relation targets are internal bundle links for MVP. See [Link Resolution](link-resolution.md) for the exact Markdown and path rules.
 
-## Reviewed Discovery
+## Deterministic Discovery And Publication
 
-Relation discovery is a review aid, not a graph-writing agent. There are two staged inputs:
+Relation discovery begins with deterministic candidate generation. There are two staged inputs:
 
 1. Bundle discovery compares approved exported concepts with deterministic signals.
 2. Assisted authoring may send up to 50 deterministically filtered draft-topic pairs through the same verifier one pair at a time, but stores confirmed results only in `KnowledgeAuthoringRun.relationSuggestions`.
 
-Neither path writes OKF frontmatter. Authoring suggestions require a user to promote them to pending review, and every pending candidate requires a second explicit approval before the source topic is updated and re-exported. Automatic topic approval does not promote or approve relations.
+Document authoring also makes one bounded structured candidate-proposal call
+over known concepts from that document. Proposed file IDs, relation names, and
+exact evidence quotes are validated before the existing one-pair verifier runs.
+The model cannot introduce a concept or write an edge from this step.
+
+The separate **Expand graph** action ranks deterministic bundle candidates and
+queues at most 50 accepted, previously unseen candidates per run. Semantic
+neighbor generation remains available only to explicit evaluation tooling and
+is disabled in production until measured precision shows that recall is the
+limiting problem.
+
+Relation publication is review-first: authoring suggestions require a user to
+promote them, and confirmed candidates require explicit approval before the
+source topic is re-exported. Existing bundle-level automatic-relation settings
+remain stored, but a global stabilization gate currently prevents automatic
+publication. Confirmed automated suggestions return to the human review queue.
 
 Candidate quality is profile-scoped. Basic English function words remain code-owned; Generic and Aviation discovery stopwords live in the versioned bundle profile. A title/description signal requires at least two meaningful shared terms. The UI records the actual sorted shared terms and tags, not only category names. Concepts are sorted by bundle-relative path before pairing, so rerunning discovery produces stable proposed direction and ordering.
 
@@ -77,11 +100,50 @@ One shared graph preflight runs during bundle discovery, authoring-suggestion pr
 
 Reverse `references` and `supports` edges remain possible when independently justified, but carry a warning.
 
-V3 inserts an evidence-verification boundary before human review. Each deterministic candidate is queued independently. A structured provider response must select only the active profile vocabulary and include an exact quote from the selected relation source. The application canonicalizes extraction whitespace but does not case-fold, remove punctuation, or fuzzy-match evidence. Prompt-like text inside a concept remains untrusted data, and the verifier has no tools or graph-writing authority. Content hashes bind the result to both concept versions.
+V3 inserts an evidence-verification boundary before human review. Each deterministic candidate is queued independently. A structured provider response must select only the active profile vocabulary, include an exact quote from the selected relation source, and provide a pair-specific rationale of at least 40 trimmed characters. `references` and `routes_to` quotes must also identify meaningful target-title terms. The application canonicalizes extraction whitespace but does not case-fold, remove punctuation, or fuzzy-match quoted evidence. Prompt-like text inside a concept remains untrusted data, and the verifier has no tools or graph-writing authority. Content hashes bind the result to both concept versions.
 
-Only `confirmed` candidates enter the reviewer list or pending-edge graph preflight. `queued`, `running`, `filtered`, and `failed` candidates never enter frontmatter, the explorer graph, or agent traversal. A direction change clears confirmation and queues another one-pair verification because the evidence must come from the newly selected source. Final approval rechecks content hashes, vocabulary, quote, target/path safety, and graph integrity before exporting the rationale and exact quote in the portable `reason` field.
+Only `confirmed` candidates are eligible for human review.
+`queued`, `running`, `filtered`, and `failed` candidates never enter
+frontmatter, the explorer graph, or agent traversal. A direction change clears
+confirmation and queues another one-pair verification because evidence must
+come from the newly selected source. Both human and automatic publication
+recheck content hashes, vocabulary, the exact quote, target/path safety, and
+graph integrity. The exported relation retains the rationale and quote in
+`reason` and remains removable by a user.
 
-The rollout removes old `pending` candidates only. Human-approved and human-rejected history and every OKF Markdown file remain unchanged. The first configured-provider checkpoint requires at least 80% precision on a representative human-reviewed sample; approximately 90% is required before considering reduced review, semantic expansion, or stronger operational-relation trust.
+The rollout maintenance command removes old `pending` candidates only after a reviewed dry run and exact apply confirmation. Human-approved and human-rejected history and every OKF Markdown file remain unchanged. Approved relations with a missing or short verifier rationale enter a separate published-review lifecycle: the graph edge remains live until a reviewer re-approves a stronger verified explanation or explicitly rejects the edge. The first configured-provider checkpoint requires at least 80% precision on a representative human-reviewed sample; approximately 90% is required before considering reduced review, broader semantic generation, or stronger operational-relation trust.
+
+Run the cleanup inventory first:
+
+```text
+pnpm --dir apps/web maintenance:stabilize-relations
+```
+
+It writes safe JSON and Markdown reports under `backups/relation-stabilization/`.
+After reviewing them, apply the all-bundle cleanup with:
+
+```text
+pnpm --dir apps/web maintenance:stabilize-relations --apply --confirm CLEAR_ALL_PENDING_RELATIONS
+```
+
+The apply command pauses and drains the verification queue, removes pending
+rows and obsolete jobs, recalculates run counters, flags resolvable weak
+published explanations for re-verification, then resumes the queue. It never
+deletes an OKF file or an approved/rejected candidate.
+
+Use `pnpm --dir apps/web eval:relation-verifier` with the documented
+`RELATION_VERIFIER_*` environment variables for a read-only configured-provider
+probe of one known pair. The command stores no candidate and reports only a
+pair hash, provider/model, outcome, and application diagnostic.
+
+```text
+RELATION_VERIFIER_WORKSPACE_ID=<workspace>
+RELATION_VERIFIER_BUNDLE_ID=<bundle>
+RELATION_VERIFIER_SOURCE_FILE=<bundle-relative source concept>
+RELATION_VERIFIER_TARGET_FILE=<bundle-relative target concept>
+RELATION_VERIFIER_PROPOSED_RELATION=references
+RELATION_VERIFIER_EXPECT=negative
+```
 
 Run `pnpm --dir apps/web eval:relations` with `RELATION_EVAL_WORKSPACE_ID` and optional comma-separated `RELATION_EVAL_BUNDLE_IDS` to write a dry-run before/after report. The report includes candidate counts, terms, tags, direction, warnings, and suppression reasons and leaves explicit human-review fields incomplete. Semantic neighbor generation, weighted scoring, broader LLM classification, and bulk relation approval remain blocked until a representative sample is reviewed.
 

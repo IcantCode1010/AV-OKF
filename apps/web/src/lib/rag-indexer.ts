@@ -56,6 +56,21 @@ export async function runRagIndexJob(
   payload: RagIndexJobPayload,
   options: RunRagIndexJobOptions = {},
 ) {
+  if (!options.repository && !options.chunkPages && !options.embeddingProvider && !options.budgetCaps) {
+    const { runBatchedRagIndexJob } = await import("./rag-batch-indexer.ts");
+    try {
+      return await runBatchedRagIndexJob(payload);
+    } catch (error) {
+      const repository = createRagRepository();
+      await repository.failIndexJob({
+        documentId: payload.documentId,
+        errorCode: "indexing_failed",
+        errorMessage: error instanceof Error ? error.message : String(error),
+        indexJobId: payload.indexJobId,
+      });
+      throw error;
+    }
+  }
   const repository = options.repository ?? createRagRepository();
   const chunkPages = options.chunkPages ?? chunkExtractedPages;
   const mode = payload.mode ?? "initial";

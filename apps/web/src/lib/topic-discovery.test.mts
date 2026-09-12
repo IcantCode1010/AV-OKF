@@ -3,12 +3,24 @@ import test from "node:test";
 
 import {
   buildPageWindows,
+  CONSOLIDATION_INPUT_TOKEN_BUDGET,
+  CONSOLIDATION_SAFE_OUTPUT_TOKEN_BUDGET,
   discoverDocumentTopics,
+  estimateTokens,
   getTopicDiscoveryMaxOutputTokens,
+  isAdministrativeTopicTitle,
   resolveExplicitTopicContinuations,
   validateDiscoveredTopics,
+  normalizeDiscoveredTopicType,
   type TopicDiscoveryProvider,
 } from "./topic-discovery.ts";
+
+test("topic type normalization maps model variants into the active profile vocabulary", () => {
+  const allowed = ["concept", "procedure", "system"];
+  assert.equal(normalizeDiscoveredTopicType("Operational Procedure", allowed), "procedure");
+  assert.equal(normalizeDiscoveredTopicType("System Overview", allowed), "system");
+  assert.equal(normalizeDiscoveredTopicType("Unexpected Type", allowed), "concept");
+});
 
 const page = (pageNumber: number, text: string) => ({
   charCount: text.length,
@@ -40,6 +52,18 @@ test("validation removes junk and duplicate titles while preserving valid covera
   assert.deepEqual(topics[0]!.pageNumbers, [1, 2]);
 });
 
+test("validation excludes administrative sections but preserves operational revision topics", () => {
+  assert.equal(isAdministrativeTopicTitle("Effective Pages List"), true);
+  assert.equal(isAdministrativeTopicTitle("Manual Revision History"), true);
+  assert.equal(isAdministrativeTopicTitle("Software Revision Procedure"), false);
+  const topics = validateDiscoveredTopics([
+    topic({ pageNumbers: [1], title: "Effective Pages List" }),
+    topic({ pageNumbers: [2], title: "Manual Revision History" }),
+    topic({ pageNumbers: [3], title: "Software Revision Procedure" }),
+  ], [page(1, "a"), page(2, "b"), page(3, "c")]);
+  assert.deepEqual(topics.map((entry) => entry.title), ["Software Revision Procedure"]);
+});
+
 test("document discovery performs window analysis then global consolidation", async () => {
   const calls: string[] = [];
   const provider: TopicDiscoveryProvider = {
@@ -62,6 +86,152 @@ test("document discovery performs window analysis then global consolidation", as
   assert.deepEqual(calls, ["window", "consolidation"]);
   assert.equal(result.topics[0]!.title, "Brake System Operation");
   assert.deepEqual(result.topics[0]!.pageNumbers, [1, 2]);
+});
+
+test("oversized consolidation uses bounded intermediate reductions", async () => {
+  const consolidationPrompts: string[] = [];
+  let windowOrdinal = 0;
+  const provider: TopicDiscoveryProvider = {
+    model: "mock-model",
+    provider: "openai",
+    async discover(input) {
+      if (input.stage === "window") {
+        windowOrdinal += 1;
+        const topics = [{
+          confidence: "high" as const,
+          evidenceHeadings: [`SECTION ${windowOrdinal}`],
+          pageNumbers: [windowOrdinal],
+          rationale: "Grounded section heading.",
+          summary: `Detailed grounded summary ${"content ".repeat(5_000)}`,
+          title: `Operational Section ${windowOrdinal}`,
+          topicType: "system",
+        }];
+        return { output: { topics }, rawResponse: JSON.stringify({ topics }) };
+      }
+
+      consolidationPrompts.push(input.prompt);
+      const topics = [{
+        confidence: "high" as const,
+        evidenceHeadings: ["SYSTEM"],
+        pageNumbers: [1],
+        rationale: "Consolidated from grounded candidates.",
+        summary: "A supported system topic.",
+        title: `Consolidated System ${consolidationPrompts.length}`,
+        topicType: "system",
+      }];
+      return { output: { topics }, rawResponse: JSON.stringify({ topics }) };
+    },
+  };
+
+  const pages = Array.from({ length: 10 }, (_, index) =>
+    page(index + 1, `SECTION ${index + 1}\nOperational details`)
+  );
+  const result = await discoverDocumentTopics({
+    documentTitle: "Large Manual",
+    pages,
+    provider,
+    tokenTarget: 1,
+  });
+
+  assert.ok(consolidationPrompts.length >= 3);
+  assert.ok(consolidationPrompts.some((prompt) => prompt.includes("Intermediate consolidation")));
+  assert.ok(consolidationPrompts.every(
+    (prompt) => estimateTokens(prompt) <= CONSOLIDATION_INPUT_TOKEN_BUDGET,
+  ));
+  assert.equal(result.topics.length, 1);
+});
+
+test("durable window results avoid repeating provider window calls", async () => {
+  let windowCalls = 0;
+  const cachedTopic = topic({ pageNumbers: [1], title: "Cached Brake System" });
+  const provider: TopicDiscoveryProvider = {
+    model: "mock-model",
+    provider: "openai",
+    async discover(input) {
+      if (input.stage === "window") windowCalls += 1;
+      const topics = input.stage === "window"
+        ? [cachedTopic]
+        : [topic({ pageNumbers: [1], title: "Consolidated Brake System" })];
+      return { output: { topics }, rawResponse: JSON.stringify({ topics }) };
+    },
+  };
+
+  await discoverDocumentTopics({
+    documentTitle: "Manual",
+    loadWindowResult: async () => ({ topics: [cachedTopic] }),
+    pages: [page(1, "BRAKES\nOperation")],
+    provider,
+  });
+
+  assert.equal(windowCalls, 0);
+});
+
+test("durable consolidation results avoid repeating successful provider reductions", async () => {
+  let providerCalls = 0;
+  const cachedWindowTopic = topic({ pageNumbers: [1], title: "Cached Brake System" });
+  const cachedConsolidatedTopic = topic({ pageNumbers: [1], title: "Consolidated Brake System" });
+  const provider: TopicDiscoveryProvider = {
+    model: "mock-model",
+    provider: "openai",
+    async discover() {
+      providerCalls += 1;
+      throw new Error("provider_should_not_be_called");
+    },
+  };
+
+  const result = await discoverDocumentTopics({
+    documentTitle: "Manual",
+    loadConsolidationResult: async () => ({ topics: [cachedConsolidatedTopic] }),
+    loadWindowResult: async () => ({ topics: [cachedWindowTopic] }),
+    pages: [page(1, "BRAKES\nOperation")],
+    provider,
+  });
+
+  assert.equal(providerCalls, 0);
+  assert.equal(result.topics[0]!.title, "Consolidated Brake System");
+});
+
+test("large flat results do not require an impossible final structured response", async () => {
+  const initialTopics = Array.from({ length: 40 }, (_, index) => topic({
+    pageNumbers: [1],
+    summary: `Initial source detail ${index} ${"content ".repeat(1_300)}`,
+    title: `Initial System ${index}`,
+  }));
+  const reducedTopics = Array.from({ length: 150 }, (_, index) => topic({
+    evidenceHeadings: [`System ${index}`],
+    pageNumbers: [1],
+    rationale: "Consolidated from the supplied grounded section candidate.",
+    summary: `Supported system description ${index} ${"detail ".repeat(30)}`,
+    title: `Reduced System ${index}`,
+  }));
+  assert.ok(
+    estimateTokens(JSON.stringify({ topics: reducedTopics })) >
+      CONSOLIDATION_SAFE_OUTPUT_TOKEN_BUDGET,
+  );
+  const consolidationPrompts: string[] = [];
+  const provider: TopicDiscoveryProvider = {
+    model: "mock-model",
+    provider: "openai",
+    async discover(input) {
+      assert.equal(input.stage, "consolidation");
+      consolidationPrompts.push(input.prompt);
+      return {
+        output: { topics: reducedTopics },
+        rawResponse: JSON.stringify({ topics: reducedTopics }),
+      };
+    },
+  };
+
+  const result = await discoverDocumentTopics({
+    documentTitle: "Large Manual",
+    loadWindowResult: async () => ({ topics: initialTopics }),
+    pages: [page(1, "SYSTEMS\nOperational details")],
+    provider,
+  });
+
+  assert.ok(consolidationPrompts.length >= 2);
+  assert.ok(consolidationPrompts.every((prompt) => prompt.includes("Intermediate consolidation")));
+  assert.equal(result.topics.length, reducedTopics.length);
 });
 
 test("paired labeled markers extend a topic using normalized title tokens", () => {

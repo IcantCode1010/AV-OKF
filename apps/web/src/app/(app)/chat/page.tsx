@@ -1,87 +1,19 @@
-import { ChatSessionList } from "@/components/chat/chat-session-list";
-import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getChatSessions, isChatAvailable } from "@/lib/chat-backend";
-import { createChatSessionAction } from "./actions";
+import { redirect } from "next/navigation";
+
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
+import { getChatSessions, isChatAvailable } from "@/lib/chat-backend";
 import { listKnowledgeBundles } from "@/lib/knowledge-bundles";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChatPage() {
-  if (!isChatAvailable()) {
-    return <ChatUnavailableNotice />;
-  }
-
+  if (!isChatAvailable()) redirect("/chat/history");
   const context = await requireAuthWorkspaceContext();
-  const [sessions, bundles] = await Promise.all([
-    getChatSessions(),
-    listKnowledgeBundles(context),
-  ]);
-
-  return (
-    <>
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <Badge variant="secondary">Chat</Badge>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-            Conversations
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Ask questions across your documents. Each message is routed to
-            OKF, RAG, Hybrid, missing-context, or unsupported handling, then
-            answered from the retrieved evidence with citations.
-          </p>
-        </div>
-        <form action={createChatSessionAction} className="flex items-end gap-2">
-          <label className="grid gap-1 text-xs text-muted-foreground">
-            Knowledge bundle
-            <select
-              className="h-9 min-w-52 rounded-md border border-input bg-background px-3 text-sm text-foreground"
-              name="knowledgeBundleId"
-              required
-            >
-              {bundles.map((bundle) => (
-                <option key={bundle.id} value={bundle.id}>{bundle.name}</option>
-              ))}
-            </select>
-          </label>
-          <PendingSubmitButton pendingLabel="Starting...">
-            New chat
-          </PendingSubmitButton>
-        </form>
-      </div>
-
-      <ChatSessionList sessions={sessions} />
-    </>
-  );
-}
-
-function ChatUnavailableNotice() {
-  return (
-    <>
-      <div>
-        <Badge variant="secondary">Chat</Badge>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-          Conversations
-        </h1>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Chat requires the production backend</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Chat sessions are stored in Postgres and are not available in local
-            JSON-vault dev mode. Set{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">
-              AV_OKF_BACKEND=production
-            </code>{" "}
-            to enable this page.
-          </p>
-        </CardContent>
-      </Card>
-    </>
-  );
+  const bundles = await listKnowledgeBundles(context);
+  const { activeBundle } = await resolveActiveKnowledgeBundle(context, bundles);
+  if (!activeBundle) redirect("/chat/new");
+  const sessions = await getChatSessions();
+  const recent = sessions.find((session) => session.primaryKnowledgeBundleId === activeBundle.id);
+  redirect(recent ? `/chat/${encodeURIComponent(recent.id)}` : "/chat/new");
 }

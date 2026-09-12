@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringArray, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import { getFrontmatterNumberArray, getFrontmatterScalar, getFrontmatterStringArray, getOkfPrimarySource, parseOkfMarkdown } from "./okf-frontmatter.ts";
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
 import { getKnowledgeBundleByIdentity, resolveKnowledgeBundleRoot } from "./knowledge-bundles.ts";
 import { getPrisma } from "./prisma.ts";
+import type { OkfSemanticNeighbor } from "./okf-concept-embedding.ts";
+import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 import { getOkfRelationVerificationQueue, type OkfRelationVerificationQueue } from "./okf-relation-verification-queue.ts";
 import {
   loadOkfRelationPreflightContext,
@@ -30,7 +32,10 @@ const BASE_STOPWORDS = new Set([
   "with",
 ]);
 
+export const MAX_CANDIDATES_PER_DISCOVERY_RUN = 50;
+
 export type RelationDiscoveryConcept = {
+  contentHash?: string;
   filePath: string;
   pages: number[];
   sourceFile: string;
@@ -66,15 +71,24 @@ export async function discoverOkfRelationCandidates(
       alreadyRunning: true,
       discovered: activeRun.totalCandidates,
       runId: activeRun.id,
+      proposed: activeRun.proposedCount,
+      skippedExisting: activeRun.skippedExistingCount,
       suppressed: activeRun.suppressedCount,
+      semanticCandidates: 0,
       warnings: activeRun.warningCount,
     };
   }
   const concepts = await loadRelationDiscoveryConcepts(input);
 
-  const discoveredCandidates = buildDeterministicRelationCandidates(concepts, {
+  const deterministicCandidates = buildDeterministicRelationCandidates(concepts, {
     stopwords: bundle.profile.relationDiscovery.stopwords,
   });
+  const discoveredCandidates = rankRelationDiscoveryCandidates(deterministicCandidates);
+  const existingCandidates = await getPrisma().okfRelationCandidate.findMany({
+    select: { relation: true, sourceFile: true, targetFile: true },
+    where: { knowledgeBundleId: bundle.id, workspaceId: input.workspaceId },
+  });
+  const existingIdentities = new Set(existingCandidates.map(candidateIdentity));
   const context = await loadOkfRelationPreflightContext({
     knowledgeBundleId: bundle.id,
     workspaceId: input.workspaceId,
@@ -84,8 +98,14 @@ export async function discoverOkfRelationCandidates(
     workspaceId: string;
   }> = [];
   let suppressed = 0;
+  let skippedExisting = 0;
   let warningCount = 0;
   for (const candidate of discoveredCandidates) {
+    if (existingIdentities.has(candidateIdentity(candidate))) {
+      skippedExisting += 1;
+      continue;
+    }
+    if (candidates.length >= MAX_CANDIDATES_PER_DISCOVERY_RUN) continue;
     const preflight = preflightOkfRelationCandidate({
       ...context,
       candidate: { ...candidate, reason: candidate.reason },
@@ -113,7 +133,9 @@ export async function discoverOkfRelationCandidates(
     const run = await tx.okfRelationDiscoveryRun.create({
       data: {
         knowledgeBundleId: bundle.id,
+        proposedCount: discoveredCandidates.length,
         requestedBy: input.requestedBy,
+        skippedExistingCount: skippedExisting,
         suppressedCount: suppressed,
         totalCandidates: candidates.length,
         warningCount,
@@ -137,6 +159,7 @@ export async function discoverOkfRelationCandidates(
         rows.push(await tx.okfRelationCandidate.update({
           data: {
             discoveryRunId: run.id,
+            discoveryVersion: "deterministic-v2",
             reason: candidate.reason,
             requestedDirection: null,
             signals: candidate.signals,
@@ -157,6 +180,7 @@ export async function discoverOkfRelationCandidates(
         data: {
           ...candidate,
           discoveryRunId: run.id,
+          discoveryVersion: "deterministic-v2",
           verificationStatus: "queued",
         },
       }));
@@ -180,9 +204,70 @@ export async function discoverOkfRelationCandidates(
     alreadyRunning: created.run.status === "running" && created.candidates.length === 0,
     discovered: created.run.totalCandidates,
     runId: created.run.id,
+    proposed: discoveredCandidates.length,
+    semanticCandidates: 0,
+    skippedExisting,
     suppressed,
     warnings: warningCount,
   };
+}
+
+export function buildSemanticRelationCandidates(
+  concepts: RelationDiscoveryConcept[],
+  neighbors: OkfSemanticNeighbor[],
+): RelationDiscoveryCandidate[] {
+  const conceptByFile = new Map(concepts.map((concept) => [concept.filePath, concept]));
+  return neighbors.flatMap((neighbor) => {
+    const source = conceptByFile.get(neighbor.sourceFile);
+    const target = conceptByFile.get(neighbor.targetFile);
+    if (!source || !target || !source.sourceFile || source.sourceFile === target.sourceFile) {
+      return [];
+    }
+    return [{
+      reason: `Semantic neighbor similarity ${neighbor.score.toFixed(3)}; requires exact-evidence verification.`,
+      relation: "references",
+      signals: [
+        "semantic_neighbor",
+        `semantic_similarity:${neighbor.score.toFixed(3)}`,
+      ],
+      sourceFile: neighbor.sourceFile,
+      targetFile: neighbor.targetFile,
+    }];
+  });
+}
+
+export function rankRelationDiscoveryCandidates(
+  candidates: RelationDiscoveryCandidate[],
+) {
+  const merged = new Map<string, RelationDiscoveryCandidate>();
+  for (const candidate of candidates) {
+    const key = `${candidate.sourceFile}\u0000${candidate.targetFile}\u0000${candidate.relation}`;
+    const current = merged.get(key);
+    merged.set(key, current
+      ? {
+          ...current,
+          signals: [...new Set([...current.signals, ...candidate.signals])],
+        }
+      : candidate);
+  }
+  return [...merged.values()].sort((left, right) =>
+    contentSignalCount(right) - contentSignalCount(left) ||
+    signalCount(right, "matched_tag:") - signalCount(left, "matched_tag:") ||
+    signalCount(right, "matched_term:") - signalCount(left, "matched_term:") ||
+    Number(right.signals.includes("source_page_proximity")) - Number(left.signals.includes("source_page_proximity")) ||
+    left.sourceFile.localeCompare(right.sourceFile) ||
+    left.targetFile.localeCompare(right.targetFile) ||
+    left.relation.localeCompare(right.relation),
+  );
+}
+
+function contentSignalCount(candidate: RelationDiscoveryCandidate) {
+  return Number(candidate.signals.includes("shared_tags")) +
+    Number(candidate.signals.includes("title_description_overlap"));
+}
+
+function signalCount(candidate: RelationDiscoveryCandidate, prefix: string) {
+  return candidate.signals.filter((signal) => signal.startsWith(prefix)).length;
 }
 
 export function buildDeterministicRelationCandidates(
@@ -341,9 +426,10 @@ export async function loadRelationDiscoveryConcepts(input: {
     const parsed = parseOkfMarkdown(markdown);
     if (!isAgentReadyOkfMetadata(parsed.frontmatter, parsed.body)) continue;
     concepts.push({
+      contentHash: hashOkfSource(markdown),
       filePath,
       pages: getFrontmatterNumberArray(parsed.frontmatter, "source_pages"),
-      sourceFile: getFrontmatterScalar(parsed.frontmatter, "source_file") ?? "",
+      sourceFile: getOkfPrimarySource(parsed.frontmatter)?.resource ?? "",
       tags: getFrontmatterStringArray(parsed.frontmatter, "tags"),
       terms: tokenizeRelationTerms(`${getFrontmatterScalar(parsed.frontmatter, "title") ?? ""} ${getFrontmatterScalar(parsed.frontmatter, "description") ?? ""}`),
     });
@@ -356,6 +442,75 @@ export async function listOkfRelationCandidates(input: { knowledgeBundleId: stri
     orderBy: [{ verificationConfidence: "desc" }, { status: "asc" }, { sourceFile: "asc" }, { targetFile: "asc" }],
     where: { knowledgeBundleId: input.knowledgeBundleId, workspaceId: input.workspaceId },
   });
+}
+
+export async function getOkfRelationReviewQueue(input: {
+  knowledgeBundleId: string;
+  workspaceId: string;
+}) {
+  const where = {
+    knowledgeBundleId: input.knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  };
+  const select = {
+    automaticApprovalError: true,
+    automaticApprovalRequested: true,
+    id: true,
+    publishedRelation: true,
+    publishedReviewStatus: true,
+    publishedSourceFile: true,
+    publishedTargetFile: true,
+    reason: true,
+    relation: true,
+    signals: true,
+    sourceFile: true,
+    status: true,
+    targetFile: true,
+    verificationConfidence: true,
+    verificationDirection: true,
+    verificationError: true,
+    verificationEvidenceQuote: true,
+    verificationModel: true,
+    verificationProvider: true,
+    verificationRationale: true,
+    verificationRelation: true,
+    verificationStatus: true,
+  } as const;
+
+  const [actionable, filtered, published, publishedReview] = await Promise.all([
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [
+        { verificationConfidence: "desc" },
+        { sourceFile: "asc" },
+        { targetFile: "asc" },
+      ],
+      select,
+      where: {
+        ...where,
+        status: "pending",
+        verificationStatus: { in: ["queued", "running", "confirmed", "failed"] },
+      },
+    }),
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      select,
+      take: 50,
+      where: { ...where, verificationStatus: "filtered" },
+    }),
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [{ reviewedAt: "desc" }, { id: "asc" }],
+      select,
+      take: 50,
+      where: { ...where, automaticApprovalRequested: true, status: "approved" },
+    }),
+    getPrisma().okfRelationCandidate.findMany({
+      orderBy: [{ publishedReviewFlaggedAt: "asc" }, { id: "asc" }],
+      select,
+      where: { ...where, publishedReviewStatus: { not: null }, status: "approved" },
+    }),
+  ]);
+
+  return { actionable, filtered, published, publishedReview };
 }
 
 export async function getLatestOkfRelationDiscoveryRun(input: { knowledgeBundleId: string; workspaceId: string }) {
@@ -402,7 +557,7 @@ function buildCandidateReason(input: {
   return `Discovered from ${details.join(", ")}.`;
 }
 
-function candidateIdentity(candidate: RelationDiscoveryCandidate) {
+function candidateIdentity(candidate: Pick<RelationDiscoveryCandidate, "relation" | "sourceFile" | "targetFile">) {
   return `${candidate.sourceFile}\u0000${candidate.targetFile}\u0000${candidate.relation}`;
 }
 

@@ -3,7 +3,11 @@ import path from "node:path";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
   getFrontmatterNumberArray,
+  getFrontmatterGeneratedEvent,
   getFrontmatterScalar,
+  getFrontmatterVerificationEvents,
+  getOkfApprovalProvenance,
+  getOkfPrimarySource,
   parseOkfMarkdown,
 } from "./okf-frontmatter.ts";
 import { isAgentReadyOkfMetadata } from "./okf-generic-metadata.ts";
@@ -17,6 +21,7 @@ import { getOkfConceptLifecycleByFile } from "./okf-lifecycle.ts";
 import { buildOkfArticleReaderContent } from "./okf-article-content.ts";
 import { normalizeOkfTopicFilePath } from "./okf-topic-routing.ts";
 import { getPrisma } from "./prisma.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
 
 export type ApprovedOkfTopicView = {
   approvalProvenance: "automated" | "human" | "legacy";
@@ -73,6 +78,7 @@ export async function loadApprovedOkfTopicView(input: {
   });
 
   try {
+    await assertOkfV02Bundle({ knowledgeRoot, okfVersion: bundle.okfVersion });
     const files = await listFiles(knowledgeRoot);
     const selected = files.find((file) => file.filename === normalizedFilePath);
     if (!selected || selected.isReserved) return null;
@@ -142,7 +148,7 @@ export function resolveApprovedOkfTopicLink(input: {
   const href = input.href?.trim();
   if (!href) return { kind: "broken" };
   if (/^https?:\/\//i.test(href)) return { kind: "external" };
-  if (href.startsWith("//") || href.startsWith("/") || href.includes("\\") || href.includes("?")) {
+  if (href.startsWith("//") || href.includes("\\") || href.includes("?")) {
     return { kind: "broken" };
   }
 
@@ -156,9 +162,9 @@ export function resolveApprovedOkfTopicLink(input: {
     return { kind: "broken" };
   }
 
-  const normalized = path.posix.normalize(
-    path.posix.join(path.posix.dirname(input.sourceFile), decoded),
-  );
+  const normalized = path.posix.normalize(decoded.startsWith("/")
+    ? decoded.slice(1)
+    : path.posix.join(path.posix.dirname(input.sourceFile), decoded));
   if (
     normalized === ".." ||
     normalized.startsWith("../") ||
@@ -178,7 +184,9 @@ function buildApprovedTopicView(input: {
   parsed: ReturnType<typeof parseOkfMarkdown>;
   sourceDocument: ApprovedOkfTopicSourceDocument | null;
 }): ApprovedOkfTopicView {
-  const approvedBy = getFrontmatterScalar(input.parsed.frontmatter, "approved_by");
+  const primarySource = getOkfPrimarySource(input.parsed.frontmatter);
+  const verification = getFrontmatterVerificationEvents(input.parsed.frontmatter)
+    .at(-1);
   const title = getFrontmatterScalar(input.parsed.frontmatter, "title")!;
   const description = getFrontmatterScalar(input.parsed.frontmatter, "description");
   const readerContent = buildOkfArticleReaderContent({
@@ -187,12 +195,8 @@ function buildApprovedTopicView(input: {
     title,
   });
   return {
-    approvalProvenance: approvedBy === null
-      ? "legacy"
-      : approvedBy.startsWith("automation:")
-        ? "automated"
-        : "human",
-    approvedAt: getFrontmatterScalar(input.parsed.frontmatter, "approved_at"),
+    approvalProvenance: getOkfApprovalProvenance(input.parsed.frontmatter),
+    approvedAt: verification?.at ?? null,
     approvedFilePaths: input.approvedFilePaths,
     body: readerContent.body,
     bundleId: input.bundle.id,
@@ -200,12 +204,12 @@ function buildApprovedTopicView(input: {
     description,
     descriptionRepeatedExactly: readerContent.descriptionRepeatedExactly,
     filePath: input.filePath,
-    sourceFile: getFrontmatterScalar(input.parsed.frontmatter, "source_file")!,
+    sourceFile: primarySource?.title ?? primarySource?.resource ?? "Source unavailable",
     sourcePages: getFrontmatterNumberArray(input.parsed.frontmatter, "source_pages"),
     sourceDocument: input.sourceDocument,
     title,
     type: getFrontmatterScalar(input.parsed.frontmatter, "type")!,
-    updated: getFrontmatterScalar(input.parsed.frontmatter, "updated"),
+    updated: getFrontmatterGeneratedEvent(input.parsed.frontmatter)?.at ?? null,
   };
 }
 

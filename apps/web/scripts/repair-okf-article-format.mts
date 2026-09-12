@@ -127,8 +127,8 @@ try {
       const expectedFilename = path.posix.join(
         getTypeDirectory(bundle.profile, type),
         buildOkfSystemTopic({
-          document,
-          knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0",
+          document: { ...document, contentSha256: document.contentSha256 ?? null },
+          knowledgeVersion: process.env.AV_OKF_KNOWLEDGE_VERSION || "0.2.0",
           topic: currentTopic,
         }).filename,
       );

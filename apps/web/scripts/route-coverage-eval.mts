@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { getEmbeddingProvider } from "../src/lib/embedding-provider.ts";
@@ -349,6 +349,7 @@ async function seedBundle(context: { role: "admin"; userId: string; workspaceId:
     });
     bundleId = created.id;
   } else {
+    await db.knowledgeBundle.update({ data: { okfVersion: "0.2" }, where: { id: bundleId } });
     await scaffoldKnowledgeBundle({
       bundleId,
       profile: GENERIC_PROFILE_TEMPLATE,
@@ -381,6 +382,7 @@ async function seedSecondaryBundle(
     });
     bundleId = created.id;
   } else {
+    await db.knowledgeBundle.update({ data: { okfVersion: "0.2" }, where: { id: bundleId } });
     await scaffoldKnowledgeBundle({
       bundleId,
       profile: GENERIC_PROFILE_TEMPLATE,
@@ -399,9 +401,14 @@ async function seedSecondaryConcept(input: {
   const fullPath = path.join(root, ...SECONDARY_CONCEPT_FILE.split("/"));
   await mkdir(path.dirname(fullPath), { recursive: true });
   await writeFile(fullPath, buildRegulatoryAuditConcept(), "utf8");
+  await writeEvalSourceReference(root, "Regulatory Records Standard.pdf");
   await writeFile(
     path.join(root, "index.md"),
     [
+      "---",
+      'okf_version: "0.2"',
+      "---",
+      "",
       "# Route Coverage Regulations",
       "",
       `- [Regulatory Audit Retention Standard](${SECONDARY_CONCEPT_FILE})`,
@@ -437,9 +444,21 @@ async function seedConcepts(input: { bundleId: string; workspaceId: string }) {
     await mkdir(path.dirname(fullPath), { recursive: true });
     await writeFile(fullPath, markdown, "utf8");
   }
+  for (const sourceTitle of [
+    "Helios Operations Handbook.pdf",
+    "Helios Power Controls.pdf",
+    "Records Governance Standard.pdf",
+    "Retired Helios Handbook.pdf",
+    "Forklift Operations Manual.pdf",
+    "Automobile Workshop Bulletin.pdf",
+  ]) await writeEvalSourceReference(root, sourceTitle);
   await writeFile(
     path.join(root, "index.md"),
     [
+      "---",
+      'okf_version: "0.2"',
+      "---",
+      "",
       "# Route Coverage Evaluation",
       "",
       ...[...markdownByPath.keys()].map((filePath) => `- [${filePath}](${filePath})`),
@@ -514,6 +533,16 @@ async function seedRagDocument(input: { bundleId: string; workspaceId: string })
   await db.document.create({
     data: {
       description: "Unreviewed discovery-only route evaluation source.",
+      extractionJobs: {
+        create: {
+          attempts: 1,
+          completedAt: new Date(),
+          id: "route_coverage_eval_extraction_v1",
+          startedAt: new Date(),
+          status: "completed",
+          workspaceId: input.workspaceId,
+        },
+      },
       extractedPages: {
         create: [
           {
@@ -640,7 +669,7 @@ async function withdrawWeakCandidates(bundleId: string, workspaceId: string) {
     const markdown = await readFile(fullPath, "utf8");
     await writeFile(
       fullPath,
-      markdown.replace("review_status: approved", "review_status: needs_review"),
+      markdown.replace("status: stable", "status: draft"),
       "utf8",
     );
   }
@@ -1107,10 +1136,11 @@ async function seedForeignPdfDocument() {
       description: "Cross-workspace PDF authorization fixture.",
       id: "route_coverage_eval_foreign_bundle_v1",
       name: "Foreign Route Coverage Bundle",
+      okfVersion: "0.2",
       slug: "foreign-route-coverage-bundle",
       workspaceId: workspace.id,
     },
-    update: {},
+    update: { okfVersion: "0.2", status: "active" },
     where: {
       workspaceId_slug: {
         slug: "foreign-route-coverage-bundle",
@@ -1118,6 +1148,33 @@ async function seedForeignPdfDocument() {
       },
     },
   });
+  let activeProfileVersion = await db.knowledgeBundleProfileVersion.findFirst({
+    orderBy: { version: "desc" },
+    where: { bundleId: bundle.id, status: "active" },
+  });
+  if (!activeProfileVersion) {
+    activeProfileVersion = await db.knowledgeBundleProfileVersion.create({
+      data: {
+        activatedAt: new Date(),
+        bundleId: bundle.id,
+        createdBy: EVAL_USER_ID,
+        schema: GENERIC_PROFILE_TEMPLATE,
+        status: "active",
+        templateId: GENERIC_PROFILE_TEMPLATE.id,
+        version: 1,
+      },
+    });
+    await db.knowledgeBundle.update({
+      data: { activeProfileVersionId: activeProfileVersion.id },
+      where: { id: bundle.id },
+    });
+  }
+  await scaffoldKnowledgeBundle({
+    bundleId: bundle.id,
+    profile: GENERIC_PROFILE_TEMPLATE,
+    workspaceId: workspace.id,
+  });
+  await writeWorkspaceVault(workspace.id);
   await db.document.deleteMany({ where: { id: FOREIGN_DOCUMENT_ID } });
   const objectKey = buildDocumentObjectKey({
     documentId: FOREIGN_DOCUMENT_ID,
@@ -1433,13 +1490,10 @@ description: Approved control process for the Helios coolant circuit.
 tags:
   - thermal
   - helios
-updated: 2026-07-19
-review_status: approved
-source_file: Helios Operations Handbook.pdf
+${trustedV02Metadata("Helios Operations Handbook.pdf")}
 source_pages:
   - 12
   - 13
-source_authority: Helios Engineering
 relations:
   - relation: routes_to
     target: power-balance-guard.md
@@ -1461,12 +1515,9 @@ description: Protects the downstream power stage during coolant-demand changes.
 tags:
   - power
   - safeguard
-updated: 2026-07-19
-review_status: approved
-source_file: Helios Power Controls.pdf
+${trustedV02Metadata("Helios Power Controls.pdf")}
 source_pages:
   - 44
-source_authority: Helios Engineering
 ---
 
 # Power Balance Guard
@@ -1483,12 +1534,9 @@ description: Defines a 7-year retention period for approved operational audit re
 tags:
   - audit
   - records
-updated: 2026-07-19
-review_status: approved
-source_file: Records Governance Standard.pdf
+${trustedV02Metadata("Records Governance Standard.pdf")}
 source_pages:
   - 5
-source_authority: Records Office
 ---
 
 # Audit Retention Standard
@@ -1505,12 +1553,9 @@ description: Defines a 10-year regulatory retention period for approved operatio
 tags:
   - audit
   - records
-updated: 2026-07-24
-review_status: approved
-source_file: Regulatory Records Standard.pdf
+${trustedV02Metadata("Regulatory Records Standard.pdf")}
 source_pages:
   - 18
-source_authority: Regulatory Records Office
 ---
 
 # Audit Retention Standard
@@ -1527,12 +1572,9 @@ description: Obsolete heat-control instructions retained only as a negative cont
 tags:
   - thermal
   - retired
-updated: 2026-07-19
-review_status: approved
-source_file: Retired Helios Handbook.pdf
+${trustedV02Metadata("Retired Helios Handbook.pdf")}
 source_pages:
   - 99
-source_authority: Retired Archive
 ---
 
 # Retired Thermal Regulation Protocol
@@ -1551,12 +1593,9 @@ tags:
   - equipment
 subject_family: Forklift
 document_type: Operations Manual
-updated: 2026-07-19
-review_status: approved
-source_file: Forklift Operations Manual.pdf
+${trustedV02Metadata("Forklift Operations Manual.pdf")}
 source_pages:
   - 18
-source_authority: Equipment Manufacturer
 ---
 
 # Operational Surface Preparation
@@ -1575,16 +1614,45 @@ tags:
   - readiness
 subject_family: Automobile
 document_type: Service Bulletin
-updated: 2026-07-19
-review_status: approved
-source_file: Automobile Workshop Bulletin.pdf
+${trustedV02Metadata("Automobile Workshop Bulletin.pdf")}
 source_pages:
   - 4
-source_authority: Vehicle Manufacturer
 ---
 
 # Facility Surface Assessment
 
 Ground leveling means confirming that the workshop service area remains within the specified floor tolerance.
 `;
+}
+
+function trustedV02Metadata(sourceTitle: string) {
+  const slug = sourceTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `status: stable
+verified:
+  - by: human:e2e-route-coverage
+    at: 2026-07-19T12:00:00.000Z
+sources:
+  - id: source-e2e
+    resource: /references/sources/${slug}.md
+    title: ${JSON.stringify(sourceTitle)}
+av_okf_approval_mode: human_individual`;
+}
+
+async function writeEvalSourceReference(root: string, sourceTitle: string) {
+  const slug = sourceTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const target = path.join(root, "references", "sources", `${slug}.md`);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, `---
+type: reference
+title: ${JSON.stringify(sourceTitle)}
+resource: urn:sha256:${createHash("sha256").update(sourceTitle).digest("hex")}
+status: stable
+generated:
+  by: process:e2e-route-coverage
+  at: 2026-07-19T12:00:00.000Z
+av_okf_role: source_document
+---
+
+Evaluation source identity.
+`, "utf8");
 }

@@ -6,11 +6,5 @@ allowBuilds:
   esbuild: true
   msgpackr-extract: true
   prisma: true
-
-onlyBuiltDependencies:
-  - "@prisma/engines"
-  - esbuild
-  - msgpackr-extract
-  - prisma
-  - sharp
-  - unrs-resolver
+  sharp: true
+  unrs-resolver: true

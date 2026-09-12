@@ -8,13 +8,13 @@ import {
 } from "./okf-coverage.ts";
 
 function createFakeRepository(
-  chunks: { id: string; sourcePageNumbers: number[] }[] = [],
+  chunks: { contentHash?: string; id: string; sourcePageNumbers: number[] }[] = [],
 ) {
   const syncCalls: Parameters<OkfCoverageRepository["syncOkfConceptChunkLinks"]>[0][] =
     [];
   const repository: OkfCoverageRepository = {
     async listActiveChunksForDocument() {
-      return chunks;
+      return chunks.map((chunk) => ({ ...chunk, contentHash: chunk.contentHash ?? "a".repeat(64) }));
     },
     async syncOkfConceptChunkLinks(input) {
       syncCalls.push(input);

@@ -15,13 +15,16 @@ test("listOkfBundleFiles lists markdown files with frontmatter labels", async ()
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-preview-"));
 
   try {
+    await mkdir(path.join(root, "references", "sources"), { recursive: true });
     await writeFile(
-      path.join(root, "source_manifest.md"),
+      path.join(root, "references", "sources", "manual.md"),
       [
         "---",
-        'type: "source_manifest"',
-        'review_status: "approved"',
-        'title: "Source Manifest"',
+        'type: "reference"',
+        'status: "stable"',
+        'title: "Manual source"',
+        'resource: "urn:sha256:abc"',
+        'av_okf_role: "source_document"',
         "---",
         "",
         "# Source Manifest",
@@ -33,13 +36,13 @@ test("listOkfBundleFiles lists markdown files with frontmatter labels", async ()
 
     assert.deepEqual(files, [
       {
-        filename: "source_manifest.md",
-        group: "reserved",
-        isReserved: true,
+        filename: "references/sources/manual.md",
+        group: "other",
+        isReserved: false,
         modifiedAt: files[0].modifiedAt,
-        reviewStatus: "approved",
-        title: "Source Manifest",
-        type: "source_manifest",
+        reviewStatus: "unverified",
+        title: "Manual source",
+        type: "reference",
       },
     ]);
     assert.match(files[0].modifiedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
@@ -104,7 +107,6 @@ test("reserved files without frontmatter use readable fallback titles", async ()
   try {
     await writeFile(path.join(root, "index.md"), "# Index\n");
     await writeFile(path.join(root, "log.md"), "# Log\n");
-    await writeFile(path.join(root, "source_manifest.md"), "# Sources\n");
 
     const files = await listOkfBundleFiles(root);
 
@@ -113,7 +115,6 @@ test("reserved files without frontmatter use readable fallback titles", async ()
       [
         ["index.md", "Bundle Index"],
         ["log.md", "Activity Log"],
-        ["source_manifest.md", "Source Manifest"],
       ],
     );
     assert.equal(files.every((file) => file.isReserved), true);

@@ -23,11 +23,11 @@ knowledge/
 ```text
 OKF core conformance
 required frontmatter fields by type
-allowed review_status values
+allowed v0.2 status values
 date field formatting
 broken Markdown links
 reserved index/log files
-unknown frontmatter fields
+unknown frontmatter fields as warnings for base portability
 allowed typed-relation frontmatter field
 AV-OKF link-resolution profile through deterministic link lint
 ```
@@ -38,25 +38,21 @@ The AV-OKF profile is defined in:
 okf-base.yaml
 ```
 
-Example:
+Example v0.2 profile contract:
 
 ```yaml
 dispatch_reference:
   required:
     - type
-    - review_status
+  optional:
     - title
     - description
-    - aircraft_family
-    - manual_type
-    - ata
-    - effectivity
-    - source_authority
-    - revision
-    - source_file
+    - status
+    - generated
+    - verified
+    - sources
     - source_pages
     - knowledge_version
-    - updated
 ```
 
 Typed relation fields are allowed in the profile:
@@ -75,7 +71,7 @@ Link resolution is defined separately in [Link Resolution](link-resolution.md). 
 
 ## CI Gate
 
-The GitHub Actions workflow runs:
+The GitHub Actions workflow pins `okflint==0.3.1` and runs:
 
 ```bash
 okflint validate --manifest okf-base.yaml
@@ -85,7 +81,8 @@ If profile or OKF conformance errors are present, the command exits non-zero and
 
 ## Boundary With Runtime Validation
 
-`okflint` validates that approved OKF files have the required metadata shape.
+`okflint` validates portable OKF structure. The dedicated v0.2 validator and
+active profile validate stricter AV-OKF trust and source-reference requirements.
 
 It does not validate whether a generated answer is safe. Runtime answer validation still belongs to the Validation Agent:
 

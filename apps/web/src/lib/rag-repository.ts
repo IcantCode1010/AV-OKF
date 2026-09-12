@@ -220,7 +220,7 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
         take: limit,
         where: {
           document: { deletedAt: null, knowledgeBundle: { status: "active" }, knowledgeBundleId: { not: null } },
-          status: { in: ["queued", "running"] },
+          status: { in: ["queued", "running", "awaiting_budget"] },
         },
       });
     },
@@ -783,12 +783,12 @@ export function createRagRepository(prisma: PrismaLike = getPrisma()) {
     async listActiveChunksForDocument(input: {
       documentId: string;
       workspaceId: string;
-    }): Promise<{ id: string; sourcePageNumbers: number[] }[]> {
+    }): Promise<{ contentHash: string; id: string; sourcePageNumbers: number[] }[]> {
       // Coverage only resolves against raw extraction chunks: okf_topic chunks
       // (synced separately) carry a topic's own page range and would otherwise
       // let a topic "cover" itself or another approved topic's synced chunk.
       return db.ragChunk.findMany({
-        select: { id: true, sourcePageNumbers: true },
+        select: { contentHash: true, id: true, sourcePageNumbers: true },
         where: {
           documentId: input.documentId,
           isActive: true,

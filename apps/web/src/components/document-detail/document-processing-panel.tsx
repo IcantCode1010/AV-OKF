@@ -1,11 +1,11 @@
 import Link from "next/link";
 import {
+  ArrowRight,
   CheckCircle2,
   Circle,
   CircleAlert,
   Clock3,
   FileText,
-  Layers3,
   LoaderCircle,
   Minus,
   RotateCcw,
@@ -16,6 +16,7 @@ import {
 import {
   confirmKnowledgeAuthoringCostAction,
   retryKnowledgeAuthoringAction,
+  retryEntityExtractionAction,
   runExtractionAction,
   startKnowledgeAuthoringAction,
 } from "@/app/(app)/documents/actions";
@@ -46,13 +47,17 @@ export function DocumentProcessingPanel({
   knowledgeBundleId,
   run,
   state,
+  topicCount,
 }: {
   documentId: string;
   extractionReady: boolean;
   knowledgeBundleId: string;
   run: ProcessingPanelRun | null;
   state: DocumentProcessingState;
+  topicCount: number;
 }) {
+  const reviewHref = `/knowledge/${encodeURIComponent(knowledgeBundleId)}/review?documentId=${encodeURIComponent(documentId)}`;
+
   return (
     <section className="rounded-lg border border-border bg-card">
       <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -88,39 +93,103 @@ export function DocumentProcessingPanel({
         <ProcessingAction
           documentId={documentId}
           extractionReady={extractionReady}
-          knowledgeBundleId={knowledgeBundleId}
           run={run}
           state={state}
         />
       </div>
 
       <ol aria-label="Document processing stages" className="p-5">
-        {state.stages.map((stage, index) => (
-          <li className="relative flex gap-3 pb-5 last:pb-0" key={stage.id}>
-            {index < state.stages.length - 1 ? (
-              <span aria-hidden className="absolute left-[11px] top-6 h-[calc(100%-1.25rem)] w-px bg-border" />
-            ) : null}
-            <StageIcon stage={stage} />
-            <div className="min-w-0 flex-1 pt-0.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium">{stage.label}</p>
-                <Badge className="capitalize" variant={stageBadgeVariant(stage.status)}>
-                  {stage.status.replaceAll("_", " ")}
-                </Badge>
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">{stage.detail}</p>
-            </div>
-          </li>
-        ))}
+        {state.stages.map((stage, index) => {
+          const isManualReviewAction =
+            stage.id === "review_export" &&
+            stage.status === "action_required" &&
+            !state.automaticApprovalEnabled;
+          const isCostConfirmationAction =
+            stage.id === "metadata_discovery" &&
+            stage.status === "action_required" &&
+            run?.status === "awaiting_cost_confirmation";
+          const isEntityRetryAction = stage.id === "entity_connections" && stage.status === "action_required";
+
+          return (
+            <li className="relative pb-5 last:pb-0" key={stage.id}>
+              {index < state.stages.length - 1 ? (
+                <span aria-hidden className="absolute left-[11px] top-6 h-[calc(100%-1.25rem)] w-px bg-border" />
+              ) : null}
+              {isCostConfirmationAction ? (
+                <form
+                  action={confirmKnowledgeAuthoringCostAction}
+                  className="flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center"
+                >
+                  <input name="documentId" type="hidden" value={documentId} />
+                  <input name="runId" type="hidden" value={run.id} />
+                  <input name="returnPanel" type="hidden" value="processing" />
+                  <div className="flex min-w-0 flex-1 gap-3">
+                    <StageIcon stage={stage} />
+                    <StageContent stage={stage} />
+                  </div>
+                  <PendingSubmitButton
+                    className="self-start sm:self-center"
+                    pendingLabel="Confirming and starting..."
+                  >
+                    Confirm {run.estimatedInputTokens.toLocaleString()} tokens and continue
+                    <ArrowRight className="h-4 w-4" />
+                  </PendingSubmitButton>
+                </form>
+              ) : isEntityRetryAction ? (
+                <form action={retryEntityExtractionAction} className="flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center">
+                  <input name="documentId" type="hidden" value={documentId} />
+                  <div className="flex min-w-0 flex-1 gap-3"><StageIcon stage={stage} /><StageContent stage={stage} /></div>
+                  <PendingSubmitButton className="self-start sm:self-center" pendingLabel="Queueing retries..." variant="outline"><RotateCcw className="h-4 w-4" /> Retry entity extraction</PendingSubmitButton>
+                </form>
+              ) : isManualReviewAction ? (
+                <Link
+                  aria-label={`Review ${topicCount} ${topicCount === 1 ? "topic" : "topics"}`}
+                  className="group flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 outline-none transition-colors hover:border-amber-500/60 hover:bg-amber-500/15 focus-visible:ring-3 focus-visible:ring-amber-500/30 sm:flex-row"
+                  href={reviewHref}
+                >
+                  <div className="flex min-w-0 gap-3">
+                    <StageIcon stage={stage} />
+                    <StageContent stage={stage} />
+                  </div>
+                  <span className="flex shrink-0 items-center gap-1 self-start pl-9 text-sm font-semibold text-amber-700 sm:ml-auto sm:self-center sm:pl-0 dark:text-amber-300">
+                    Review {topicCount} {topicCount === 1 ? "topic" : "topics"}
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+                  </span>
+                </Link>
+              ) : (
+                <div className="flex gap-3">
+                  <StageIcon stage={stage} />
+                  <StageContent stage={stage} />
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
 }
 
+function StageContent({ stage }: { stage: DocumentProcessingStage }) {
+  return (
+    <div className="min-w-0 flex-1 pt-0.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">{stage.label}</p>
+        <Badge className="capitalize" variant={stageBadgeVariant(stage.status)}>
+          {stage.status.replaceAll("_", " ")}
+        </Badge>
+      </div>
+      <p className="mt-1 text-sm text-muted-foreground">{stage.detail}</p>
+    </div>
+  );
+}
+
 export function DocumentProcessingStatusStrip({
+  actionHref,
   documentId,
   state,
 }: {
+  actionHref?: string;
   documentId: string;
   state: DocumentProcessingState;
 }) {
@@ -143,7 +212,7 @@ export function DocumentProcessingStatusStrip({
             ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
             : "border-primary/30 bg-primary/10 text-foreground hover:bg-primary/15",
       )}
-      href={`/documents/${documentId}?panel=processing`}
+      href={actionHref ?? `/documents/${documentId}?panel=processing`}
     >
       {state.active ? (
         <LoaderCircle className="h-4 w-4 shrink-0 animate-spin motion-reduce:animate-none" />
@@ -155,7 +224,9 @@ export function DocumentProcessingStatusStrip({
         <span aria-hidden> · </span>
         {statusText}
       </span>
-      <span className="shrink-0 text-xs font-medium">View progress</span>
+      <span className="shrink-0 text-xs font-medium">
+        {actionHref ? "Review topics" : "View progress"}
+      </span>
     </Link>
   );
 }
@@ -163,13 +234,11 @@ export function DocumentProcessingStatusStrip({
 function ProcessingAction({
   documentId,
   extractionReady,
-  knowledgeBundleId,
   run,
   state,
 }: {
   documentId: string;
   extractionReady: boolean;
-  knowledgeBundleId: string;
   run: ProcessingPanelRun | null;
   state: DocumentProcessingState;
 }) {
@@ -207,16 +276,7 @@ function ProcessingAction({
     );
   }
   if (run.status === "awaiting_cost_confirmation") {
-    return (
-      <form action={confirmKnowledgeAuthoringCostAction}>
-        <input name="documentId" type="hidden" value={documentId} />
-        <input name="runId" type="hidden" value={run.id} />
-        <input name="returnPanel" type="hidden" value="processing" />
-        <PendingSubmitButton pendingLabel="Confirming...">
-          Confirm {run.estimatedInputTokens.toLocaleString()} tokens
-        </PendingSubmitButton>
-      </form>
-    );
+    return null;
   }
   if (run.status === "failed") {
     return <RetryAuthoringForm documentId={documentId} runId={run.id} />;
@@ -231,14 +291,7 @@ function ProcessingAction({
     );
   }
   if (["ready_for_review", "completed"].includes(run.status)) {
-    return (
-      <Button asChild>
-        <Link href={`/knowledge/${knowledgeBundleId}/review`}>
-          <Layers3 className="h-4 w-4" />
-          Review and export topics
-        </Link>
-      </Button>
-    );
+    return null;
   }
   return null;
 }

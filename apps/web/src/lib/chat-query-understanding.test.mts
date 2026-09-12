@@ -182,7 +182,7 @@ test("an incomplete clarification follow-up uses bounded disclosed assumptions",
   assert.equal(result.rewriteMode, "llm");
   assert.match(result.retrievalQuery, /this policy/);
   assert.doesNotMatch(result.retrievalQuery, /raw documents only/);
-  assert.equal(result.assumptions.length, 2);
+  assert.equal(result.assumptions.length, 4);
 });
 
 test("invalid assumptions fail safely to the fixed default set", async () => {
@@ -342,4 +342,73 @@ test("an identical clarification origin is not duplicated in fallback retrieval 
   );
 
   assert.equal(result.retrievalQuery, question);
+});
+
+test("unsupported routes never invoke query understanding after clarification", async () => {
+  const question = "What is the live generator status right now?";
+  const decision = {
+    ...routeChatQuestion(question),
+    route: "unsupported" as const,
+  };
+  let keyCalls = 0;
+  const result = await understandChatQuery(
+    {
+      clarificationAlreadyAsked: true,
+      clarificationOriginQuestion: "Which generator?",
+      decision,
+      question,
+      workspaceId: "wrk_1",
+    },
+    {
+      getApiKey: async () => {
+        keyCalls += 1;
+        return { apiKey: "unused", provider: "openai" };
+      },
+    },
+  );
+
+  assert.equal(keyCalls, 0);
+  assert.equal(result.rewriteMode, "not_needed");
+});
+
+test("a short clarification reply becomes the grounded subject before defaults", async () => {
+  const question = "The generator.";
+  const decision = {
+    ...routeChatQuestion({ clarificationAlreadyAsked: true, question }),
+    requiredContext: [
+      "subject_or_entity",
+      "applicable_scope_or_version",
+      "source_authority",
+      "intended_action",
+    ],
+    route: "okf_only" as const,
+  };
+  const result = await understandChatQuery(
+    {
+      clarificationAlreadyAsked: true,
+      clarificationOriginQuestion: "What should I do?",
+      decision,
+      question,
+      workspaceId: "wrk_1",
+    },
+    {
+      callProvider: async () => providerOutput({
+        assumptions: [{
+          basis: "safe_default",
+          field: "subject_or_entity",
+          value: "all subjects represented in the workspace",
+        }],
+        retrievalQuery: "generator guidance",
+      }),
+      getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    },
+  );
+
+  assert.deepEqual(result.assumptions[0], {
+    basis: "conversation",
+    field: "subject_or_entity",
+    value: "generator",
+  });
+  assert.equal(result.assumptions.length, 4);
+  assert.match(result.retrievalQuery, /generator/i);
 });

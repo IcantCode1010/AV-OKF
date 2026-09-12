@@ -14,13 +14,22 @@ extraction
   -> human review, approval, and export
 ```
 
-The LLM prepares a review package. It is not a knowledge publisher and has no deletion or lifecycle authority.
+The LLM prepares topics and verifies bounded relation candidates. Publication
+remains human-controlled by default, with separate bundle-scoped automation
+options. The model itself has no deletion or lifecycle authority.
 
 ## Durable Run
 
 `KnowledgeAuthoringRun` is the parent workflow record. It stores the current stage, completed stages, cost estimate, errors, validation results, review readiness, and an immutable snapshot of the bundle profile version and automatic-publication setting. `KnowledgeAuthoringStageAudit` is append-only stage history. Provider calls remain audited by the existing topic discovery and enrichment audit tables, while metadata proposals have their own reversible record.
 
-Publication is human-controlled by default. A bundle admin may activate `automation.autoApproveEnrichedTopics` through a versioned profile draft. Enabled runs automatically publish only high-confidence, fully enriched, metadata-valid, non-overlapping topics with established source pages. All other topics remain in review with explicit blocker reasons. Automatic publication records provenance and never approves relation suggestions or performs archive, retraction, or deletion actions.
+Publication is human-controlled by default. A bundle admin may activate
+`automation.autoApproveEnrichedTopics` and
+`automation.autoApproveVerifiedRelations` independently through a versioned
+profile draft. Topic automation retains its high-confidence content gates.
+Relation automation waits until both endpoint topics are approved/exported and
+publishes only exact-quote verifier results at 0.90 confidence or higher after
+the same graph preflight used by human approval. Both settings are snapshotted
+on the durable run. Neither grants archive, retraction, or deletion authority.
 
 Each stage audit carries an explicit attempt number. The worker persists `currentStage` before stage execution and reports failures against that in-memory active stage rather than re-reading potentially stale run state. The product UI shows one latest row per stage and keeps every underlying attempt in an expandable history.
 
@@ -31,8 +40,32 @@ Extraction queues one authoring run. The worker performs the stages sequentially
 - **Metadata discovery:** proposes general-purpose document metadata from extracted text. Valid normalized values are applied immediately, with previous values retained for explicit undo.
 - **Concept discovery:** reuses bounded, overlapping page-window analysis and document-wide consolidation. Approved and rejected topics remain preserved.
 - **Enrichment:** automatically enriches medium/high-confidence drafts. Low-confidence drafts remain raw and require cleanup.
-- **Relation classification:** starts only from deterministic candidate pairs, then asks the configured provider to choose from the active bundle profile's relation vocabulary. Suggestions remain `pending` and cannot affect graph traversal.
+- **Relation classification:** compares the document's topics with one another
+  and with approved concepts already exported in the same bundle. It starts
+  only from deterministic candidate pairs, then asks the configured provider
+  to choose from the active profile vocabulary and cite an exact source quote.
+  Suggestions cannot affect graph traversal until publication gates pass.
 - **Validation:** checks title, summary, source coverage, enrichment failures, and unresolved source-page proposals. The run then stops at `ready_for_review`.
+
+## Non-Destructive Enrichment Revisions
+
+The first successful enrichment writes only the dedicated enriched title,
+summary, body, and proposed source-page fields. Raw discovery content remains
+unchanged. The audit records normalized before/after snapshots, a content
+fingerprint, and a deterministic field/page/word-count diff.
+
+A later enrichment run never overwrites the accepted enriched article. Changed
+output is stored as an `awaiting_review` audit candidate and the topic enters
+`review_required`. Reviewers compare the current and proposed versions and
+explicitly choose **Use new enrichment** or **Keep current enrichment**. Until
+then, individual approval and bulk export are blocked. Equivalent output is
+recorded as unchanged without creating review work. A failed rerun leaves the
+accepted article and completed eligibility intact while exposing the failure.
+
+Candidate resolution is workspace-scoped and transactional. The accepted
+baseline fingerprint must still match, and only one concurrent decision can
+claim a pending candidate. This prevents stale asynchronous output from
+replacing newer reviewer edits.
 
 ## Cost Boundary
 
@@ -44,7 +77,12 @@ The authoring operation registry deliberately contains no operation for approval
 
 Deletion always remains a direct end-user lifecycle action outside this workflow.
 
-After reviewers approve and export both topics in a suggested pair, they may explicitly promote the suggestion into the bundle's existing relation-candidate queue. Promotion converts topic IDs into stable exported paths. A second reviewer action validates and re-exports the relation before it can appear in OKF frontmatter, the graph, backlinks, or agent traversal.
+After both topics in a suggested pair are approved and exported, promotion
+converts topic IDs into stable exported paths and queues one-pair verification.
+In manual mode, a second reviewer action is required. In automatic mode, the
+worker publishes only candidates meeting the 0.90 confidence threshold and
+all deterministic checks. Failures remain visible in relation audit state;
+they are not graph edges.
 
 ## Real Provider Verification
 

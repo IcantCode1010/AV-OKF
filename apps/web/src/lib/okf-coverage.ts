@@ -9,6 +9,7 @@ export type OkfCoverageRepository = Pick<
 
 export type OkfCoverageResolution = {
   chunkIds: string[];
+  chunks: Array<{ contentHash: string; id: string; sourcePageNumbers: number[] }>;
   coverageType: string;
 };
 
@@ -34,6 +35,7 @@ export async function resolveOkfCoverage(input: {
 
   return {
     chunkIds,
+    chunks: chunks.filter((chunk) => chunkIds.includes(chunk.id)),
     coverageType: OKF_COVERAGE_TYPE_DIRECT_SOURCE,
   };
 }

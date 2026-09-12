@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
+import { getDefaultKnowledgeRoot, resolveKnowledgePath } from "./knowledge-root.ts";
+import { parseOkfMarkdown, serializeOkfMarkdown } from "./okf-frontmatter.ts";
 import { getPrisma } from "./prisma.ts";
 import type {
   OkfConceptLifecycleLookup,
@@ -169,6 +170,18 @@ export async function markOkfConceptLifecycle(input: {
     },
   });
 
+  const knowledgeRoot = input.knowledgeRoot ?? getDefaultKnowledgeRoot();
+  if (input.status === "archived" || input.status === "retracted") {
+    await deprecateOkfConceptFile({
+      actorId: input.actorId,
+      changedAt,
+      filePath: input.filePath,
+      knowledgeRoot,
+      reason,
+      status: input.status,
+    });
+  }
+
   if (input.embeddingCleanup) {
     await input.embeddingCleanup(input);
   } else if (process.env.AV_OKF_BACKEND === "production") {
@@ -183,7 +196,7 @@ export async function markOkfConceptLifecycle(input: {
   await appendLifecycleLogEntry({
     changedAt,
     filePath: input.filePath,
-    knowledgeRoot: input.knowledgeRoot ?? getDefaultKnowledgeRoot(),
+    knowledgeRoot,
     reason,
     status: input.status,
   });
@@ -206,12 +219,43 @@ async function appendLifecycleLogEntry(input: {
     existing = "";
   }
 
+  const dateHeading = `## ${toIsoDate(input.changedAt)}`;
   const base = existing.trimEnd() || "# Change Log";
+  const withDate = base.includes(dateHeading) ? base : `${base}\n\n${dateHeading}`;
   await writeFile(
     /*turbopackIgnore: true*/ logPath,
-    `${base}\n\n${entry}\n`,
+    `${withDate}\n\n${entry}\n`,
     "utf8",
   );
+}
+
+async function deprecateOkfConceptFile(input: {
+  actorId: string;
+  changedAt: Date;
+  filePath: string;
+  knowledgeRoot: string;
+  reason: string;
+  status: "archived" | "retracted";
+}) {
+  const target = await resolveKnowledgePath({
+    knowledgeRoot: input.knowledgeRoot,
+    relativePath: input.filePath,
+  });
+  if (!target) throw new Error("okf_lifecycle_unsafe_file_path");
+  const markdown = await readFile(target, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (markdown === null) return;
+  const parsed = parseOkfMarkdown(markdown);
+  parsed.frontmatter.status = "deprecated";
+  parsed.frontmatter.av_okf_lifecycle = {
+    status: input.status,
+    reason: input.reason,
+    changed_by: input.actorId,
+    changed_at: input.changedAt.toISOString(),
+  };
+  await writeFile(target, serializeOkfMarkdown(parsed), "utf8");
 }
 
 function toIsoDate(date: Date) {

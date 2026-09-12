@@ -1,3 +1,5 @@
+import {SourceReadiness} from "@/components/document-detail/source-readiness";
+import {knowledgeFeature} from "@/lib/knowledge/contracts";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -40,10 +42,14 @@ import {
 } from "@/lib/knowledge-bundles";
 import { getLatestKnowledgeAuthoringRun } from "@/lib/knowledge-authoring";
 import {
-  buildDocumentProcessingFingerprint,
   buildDocumentProcessingState,
+  resolveDocumentProcessingFingerprint,
   resolveDocumentPanel,
 } from "@/lib/document-processing-state";
+import { getDocumentBatchProgress } from "@/lib/document-batch-progress";
+import { isProductionBackend } from "@/lib/production-document-service";
+import { getProductionDocumentProcessingStatusSnapshot } from "@/lib/production-document-processing-status";
+import { getDocumentEntityConnectionStatus } from "@/lib/entity-graph";
 
 export const dynamic = "force-dynamic";
 
@@ -99,19 +105,47 @@ export default async function DocumentDetailPage({
   const knowledgeRoot = currentBundle
     ? resolveKnowledgeBundleRoot({ bundleId: currentBundle.id, workspaceId: context.workspaceId })
     : null;
-  const [relationTargets, authoringRun, availableBundles] = await Promise.all([
+  const [
+    relationTargets,
+    authoringRun,
+    availableBundles,
+    extractionProgress,
+    processingStatusSnapshot,
+    entityConnections,
+  ] = await Promise.all([
     knowledgeRoot ? getRelationTargets(knowledgeRoot) : Promise.resolve([]),
     assigned ? getLatestKnowledgeAuthoringRun({ context, documentId: id }) : Promise.resolve(null),
     assigned ? Promise.resolve([]) : listKnowledgeBundles(context),
+    getDocumentBatchProgress(id, context.workspaceId),
+    assigned && isProductionBackend()
+      ? getProductionDocumentProcessingStatusSnapshot({ context, documentId: id })
+      : Promise.resolve(null),
+    assigned && isProductionBackend()
+      ? getDocumentEntityConnectionStatus({ documentId: id, workspaceId: context.workspaceId })
+      : Promise.resolve(null),
   ]);
   const visibleTopics = assigned ? topicRecords : [];
+  const reviewTopicCount = visibleTopics.filter(
+    (topic) => topic.reviewStatus === "needs_review",
+  ).length;
   const allowedRelations = currentBundle?.profile.relations ?? [];
   const processingState = buildDocumentProcessingState({
     authoringRun,
     bundleName: currentBundle?.name ?? "Unassigned",
     document: currentDocument,
+    extractionProgress,
+    entityConnections,
+    reviewTopicCount,
     topicCount: visibleTopics.length,
   });
+  const manualReviewHref =
+    !processingState.automaticApprovalEnabled &&
+    processingState.stages.some(
+      (stage) =>
+        stage.id === "review_export" && stage.status === "action_required",
+    )
+      ? `/knowledge/${encodeURIComponent(currentBundle!.id)}/review?documentId=${encodeURIComponent(currentDocument.id)}`
+      : undefined;
   const activePanel = assigned
     ? resolveDocumentPanel({
         extractionStatus: currentDocument.extraction.status,
@@ -120,9 +154,10 @@ export default async function DocumentDetailPage({
         topicCount: visibleTopics.length,
       })
     : (["summary", "metadata", "extraction", "logs"].includes(panel ?? "") ? panel! : "summary");
-  const processingFingerprint = buildDocumentProcessingFingerprint({
+  const processingFingerprint = resolveDocumentProcessingFingerprint({
     authoringRun,
     document: currentDocument,
+    productionSnapshot: processingStatusSnapshot,
   });
   const selectedTopic =
     activePanel === "topics"
@@ -209,7 +244,9 @@ export default async function DocumentDetailPage({
               <Button disabled>Seed document has no stored PDF</Button>
             )}
           </div>
+          {knowledgeFeature("shared")&&<SourceReadiness workspaceId={context.workspaceId} documentId={document.id}/>}
           {assigned ? <DocumentProcessingStatusStrip
+            actionHref={manualReviewHref}
             documentId={currentDocument.id}
             state={processingState}
           /> : <div className="border-t border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">This source is preserved but unassigned. Assign it to a bundle before authoring, indexing, export, or chat use.</div>}
@@ -251,6 +288,7 @@ export default async function DocumentDetailPage({
           knowledgeBundleId={currentBundle!.id}
           run={authoringRun}
           state={processingState}
+          topicCount={reviewTopicCount}
         />
       );
     }
@@ -291,6 +329,7 @@ export default async function DocumentDetailPage({
           relationTargets={relationTargets}
           topic={selectedTopic}
           topicsGeneratedCount={parseTopicsGeneratedCount(topicsGenerated)}
+          topicOptions={visibleTopics.map((candidate) => ({ id: candidate.id, title: candidate.title }))}
         />
       );
     }
@@ -351,8 +390,7 @@ async function getRelationTargets(knowledgeRoot: string) {
     return (await listOkfBundleFiles(knowledgeRoot)).filter(
       (file) =>
         file.filename !== "index.md" &&
-        file.filename !== "log.md" &&
-        file.filename !== "source_manifest.md",
+        file.filename !== "log.md",
     );
   } catch (error) {
     if (
@@ -438,6 +476,16 @@ function formatMetadataError(raw: string | undefined) {
   if (raw === "document_workspace_mismatch") {
     return "This document belongs to a different workspace.";
   }
+
+  const aviationErrors: Record<string, string> = {
+    invalid_aviation_ata: "Enter an ATA chapter or code such as 24 or 24-00-00.",
+    invalid_aviation_aircraft_type_id: "Aircraft type IDs must be 2-4 letters or numbers, such as B738.",
+    invalid_aviation_source_classification: "Choose a valid aviation source classification.",
+    invalid_aviation_intended_audience: "Choose Pilot, Maintenance, or both audiences.",
+    aviation_intended_audience_required: "Choose at least one intended audience.",
+    aviation_content_purpose_required: "Enter the aviation content purpose.",
+  };
+  if (aviationErrors[raw]) return aviationErrors[raw];
 
   return "Document metadata could not be saved.";
 }

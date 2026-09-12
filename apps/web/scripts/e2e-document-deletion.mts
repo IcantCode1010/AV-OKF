@@ -333,12 +333,48 @@ try {
   const conceptPaths = exportedFiles.map((filePath) =>
     path.join(knowledgeRoot, ...filePath.split("/")),
   );
+  const sourceReferencePath = "references/sources/permanent-deletion-source.md";
   await mkdir(path.dirname(conceptPaths[0]!), { recursive: true });
+  await mkdir(path.join(knowledgeRoot, "references", "sources"), { recursive: true });
+  await writeFile(path.join(knowledgeRoot, ...sourceReferencePath.split("/")), `---
+type: reference
+title: ${documentTitle}
+resource: urn:sha256:${"c".repeat(64)}
+status: stable
+generated:
+  by: process:e2e-document-deletion
+  at: 2026-07-21T12:00:00.000Z
+av_okf_role: source_document
+---
+
+Disposable source identity.
+`, "utf8");
   await Promise.all(conceptPaths.map((conceptPath, index) =>
-    writeFile(conceptPath, `---\ntype: procedure\ntitle: ${allTopics[index]!.title}\ndescription: Disposable concept.\nreview_status: ${allTopics[index]!.reviewStatus}\nsource_file: ${JSON.stringify(documentTitle)}\nsource_pages: [1]\nupdated: 2026-07-21\n---\n\nThis content must disappear with its source document.\n`, "utf8"),
+    writeFile(conceptPath, `---
+type: procedure
+title: ${allTopics[index]!.title}
+description: Disposable concept.
+status: ${allTopics[index]!.reviewStatus === "approved" ? "stable" : "draft"}
+${allTopics[index]!.reviewStatus === "approved" ? `verified:
+  - by: human:e2e-reviewer
+    at: 2026-07-21T12:00:00.000Z` : ""}
+sources:
+  - resource: /${sourceReferencePath}
+    title: ${JSON.stringify(documentTitle)}
+source_pages: [1]
+---
+
+This content must disappear with its source document.
+`, "utf8"),
   ));
-  await writeFile(path.join(knowledgeRoot, "index.md"), `# Knowledge Index\n\n${allTopics.map((entry) => `- [${entry.title}](${entry.exportedFilePath})`).join("\n")}\n`, "utf8");
-  await writeFile(path.join(knowledgeRoot, "source_manifest.md"), `# Source Manifest\n\n- ${documentTitle}\n  - source: permanent-deletion-e2e.pdf\n`, "utf8");
+  await writeFile(path.join(knowledgeRoot, "index.md"), `---
+okf_version: "0.2"
+---
+
+# Knowledge Index
+
+${allTopics.map((entry) => `- [${entry.title}](${entry.exportedFilePath})`).join("\n")}
+`, "utf8");
   await writeFile(path.join(knowledgeRoot, "log.md"), `# Change Log\n\n${exportedFiles.map((filePath) => `- 2026-07-21 - export - ${filePath}`).join("\n")}\n`, "utf8");
 
   await assert.rejects(
@@ -402,15 +438,17 @@ try {
   for (const conceptPath of conceptPaths) {
     await assert.rejects(() => readFile(conceptPath, "utf8"), /ENOENT/);
   }
+  await assert.rejects(
+    () => readFile(path.join(knowledgeRoot, ...sourceReferencePath.split("/")), "utf8"),
+    /ENOENT/,
+  );
 
-  const [index, manifest, log, tombstonedMessage] = await Promise.all([
+  const [index, log, tombstonedMessage] = await Promise.all([
     readFile(path.join(knowledgeRoot, "index.md"), "utf8"),
-    readFile(path.join(knowledgeRoot, "source_manifest.md"), "utf8"),
     readFile(path.join(knowledgeRoot, "log.md"), "utf8"),
     db.chatMessage.findUniqueOrThrow({ where: { id: assistantMessage.id } }),
   ]);
   assert.doesNotMatch(index, new RegExp(exportedFilePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.doesNotMatch(manifest, new RegExp(documentTitle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(log, / - export - concepts\/procedure\/permanent-deletion/);
   assert.match(log, /permanent-document-deletion/);
   assert.match(log, /objects: 1/);

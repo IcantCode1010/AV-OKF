@@ -159,9 +159,10 @@ try {
     approvedTopic.exportedFilePath,
   );
   const exported = await readFile(exportedPath, "utf8");
-  assert.match(exported, /review_status: ["']approved["']/);
-  assert.match(exported, new RegExp(`approved_by: ["']?automation:${userId}`));
-  assert.match(exported, /approved_at: ["']\d{4}-\d{2}-\d{2}["']/);
+  assert.match(exported, /status: stable/);
+  assert.match(exported, /by: process:av-okf-auto-approval/);
+  assert.match(exported, /av_okf_approval_mode: automated/);
+  assert.doesNotMatch(exported, /review_status:|approved_by:|approved_at:/);
   const embeddingJobStatus = await waitForEmbeddingJob(automatedBundle.id);
 
   const duplicate = await createAutomaticBulkApprovalRun({

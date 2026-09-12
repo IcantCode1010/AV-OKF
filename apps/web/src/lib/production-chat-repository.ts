@@ -1,9 +1,11 @@
+import {knowledgeFeature} from "./knowledge/contracts.ts";
 import type { Prisma } from "@prisma/client";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import type { ChatCitation, ChatMessage, ChatSession } from "./chat-types.ts";
 import type { Stage6aRouterTrace } from "./chat-router.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
+import { retrievalTriggerProposalFingerprint } from "./retrieval-trigger-proposals.ts";
 import {
   normalizeKnowledgeProfile,
   type KnowledgeProfileSchema,
@@ -50,7 +52,7 @@ type DbChatMessageRecord = {
 const DEFAULT_CHAT_TITLE = "New chat";
 const MAX_CHAT_TITLE_LENGTH = 72;
 export const MAX_CHAT_SESSION_LIST_RESULTS = 50;
-export const MAX_CHAT_KNOWLEDGE_BUNDLES = 10;
+export const MAX_CHAT_KNOWLEDGE_BUNDLES = knowledgeFeature("shared")?Number.MAX_SAFE_INTEGER:10;
 
 const sessionBundleInclude = {
   knowledgeBundles: {
@@ -242,6 +244,12 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
 
       const [userRecord, assistantRecord] = await db.$transaction(
         async (tx: Prisma.TransactionClient) => {
+          if(knowledgeFeature("shared")){
+            await tx.$queryRaw`SELECT id FROM "ChatSession" WHERE id = ${input.sessionId} FOR UPDATE`;
+            const scoped=await tx.chatSession.findFirst({where:{id:input.sessionId,workspaceId:input.context.workspaceId,scopeVersion:input.scopeVersion}});
+            if(!scoped)throw Error("chat_scope_changed");
+            if(!await tx.workspaceMember.findFirst({where:{workspaceId:input.context.workspaceId,userId:input.context.userId}}))throw Error("knowledge_access_denied");
+          }
           const userRecord = await tx.chatMessage.create({
             data: {
               content: input.content,
@@ -265,7 +273,7 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
             },
           });
           if (input.knowledgeGap) {
-            await tx.knowledgeGap.create({
+            const gap = await tx.knowledgeGap.create({
               data: {
                 assistantMessageId: assistantRecord.id,
                 chatSessionId: input.sessionId,
@@ -280,6 +288,42 @@ export function createPostgresChatRepository(prisma: PrismaLike = getPrisma()) {
                 workspaceId: input.context.workspaceId,
               },
             });
+            const proposals = (input.knowledgeGap.retrievalTriggerCandidates ?? [])
+              .filter((candidate) => input.knowledgeBundleIds.includes(candidate.knowledgeBundleId))
+              .slice(0, 3);
+            for (const proposal of proposals) {
+              await tx.okfRetrievalTriggerProposal.upsert({
+                create: {
+                  fingerprint: retrievalTriggerProposalFingerprint({
+                    contentHash: proposal.contentHash,
+                    filePath: proposal.filePath,
+                    knowledgeBundleId: proposal.knowledgeBundleId,
+                    terms: proposal.suggestedTerms,
+                  }),
+                  knowledgeBundleId: proposal.knowledgeBundleId,
+                  knowledgeGapId: gap.id,
+                  matchReason: proposal.matchReason,
+                  suggestedTerms: proposal.suggestedTerms,
+                  targetContentHash: proposal.contentHash,
+                  targetFilePath: proposal.filePath,
+                  targetTitle: proposal.title,
+                  workspaceId: input.context.workspaceId,
+                },
+                update: {},
+                where: {
+                  workspaceId_knowledgeBundleId_fingerprint: {
+                    fingerprint: retrievalTriggerProposalFingerprint({
+                      contentHash: proposal.contentHash,
+                      filePath: proposal.filePath,
+                      knowledgeBundleId: proposal.knowledgeBundleId,
+                      terms: proposal.suggestedTerms,
+                    }),
+                    knowledgeBundleId: proposal.knowledgeBundleId,
+                    workspaceId: input.context.workspaceId,
+                  },
+                },
+              });
+            }
           }
           const updatedAt = new Date();
           const titleUpdate = await tx.chatSession.updateMany({

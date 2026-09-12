@@ -2,7 +2,7 @@ import Link from "next/link";
 import { BookOpenCheck, Clock, FileText, FolderOpen, Plus } from "lucide-react";
 
 import { KnowledgeBundleDeleteControl } from "@/components/knowledge-bundle-delete-control";
-import { KnowledgeBundleDeletionPoller } from "@/components/knowledge-bundle-deletion-poller";
+import { KnowledgeBundleDeletionLiveStatus } from "@/components/knowledge-bundle-deletion-live-status";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,9 @@ import { Label } from "@/components/ui/label";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { getOkfBundleSummary } from "@/lib/okf-bundle";
 import { listKnowledgeBundles, resolveKnowledgeBundleRoot } from "@/lib/knowledge-bundles";
-import { getKnowledgeBundleDeletionStatusSnapshot } from "@/lib/knowledge-bundle-deletion";
+import { buildKnowledgeBundleDeletionProgressSnapshot, getKnowledgeBundleDeletionStatusSnapshot } from "@/lib/knowledge-bundle-deletion";
 import { isProductionBackend } from "@/lib/production-document-service";
-import { createKnowledgeBundleAction, retryKnowledgeBundleDeletionAction } from "./actions";
+import { createKnowledgeBundleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -36,10 +36,7 @@ export default async function KnowledgePage() {
 
   return (
     <div className="space-y-6">
-      <KnowledgeBundleDeletionPoller
-        active={deletionSnapshot.active}
-        fingerprint={deletionSnapshot.fingerprint}
-      />
+      <KnowledgeBundleDeletionLiveStatus initialSnapshot={buildKnowledgeBundleDeletionProgressSnapshot(deletionSnapshot)} />
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <Badge variant="secondary">Knowledge vault</Badge>
@@ -50,26 +47,6 @@ export default async function KnowledgePage() {
         </div>
         <Badge variant="outline">{bundles.length} bundle{bundles.length === 1 ? "" : "s"}</Badge>
       </div>
-
-      {deletionSnapshot.jobs.length > 0 ? (
-        <Card>
-          <CardHeader><CardTitle>Bundle deletion</CardTitle><CardDescription>Knowledge cleanup runs in the background. Source documents remain available as Unassigned.</CardDescription></CardHeader>
-          <CardContent className="space-y-3">
-            {deletionSnapshot.jobs.map((job) => (
-              <div className="flex flex-col gap-3 border border-border p-3 sm:flex-row sm:items-center sm:justify-between" key={job.id}>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{job.bundleName}</span><Badge variant={job.status === "failed" ? "destructive" : "outline"}>{job.status}</Badge></div>
-                  <p className="mt-1 text-xs text-muted-foreground">{job.documentCount} preserved document{job.documentCount === 1 ? "" : "s"}</p>
-                  {job.errorMessage ? <p className="mt-1 text-xs text-destructive">{job.errorMessage}</p> : null}
-                </div>
-                {job.status === "failed" ? (
-                  <form action={retryKnowledgeBundleDeletionAction}><input name="jobId" type="hidden" value={job.id} /><PendingSubmitButton pendingLabel="Retrying...">Retry deletion</PendingSubmitButton></form>
-                ) : null}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
 
       {bundles.length === 0 ? (
         <div className="flex min-h-56 flex-col items-center justify-center border border-dashed border-border p-8 text-center">

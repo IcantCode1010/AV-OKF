@@ -2,9 +2,15 @@
 
 ## Contract
 
-Every OKF profile inherits five generic fields: required `type`, plus optional `title`, `description`, `tags`, and `updated`. Profiles may add fields and types but cannot redefine those semantics or remove `type`.
+Every OKF v0.2 profile inherits required `type` plus the standard optional
+`title`, `description`, `resource`, `tags`, `sources`, `generated`, `verified`,
+`status`, and `stale_after` families. Profiles may add extension fields and
+types but cannot remove `type` or redefine standard semantics.
 
-Generic conformance and agent trust are separate. A file can be valid generic OKF with only `type`. Approved agent evidence additionally requires an active lifecycle, `review_status: approved`, usable title/body, and source-file/page provenance.
+Generic conformance and agent trust are separate. A file can be valid generic
+OKF with only `type`. Approved agent evidence additionally requires active
+lifecycle, current `status: stable`, recognized `verified` provenance, usable
+title/body, portable `sources`, and source-page provenance.
 
 ## Storage
 
@@ -15,9 +21,9 @@ knowledge/workspaces/{workspaceId}/
     okf-base.yaml
     index.md
     log.md
-    source_manifest.md
     concepts/{type}/
     procedures/{type}/
+    references/sources/{source-reference}.md
     references/{type}/
     routing/{type}/
     indexes/{type}/
@@ -31,10 +37,20 @@ Generic and Aviation are immutable templates. UI edits clone the active profile 
 
 ## Retrieval And Relations
 
-Chat sessions select one bundle and cannot search another. OKF retrieval reads that bundle live; raw RAG queries filter through the document's bundle. Relation discovery uses deterministic signals to create pending candidates. Pending and rejected candidates never affect traversal. Approval validates the bundle-relative target and active vocabulary, updates the topic working copy, and re-exports frontmatter.
+Chat sessions select an ordered scope of one to ten active workspace bundles.
+OKF and raw-RAG retrieval cannot leave the per-turn snapshot, and typed graph
+traversal remains bundle-local. Relation discovery uses deterministic signals
+followed by one-pair LLM verification; only confirmed candidates reach human
+review, and only approval writes frontmatter.
 
 ## Migration And Deletion
 
-`migrate:knowledge-vault` requires an explicit workspace ID. Its default is a dry run; `--apply` creates a backup and recovery journal, moves concepts into type folders, replaces `last_verified` with `updated`, and rewrites path projections and chat citations.
+`migrate:knowledge-vault` performs the earlier single-root to workspace-vault
+migration. `migrate:okf-v0.2` then hashes source PDFs, creates portable source
+references, maps trust/provenance, stages and validates all v0.1 bundles, and
+requires explicit maintenance-window confirmation and a PostgreSQL backup.
 
-Permanent deletion requires the exact bundle name. The web process marks the bundle `deleting` and enqueues an idempotent BullMQ job. The worker deletes source objects, the physical bundle, and the bundle row whose cascades remove documents, extraction, topics, RAG, lifecycle, coverage, profiles, and chats. A minimal workspace audit record remains.
+Permanent bundle deletion uses one clear confirmation. It removes bundle-owned
+knowledge, profiles, RAG, relations, and scoped chat evidence while preserving
+uploaded PDFs, document metadata, extraction pages, jobs, and logs. Preserved
+documents become Unassigned until a user assigns them to another active bundle.

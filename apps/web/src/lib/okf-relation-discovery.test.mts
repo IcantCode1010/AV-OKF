@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildDeterministicRelationCandidates } from "./okf-relation-discovery.ts";
+import {
+  buildDeterministicRelationCandidates,
+  buildSemanticRelationCandidates,
+  MAX_CANDIDATES_PER_DISCOVERY_RUN,
+  rankRelationDiscoveryCandidates,
+} from "./okf-relation-discovery.ts";
 
 test("relation discovery requires multiple deterministic signals and stays review-only", () => {
   const candidates = buildDeterministicRelationCandidates([
@@ -20,6 +25,34 @@ test("relation discovery requires multiple deterministic signals and stays revie
   ]);
   assert.match(candidates[0]?.reason ?? "", /shared tags \(safety\)/);
   assert.equal("status" in (candidates[0] ?? {}), false);
+});
+
+test("candidate ranking prioritizes content evidence and remains stable", () => {
+  const candidates = rankRelationDiscoveryCandidates([
+    { reason: "proximity", relation: "supports", signals: ["shared_source_file", "source_page_proximity"], sourceFile: "concepts/a.md", targetFile: "concepts/b.md" },
+    { reason: "terms", relation: "references", signals: ["shared_source_file", "title_description_overlap", "matched_term:door", "matched_term:seal"], sourceFile: "concepts/c.md", targetFile: "concepts/d.md" },
+    { reason: "tags and terms", relation: "references", signals: ["shared_source_file", "shared_tags", "title_description_overlap", "matched_tag:chapter-52", "matched_term:door", "matched_term:seal"], sourceFile: "concepts/e.md", targetFile: "concepts/f.md" },
+  ]);
+  assert.deepEqual(candidates.map((candidate) => candidate.reason), ["tags and terms", "terms", "proximity"]);
+  assert.equal(MAX_CANDIDATES_PER_DISCOVERY_RUN, 50);
+});
+
+test("semantic expansion proposes only cross-document pairs and keeps similarity evidence", () => {
+  const concepts = [
+    { contentHash: "a", filePath: "concepts/a.md", pages: [1], sourceFile: "references/sources/a.md", tags: [], terms: [] },
+    { contentHash: "b", filePath: "concepts/b.md", pages: [2], sourceFile: "references/sources/a.md", tags: [], terms: [] },
+    { contentHash: "c", filePath: "concepts/c.md", pages: [3], sourceFile: "references/sources/c.md", tags: [], terms: [] },
+  ];
+  const candidates = buildSemanticRelationCandidates(concepts, [
+    { score: 0.91, sourceFile: "concepts/a.md", targetFile: "concepts/b.md" },
+    { score: 0.82, sourceFile: "concepts/a.md", targetFile: "concepts/c.md" },
+  ]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.targetFile, "concepts/c.md");
+  assert.deepEqual(candidates[0]?.signals, [
+    "semantic_neighbor",
+    "semantic_similarity:0.820",
+  ]);
 });
 
 test("one shared term does not qualify but two meaningful terms do", () => {

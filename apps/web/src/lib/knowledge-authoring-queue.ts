@@ -19,13 +19,26 @@ export function createBullMqKnowledgeAuthoringQueue(redisUrl: string) {
     async close() {
       await queue.close();
     },
-    async enqueue(payload: KnowledgeAuthoringJobPayload) {
+    async enqueue(
+      payload: KnowledgeAuthoringJobPayload,
+      options: { waitForActive?: boolean } = {},
+    ) {
       const jobId = buildKnowledgeAuthoringJobId(payload);
-      const existingJob = await queue.getJob(jobId);
+      let existingJob = await queue.getJob(jobId);
+      if (existingJob && options.waitForActive) {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          if (await existingJob.getState() !== "active") break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          existingJob = await queue.getJob(jobId);
+          if (!existingJob) break;
+        }
+      }
       if (existingJob) {
         const state = await existingJob.getState();
         if (state === "completed" || state === "failed") {
           await existingJob.remove();
+        } else if (state === "active" && options.waitForActive) {
+          throw new Error("knowledge_authoring_parent_job_still_active");
         } else {
           return;
         }

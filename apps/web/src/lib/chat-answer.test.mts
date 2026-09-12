@@ -4,9 +4,11 @@ import test from "node:test";
 import {
   buildChatAnswerPrompt,
   buildNotDirectlyAnsweredReply,
+  chatAnswerProviderSchema,
   discloseChatAssumptions,
   generateChatAnswer,
   hasValidCitationMarkers,
+  validateEntityCandidates,
 } from "./chat-answer.ts";
 import { buildRetrievalAnswer } from "./chat-retrieval.ts";
 import type { ChatRetrievalEvidence } from "./chat-retrieval.ts";
@@ -33,6 +35,18 @@ function makeEvidence(index: number): ChatRetrievalEvidence {
     text: "GEN OFF BUS light indicates a generator bus fault. Reset the generator per QRH 6.2.",
   };
 }
+
+test("provider structured output requires entityCandidates for OpenAI strict schemas", () => {
+  assert.equal(chatAnswerProviderSchema.safeParse({
+    answer: "Supported answer [1].",
+    supported: true,
+  }).success, false);
+  assert.equal(chatAnswerProviderSchema.safeParse({
+    answer: "Supported answer [1].",
+    entityCandidates: [],
+    supported: true,
+  }).success, true);
+});
 
 test("discloseChatAssumptions names each assumed field and value", () => {
   const answer = discloseChatAssumptions("Supported answer [1].", [
@@ -180,6 +194,66 @@ test("generateChatAnswer uses the LLM answer when it is supported and correctly 
     answer.content,
     "The GEN OFF BUS light indicates a generator bus fault [1].",
   );
+});
+
+test("entity suggestions require an exact source quote containing the entity name", () => {
+  const candidates = validateEntityCandidates([
+    {
+      citationIndex: 1,
+      entityType: "system",
+      evidenceQuote: "GEN OFF BUS light",
+      name: "GEN OFF BUS",
+      summary: "A named indication associated with generator bus status.",
+    },
+    {
+      citationIndex: 1,
+      entityType: "product",
+      evidenceQuote: "fabricated product",
+      name: "fabricated product",
+      summary: "This candidate is not present in the source evidence.",
+    },
+    {
+      citationIndex: 2,
+      entityType: "system",
+      evidenceQuote: "GEN OFF BUS light",
+      name: "GEN OFF BUS",
+      summary: "This candidate points to an unknown evidence item.",
+    },
+  ], [makeEvidence(1)]);
+
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]?.name, "GEN OFF BUS");
+  assert.equal(candidates[0]?.citationIndex, 1);
+  assert.equal(candidates[0]?.id.length, 20);
+});
+
+test("supported answers retain validated entity suggestions as untrusted review candidates", async () => {
+  const answer = await generateChatAnswer(
+    {
+      evidence: [makeEvidence(1)],
+      query: QUERY,
+      retrieval: { citations: [makeCitation(1)], retrievalError: false },
+      route: "okf_only",
+      workspaceId: WORKSPACE_ID,
+    },
+    {
+      callProvider: async () => ({
+        answer: "The GEN OFF BUS light indicates a generator bus fault [1].",
+        entityCandidates: [{
+          citationIndex: 1,
+          entityType: "system",
+          evidenceQuote: "GEN OFF BUS light",
+          name: "GEN OFF BUS",
+          summary: "A named indication associated with generator bus status.",
+        }],
+        supported: true,
+      }),
+      getApiKey: anthropicKey,
+    },
+  );
+
+  assert.equal(answer.entityCandidates?.length, 1);
+  assert.equal(answer.entityCandidates?.[0]?.name, "GEN OFF BUS");
 });
 
 test("generateChatAnswer rejects answers citing evidence that does not exist", async () => {

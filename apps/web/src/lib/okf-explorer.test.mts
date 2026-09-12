@@ -5,7 +5,101 @@ import path from "node:path";
 import test from "node:test";
 
 import { buildOkfExplorerSnapshot } from "./okf-explorer.ts";
+import {
+  buildOkfGraphFocus,
+  buildOkfGraphView,
+  getDefaultOkfGraphViewMode,
+} from "./okf-graph-view.ts";
+
+test("graph focus keeps the selected node and direct neighbors highlighted", () => {
+  const nodes = [
+    graphNode("a.md", "A", 1),
+    graphNode("b.md", "B", 2),
+    graphNode("c.md", "C", 1),
+    graphNode("d.md", "D", 0),
+  ];
+  const edges = [
+    graphEdge("a-to-b", "a.md", "b.md"),
+    graphEdge("b-to-c", "b.md", "c.md"),
+  ];
+
+  assert.deepEqual(buildOkfGraphFocus({ edges, nodes, selectedFile: "b.md" }), {
+    highlightedLinkIndices: [0, 1],
+    highlightedPointIndices: [0, 1, 2],
+    selectedIndex: 1,
+  });
+  assert.deepEqual(buildOkfGraphFocus({ edges, nodes, selectedFile: null }), {
+    highlightedLinkIndices: [],
+    highlightedPointIndices: [],
+    selectedIndex: -1,
+  });
+});
 import { listOkfBundleFiles } from "./okf-bundle.ts";
+
+test("graph view defaults to the selected concept and its direct neighborhood", () => {
+  const nodes = [
+    graphNode("a.md", "A", 1),
+    graphNode("b.md", "B", 2),
+    graphNode("c.md", "C", 1),
+    graphNode("isolated.md", "Isolated", 0),
+  ];
+  const edges = [
+    graphEdge("a-to-b", "a.md", "b.md"),
+    graphEdge("b-to-c", "b.md", "c.md"),
+  ];
+
+  const view = buildOkfGraphView({
+    edges,
+    mode: "neighborhood",
+    nodes,
+    selectedFile: "a.md",
+  });
+
+  assert.equal(view.focusFile, "a.md");
+  assert.deepEqual(view.nodes.map((node) => node.id), ["a.md", "b.md"]);
+  assert.deepEqual(view.edges.map((edge) => edge.id), ["a-to-b"]);
+  assert.deepEqual(view.isolatedNodes.map((node) => node.id), ["isolated.md"]);
+});
+
+test("all-concepts graph view preserves the complete topology", () => {
+  const nodes = [
+    graphNode("a.md", "A", 1),
+    graphNode("b.md", "B", 1),
+    graphNode("isolated.md", "Isolated", 0),
+  ];
+  const edges = [graphEdge("a-to-b", "a.md", "b.md")];
+
+  const view = buildOkfGraphView({
+    edges,
+    mode: "all",
+    nodes,
+    selectedFile: "b.md",
+  });
+
+  assert.equal(view.focusFile, "b.md");
+  assert.deepEqual(view.nodes, nodes);
+  assert.deepEqual(view.edges, edges);
+});
+
+test("the graph opens in an overview before the user narrows its neighborhood", () => {
+  assert.equal(getDefaultOkfGraphViewMode(), "all");
+});
+
+test("graph view chooses the highest-degree concept when selection is not a graph node", () => {
+  const view = buildOkfGraphView({
+    edges: [graphEdge("a-to-b", "a.md", "b.md")],
+    mode: "neighborhood",
+    nodes: [
+      graphNode("a.md", "A", 1),
+      graphNode("b.md", "B", 3),
+      graphNode("c.md", "C", 0),
+    ],
+    selectedFile: "index.md",
+  });
+
+  assert.equal(view.focusFile, "b.md");
+  assert.deepEqual(view.nodes.map((node) => node.id), ["a.md", "b.md"]);
+});
 
 test("physical nested paths build a directory-first tree and reserved files stay out of graph", async () => {
   await withFixture(async (root) => {
@@ -242,4 +336,26 @@ async function writeTopic(
     ].join("\n"),
     "utf8",
   );
+}
+
+function graphNode(id: string, title: string, degree: number) {
+  return {
+    degree,
+    id,
+    reviewStatus: "approved",
+    sourceFile: "source.pdf",
+    sourcePages: [1],
+    title,
+    type: "system_topic",
+  };
+}
+
+function graphEdge(id: string, source: string, target: string) {
+  return {
+    id,
+    reason: "Test relation",
+    relation: "references",
+    source,
+    target,
+  };
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import {
   retrieveOkfBundleEvidenceWithDiagnostics,
   type OkfNearMissCandidate,
 } from "./okf-bundle-retriever.ts";
+import { hashOkfSource } from "./okf-concept-embedding-content.ts";
 
 test("approved system_topic returns normalized OKF evidence", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-"));
@@ -87,12 +88,14 @@ test("retriever exposes automated and human approval provenance from live frontm
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-provenance-"));
   try {
     await writeTopic(root, "automated.md", {
-      extraFrontmatter: ['approved_by: "automation:user-1"'],
+      approvalMode: "automated",
       title: "Automated Brake Procedure",
+      verifiedBy: "process:av-okf-auto-approval",
     });
     await writeTopic(root, "human.md", {
-      extraFrontmatter: ['approved_by: "user-2"'],
+      approvalMode: "human_individual",
       title: "Human Brake Procedure",
+      verifiedBy: "human:user-2",
     });
     const results = await retrieveOkfBundleEvidence({
       knowledgeRoot: root,
@@ -229,6 +232,33 @@ test("ranking is deterministic", async () => {
   }
 });
 
+test("lexical matching normalizes simple plurals and ranks the specific concept first", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-plurals-"));
+
+  try {
+    await writeTopic(root, "overview.md", {
+      description: "Overview of flight controls including spoilers and flaps.",
+      title: "Flight Control Systems Overview",
+    });
+    await writeTopic(root, "spoiler.md", {
+      body: "The speedbrake lever controls flight spoiler movement.",
+      description: "Manual operation of the flight spoiler control system.",
+      title: "Flight Spoiler Control System",
+    });
+
+    const results = await retrieveOkfBundleEvidence({
+      knowledgeRoot: root,
+      query: "how do i activate the spoilers",
+      workspaceId: "wrk_1",
+    });
+
+    assert.equal(results[0]?.filePath, "spoiler.md");
+    assert.ok(results[0]?.matchedTerms.includes("spoiler"));
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test("retriever reads bundle live and stops surfacing unapproved changes", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-live-"));
   const target = path.join(root, "brakes.md");
@@ -275,9 +305,14 @@ test("retriever accepts approved agent-ready content without optional descriptio
     await writeFile(path.join(root, "no-description.md"), [
       "---",
       'type: "system_topic"',
-      'review_status: "approved"',
+      'status: "stable"',
       'title: "Brake System Missing Description"',
-      'source_file: "737NG AMM 32 Landing Gear"',
+      "verified:",
+      '  - by: "human:test-reviewer"',
+      '    at: "2026-07-20T12:00:00.000Z"',
+      "sources:",
+      '  - resource: "/references/sources/test-source.md"',
+      '    title: "737NG AMM 32 Landing Gear"',
       "source_pages:",
       "  - 41",
       "---",
@@ -762,6 +797,54 @@ test("metadata clarification is absent when no allowlisted axis partitions candi
   );
 });
 
+test("only current reviewed retrieval aliases can qualify lexical evidence", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "av-okf-retriever-reviewed-alias-"));
+  try {
+    await writeTopic(root, "brakes.md", {
+      body: "Normal braking is available through the hydraulic system.",
+      description: "Approved braking system information.",
+      title: "Main Gear Brake System",
+    });
+    const source = await readFile(path.join(root, "brakes.md"), "utf8");
+    const contentHash = hashOkfSource(source);
+    const baseInput = {
+      knowledgeRoot: root,
+      query: "deceleration stopping equipment",
+      semantic: {
+        getMetadata: async () => [],
+        search: async () => assert.fail("missing vectors must not be searched"),
+      },
+      workspaceId: "wrk_1",
+    };
+
+    const withoutAlias = await retrieveOkfBundleEvidence(baseInput);
+    assert.deepEqual(withoutAlias, []);
+
+    const [withApprovedAlias] = await retrieveOkfBundleEvidence({
+      ...baseInput,
+      retrievalTriggers: [{
+        contentHash,
+        filePath: "brakes.md",
+        terms: ["deceleration", "stopping"],
+      }],
+    });
+    assert.equal(withApprovedAlias?.filePath, "brakes.md");
+    assert.equal(withApprovedAlias?.okfMatchMode, "lexical");
+
+    const staleAlias = await retrieveOkfBundleEvidence({
+      ...baseInput,
+      retrievalTriggers: [{
+        contentHash: "stale-content-hash",
+        filePath: "brakes.md",
+        terms: ["deceleration", "stopping"],
+      }],
+    });
+    assert.deepEqual(staleAlias, []);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 function makeNearMiss(
   filePath: string,
   answerableMetadata: Record<string, string[]>,
@@ -779,11 +862,13 @@ async function writeTopic(
   root: string,
   filename: string,
   options: {
+    approvalMode?: string;
     body?: string;
     description?: string;
     extraFrontmatter?: string[];
     reviewStatus?: string;
     title?: string;
+    verifiedBy?: string;
   } = {},
 ) {
   await mkdir(path.dirname(path.join(root, filename)), { recursive: true });
@@ -792,13 +877,26 @@ async function writeTopic(
     [
       "---",
       'type: "system_topic"',
-      `review_status: "${options.reviewStatus ?? "approved"}"`,
+      `status: "${(options.reviewStatus ?? "approved") === "approved" ? "stable" : "draft"}"`,
       `title: "${options.title ?? "Main Gear Brake System"}"`,
       `description: "${
         options.description ??
         "The main gear brake system provides normal and alternate braking."
       }"`,
-      'source_file: "737NG AMM 32 Landing Gear"',
+      ...((options.reviewStatus ?? "approved") === "approved"
+        ? [
+            "verified:",
+            `  - by: "${options.verifiedBy ?? "human:test-reviewer"}"`,
+            '    at: "2026-07-20T12:00:00.000Z"',
+            ...(options.approvalMode
+              ? [`av_okf_approval_mode: "${options.approvalMode}"`]
+              : []),
+            "sources:",
+            '  - id: "source-test"',
+            '    resource: "/references/sources/test-source.md"',
+            '    title: "737NG AMM 32 Landing Gear"',
+          ]
+        : []),
       "source_pages:",
       "  - 41",
       "  - 42",

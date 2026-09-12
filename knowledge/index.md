@@ -1,3 +1,7 @@
+---
+okf_version: "0.2"
+---
+
 # AV-OKF Knowledge Bundle
 - [ELECTRICAL POWER](maintenance-electrical-power-5162082097.md) - Airbus Maintenance Training Boeing 737 Student Book ELECTRICAL POWER DISCLAIMER This is an UNCONTROLLED DOCUMENT and will not be revised. Information contained herein is For Tra...
 - [737 MAX Differences](maintenance-737-max-differences-3072dff2ea.md) - B737 TechOps Training 737 MAX Differences Engine Fuel and Control Training Code: 37MD B737 TechOps Training ENGINE FUEL AND CONTROL - INTRODUCTION General The engine fuel and co...
@@ -6,6 +10,4 @@
 - [ENGINE FUEL AND CONTROL - DISTRIBUTION - GENERAL DESCRIPTION](maintenance-engine-fuel-and-control-distribution-general-description-ea0af28e45.md) - B737 TechOps Training ENGINE FUEL AND CONTROL - DISTRIBUTION - GENERAL DESCRIPTION Effective On:B737 MAX 5 ATA 73-00
 - [ABNORMAL AND](training-abnormal-and-7c79d453ed.md) - ABNORMAL AND EMERGENCY PROCEDURES Intentionally left blank
 
-This directory is the future OKF bundle root.
-
-Approved OKF concepts will be exported here after topic review. Raw extraction and unreviewed RAG content should not be committed here as trusted OKF.
+This tracked directory is an untrusted v0.2 repository fixture. Production bundles are workspace-scoped and generated after topic review.

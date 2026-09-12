@@ -1,16 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
-
 import type { ExtractionStatus, TopicDiscoveryStatus } from "@/lib/document-vault";
 import { shouldPollDocumentProcessing } from "@/lib/document-processing-state";
-
-const POLL_INTERVAL_MS = 2_000;
-
-type ProcessingStatusResponse = {
-  active: boolean;
-  fingerprint: string;
-};
+import type { DocumentProcessingProgressData } from "@/lib/production-document-processing-status";
+import type { OperationProgressSnapshot } from "@/lib/operation-progress";
+import { useOperationProgress, useOperationTerminalRefresh } from "./use-operation-progress";
 
 export function DocumentExtractionPoller({
   authoringStatus = "not_started",
@@ -29,100 +23,43 @@ export function DocumentExtractionPoller({
   status: ExtractionStatus;
   topicDiscoveryStatus?: TopicDiscoveryStatus;
 }) {
-  useEffect(() => {
-    if (!shouldPollDocumentProcessing({
+  const active = shouldPollDocumentProcessing({
       authoringStatus,
       automaticApprovalStatus,
       derivedProcessingActive: processingActive,
       extractionStatus: status,
       topicDiscoveryStatus,
-    })) {
-      return;
-    }
-
-    let cancelled = false;
-    let requestInFlight = false;
-    let reloadRequested = false;
-    const transitionKey = `document-processing-transition:${documentId}`;
-    const poll = async () => {
-      if (requestInFlight || reloadRequested) return;
-      requestInFlight = true;
-      try {
-        const response = await fetch(
-          `/api/documents/${encodeURIComponent(documentId)}/processing-status`,
-          { cache: "no-store" },
-        );
-        if (!response.ok) return;
-        const payload = (await response.json()) as ProcessingStatusResponse;
-        if (!isProcessingStatusResponse(payload) || cancelled) return;
-
-        const previousTransition = window.sessionStorage.getItem(transitionKey);
-        const decision = resolveDocumentProcessingPollDecision({
-          currentFingerprint: fingerprint,
-          next: payload,
-          previousTransition,
-        });
-
-        if (decision === "reload") {
-          reloadRequested = true;
-          window.sessionStorage.setItem(
-            transitionKey,
-            buildProcessingTransition(fingerprint, payload.fingerprint),
-          );
-          window.location.reload();
-          return;
-        }
-
-        if (decision === "stop") {
-          window.clearInterval(intervalId);
-          return;
-        }
-
-        if (payload.fingerprint === fingerprint) {
-          window.sessionStorage.removeItem(transitionKey);
-        }
-      } catch {
-        // A transient poll failure must not interrupt the visible workflow.
-      } finally {
-        requestInFlight = false;
-      }
-    };
-
-    void poll();
-    const intervalId = window.setInterval(() => void poll(), POLL_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [authoringStatus, automaticApprovalStatus, documentId, fingerprint, processingActive, status, topicDiscoveryStatus]);
-
-  return null;
-}
-
-export function resolveDocumentProcessingPollDecision(input: {
-  currentFingerprint: string;
-  next: ProcessingStatusResponse;
-  previousTransition: string | null;
-}): "continue" | "reload" | "stop" {
-  if (input.next.fingerprint === input.currentFingerprint) {
-    return input.next.active ? "continue" : "stop";
-  }
-
-  return input.previousTransition ===
-    buildProcessingTransition(input.currentFingerprint, input.next.fingerprint)
-    ? "stop"
-    : "reload";
-}
-
-function buildProcessingTransition(currentFingerprint: string, nextFingerprint: string) {
-  return `${currentFingerprint}\u0000${nextFingerprint}`;
-}
-
-function isProcessingStatusResponse(
-  value: ProcessingStatusResponse,
-): value is ProcessingStatusResponse {
+    });
+  const initialSnapshot: OperationProgressSnapshot<DocumentProcessingProgressData> = {
+    active,
+    data: {
+      authoring: null, automaticApproval: null, efbRelease: null,
+      entities: { completed: 0, failed: 0, queued: 0, running: 0 },
+      extraction: { completed: 0, ocrPages: 0, status, total: 0 },
+      ragIndex: null,
+      topicDiscovery: { completed: 0, status: topicDiscoveryStatus, total: 0 },
+    },
+    fingerprint,
+    generatedAt: new Date().toISOString(),
+    operations: [],
+  };
+  const refreshTerminal = useOperationTerminalRefresh();
+  const { connected, snapshot } = useOperationProgress({
+    initialSnapshot,
+    onTerminal: refreshTerminal,
+    url: `/api/documents/${encodeURIComponent(documentId)}/processing-status`,
+  });
+  const current = snapshot.operations.find((operation) => operation.status === "running")
+    ?? snapshot.operations.find((operation) => operation.status === "action_required")
+    ?? snapshot.operations.find((operation) => operation.status === "queued");
+  if (!current || (!snapshot.active && connected)) return null;
   return (
-    typeof value?.active === "boolean" && typeof value.fingerprint === "string"
+    <div className="mb-4 flex flex-col gap-2 rounded-md border border-border bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between" aria-live="polite">
+      <div className="min-w-0">
+        <span className="font-medium">Processing document · {current.label}</span>
+        <p className="truncate text-xs text-muted-foreground">{current.detail}</p>
+      </div>
+      <span className="shrink-0 text-xs text-muted-foreground">{!connected ? "Reconnecting..." : current.stage.replaceAll("_", " ")}</span>
+    </div>
   );
 }

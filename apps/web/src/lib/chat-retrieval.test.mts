@@ -287,7 +287,14 @@ test("weak follow-up cannot clarify again and falls through to RAG discovery", a
         }],
         question: "Which subject or family applies?",
       },
-      nearMissCandidates: [],
+      nearMissCandidates: [{
+        answerableMetadata: { subject_family: ["Forklift"] },
+        contentHash: "hash_forklift_maintenance",
+        filePath: "concepts/procedure/forklift-maintenance.md",
+        lexicalScore: 4,
+        matchReason: "Weak lexical match: hydraulic",
+        title: "Forklift Maintenance",
+      }],
       qualifiedEvidence: [],
     }),
   );
@@ -296,6 +303,24 @@ test("weak follow-up cannot clarify again and falls through to RAG discovery", a
   assert.equal(result.ragUsedForDiscoveryOnly, true);
   assert.equal(result.citations[0]?.sourceType, "rag");
   assert.equal(ragQuery, "hydraulic fuse Forklift Operations Manual");
+  assert.deepEqual(result.retrievalTriggerCandidates, [{
+    contentHash: "hash_forklift_maintenance",
+    filePath: "concepts/procedure/forklift-maintenance.md",
+    knowledgeBundleId: "kb_general_local",
+    matchReason: "Weak lexical match: hydraulic",
+    suggestedTerms: ["fuse", "hydraulic", "operation"],
+    title: "Forklift Maintenance",
+  }]);
+  assert.equal(
+    result.citations.some((citation) =>
+      citation.okfFilePath === "concepts/procedure/forklift-maintenance.md"),
+    false,
+  );
+  assert.equal(
+    result.evidence.some((evidence) =>
+      evidence.okfFilePath === "concepts/procedure/forklift-maintenance.md"),
+    false,
+  );
 });
 
 test("okf_only falls back to raw RAG when live OKF bundle relevance is too low", async () => {
