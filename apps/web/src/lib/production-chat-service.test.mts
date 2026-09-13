@@ -130,6 +130,36 @@ function fallbackQueryUnderstanding(
   };
 }
 
+test("new chats retain only the requested active bundle even when shared knowledge is enabled", async () => {
+  const original = process.env.AV_OKF_SHARED_ENABLED;
+  try {
+    for (const shared of ["false", "true"]) {
+      process.env.AV_OKF_SHARED_ENABLED = shared;
+      const { repository } = createRepositoryStub();
+      const { session } = await repository.getSessionWithMessages();
+      let creations = 0;
+      const service = createProductionChatService({
+        ...repository,
+        createSession: async (input: { context: AuthWorkspaceContext; knowledgeBundleId?: string; title?: string }) => {
+          creations++;
+          assert.equal(input.knowledgeBundleId, "kb_airbus");
+          assert.equal(input.context.workspaceId, context.workspaceId);
+          return { ...session, primaryKnowledgeBundleId: "kb_airbus", knowledgeBundles: [{ id: "kb_airbus", name: "Airbus 319/320", position: 0 }] };
+        },
+        updateKnowledgeBundleScope: async () => { throw new Error("new_chat_must_not_expand_scope"); },
+      }, { getContext: async () => context });
+      const created = await service.createSession("kb_airbus", "Scope test");
+      assert.equal(creations, 1);
+      assert.equal(created.primaryKnowledgeBundleId, "kb_airbus");
+      assert.deepEqual(created.knowledgeBundles.map(bundle => bundle.id), ["kb_airbus"]);
+      assert.equal(created.scopeVersion, 1);
+    }
+  } finally {
+    if (original === undefined) delete process.env.AV_OKF_SHARED_ENABLED;
+    else process.env.AV_OKF_SHARED_ENABLED = original;
+  }
+});
+
 function historyMessage(input: {
   content: string;
   id: string;
@@ -745,6 +775,7 @@ test("sendMessage stores only answer-used citations and separates related retrie
 });
 
 test("sendMessage falls back when a generated answer violates the evidence contract", async () => {
+  const stages: string[] = [];
   const { appendCalls, repository } = createRepositoryStub();
   const service = createProductionChatService(repository, {
     generateAnswer: async () => ({
@@ -760,8 +791,11 @@ test("sendMessage falls back when a generated answer violates the evidence contr
   const result = await service.sendMessage(
     "session_1",
     "What is the official manual path for GEN OFF BUS?",
+    undefined,
+    stage => { stages.push(stage); assert.equal(appendCalls.length, 0); },
   );
 
+  assert.deepEqual(stages, ["answering", "validating", "saving"]);
   assert.equal(appendCalls[0]?.assistantTrace.answerMode, "deterministic");
   assert.equal(appendCalls[0]?.assistantTrace.answerValidation?.status, "pass");
   assert.ok(

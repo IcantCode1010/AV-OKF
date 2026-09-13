@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Reworked chat into a centered, research-style answer layout with question
+  headings, compact per-answer source cards, expandable source lists, and a
+  persistent follow-up composer. Sources keep approval, raw-document, page,
+  and lifecycle labels and the existing citation destinations.
+- Moved the always-open desktop source panel into an on-demand drawer, added
+  per-answer details and copy actions, and made live answer stages expandable.
+  Existing bundle scope, validated progressive reveal, and retrieval behavior
+  are unchanged.
+
+- Fixed new chats automatically adding every workspace bundle when shared
+  knowledge was enabled. New conversations now retain only the active bundle;
+  additional sources require explicit selection. Removed all-collections copy
+  from the new-chat screen. Existing conversation scopes are not rewritten.
+
+- Fixed existing-chat replies being interrupted by a forced ten-second page
+  reload. Replies now use authenticated streamed stage updates and deliver the
+  persisted message pair directly into shared conversation/source-panel state.
+  Validated text reveals progressively, supports reduced motion and Show full
+  answer, and follows the bottom only while the reader is already there.
+- Added interrupted-delivery recovery that checks saved history without
+  resending the question, plus request/schema validation and duplicate-submit
+  guards. Retrieval, evidence validation and knowledge approval are unchanged.
+
 - Replaced the bundle graph's separate, automatically collapsed default views
   with one full-width network of published concepts and grounded entity links.
   Filters and evidence details open on demand; aliases fold into node metadata,

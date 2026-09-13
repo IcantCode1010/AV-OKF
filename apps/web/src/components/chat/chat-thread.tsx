@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-
 import { ChatMessageBubble } from "@/components/chat/chat-message-bubble";
 import type { ChatMessage } from "@/lib/chat-types";
 import type { MetadataClarificationSelection } from "@/lib/chat-router";
+import { LoaderCircle } from "lucide-react";
+import { CHAT_STAGE_LABELS } from "@/lib/chat-delivery";
 
 export type PendingChatMessage = {
   content: string;
@@ -17,6 +17,8 @@ export function ChatThread({
   messages,
   onSend,
   pendingMessage,
+  pendingLabel = "Searching selected knowledge and source evidence",
+  revealMessageId,
 }: {
   isPending: boolean;
   messages: ChatMessage[];
@@ -25,18 +27,9 @@ export function ChatThread({
     selection?: MetadataClarificationSelection[],
   ) => void;
   pendingMessage?: PendingChatMessage | null;
+  pendingLabel?: string;
+  revealMessageId?: string | null;
 }) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const latestMessageId =
-    pendingMessage?.id ?? messages[messages.length - 1]?.id;
-
-  // The thread lives inside an overflow-y-auto container that starts at
-  // scrollTop 0, hiding the newest message below the fold on load and after
-  // each reply. Keep the latest message in view instead.
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [latestMessageId]);
-
   if (messages.length === 0 && !pendingMessage) {
     return (
       <div className="flex h-full min-h-80 items-center justify-center text-center">
@@ -48,7 +41,7 @@ export function ChatThread({
   }
 
   return (
-    <div className="flex min-h-full flex-col justify-end gap-6 py-4">
+    <div className="flex min-h-full flex-col gap-5 py-8 sm:py-10">
       {messages.map((message, index) => (
         <ChatMessageBubble
           canAnswerClarification={
@@ -56,32 +49,25 @@ export function ChatThread({
           }
           key={message.id}
           message={message}
+          animate={message.id === revealMessageId}
           onClarificationSubmit={onSend}
         />
       ))}
       {pendingMessage ? (
         <>
-          <div className="max-w-lg self-end rounded-2xl rounded-br-sm bg-secondary px-4 py-2.5 text-sm text-secondary-foreground opacity-80">
+          <h2 className="mt-8 w-full whitespace-pre-wrap break-words border-t border-border pt-8 text-xl font-semibold leading-snug sm:text-2xl first:mt-0 first:border-0 first:pt-0">
             {pendingMessage.content}
-          </div>
-          <div
-            className="flex max-w-3xl items-center gap-3 self-start rounded-2xl rounded-bl-sm border border-border bg-background/70 px-4 py-3 text-sm text-muted-foreground"
-            aria-live="polite"
-          >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
-            </span>
-            <span>Searching the knowledge bundle and raw document evidence</span>
-            <span className="flex items-center gap-1" aria-hidden="true">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.2s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:-0.1s]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground" />
-            </span>
-          </div>
+          </h2>
+          <details className="border-y border-border py-3">
+            <summary className="cursor-pointer text-sm"><span className="ml-1 inline-flex items-center gap-2"><LoaderCircle aria-hidden="true" className="h-4 w-4 motion-safe:animate-spin text-muted-foreground" />Answer progress</span></summary>
+            <ol className="mt-3 space-y-2 text-xs text-muted-foreground">
+              {Object.entries(CHAT_STAGE_LABELS).map(([key, label]) => <li key={key} aria-current={pendingLabel === label ? "step" : undefined} className={pendingLabel === label ? "font-medium text-foreground" : ""}>{label}{pendingLabel === label ? " (in progress)" : ""}</li>)}
+            </ol>
+          </details>
+          <p role="status" className="text-sm text-muted-foreground">{pendingLabel}</p>
         </>
       ) : null}
-      <div ref={bottomRef} aria-hidden className="h-px shrink-0" />
+      <div aria-hidden className="h-px shrink-0" />
     </div>
   );
 }

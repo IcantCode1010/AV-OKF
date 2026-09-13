@@ -11,16 +11,16 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 
-export function ChatSidePanelSheet({ children }: { children: ReactNode }) {
+export function ChatSidePanelSheet({ children, label = "Sources & trace" }: { children: ReactNode; label?: string }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2 lg:hidden">
+        <Button variant="ghost" size="sm" className="shrink-0 gap-2">
           <PanelRightOpen className="h-4 w-4" />
-          Sources &amp; trace
+          {label}
         </Button>
       </SheetTrigger>
-      <SheetContent side="right" className="w-80 overflow-y-auto p-4">
+      <SheetContent side="right" className="overflow-y-auto p-4 pt-12 data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
         <SheetTitle className="sr-only">Sources and trace</SheetTitle>
         {children}
       </SheetContent>

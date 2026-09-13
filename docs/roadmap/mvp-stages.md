@@ -12,6 +12,18 @@ The [aircraft article pipeline review and delivery plan](efb-content-platform-pl
 
 ## Current Implementation Status
 
+### Chat delivery reliability - 2026-09-13
+
+- Existing conversations no longer force a reload after ten seconds or depend
+  on a redirect/RSC refresh to display replies. Authenticated NDJSON delivers
+  safe stage updates and the persisted result; Sources & Trace updates live.
+- Text reveals progressively only after evidence validation and persistence.
+  Interrupted transport offers a saved-answer check without a duplicate send.
+- Full tests, lint and configured Docker build passed. A real Airbus long-answer
+  browser check delivered nine cited sources without refreshing the page.
+- Durable request identity across server restart and the initial new-chat
+  Server Action remain follow-ups. See the chat-delivery implementation report.
+
 ### Chat readability — 2026-09-11
 
 - Implemented Markdown answer rendering with evidence-bound citation links, concise answer formatting guidance, and collapsed secondary details.

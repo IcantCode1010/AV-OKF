@@ -1,4 +1,5 @@
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
+import type { ChatDeliveryStage } from "./chat-delivery.ts";
 import type { MetadataClarificationSelection } from "./chat-router.ts";
 import { isProductionBackend } from "./production-document-service.ts";
 import { getProductionChatService } from "./production-chat-service.ts";
@@ -59,11 +60,13 @@ export async function sendChatMessage(
   sessionId: string,
   content: string,
   metadataSelection?: MetadataClarificationSelection[],
+  onProgress?: (stage: ChatDeliveryStage) => void,
 ): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }> {
   assertChatAvailable();
   return getProductionChatService().sendMessage(
     sessionId,
     content,
     metadataSelection,
+    onProgress,
   );
 }

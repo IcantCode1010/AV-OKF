@@ -12,6 +12,12 @@
 
 ## Bundle-Centered Experience
 
+- [x] Remove the chat's ten-second forced reload and render saved replies,
+  source panels, processing stages and progressive validated text in place.
+- [ ] Extend durable chat request identity/reconnection across browser closure
+  and server restart; bring first-message new-chat creation onto the same
+  delivery transport. Do not expose unchecked model tokens or auto-resend a
+  question when the original request's outcome is unknown.
 - [ ] Improve dense-network 2D fallback spacing and benchmark large graph
   rendering/memory. The new default 3D overview is verified; the retained 2D
   view still bunches the current corpus together.

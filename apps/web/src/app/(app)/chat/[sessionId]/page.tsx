@@ -4,7 +4,7 @@ import { History } from "lucide-react";
 
 import { ChatConversationPanel } from "@/components/chat/chat-conversation-panel";
 import { ChatSidePanelSheet } from "@/components/chat/chat-side-panel-sheet";
-import { ChatSidePanelContent } from "@/components/chat/chat-side-panel";
+import { ChatLiveProvider, ChatLiveSidePanel } from "@/components/chat/chat-live-state";
 import { Button } from "@/components/ui/button";
 import { getChatSessionWithMessages, isChatAvailable } from "@/lib/chat-backend";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
@@ -39,15 +39,13 @@ export default async function ChatSessionPage({
     session.knowledgeBundles.find(
       (bundle) => bundle.id === session.primaryKnowledgeBundleId,
     ) ?? session.knowledgeBundles[0];
-  const latestAssistantMessage =
-    [...messages].reverse().find((message) => message.role === "assistant") ??
-    null;
 
   return (
-    <div className="grid h-full min-h-[32rem] lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="flex min-h-0 min-w-0 flex-col bg-background">
+    <ChatLiveProvider key={session.id} messages={messages}>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Button asChild variant="ghost" size="icon">
               <Link href="/chat/history">
                 <History className="h-4 w-4" />
@@ -62,9 +60,7 @@ export default async function ChatSessionPage({
             </div>
           </div>
           <ChatSidePanelSheet>
-            <ChatSidePanelContent
-              latestAssistantMessage={latestAssistantMessage}
-            />
+            <ChatLiveSidePanel />
           </ChatSidePanelSheet>
         </div>
         {entityError ? (
@@ -78,20 +74,13 @@ export default async function ChatSessionPage({
             id: bundle.id,
             name: bundle.name,
           }))}
-          messages={messages}
           selectedBundleIds={session.knowledgeBundles.map((bundle) => bundle.id)}
           sessionId={session.id}
         />
       </div>
 
-      <aside className="hidden min-h-0 border-l bg-muted/20 lg:block">
-        <div className="h-full overflow-y-auto p-4">
-          <ChatSidePanelContent
-            latestAssistantMessage={latestAssistantMessage}
-          />
-        </div>
-      </aside>
     </div>
+    </ChatLiveProvider>
   );
 }
 

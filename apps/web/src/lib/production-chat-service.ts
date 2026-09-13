@@ -46,6 +46,7 @@ import {
   type ChatRetrievalFn,
 } from "./chat-retrieval.ts";
 import type { ChatMessage, ChatSession } from "./chat-types.ts";
+import type { ChatDeliveryStage } from "./chat-delivery.ts";
 import { finalizeChatTurn } from "./chat-turn-finalization.ts";
 import { annotateChatCitationLifecycle } from "./chat-citation-lifecycle.ts";
 import type { KnowledgeGapDraft } from "./knowledge-gaps.ts";
@@ -70,6 +71,7 @@ export type ProductionChatService = {
     sessionId: string,
     content: string,
     metadataSelection?: MetadataClarificationSelection[],
+    onProgress?: (stage: ChatDeliveryStage) => void,
   ): Promise<{ assistantMessage: ChatMessage; userMessage: ChatMessage }>;
 };
 
@@ -118,10 +120,8 @@ export function createProductionChatService(
   return {
     async createSession(knowledgeBundleId: string, title?: string) {
       const context = await getContext();
-      const session=await repository.createSession({ context, knowledgeBundleId, title });
-      if(!knowledgeFeature("shared"))return session;
-      const bundles=await getPrisma().knowledgeBundle.findMany({where:{workspaceId:context.workspaceId,status:"active"},select:{id:true}});
-      return repository.updateKnowledgeBundleScope({context,sessionId:session.id,knowledgeBundleIds:bundles.map(b=>b.id)});
+      // Shared retrieval capability must not widen the user's initial scope.
+      return repository.createSession({ context, knowledgeBundleId, title });
     },
 
     async getSessionWorkspaceId(sessionId: string) {
@@ -207,6 +207,7 @@ export function createProductionChatService(
       sessionId: string,
       content: string,
       metadataSelection?: MetadataClarificationSelection[],
+      onProgress?: (stage: ChatDeliveryStage) => void,
     ) {
       const context = await getContext();
       // Recent turns give the router (and its future LLM-fallback/agent
@@ -361,6 +362,7 @@ export function createProductionChatService(
             ],
           }
         : queryUnderstanding;
+      onProgress?.("answering");
       const answer: ChatAnswer = retrieval.metadataClarification
         ? {
             content: retrieval.metadataClarification.question,
@@ -391,6 +393,7 @@ export function createProductionChatService(
             mode: "deterministic" as const,
             outcome: "answered" as const,
           };
+      onProgress?.("validating");
       const assistantTrace = {
         ...buildStage6aRouterTrace(decision),
         answerMode: answer.mode,
@@ -660,6 +663,7 @@ export function createProductionChatService(
             }
           : undefined;
 
+      onProgress?.("saving");
       return repository.appendUserMessageAndAssistantReply({
         assistantContent: graphResearch?.research.result.coverage==="partial"?`${finalizedTurn.content}\n\nResearch reached its limit. This answer reflects the evidence checked so far; additional applicable information may exist.`:finalizedTurn.content,
         assistantTrace: {

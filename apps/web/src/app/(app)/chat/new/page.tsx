@@ -1,4 +1,3 @@
-import {knowledgeFeature} from "@/lib/knowledge/contracts";
 import { NewChatPanel } from "@/components/chat/new-chat-panel";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
 import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
@@ -12,5 +11,5 @@ export default async function NewChatPage() {
   const context = await requireAuthWorkspaceContext();
   const bundles = await listKnowledgeBundles(context);
   const { activeBundle } = await resolveActiveKnowledgeBundle(context, bundles);
-  return <NewChatPanel allCollections={knowledgeFeature("shared")} activeBundle={activeBundle ? { id: activeBundle.id, name: activeBundle.name } : null} />;
+  return <NewChatPanel activeBundle={activeBundle ? { id: activeBundle.id, name: activeBundle.name } : null} />;
 }
