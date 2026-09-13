@@ -7,6 +7,7 @@ export type EntityGraphNode = {
   status: string;
   title: string;
   type: string;
+  exportedFilePath?: string | null;
 };
 
 export type EntityGraphEdge = {
@@ -44,7 +45,7 @@ export async function loadEntityGraphSnapshot(input: {
       include: {
         document: { select: { id: true, title: true } },
         entity: true,
-        topic: { select: { id: true, title: true, enrichedTitle: true } },
+        topic: { select: { id: true, title: true, enrichedTitle: true, exportedFilePath: true } },
       },
       orderBy: [{ entity: { canonicalName: "asc" } }, { documentId: "asc" }, { topicId: "asc" }],
       where: { knowledgeBundleId: input.knowledgeBundleId, workspaceId: input.workspaceId },
@@ -113,7 +114,7 @@ export async function loadEntityGraphSnapshot(input: {
     const topicId = `topic:${occurrence.topicId}`;
     const documentId = `document:${occurrence.documentId}`;
     addNode({ id: entityId, kind: "entity", status: occurrence.entity.status, title: occurrence.entity.canonicalName, type: occurrence.entity.entityType });
-    addNode({ id: topicId, kind: "topic", status: "grounded", title: occurrence.topic.enrichedTitle ?? occurrence.topic.title, type: "concept" });
+    addNode({ id: topicId, kind: "topic", status: "grounded", title: occurrence.topic.enrichedTitle ?? occurrence.topic.title, type: "concept", exportedFilePath: occurrence.topic.exportedFilePath });
     addNode({ id: documentId, kind: "document", status: "source", title: occurrence.document.title, type: "document" });
     addEdge({
       evidenceQuote: occurrence.evidenceQuote,

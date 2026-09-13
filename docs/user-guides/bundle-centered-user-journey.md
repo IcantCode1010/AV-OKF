@@ -27,8 +27,12 @@ are not silently rewritten.
 3. Use **Chat** to resume the bundle's latest conversation or start a new one.
 4. Use **Browse** to filter the physical OKF tree and read a concept with its
    trust, provenance, sources, relations, and backlinks.
-5. Use **Graph** to explore approved typed relations. The selected concept is
-   preserved when moving between Browse and Graph.
+5. Use **Graph** to enter the full network of concepts, entities, and source
+   documents. Search for a subject, select it to highlight its connections,
+   and open the evidence for a link. Filters open from the toolbar; switch to
+   Published relations or Needs attention when needed. Source-evidence links
+   are distinguished from approved semantic relations. The Browse toolbar
+   action carries the selected concept into the reader.
 6. Use **Documents** to upload into the active bundle or switch between This
    bundle, Unassigned, and All workspace documents.
 7. Follow each document's Processing panel through extraction, discovery,

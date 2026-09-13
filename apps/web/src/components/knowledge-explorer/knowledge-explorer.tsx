@@ -596,6 +596,7 @@ type KnowledgeGraphProps = {
   edges: OkfExplorerEdge[];
   nodes: OkfExplorerNode[];
   onSelect: (filename: string) => void;
+  onSelectEdge?: (id: string) => void;
   selectedFile: string | null;
 };
 
@@ -831,7 +832,7 @@ function KnowledgeGraph2D({
   }
 
   return (
-    <div className="relative h-full min-h-[560px] overflow-hidden pt-16">
+    <div className="relative h-full min-h-[min(520px,65dvh)] overflow-hidden pt-16">
       <div ref={containerRef} className="absolute inset-0 top-16" aria-label="Interactive force-directed graph" />
       <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2">
         <Button

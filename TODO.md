@@ -12,6 +12,16 @@
 
 ## Bundle-Centered Experience
 
+- [ ] Improve dense-network 2D fallback spacing and benchmark large graph
+  rendering/memory. The new default 3D overview is verified; the retained 2D
+  view still bunches the current corpus together.
+- [x] Open Graph on the complete topic/entity network with on-demand controls,
+  folded aliases, deduplicated evidence lines, and preserved source inspection.
+- [ ] Evaluate entity-grounding-v2 on representative documents before running
+  a reviewed reclassification of existing `other` entities. Measure type
+  consistency, acronym resolution, homonyms, and semantic relation precision;
+  do not merge identities or invent relations to increase visual density.
+
 - [x] Replace full-page polling refreshes with one smooth operation-progress architecture across document processing, bulk approval, workflow, activity, relation verification, topic expansion, and deletion:
   - define a shared structured `OperationProgress` snapshot with stage, status, completed/total work, current item, attention state, actions, and fingerprint;
   - return the changed snapshot from authenticated status endpoints instead of using the fingerprint only to call `window.location.reload()` or refresh the full Server Component tree;

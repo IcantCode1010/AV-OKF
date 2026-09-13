@@ -2,6 +2,35 @@
 
 Objective: improve visual graph exploration and make graph retrieval useful, evidence-grounded, and explainable for the agent. The broader architecture plan remains in scope; this checklist is not a completion claim.
 
+## Full-network default - 2026-09-13
+
+The bundle Graph route now opens a combined, uncollapsed network. Published
+relations come from the live OKF snapshot; entity occurrences remain explicitly
+structural evidence. Alias labels are folded into entity details and repeated
+lines retain every supporting record. No entity identity is merged by display
+name. Filters and details are overlays, leaving the canvas full width.
+
+This supersedes the older default group/layer behavior described below.
+The renderer now highlights selection without automatically moving the camera,
+fits the network on viewport changes, and keeps disconnected nodes within a
+bounded display perimeter. Search and browser history retain direct selection.
+
+Entity extraction v2 adds explicit type definitions and discourages bare codes,
+heading fragments, and generic instructions. Quality improvements on new
+provider output remain unmeasured; existing `other` records are not relabeled.
+Evaluate this before any bulk identity or classification repair.
+
+Verification: full Node/component suite (905 passed, five skipped), 20 focused
+graph/entity tests, ESLint, Docker production build, five Python relation tests,
+and relation lint pass. A raw local build encounters the existing test-auth
+configuration guard; standalone TypeScript includes existing test-fixture
+errors. The configured Docker build type-checks successfully. Browser checks
+use the actual bundle and include full-network entry, search, source evidence,
+type filters and 2D switching. See the
+[implementation report](../../.ai/handoffs/graph-network-implementation-report.md)
+for viewport coverage and limits. The retained 2D layout still needs dense-network
+spacing work; the complete, automatically fitted 3D view is the default.
+
 ## Latest agent integration verification
 
 - Wired the previously ignored 3D `autoFocusSelected` option. External selections schedule camera focus after render, wait for async grouping, and track the last selection to avoid repeated camera interruptions. Browser fixture selected a concept via the answer's text list and rendered its focused graph/source excerpt without errors; screenshot `work/answer-external-focus.png`. Targeted lint passes after moving focus work to an animation-frame callback with cleanup.

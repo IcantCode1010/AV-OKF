@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+- Replaced the bundle graph's separate, automatically collapsed default views
+  with one full-width network of published concepts and grounded entity links.
+  Filters and evidence details open on demand; aliases fold into node metadata,
+  repeated occurrence lines retain all evidence under one connection, and node
+  selection preserves the overview and browser history. Added stronger line
+  contrast, gentle highlighting, and camera refitting on viewport changes.
+- Versioned the entity extraction prompt with explicit type definitions and
+  guidance against extracting bare section codes or instruction fragments as
+  entities. Existing identities and published relations are not rewritten.
+
 - Added aviation knowledge and EFB agent infographic drafts covering manual ingestion, curated/versioned topics, custom topic creation, signed package publication, activation, and source-linked answers.
 
 - AV-OKF chat now renders Markdown paragraphs, lists, headings, and tables with preserved source links. Entity suggestions and diagnostics are collapsed; reviewed-source labels distinguish source review from generated answers.
