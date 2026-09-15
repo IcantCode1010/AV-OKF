@@ -40,7 +40,7 @@ The physical file tree mirrors bundle-relative folders. `index.md` is readable b
 The explorer and the chat retriever have intentionally different inclusion rules.
 
 - Human explorer: active lifecycle content with parseable concept metadata.
-- Trusted agent retrieval: active lifecycle, `review_status: approved`, required OKF fields, and a qualified query match.
+- Trusted agent retrieval: active lifecycle, current `status: stable`, recognized `verified` provenance, portable source metadata, required AV-OKF fields, and a qualified query match.
 
 An active draft may therefore be visible to a reviewer without becoming evidence for an approved OKF answer. The explorer must never be used as a shortcut around the stricter agent retrieval gates.
 
@@ -54,6 +54,11 @@ PDF page opening, graph editing, generic Markdown links as graph edges, clusteri
 
 ## Relation Discovery Boundary
 
-The graph currently renders only reviewed typed relations already present in OKF frontmatter. A separate reviewed relation-discovery slice will propose candidate edges from deterministic bundle signals and optional workspace-LLM classification, but candidates remain outside the trusted graph until a reviewer approves them and the source concept is re-exported successfully.
+The graph renders only typed relations present in active OKF frontmatter.
+Manual relations enter after review and re-export. Bundles that explicitly
+enable automatic verified relations may also publish 90%+ exact-quote verifier
+results after the same deterministic graph preflight. Those edges carry
+automation provenance and are labeled in the reader. Candidates and failed or
+filtered verifier results remain outside the graph.
 
 The Knowledge Explorer may host that review workflow, but it must not become an unrestricted graph editor. Exported `relations` frontmatter remains the source of truth, incoming backlinks remain derived, and pending or rejected candidates must never influence agent graph traversal.

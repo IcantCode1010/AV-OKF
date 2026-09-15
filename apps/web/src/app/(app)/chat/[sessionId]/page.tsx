@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { History } from "lucide-react";
 
 import { ChatConversationPanel } from "@/components/chat/chat-conversation-panel";
 import { ChatSidePanelSheet } from "@/components/chat/chat-side-panel-sheet";
-import { ChatSidePanelContent } from "@/components/chat/chat-side-panel";
+import { ChatLiveProvider, ChatLiveSidePanel } from "@/components/chat/chat-live-state";
 import { Button } from "@/components/ui/button";
 import { getChatSessionWithMessages, isChatAvailable } from "@/lib/chat-backend";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
@@ -15,14 +15,17 @@ export const dynamic = "force-dynamic";
 
 export default async function ChatSessionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ sessionId: string }>;
+  searchParams: Promise<{ entityError?: string }>;
 }) {
   if (!isChatAvailable()) {
     notFound();
   }
 
   const { sessionId } = await params;
+  const { entityError } = await searchParams;
   const result = await getChatSessionWithMessages(sessionId);
 
   if (!result) {
@@ -36,19 +39,17 @@ export default async function ChatSessionPage({
     session.knowledgeBundles.find(
       (bundle) => bundle.id === session.primaryKnowledgeBundleId,
     ) ?? session.knowledgeBundles[0];
-  const latestAssistantMessage =
-    [...messages].reverse().find((message) => message.role === "assistant") ??
-    null;
 
   return (
-    <div className="grid h-[calc(100vh-7rem)] min-h-[32rem] gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="flex min-h-0 min-w-0 flex-col rounded-lg border border-border bg-card/30">
+    <ChatLiveProvider key={session.id} messages={messages}>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 py-3">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <Button asChild variant="ghost" size="icon">
-              <Link href="/chat">
-                <ArrowLeft className="h-4 w-4" />
-                <span className="sr-only">Back to conversations</span>
+              <Link href="/chat/history">
+                <History className="h-4 w-4" />
+                <span className="sr-only">All conversations</span>
               </Link>
             </Button>
             <div className="min-w-0">
@@ -59,30 +60,36 @@ export default async function ChatSessionPage({
             </div>
           </div>
           <ChatSidePanelSheet>
-            <ChatSidePanelContent
-              latestAssistantMessage={latestAssistantMessage}
-            />
+            <ChatLiveSidePanel />
           </ChatSidePanelSheet>
         </div>
+        {entityError ? (
+          <div className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            {entityPromotionErrorMessage(entityError)}
+          </div>
+        ) : null}
 
         <ChatConversationPanel
           availableBundles={availableBundles.map((bundle) => ({
             id: bundle.id,
             name: bundle.name,
           }))}
-          messages={messages}
           selectedBundleIds={session.knowledgeBundles.map((bundle) => bundle.id)}
           sessionId={session.id}
         />
       </div>
 
-      <aside className="hidden min-h-0 lg:block">
-        <div className="h-full overflow-y-auto">
-          <ChatSidePanelContent
-            latestAssistantMessage={latestAssistantMessage}
-          />
-        </div>
-      </aside>
     </div>
+    </ChatLiveProvider>
   );
+}
+
+function entityPromotionErrorMessage(code: string) {
+  if (code === "chat_entity_identity_collision") {
+    return "This entity conflicts with an existing knowledge record and was not added.";
+  }
+  if (code === "chat_entity_candidate_source_unavailable") {
+    return "The supporting source is no longer available, so this entity cannot be added.";
+  }
+  return "This entity suggestion is no longer available. Refresh the conversation and try again.";
 }

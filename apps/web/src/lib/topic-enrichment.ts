@@ -1,4 +1,4 @@
-import { generateText, Output } from "ai";
+import { generateText, NoOutputGeneratedError, Output } from "ai";
 import { z } from "zod";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
@@ -9,6 +9,7 @@ import {
   failTopicEnrichment,
   getTopicEnrichmentInput,
   markTopicEnrichmentPending,
+  resolveTopicEnrichmentCandidate as resolveTopicEnrichmentCandidateBackend,
   type ApprovedContentSource,
   type ExtractedPageRecord,
   type TopicRecord,
@@ -18,10 +19,13 @@ import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import {
   getLlmProvider,
   getSdkModel,
-  LLM_PROVIDERS,
   type LlmProviderId,
 } from "./llm-providers.ts";
 import { normalizeOkfArticleBody } from "./okf-article-content.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+} from "./topic-enrichment-diff.ts";
 
 export type TopicEnrichmentProviderInput = {
   apiKey: string;
@@ -29,6 +33,15 @@ export type TopicEnrichmentProviderInput = {
   sourcePages: ExtractedPageRecord[];
   summary: string;
   title: string;
+  media?: TopicEnrichmentMedia[];
+};
+
+export type TopicEnrichmentMedia = {
+  altText: string;
+  image: Buffer;
+  pageNumber: number;
+  sourceCaption: string | null;
+  visualContext: string;
 };
 
 export type TopicEnrichmentProviderOutput = {
@@ -52,6 +65,7 @@ type TopicEnrichmentOutputGenerator = (input: {
   model: string;
   prompt: string;
   provider: LlmProviderId;
+  media?: TopicEnrichmentMedia[];
 }) => Promise<unknown>;
 
 export type TopicEnrichmentRepository = {
@@ -64,6 +78,7 @@ export type TopicEnrichmentRepository = {
     topicId: string;
   }): Promise<TopicRecord>;
   completeTopicEnrichment(input: {
+    baselineFingerprint: string;
     context: AuthWorkspaceContext;
     enrichedSummary: string;
     enrichedTitle: string;
@@ -104,7 +119,9 @@ type EnrichTopicOptions = {
   provider?: TopicEnrichmentProvider;
   providerFactory?: (providerId: LlmProviderId) => TopicEnrichmentProvider;
   repository?: TopicEnrichmentRepository;
+  sourcePagesOverride?: ExtractedPageRecord[];
   sourcePageMode?: "expanded" | "exact";
+  media?: TopicEnrichmentMedia[];
 };
 
 type ApproveTopicOptions = {
@@ -115,8 +132,12 @@ type ApproveTopicOptions = {
   repository?: Pick<TopicEnrichmentRepository, "approveTopicContent">;
 };
 
-const ANTHROPIC_PROVIDER = getLlmProvider(LLM_PROVIDERS[0].id);
-const OPENAI_PROVIDER = getLlmProvider(LLM_PROVIDERS[1].id);
+const ANTHROPIC_PROVIDER = getLlmProvider("anthropic");
+const KIMI_PROVIDER = getLlmProvider("kimi");
+const OPENAI_PROVIDER = getLlmProvider("openai");
+const COMPACT_RETRY_SOURCE_CHAR_LIMIT = 12_000;
+const COMPACT_SOURCE_MARKER = "\n[...source excerpt shortened...]\n";
+export const TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS = 3_000;
 const topicEnrichmentSchema = z.object({
   body: z.string(),
   proposedSourcePageNumbers: z.array(z.number().int().positive()),
@@ -135,9 +156,12 @@ export async function enrichTopic(
     topicId,
   });
   const topic = enrichmentInput.topic;
-  const sourcePages = options.sourcePageMode === "exact"
+  const baselineFingerprint = topicEnrichmentSnapshotFingerprint(
+    buildAcceptedTopicEnrichmentSnapshot(topic),
+  );
+  const sourcePages = options.sourcePagesOverride ?? (options.sourcePageMode === "exact"
     ? enrichmentInput.sourcePages.filter((page) => topic.sourcePageNumbers.includes(page.pageNumber))
-    : enrichmentInput.sourcePages;
+    : enrichmentInput.sourcePages);
 
   if (topic.reviewStatus === "approved") {
     throw new Error("topic_enrichment_requires_unapproved_topic");
@@ -159,15 +183,40 @@ export async function enrichTopic(
     allowSourcePageProposals: options.sourcePageMode !== "exact",
     sourcePages,
     topic,
+    media: options.media,
   });
+  let activePrompt = prompt;
+  let attempts = 1;
   try {
-    const result = await provider.enrich({
-      apiKey: key.apiKey,
-      prompt,
-      sourcePages,
-      summary: topic.summary,
-      title: topic.title,
-    });
+    let result: TopicEnrichmentProviderOutput;
+    try {
+      result = await provider.enrich({
+        apiKey: key.apiKey,
+        prompt: activePrompt,
+        sourcePages,
+        summary: topic.summary,
+        title: topic.title,
+        media: options.media,
+      });
+    } catch (error) {
+      if (!isMissingStructuredOutput(error) && !isContextLengthError(error)) throw error;
+      attempts = 2;
+      activePrompt = buildTopicEnrichmentPrompt({
+        allowSourcePageProposals: options.sourcePageMode !== "exact",
+        compactRetry: true,
+        sourcePages,
+        topic,
+        media: options.media,
+      });
+      result = await provider.enrich({
+        apiKey: key.apiKey,
+        prompt: activePrompt,
+        sourcePages,
+        summary: topic.summary,
+        title: topic.title,
+        media: options.media,
+      });
+    }
     const enrichedTitle = result.title.trim();
     const enrichedSummary = result.summary.trim();
     const enrichedBodyInput = (result.body ?? result.summary).trim();
@@ -186,13 +235,14 @@ export async function enrichTopic(
     const enrichedBody = normalizedBody || enrichedSummary;
 
     return repository.completeTopicEnrichment({
+      baselineFingerprint,
       context,
       enrichedSummary,
       enrichedTitle,
       enrichedBody,
       proposedSourcePageNumbers,
       model: provider.model,
-      promptSent: prompt,
+      promptSent: activePrompt,
       provider: provider.provider,
       rawResponse: result.rawResponse,
       requestedBy: context.userId,
@@ -201,15 +251,32 @@ export async function enrichTopic(
   } catch (error) {
     return repository.failTopicEnrichment({
       context,
-      errorMessage: normalizeErrorMessage(error),
+      errorMessage: formatEnrichmentErrorMessage(error, attempts),
       model: provider.model,
-      promptSent: prompt,
+      promptSent: activePrompt,
       provider: provider.provider,
-      rawResponse: error instanceof Error ? error.message : String(error),
+      rawResponse: serializeEnrichmentError(error, {
+        attempts,
+        compactRetryUsed: attempts === 2,
+        promptCharacters: activePrompt.length,
+      }),
       requestedBy: context.userId,
       topicId,
     });
   }
+}
+
+export async function resolveTopicEnrichmentCandidateDecision(
+  topicId: string,
+  input: { auditId: string; decision: "accept" | "reject" },
+  options: { context?: AuthWorkspaceContext } = {},
+) {
+  const context = options.context ?? (await requireAuthWorkspaceContext());
+  return resolveTopicEnrichmentCandidateBackend(topicId, {
+    auditId: input.auditId,
+    decision: input.decision,
+    resolvedBy: context.userId,
+  });
 }
 
 export async function approveTopicContentSource(
@@ -232,10 +299,15 @@ export async function approveTopicContentSource(
 
 export function buildTopicEnrichmentPrompt(input: {
   allowSourcePageProposals?: boolean;
+  compactRetry?: boolean;
   sourcePages: ExtractedPageRecord[];
   topic: TopicRecord;
+  media?: TopicEnrichmentMedia[];
 }) {
-  const sourceText = input.sourcePages
+  const sourcePages = input.compactRetry
+    ? compactSourcePages(input.sourcePages, COMPACT_RETRY_SOURCE_CHAR_LIMIT)
+    : input.sourcePages;
+  const sourceText = sourcePages
     .map((page) => `Page ${page.pageNumber}\n${page.text}`)
     .join("\n\n---\n\n");
 
@@ -247,16 +319,23 @@ export function buildTopicEnrichmentPrompt(input: {
     "Keep summary concise. Body must be a structured Markdown article grounded only in source text.",
     "The body is an article fragment: do not include a top-level H1 or repeat the title.",
     "Do not restate the summary as the opening paragraph, and do not add a Source, Sources, References, or provenance section.",
+    input.compactRetry
+      ? "This is a bounded retry using compact source excerpts. Return a complete concise article rather than an exhaustive response."
+      : null,
     input.allowSourcePageProposals === false
       ? "Use only the established source pages and return an empty proposedSourcePageNumbers array."
       : "Only propose page numbers from the supplied source context; proposals require reviewer acceptance.",
     "",
     `Current title: ${input.topic.title}`,
     `Current summary: ${input.topic.summary}`,
+    input.media?.length ? "Approved figure context:" : null,
+    ...(input.media ?? []).map((media) =>
+      `Page ${media.pageNumber}: ${media.sourceCaption ?? media.altText} — ${media.visualContext}`
+    ),
     "",
     "Source text:",
     sourceText || "No source text was available for this topic.",
-  ].join("\n");
+  ].filter((line): line is string => line !== null).join("\n");
 }
 
 export function createTopicEnrichmentProvider(
@@ -270,6 +349,10 @@ export function createTopicEnrichmentProvider(
 
   if (provider.id === OPENAI_PROVIDER.id) {
     return createOpenAiTopicEnrichmentProvider();
+  }
+
+  if (provider.id === KIMI_PROVIDER.id) {
+    return createKimiTopicEnrichmentProvider();
   }
 
   throw new Error("unsupported_llm_provider");
@@ -330,6 +413,7 @@ function createAnthropicTopicEnrichmentProvider(
         model: ANTHROPIC_PROVIDER.model,
         prompt: input.prompt,
         provider: ANTHROPIC_PROVIDER.id,
+        media: input.media,
       });
       const parsed = topicEnrichmentSchema.safeParse(output);
 
@@ -360,6 +444,7 @@ export function createOpenAiTopicEnrichmentProvider(
         model: OPENAI_PROVIDER.model,
         prompt: input.prompt,
         provider: OPENAI_PROVIDER.id,
+        media: input.media,
       });
       const parsed = topicEnrichmentSchema.safeParse(output);
 
@@ -378,25 +463,154 @@ export function createOpenAiTopicEnrichmentProvider(
   };
 }
 
+export function createKimiTopicEnrichmentProvider(
+  generateOutput: TopicEnrichmentOutputGenerator = generateTopicEnrichmentOutput,
+): TopicEnrichmentProvider {
+  return {
+    model: KIMI_PROVIDER.model,
+    provider: KIMI_PROVIDER.id,
+    async enrich(input) {
+      const output = await generateOutput({
+        apiKey: input.apiKey,
+        media: input.media,
+        model: KIMI_PROVIDER.model,
+        prompt: input.prompt,
+        provider: KIMI_PROVIDER.id,
+      });
+      const parsed = topicEnrichmentSchema.safeParse(output);
+      if (!parsed.success) throw new Error("llm_enrichment_malformed_response");
+      return {
+        rawResponse: JSON.stringify(output),
+        body: parsed.data.body,
+        proposedSourcePageNumbers: parsed.data.proposedSourcePageNumbers,
+        summary: parsed.data.summary,
+        title: parsed.data.title,
+      };
+    },
+  };
+}
+
 async function generateTopicEnrichmentOutput(input: {
   apiKey: string;
   model: string;
   prompt: string;
   provider: LlmProviderId;
+  media?: TopicEnrichmentMedia[];
 }): Promise<unknown> {
-  const result = await generateText({
+  const settings = {
     model: getSdkModel(input.provider, input.apiKey),
     output: Output.object({ schema: topicEnrichmentSchema }),
-    prompt: input.prompt,
+    providerOptions: input.provider === "kimi"
+      ? { openai: { reasoningEffort: "high" } }
+      : undefined,
     system:
       "You enrich topic records for a technical knowledge base. Return only the requested structured object.",
-    maxOutputTokens: 1200,
+    maxOutputTokens: TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS,
     temperature: 0,
-  });
+  };
+  const result = input.media?.length
+    ? await generateText({
+        ...settings,
+        messages: [{
+          content: [
+            { type: "text", text: input.prompt },
+            ...input.media.slice(0, 5).map((media) => ({
+              image: media.image,
+              mediaType: "image/png" as const,
+              type: "image" as const,
+            })),
+          ],
+          role: "user",
+        }],
+      })
+    : await generateText({ ...settings, prompt: input.prompt });
 
   return result.output;
 }
 
 function normalizeErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingStructuredOutput(error: unknown) {
+  return NoOutputGeneratedError.isInstance(error) ||
+    normalizeErrorMessage(error) === "No output generated.";
+}
+
+function isContextLengthError(error: unknown) {
+  const messages: string[] = [];
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+  while (current && !visited.has(current)) {
+    visited.add(current);
+    messages.push(normalizeErrorMessage(current).toLowerCase());
+    current = current instanceof Error ? current.cause : null;
+  }
+  const message = messages.join(" ");
+  return message.includes("maximum context length") ||
+    message.includes("context_length_exceeded") ||
+    message.includes("reduce the length of the messages");
+}
+
+function formatEnrichmentErrorMessage(error: unknown, attempts: number) {
+  if (isMissingStructuredOutput(error)) {
+    return attempts > 1
+      ? "The model did not return a complete structured topic after two attempts."
+      : "The model did not return a complete structured topic.";
+  }
+  if (isContextLengthError(error)) {
+    return attempts > 1
+      ? "The source context remained too large for the configured model after a bounded retry."
+      : "The source context is too large for the configured model.";
+  }
+  return normalizeErrorMessage(error);
+}
+
+function serializeEnrichmentError(
+  error: unknown,
+  context: { attempts: number; compactRetryUsed: boolean; promptCharacters: number },
+) {
+  const details: Record<string, unknown> = {
+    ...context,
+    message: normalizeErrorMessage(error),
+    name: error instanceof Error ? error.name : "UnknownError",
+  };
+  if (error instanceof Error && error.cause) {
+    details.cause = error.cause instanceof Error
+      ? { message: error.cause.message, name: error.cause.name }
+      : String(error.cause);
+  }
+  return JSON.stringify(details);
+}
+
+function compactSourcePages(pages: ExtractedPageRecord[], limit: number) {
+  if (pages.length === 0) return pages;
+  const selectedPages = selectEvenlySpacedPages(pages, 64);
+  const markerAllowance = selectedPages.length * COMPACT_SOURCE_MARKER.length;
+  const perPageLimit = Math.max(
+    1,
+    Math.floor((limit - markerAllowance) / selectedPages.length),
+  );
+  return selectedPages.map((page) => ({
+    ...page,
+    text: compactSourceText(page.text, perPageLimit),
+  }));
+}
+
+function selectEvenlySpacedPages(pages: ExtractedPageRecord[], maximum: number) {
+  if (pages.length <= maximum) return pages;
+  const selected = new Map<number, ExtractedPageRecord>();
+  for (let index = 0; index < maximum; index += 1) {
+    const pageIndex = Math.round((index * (pages.length - 1)) / (maximum - 1));
+    const page = pages[pageIndex];
+    if (page) selected.set(page.pageNumber, page);
+  }
+  return [...selected.values()].sort((left, right) => left.pageNumber - right.pageNumber);
+}
+
+function compactSourceText(value: string, limit: number) {
+  if (value.length <= limit) return value;
+  const headLength = Math.floor(limit * 0.7);
+  const tailLength = limit - headLength;
+  return `${value.slice(0, headLength).trimEnd()}${COMPACT_SOURCE_MARKER}${value.slice(-tailLength).trimStart()}`;
 }

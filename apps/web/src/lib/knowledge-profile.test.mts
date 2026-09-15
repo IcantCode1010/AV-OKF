@@ -17,12 +17,28 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.equal(generic.fields.type.required, true);
   assert.equal(generic.automation.autoApproveEnrichedTopics, false);
   assert.equal(aviation.automation.autoApproveEnrichedTopics, false);
+  assert.equal(generic.automation.autoApproveVerifiedRelations, false);
+  assert.equal(aviation.automation.autoApproveVerifiedRelations, false);
   assert.equal(generic.agent.boundedAdaptiveRetryEnabled, false);
   assert.equal(aviation.agent.boundedAdaptiveRetryEnabled, false);
+  assert.deepEqual(generic.media, {
+    autoApproveHighConfidenceEnabled: false,
+    autoApproveThreshold: 0.95,
+    topicFiguresEnabled: false,
+  });
   assert.equal(generic.fields.aircraft_family, undefined);
   assert.equal(generic.fields.covered_rag_chunk_ids?.type, "string_array");
   assert.equal(generic.fields.classification_code?.type, "string");
+  assert.equal(generic.fields.entity_type?.type, "string");
+  assert.equal(generic.types.entity?.category, "concepts");
   assert.equal(aviation.fields.aircraft_family?.required, undefined);
+  assert.equal(aviation.fields.efb_entry_id?.type, "string");
+  assert.equal(aviation.fields.efb_audiences?.type, "string_array");
+  assert.equal(aviation.fields.efb_aircraft_type_ids?.type, "string_array");
+  assert.equal(aviation.fields.efb_placements?.type, "string_array");
+  assert.equal(aviation.fields.efb_source_classification?.type, "string");
+  assert.equal(aviation.fields.efb_license_reviewed_at?.type, "date");
+  assert.equal(generic.fields.efb_entry_id, undefined);
   assert.deepEqual(aviation.clarificationFields, [
     "subject_family",
     "classification_code",
@@ -33,6 +49,9 @@ test("generic and aviation profiles share the base contract without leaking avia
   assert.deepEqual(generic.relationDiscovery.stopwords, GENERIC_RELATION_DISCOVERY_STOPWORDS);
   assert.equal(generic.relationDiscovery.stopwords.includes("aircraft"), false);
   assert.equal(aviation.relationDiscovery.stopwords.includes("aircraft"), true);
+  assert.equal(generic.relations.includes("part_of"), true);
+  assert.equal(generic.relations.includes("applies_to"), true);
+  assert.equal(generic.relations.includes("triggers"), true);
 });
 
 test("profile clarification fields reject unsafe, unknown, duplicate, and unsupported fields", () => {
@@ -89,6 +108,11 @@ test("legacy built-in profiles gain safe defaults while legacy custom profiles f
   );
   assert.equal(
     normalizeKnowledgeProfile(custom as ReturnType<typeof getKnowledgeProfileTemplate>)
+      .automation.autoApproveVerifiedRelations,
+    false,
+  );
+  assert.equal(
+    normalizeKnowledgeProfile(custom as ReturnType<typeof getKnowledgeProfileTemplate>)
       .agent.boundedAdaptiveRetryEnabled,
     false,
   );
@@ -120,8 +144,11 @@ test("bundle automation is cloned per profile and does not leak between bundles"
   const first = getKnowledgeProfileTemplate("generic");
   const second = getKnowledgeProfileTemplate("generic");
   first.automation.autoApproveEnrichedTopics = true;
+  first.automation.autoApproveVerifiedRelations = true;
   assert.equal(first.automation.autoApproveEnrichedTopics, true);
+  assert.equal(first.automation.autoApproveVerifiedRelations, true);
   assert.equal(second.automation.autoApproveEnrichedTopics, false);
+  assert.equal(second.automation.autoApproveVerifiedRelations, false);
 });
 
 test("bounded adaptive retry is cloned per profile and does not leak between bundles", () => {
@@ -138,7 +165,7 @@ test("bundle manifest makes only profile-required fields required", () => {
   const manifest = buildBundleManifest(profile);
   assert.match(manifest, /required:\n      - type\n      - department/);
   assert.match(manifest, /optional:[\s\S]*- title/);
-  assert.match(manifest, /date_fields:\n  - updated/);
+  assert.match(manifest, /date_fields:\n  - stale_after/);
 });
 
 test("workspace bundle roots are isolated and server-generated segments are path-safe", () => {

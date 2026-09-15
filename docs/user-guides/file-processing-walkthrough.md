@@ -1,134 +1,385 @@
-# AV-OKF File Processing Walkthrough
+# Document-To-OKF Bundle Walkthrough
 
-This walkthrough explains how to take one PDF from upload through extraction, topic review, OKF export, and search.
+## Purpose
 
-## Before You Start
+This guide explains how to turn source PDFs into portable Open Knowledge
+Format (OKF) bundles that can be reviewed, validated, imported, and searched by
+an agent.
 
-You need a PDF file ready to upload. For the best results, use a real document with selectable text, clear headings, and page structure.
-
-Some features depend on the production backend:
-
-- Upload, extraction, topic generation, metadata editing, and OKF export work in the current app flow.
-- RAG indexing, admin reindex, and production queue behavior depend on the Postgres, Redis, worker, and object storage setup.
-
-## Step 1: Open The Document Library
-
-Go to:
+The pipeline deliberately separates three kinds of data:
 
 ```text
-/documents
+Source documents -> original evidence and page references
+Raw RAG index    -> unreviewed discovery over extracted text
+OKF bundle       -> reviewed, structured knowledge articles
 ```
 
-The document library is where uploaded files are listed. It also contains the PDF upload form.
+The PDF is the source of record. Raw RAG helps find information. The OKF bundle
+contains the curated knowledge that the application may present as approved
+evidence.
 
-## Step 2: Upload The PDF
+## Compatibility Note
 
-In the **Upload PDF** form, enter the document details:
+AV-OKF runs a v0.2-only production runtime. Every active bundle must declare:
 
-- Title
-- Owner
-- Source type
-- Tags
-- Description
-- PDF file
+```yaml
+okf_version: "0.2"
+```
 
-Click **Upload PDF**.
+The declaration must agree in the bundle database row and root `index.md`.
+Production does not fall back to v0.1. Generated concepts use the v0.2
+`generated`, `verified`, `sources`, `status`, and `stale_after` families while
+AV-OKF applies stricter workspace, lifecycle, approval, and source-evidence
+rules before treating a concept as trusted agent evidence.
 
-The system validates the file, stores it, creates a document record, and sends you to the document detail page.
+## End-To-End Pipeline
 
-## Step 3: Wait For Extraction
+```mermaid
+flowchart TD
+    A["Create or select a knowledge bundle"] --> B["Upload PDF and document metadata"]
+    B --> C["Store original PDF"]
+    C --> D["Extract page-level text"]
+    D --> E["Index raw text for RAG discovery"]
+    D --> F["Discover document metadata"]
+    F --> G["Discover and consolidate concepts"]
+    G --> H["Enrich titles, summaries, and article bodies"]
+    H --> I["Validate metadata, source pages, and overlap"]
+    I --> J{"Review method"}
+    J -->|"Human"| K["Review and approve"]
+    J -->|"Enabled and eligible"| L["Automatic approval"]
+    K --> M["Export approved topic"]
+    L --> M
+    M --> N["Update index, source reference, and log"]
+    N --> O["Optionally discover and review relations"]
+    O --> P["Validate portable bundle"]
+```
 
-On the document detail page, find the **Extraction** panel.
+### 1. Create The Knowledge Bundle
 
-The normal extraction status flow is:
+Open `/knowledge` and create a bundle before uploading a document.
+
+Choose:
+
+- a name and description;
+- the Generic or Aviation profile template;
+- any bundle-specific profile settings.
+
+A bundle is an independent knowledge base. Documents, topics, relations, raw
+RAG, and chats stay within their assigned bundle unless the user explicitly
+selects multiple bundles for a chat.
+
+### 2. Upload The Source PDF
+
+Open `/documents`, choose the destination bundle, and provide:
+
+- PDF file;
+- title;
+- owner;
+- source type;
+- tags and description when available.
+
+After upload, the application stores the PDF in object storage, creates the
+document record, queues extraction, and opens the Processing panel.
+
+The bundle assignment locks when extraction begins. This prevents derived data
+from being split across bundles.
+
+### 3. Extract Page-Level Evidence
+
+The extraction worker reads the PDF and stores text by source page. Page
+identity is preserved so every later topic and citation can refer back to the
+original document.
+
+Normal extraction states are:
 
 ```text
 queued -> running -> completed
 ```
 
-The page refreshes while extraction is running. When extraction completes, the document should show page records, extracted text, logs, and document readiness details.
+If extraction fails, correct the reported file or worker problem and retry.
+Do not create trusted concepts from incomplete extraction.
 
-If extraction fails, the document shows a blocked or failed state with an error message. You can retry extraction from the document detail page.
+### 4. Build The Raw RAG Index
 
-## Step 4: Generate Topic Records
-
-After extraction is completed, go to the **Topic records** section.
-
-Click **Generate topics**.
-
-The system reviews the extracted page text and creates draft topic records. These topics are based on document structure, headings, page ranges, and fallback grouping when headings are unclear.
-
-New topics usually start with this review status:
+Extracted text may be split into contextual chunks and embedded for raw
+document search. The current chunking strategy is:
 
 ```text
-needs_review
+paragraph-context-v2
 ```
 
-## Step 5: Review The Topics
+The embedding text receives deterministic document, section, and page context.
+Citation text remains the clean source excerpt.
 
-Review each topic and decide what should happen to it.
+Raw RAG is always unreviewed discovery evidence. A high retrieval score never
+promotes it to approved OKF knowledge.
 
-Possible review states:
+### 5. Discover Metadata And Concepts
+
+The assisted authoring workflow performs:
 
 ```text
-needs_review
-needs_cleanup
-approved
-rejected
+metadata discovery
+-> concept discovery
+-> topic enrichment
+-> relation classification
+-> validation
 ```
 
-Only approved topics can be exported to OKF.
+Concept discovery analyzes overlapping page windows and then consolidates the
+results across the document. The continuation resolver can extend a topic
+across adjacent pages when both pages contain compatible explicit continuation
+markers.
 
-Use **approved** for topics that are accurate enough to become structured knowledge. Use **rejected** for topics that should not be exported. Use **needs_cleanup** when the topic is close but still needs human correction later.
+Each topic records:
 
-## Step 6: Complete Export Metadata
+- a meaningful title;
+- a concise summary;
+- confidence;
+- authoritative source page numbers;
+- review and enrichment state;
+- profile-specific metadata.
 
-Before exporting an approved topic, make sure the document has the required OKF metadata.
+### 6. Enrich The Topic
 
-Fill in:
+Enrichment uses the topic title, summary, and established source pages to
+produce a readable knowledge article. The source PDF remains authoritative;
+enrichment may organize and explain the content but must not invent unsupported
+facts.
 
-- Aircraft family
-- Manual type
-- ATA
-- Effectivity
-- Source authority
-- Revision
-
-ATA must use one of these formats:
+Keep the following distinct:
 
 ```text
-32
-32-41
-32-41-11
+Raw topic       -> discovery output
+Enriched topic  -> LLM-authored review candidate
+Approved topic  -> content authorized for OKF export
 ```
 
-If required metadata is missing, the OKF export will stop and tell you which fields need to be completed. The system does not guess these values.
+### 7. Review And Approve
 
-## Step 7: Export An Approved Topic To OKF
+Human review is the default. A reviewer checks:
 
-For an approved topic, click **Export to OKF**.
+- title and summary;
+- article body;
+- source page range;
+- document and profile metadata;
+- page overlap with other approved topics;
+- whether the content accurately represents the source.
 
-The system creates a Markdown OKF file in the knowledge bundle. It also updates the bundle index, source manifest, and log.
+Bundle-scoped automatic approval is optional and disabled by default. It may
+approve only high-confidence, fully enriched, metadata-valid,
+non-overlapping topics with established source pages. Automated approval is
+recorded as a distinct provenance tier and is not presented as human review.
 
-The exported OKF file includes:
+### 8. Export To OKF
 
-- Topic title
-- Topic summary
-- Source document name
-- Source page numbers
-- Document metadata
-- Review status
-- Last verified date
+Only approved topics can be exported. Export writes the concept Markdown file
+and updates:
 
-The exported topic should validate against the OKF profile and relation linter.
+- `index.md`;
+- the source-reference concept under `references/sources/`;
+- `log.md`.
 
-## Step 8: Add Typed Relations Optional
+The exporter, rather than a person or external process, should update these
+reserved files. This keeps the bundle and its upstream source-of-truth records
+consistent.
 
-After a topic is approved, you can add typed relations to other exported OKF files.
+### 9. Discover And Publish Relations
 
-A relation explains how one exported knowledge file connects to another.
+Relation discovery is optional and review-first by default:
 
-Examples:
+1. deterministic signals produce candidate pairs;
+2. an LLM may verify one pair and an exact source quote;
+3. a human approves the relation;
+4. the source concept is re-exported with typed relation frontmatter.
+
+A bundle administrator can instead enable **Automatically create verified
+relations**. New document topics are compared with approved concepts in the
+same bundle. Once both endpoints are approved and exported, the worker may
+publish a relation without human approval only when the verifier supplies an
+exact source quote, confidence is at least 90%, and vocabulary, path, type,
+duplicate, cycle, and supersession checks all pass. Automated relation
+publication cannot delete or change lifecycle state.
+
+Queued, filtered, failed, pending, and rejected candidates are not graph edges.
+Only approved, exported relations enter the explorer graph or agent traversal.
+
+## Portable Knowledge Structure
+
+### Workspace Vault
+
+The production vault is workspace-scoped:
+
+```text
+knowledge/
+└── workspaces/
+    └── {workspaceId}/
+        ├── okf-vault.json
+        └── bundles/
+            └── {bundleId}/
+                ├── okf-base.yaml
+                ├── index.md
+                ├── log.md
+                ├── concepts/
+                │   └── {type}/
+                ├── procedures/
+                │   └── {type}/
+                ├── references/
+                │   ├── sources/
+                │   └── {type}/
+                ├── routing/
+                │   └── {type}/
+                └── indexes/
+                    └── {type}/
+```
+
+The bundle is the portable unit. Workspace and bundle IDs are storage
+identifiers and must be generated by the receiving application rather than
+copied across tenants.
+
+### Reserved Files
+
+| File | Purpose |
+| --- | --- |
+| `okf-base.yaml` | Bundle profile, allowed fields, types, statuses, relations, and hygiene rules. |
+| `index.md` | Human and agent entrypoint containing links to exported concepts. |
+| `log.md` | Append-only export and lifecycle history. |
+| `okf-vault.json` | Workspace-level registry pointing to each bundle manifest. It lives outside the bundle. |
+
+`index.md` and `log.md` are the OKF reserved Markdown files and are not concept
+graph nodes. `okf-base.yaml` and `okf-vault.json` are AV-OKF profile and vault
+artifacts. Source documents are represented as ordinary concepts under
+`references/sources/`, using `av_okf_role: source_document`; they remain
+visible to humans but are never answer-eligible evidence.
+
+### Folder Placement
+
+The active bundle profile maps each concept `type` to one folder category:
+
+```text
+concepts
+procedures
+references
+routing
+indexes
+```
+
+For example:
+
+```text
+type: procedure -> procedures/procedure/
+type: system    -> concepts/system/
+type: metric    -> references/metric/
+```
+
+The frontmatter `type` is the semantic identity. Folder placement is a
+profile-defined organization rule and must agree with `okf-base.yaml`.
+
+## Concept Markdown Contract
+
+### Generic OKF v0.2 Fields
+
+The interoperable base fields are:
+
+| Field | Requirement | Meaning |
+| --- | --- | --- |
+| `type` | Required | Stable concept type identifier. |
+| `title` | Optional for generic conformance | Human-readable title. |
+| `description` | Optional for generic conformance | Concise concept summary. |
+| `resource` | Optional | URI or bundle path for the represented resource. |
+| `tags` | Optional | List of retrieval and organization keywords. |
+| `sources` | Optional | Structured provenance records. |
+| `generated` | Optional | Actor and timestamp for the current content. |
+| `verified` | Optional | One or more verification events. |
+| `status` | Optional | `draft`, `stable`, or `deprecated`; absent means stable. |
+| `stale_after` | Optional | Absolute date after which the concept is stale. |
+
+Only `type` is required for generic structural validity. That does not make a
+file trusted agent evidence.
+
+### AV-OKF Trust And Provenance Extensions
+
+An agent-ready concept also needs:
+
+- active lifecycle state;
+- current `status: stable`;
+- recognized `verified` provenance;
+- a usable title and article body;
+- at least one resolvable `sources[].resource`;
+- one or more valid `source_pages`;
+- source provenance accepted by the bundle profile.
+
+Common extension fields include:
+
+```text
+av_okf_approval_mode
+av_okf_lifecycle
+source_authority
+knowledge_version
+subject_family
+document_type
+classification_code
+effectivity
+revision
+covered_rag_chunk_ids
+coverage_type
+relations
+```
+
+Profiles may add domain-specific fields, but they cannot redefine the meaning
+of `type`, `title`, `description`, `tags`, or `updated`.
+
+### Complete Example
+
+```markdown
+---
+type: "procedure"
+title: "Vehicle Pre-Start Inspection"
+description: "Checks required before operating the vehicle."
+tags:
+  - vehicle
+  - inspection
+  - safety
+status: "stable"
+generated:
+  by: "av-okf/authoring-v1"
+  at: "2026-07-26T14:30:00Z"
+verified:
+  - by: "human:user-id"
+    at: "2026-07-26T15:00:00Z"
+sources:
+  - id: "source-a1b2c3d4e5f6"
+    resource: "/references/sources/source-document-a1b2c3d4e5f6.md"
+    title: "Vehicle Operations Manual"
+source_pages:
+  - 12
+  - 13
+source_authority: "Manufacturer operations manual"
+knowledge_version: "0.1.0"
+av_okf_approval_mode: "human_individual"
+relations:
+  - relation: "depends_on"
+    target: "../../concepts/system/braking-system-a1b2c3d4e5.md"
+    target_type: "system"
+    reason: "The inspection requires verification of the braking system."
+---
+
+# Vehicle Pre-Start Inspection
+
+Inspect the vehicle before operation. Verify the listed safety systems and
+record any condition that prevents safe use.
+
+## Source
+
+- vehicle-operations-manual.pdf, pages 12-13
+```
+
+The body heading should not duplicate the title or description again
+immediately. The exporter normalizes this when it creates an article.
+
+## Relation Rules
+
+The default relation vocabulary is:
 
 ```text
 routes_to
@@ -140,89 +391,166 @@ conflicts_with
 depends_on
 ```
 
-Each relation needs:
+Each relation contains:
 
-- Relation type
-- Target OKF file
-- Target type
-- Reason
+- `relation`;
+- `target`;
+- `target_type`;
+- `reason`.
 
-After adding a relation, export the topic again so the relation is written into the OKF file.
+Targets must:
 
-## Step 9: Search The Document
+- use forward slashes;
+- be relative to the source concept file;
+- end in `.md`;
+- stay inside the same bundle;
+- resolve to an existing active concept;
+- match the target's frontmatter `type`.
 
-Go to:
+Do not use absolute paths, URLs, backslashes, query strings, or cross-bundle
+targets.
 
-```text
-/search
-```
+## Packaging For Import
 
-Search for a phrase, keyword, ATA reference, procedure term, or equipment name from the document.
+### Current Product Boundary
 
-Search results should show:
+AV-OKF currently exports and validates bundles but does not provide a finished
+UI or API for importing an arbitrary bundle archive. The following structure is
+the import contract a future importer should consume and the recommended
+handoff format for manually staged bundles.
 
-- Matching excerpt
-- Document title
-- Page citation
-- Retrieval mode
-- Review status
-
-This confirms the document is available through the retrieval path.
-
-## Step 10: Reindex If Needed
-
-If the document needs a fresh RAG index, go to:
+### Recommended Handoff Package
 
 ```text
-/admin/reindex
+okf-handoff/
+├── bundle/
+│   ├── okf-base.yaml
+│   ├── index.md
+│   ├── log.md
+│   ├── references/
+│   │   └── sources/
+│   └── concepts-or-profile-folders/
+├── sources/
+│   └── original-source-files.pdf
+└── import-map.json
 ```
 
-This page is for rebuilding chunks and embeddings for one document at a time.
+`bundle/` is the portable OKF bundle. `sources/` and `import-map.json` form an
+optional AV-OKF transport envelope and are not part of the OKF specification.
+Each trusted concept points through `sources[].resource` to a bundle-local
+source-reference concept. That reference carries the portable
+`urn:sha256:<digest>` identity; database document IDs never appear in the
+bundle.
 
-For the document:
+A proposed `import-map.json` shape is:
 
-1. Review the file size, current strategy, chunk count, last indexed date, and status.
-2. Pick the chunking strategy.
-3. Click **Reindex**.
-
-Only one reindex job can run at a time in the workspace.
-
-The current default chunking strategy is:
-
-```text
-paragraph-context-v2
+```json
+{
+  "transportVersion": "1",
+  "bundleDirectory": "bundle",
+  "sources": [
+    {
+      "resource": "urn:sha256:a1b2c3d4e5f6...",
+      "path": "sources/vehicle-operations-manual.pdf"
+    }
+  ]
+}
 ```
 
-If a document was indexed before strategy tracking existed, the strategy may show as:
+The mapping uses portable filenames, never database document IDs.
 
-```text
-unknown
+### Two Import Levels
+
+**Structural import**
+
+- imports valid Markdown and the bundle profile;
+- makes concepts visible in the human explorer;
+- does not automatically trust imported approval claims;
+- does not provide PDF drilldown unless source documents are mapped.
+
+**Source-linked trusted import**
+
+- imports or maps each original PDF inside the target workspace;
+- resolves each source-reference digest to a readable document in the target bundle;
+- validates source pages against the extracted document;
+- recreates topic-to-file projections;
+- requires explicit target-workspace review before imported content becomes
+  trusted agent evidence.
+
+External `verified` events are portable provenance, not sufficient proof that
+the receiving workspace approved the concept for trusted retrieval.
+
+### Safe Import Sequence
+
+A future importer should:
+
+1. Extract the package into a temporary directory, never directly into the live
+   vault.
+2. Reject absolute paths, `..`, encoded traversal, backslashes, symlinks that
+   escape the package, and duplicate normalized paths.
+3. Parse `okf-base.yaml` and every Markdown frontmatter block.
+4. Validate type-to-folder placement, required fields, dates, statuses, links,
+   and relation targets.
+5. Create a new target bundle and profile version using server-generated IDs.
+6. Upload or map source PDFs within the authenticated workspace.
+7. Resolve each concept's `sources[].resource` and verify its page numbers.
+8. Copy the validated bundle into the new bundle root atomically.
+9. Rebuild database projections, lifecycle records, backlinks, and OKF lookup
+   embeddings from the Markdown files.
+10. Build raw RAG only from source PDFs that were actually imported and
+    extracted.
+11. Require reviewer confirmation before assigning target-workspace trusted
+    status.
+12. Write an import entry to `log.md` and update the workspace
+    `okf-vault.json`.
+
+If any required validation fails, the importer must leave the live bundle
+unchanged.
+
+## Validation Checklist
+
+From a bundle root, run:
+
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+python -m okflint validate --manifest okf-base.yaml
+python C:\projects\AV-OKF\tools\okf_relation_lint.py --manifest okf-base.yaml
 ```
 
-## Complete Happy Path
+For a workspace vault, run:
 
-The full file processing flow is:
-
-```text
-Upload PDF
--> Wait for extraction
--> Generate topic records
--> Review and approve a topic
--> Complete export metadata
--> Export approved topic to OKF
--> Add typed relations if needed
--> Search the document
--> Reindex if needed
+```powershell
+$env:PYTHONIOENCODING = "utf-8"
+python -m okflint validate --vault
 ```
+
+Before accepting a bundle, confirm:
+
+- every concept has valid YAML frontmatter;
+- every concept type is defined by the profile;
+- every index link resolves;
+- every relation target resolves inside the bundle;
+- every source-reference resource resolves through the import mapping to one
+  supplied or existing source document;
+- source pages are valid for the mapped document;
+- reserved files were generated or reconciled, not independently hand-edited;
+- generic validity and trusted-agent readiness are reported separately;
+- no imported content becomes trusted without target-workspace authorization.
 
 ## Finished Result
 
-After the process is complete, the user has:
+A complete source-linked knowledge package contains:
 
-- A stored PDF document
-- Extracted page text
-- Reviewed topic records
-- At least one exported OKF Markdown file
-- A searchable RAG index when production indexing is enabled
-- Optional typed relations between OKF files
-- A knowledge bundle that can be validated
+- original PDFs outside the OKF bundle;
+- page-preserving extraction records in the receiving system;
+- optional raw RAG chunks for unreviewed discovery;
+- reviewed Markdown concepts with portable provenance;
+- deterministic index and log files plus portable source-reference concepts;
+- reviewed typed relations;
+- a bundle profile that describes the allowed structure;
+- enough mapping information to rebuild database projections without embedding
+  database IDs in the portable knowledge.
+
+This separation keeps the OKF bundle readable and portable while allowing the
+receiving application to rebuild search indexes, source drilldowns, lifecycle
+state, and agent retrieval safely.

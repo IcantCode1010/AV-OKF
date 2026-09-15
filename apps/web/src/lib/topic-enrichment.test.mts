@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { NoOutputGeneratedError } from "ai";
 
 import {
   approveTopicContentSource,
+  buildTopicEnrichmentPrompt,
   createOpenAiTopicEnrichmentProvider,
   createTopicEnrichmentProvider,
   enrichTopic,
+  TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS,
   type TopicEnrichmentProvider,
   type TopicEnrichmentRepository,
 } from "./topic-enrichment.ts";
@@ -14,8 +17,16 @@ import type {
   TopicRecord,
 } from "./document-vault.ts";
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
+import {
+  buildAcceptedTopicEnrichmentSnapshot,
+  buildTopicEnrichmentDiff,
+  hasExistingTopicEnrichment,
+  normalizeTopicEnrichmentSnapshot,
+  topicEnrichmentSnapshotFingerprint,
+} from "./topic-enrichment-diff.ts";
 
 type AuditRow = {
+  baselineFingerprint?: string;
   errorMessage: string | null;
   model: string;
   promptSent: string;
@@ -119,7 +130,7 @@ function createFakeRepository(input: {
       topic = {
         ...topic,
         enrichmentErrorMessage: input.errorMessage,
-        enrichmentStatus: "failed",
+        enrichmentStatus: hasExistingTopicEnrichment(topic) ? "completed" : "failed",
       };
       return topic;
     },
@@ -132,6 +143,10 @@ function createFakeRepository(input: {
     },
     async markTopicEnrichmentPending(input) {
       assertWorkspace(input.context);
+      if (topic.enrichmentStatus === "pending") throw new Error("topic_enrichment_already_pending");
+      if (topic.enrichmentStatus === "review_required") {
+        throw new Error("topic_enrichment_candidate_requires_resolution");
+      }
       topic = {
         ...topic,
         enrichmentErrorMessage: null,
@@ -141,7 +156,18 @@ function createFakeRepository(input: {
     },
     async completeTopicEnrichment(input) {
       assertWorkspace(input.context);
+      const baseline = buildAcceptedTopicEnrichmentSnapshot(topic);
+      assert.equal(input.baselineFingerprint, topicEnrichmentSnapshotFingerprint(baseline));
+      const candidate = normalizeTopicEnrichmentSnapshot({
+        body: input.enrichedBody ?? input.enrichedSummary,
+        proposedSourcePageNumbers: input.proposedSourcePageNumbers ?? [],
+        summary: input.enrichedSummary,
+        title: input.enrichedTitle,
+      });
+      const diff = buildTopicEnrichmentDiff(baseline, candidate);
+      const firstEnrichment = !hasExistingTopicEnrichment(topic);
       audits.push({
+        baselineFingerprint: input.baselineFingerprint,
         errorMessage: null,
         model: input.model,
         promptSent: input.promptSent,
@@ -153,13 +179,32 @@ function createFakeRepository(input: {
       completedProposals.push(input.proposedSourcePageNumbers ?? []);
       topic = {
         ...topic,
-        enrichedAt: "Jan 1, 2026, 12:01 PM",
-        enrichedBody: input.enrichedBody ?? input.enrichedSummary,
-        enrichedSummary: input.enrichedSummary,
-        enrichedTitle: input.enrichedTitle,
+        ...(firstEnrichment
+          ? {
+              enrichedAt: "Jan 1, 2026, 12:01 PM",
+              enrichedBody: candidate.body,
+              enrichedSummary: candidate.summary,
+              enrichedTitle: candidate.title,
+            }
+          : {}),
         enrichmentErrorMessage: null,
         enrichmentModel: input.model,
-        enrichmentStatus: "completed",
+        enrichmentStatus: firstEnrichment || !diff.changed
+          ? "completed"
+          : "review_required",
+        pendingEnrichment: !firstEnrichment && diff.changed
+          ? {
+              auditId: `audit-${audits.length}`,
+              body: candidate.body,
+              createdAt: "Jan 1, 2026, 12:01 PM",
+              diff,
+              model: input.model,
+              proposedSourcePageNumbers: candidate.proposedSourcePageNumbers,
+              provider: input.provider,
+              summary: candidate.summary,
+              title: candidate.title,
+            }
+          : null,
       };
       return topic;
     },
@@ -346,7 +391,109 @@ test("failed enrichment stores failure audit and returns failed state", async ()
   assert.equal(audits[0]?.errorMessage, "anthropic_unavailable");
 });
 
-test("re-enrichment creates a second audit row and keeps latest success on topic", async () => {
+test("missing structured output retries once with bounded compact source text", async () => {
+  const longText = "Hydraulic system operation and limitations. ".repeat(800);
+  const fake = createFakeRepository({
+    sourcePages: [page(1, longText), page(2, longText)],
+  });
+  let attempt = 0;
+  const { calls, provider } = createProvider("openai", async () => {
+    attempt += 1;
+    if (attempt === 1) throw new NoOutputGeneratedError();
+    return {
+      body: "## Operation\nUse the documented operating limits.",
+      proposedSourcePageNumbers: [],
+      rawResponse: "recovered response",
+      summary: "Documented hydraulic operation and limits.",
+      title: "Hydraulic System Operation",
+    };
+  });
+
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    provider,
+    repository: fake.repository,
+  });
+
+  assert.equal(result.enrichmentStatus, "completed");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]?.prompt ?? "", /bounded retry using compact source excerpts/i);
+  assert.ok((calls[1]?.prompt.length ?? Infinity) < (calls[0]?.prompt.length ?? 0));
+});
+
+test("provider context-limit errors retry once with bounded compact source text", async () => {
+  const longText = "Door seal maintenance inspection and repair. ".repeat(1_000);
+  const fake = createFakeRepository({
+    sourcePages: Array.from({ length: 80 }, (_, index) => page(index + 1, longText)),
+  });
+  let attempt = 0;
+  const { calls, provider } = createProvider("openai", async () => {
+    attempt += 1;
+    if (attempt === 1) {
+      throw new Error(
+        "This model's maximum context length is 128000 tokens. Please reduce the length of the messages.",
+      );
+    }
+    return {
+      body: "## Maintenance\nInspect and repair the door seals as specified.",
+      proposedSourcePageNumbers: [],
+      rawResponse: "recovered response",
+      summary: "Door seal inspection and repair requirements.",
+      title: "Door Seal Maintenance Procedures",
+    };
+  });
+
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    provider,
+    repository: fake.repository,
+  });
+
+  assert.equal(result.enrichmentStatus, "completed");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1]?.prompt ?? "", /bounded retry using compact source excerpts/i);
+  assert.ok((calls[1]?.prompt.length ?? Infinity) < 15_000);
+});
+
+test("repeated empty output stores actionable diagnostics and stops after two attempts", async () => {
+  const fake = createFakeRepository();
+  const { calls, provider } = createProvider("openai", async () => {
+    throw new NoOutputGeneratedError({ cause: new Error("response_incomplete") });
+  });
+
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => ({ apiKey: "sk-test", provider: "openai" }),
+    provider,
+    repository: fake.repository,
+  });
+
+  assert.equal(result.enrichmentStatus, "failed");
+  assert.equal(calls.length, 2);
+  assert.equal(
+    fake.audits[0]?.errorMessage,
+    "The model did not return a complete structured topic after two attempts.",
+  );
+  const diagnostics = JSON.parse(fake.audits[0]!.rawResponse);
+  assert.equal(diagnostics.attempts, 2);
+  assert.equal(diagnostics.compactRetryUsed, true);
+  assert.equal(diagnostics.cause.message, "response_incomplete");
+});
+
+test("enrichment prompt and output allowance support complete structured articles", () => {
+  const prompt = buildTopicEnrichmentPrompt({
+    compactRetry: true,
+    sourcePages: [page(1, "Procedure details. ".repeat(2_000))],
+    topic: baseTopic(),
+  });
+  assert.equal(TOPIC_ENRICHMENT_MAX_OUTPUT_TOKENS, 3_000);
+  assert.ok(prompt.length < 13_500);
+  assert.match(prompt, /source excerpt shortened/i);
+});
+
+test("re-enrichment creates a reviewable candidate without overwriting accepted content", async () => {
   const { repository, audits } = createFakeRepository();
   let run = 0;
   const { provider } = createProvider("anthropic", async () => {
@@ -374,7 +521,58 @@ test("re-enrichment creates a second audit row and keeps latest success on topic
   assert.equal(audits.length, 2);
   assert.equal(audits[0]?.rawResponse, "response 1");
   assert.equal(audits[1]?.rawResponse, "response 2");
-  assert.equal(second.enrichedTitle, "Title 2");
+  assert.equal(second.enrichmentStatus, "review_required");
+  assert.equal(second.enrichedTitle, "Title 1");
+  assert.equal(second.pendingEnrichment?.title, "Title 2");
+  assert.equal(second.pendingEnrichment?.diff.changed, true);
+});
+
+test("equivalent re-enrichment creates no review work", async () => {
+  const fake = createFakeRepository({
+    topic: baseTopic({
+      enrichedBody: "Same body",
+      enrichedSummary: "Same summary",
+      enrichedTitle: "Same title",
+      enrichmentStatus: "completed",
+    }),
+  });
+  const { provider } = createProvider("anthropic", async () => ({
+    body: "Same body",
+    rawResponse: "same response",
+    summary: "Same summary",
+    title: "Same title",
+  }));
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => "sk-ant-test",
+    provider,
+    repository: fake.repository,
+  });
+  assert.equal(result.enrichmentStatus, "completed");
+  assert.equal(result.pendingEnrichment, null);
+});
+
+test("failed re-enrichment preserves the accepted article", async () => {
+  const fake = createFakeRepository({
+    topic: baseTopic({
+      enrichedBody: "Accepted body",
+      enrichedSummary: "Accepted summary",
+      enrichedTitle: "Accepted title",
+      enrichmentStatus: "completed",
+    }),
+  });
+  const { provider } = createProvider("anthropic", async () => {
+    throw new Error("provider_unavailable");
+  });
+  const result = await enrichTopic("topic_1", {
+    context,
+    getApiKey: async () => "sk-ant-test",
+    provider,
+    repository: fake.repository,
+  });
+  assert.equal(result.enrichmentStatus, "completed");
+  assert.equal(result.enrichedTitle, "Accepted title");
+  assert.equal(result.enrichmentErrorMessage, "provider_unavailable");
 });
 
 test("approval can choose enriched or raw content explicitly", async () => {

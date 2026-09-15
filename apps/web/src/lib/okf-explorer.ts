@@ -4,8 +4,12 @@ import {
   getFrontmatterNumberArray,
   getFrontmatterRelations,
   getFrontmatterScalar,
+  deriveOkfTrustTier,
+  getOkfPrimarySource,
   parseOkfMarkdown,
 } from "./okf-frontmatter.ts";
+import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
 import { getAllowedRelations } from "./okf-relation-vocabulary.ts";
 import { resolveKnowledgePath } from "./knowledge-root.ts";
 import {
@@ -29,6 +33,7 @@ export type OkfExplorerNode = {
 };
 
 export type OkfExplorerEdge = {
+  approvalMode?: "automated" | "human" | null;
   id: string;
   reason: string;
   relation: string;
@@ -37,6 +42,7 @@ export type OkfExplorerEdge = {
 };
 
 export type OkfExplorerBacklink = {
+  approvalMode?: "automated" | "human" | null;
   reason: string;
   relation: string;
   sourceFile: string;
@@ -110,6 +116,15 @@ export async function loadOkfExplorerSnapshot(input: {
   requestedFile?: string;
   workspaceId: string;
 }): Promise<OkfExplorerSnapshot> {
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: input.knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  await assertOkfV02Bundle({
+    knowledgeRoot: input.knowledgeRoot,
+    okfVersion: bundle.okfVersion,
+  });
   let bundleFiles: OkfBundleFile[];
 
   try {
@@ -170,7 +185,7 @@ export async function buildOkfExplorerSnapshot(
           });
       const isParseable = file.isReserved || Boolean(title && type);
       const genericValidation = validateGenericOkfMetadata(parsed.frontmatter);
-      const hasAnyTrustMetadata = ["review_status", "source_file", "source_pages"].some(
+      const hasAnyTrustMetadata = ["verified", "sources", "source_pages"].some(
         (field) => parsed.frontmatter[field] !== undefined,
       );
       const trustStatus = file.isReserved
@@ -199,9 +214,8 @@ export async function buildOkfExplorerSnapshot(
         isParseable,
         isReserved: file.isReserved,
         lifecycleStatus: "active" as const,
-        reviewStatus:
-          getFrontmatterScalar(parsed.frontmatter, "review_status") ?? "unknown",
-        sourceFile: getFrontmatterScalar(parsed.frontmatter, "source_file"),
+        reviewStatus: deriveOkfTrustTier(parsed.frontmatter),
+        sourceFile: getOkfPrimarySource(parsed.frontmatter)?.title ?? null,
         sourcePages: getFrontmatterNumberArray(parsed.frontmatter, "source_pages"),
         title: title ?? file.title,
         trustStatus,
@@ -240,6 +254,7 @@ export async function buildOkfExplorerSnapshot(
 
       const target = resolveRelationPath(file.filename, relation.target)!;
       edges.push({
+        ...(relation.approvalMode ? { approvalMode: relation.approvalMode } : {}),
         id: `${file.filename}::${relationIndex}::${target}`,
         reason: relation.reason.trim(),
         relation: relation.relation,
@@ -451,6 +466,7 @@ function getBacklinks(
   return edges
     .filter((edge) => edge.target === filename)
     .map((edge) => ({
+      ...(edge.approvalMode ? { approvalMode: edge.approvalMode } : {}),
       reason: edge.reason,
       relation: edge.relation,
       sourceFile: edge.source,

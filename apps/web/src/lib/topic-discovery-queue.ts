@@ -19,10 +19,20 @@ export function createBullMqTopicDiscoveryQueue(redisUrl: string) {
   });
   return {
     async enqueue(payload: TopicDiscoveryJobPayload) {
+      const jobId = buildTopicDiscoveryJobId(payload);
+      const existingJob = await queue.getJob(jobId);
+      if (existingJob) {
+        const state = await existingJob.getState();
+        if (state === "completed" || state === "failed") {
+          await existingJob.remove();
+        } else {
+          return;
+        }
+      }
       await queue.add("discover", payload, {
         attempts: 2,
         backoff: { delay: 5_000, type: "exponential" },
-        jobId: buildTopicDiscoveryJobId(payload),
+        jobId,
         removeOnComplete: 100,
         removeOnFail: 500,
       });

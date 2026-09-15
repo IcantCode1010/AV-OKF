@@ -129,7 +129,10 @@ test("runProductionExtractionJob queues the guided authoring workflow after extr
       extractPdfPages: async () => [{ charCount: 7, imageCount: 0, pageNumber: 1, tables: [], text: "BRAKES" }],
       repository: {
         completeExtractionJob: async () => {},
-        createKnowledgeAuthoringRunAfterExtraction: async () => ({ documentId: "doc-1", id: "authoring-1", workspaceId: "ws-1" }),
+        createKnowledgeAuthoringRunAfterExtraction: async (input) => {
+          assert.equal(input.extractionJobId, "extract-1");
+          return { documentId: "doc-1", id: "authoring-1", workspaceId: "ws-1" };
+        },
         failExtractionJob: async () => {},
         getPrimaryDocumentObject: async () => ({ objectKey: "opaque.pdf" }),
         startExtractionJob: async () => {},

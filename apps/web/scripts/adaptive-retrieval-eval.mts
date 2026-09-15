@@ -393,6 +393,9 @@ async function ensureBundle(
     name: fixture.name,
     templateId: "generic",
   });
+  if (existing) {
+    await db.knowledgeBundle.update({ data: { okfVersion: "0.2" }, where: { id: bundle.id } });
+  }
   const current = await getKnowledgeBundle({ bundleId: bundle.id, context });
   if (!current) throw new Error(`adaptive_eval_bundle_unavailable:${fixture.slug}`);
   await scaffoldKnowledgeBundle({
@@ -416,6 +419,7 @@ async function writeConceptFiles(input: {
   const db = getPrisma();
   const root = resolveKnowledgeBundleRoot(input);
   const links: string[] = [];
+  await writeAdaptiveSourceReference(root, input.fixture.rawDocument.title);
   for (const concept of input.fixture.concepts) {
     const markdown = renderConcept(input.fixture.rawDocument.title, concept);
     const fullPath = path.join(root, ...concept.filePath.split("/"));
@@ -460,9 +464,39 @@ async function writeConceptFiles(input: {
   });
   await writeFile(
     path.join(root, "index.md"),
-    [`# ${input.fixture.name}`, "", ...links, ""].join("\n"),
+    [
+      "---",
+      'okf_version: "0.2"',
+      "---",
+      "",
+      `# ${input.fixture.name}`,
+      "",
+      ...links,
+      "",
+    ].join("\n"),
     "utf8",
   );
+}
+
+async function writeAdaptiveSourceReference(root: string, sourceTitle: string) {
+  const slug = sourceTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const target = path.join(root, "references", "sources", `${slug}.md`);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, [
+    "---",
+    "type: reference",
+    `title: ${JSON.stringify(sourceTitle)}`,
+    `resource: urn:sha256:${hash(sourceTitle)}`,
+    "status: stable",
+    "generated:",
+    "  by: process:e2e-adaptive-retrieval",
+    "  at: 2026-07-25T12:00:00.000Z",
+    "av_okf_role: source_document",
+    "---",
+    "",
+    "Evaluation source identity.",
+    "",
+  ].join("\n"), "utf8");
 }
 
 async function seedRawDocument(input: {
@@ -612,14 +646,16 @@ function renderConcept(
     `description: "${concept.description}"`,
     "tags:",
     ...concept.tags.map((tag) => `  - ${tag}`),
-    "updated: 2026-07-25",
-    "review_status: approved",
-    `source_file: "${sourceFile}"`,
+    "status: stable",
+    "verified:",
+    '  - by: "human:e2e-adaptive-retrieval"',
+    '    at: "2026-07-25T12:00:00.000Z"',
+    "sources:",
+    `  - resource: "/references/sources/${sourceFile.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md"`,
+    `    title: "${sourceFile}"`,
     "source_pages:",
     `  - ${concept.page}`,
-    'source_authority: "Evaluation fixture"',
-    'approved_by: "human:e2e-adaptive-retrieval"',
-    "approved_at: 2026-07-25",
+    'av_okf_approval_mode: "human_individual"',
     "---",
     "",
     concept.body,
@@ -633,9 +669,13 @@ function renderRetractedConcept(sourceFile: string): string {
     "type: reference",
     'title: "Retracted Evaluation Decoy"',
     'description: "A negative-control concept that must never appear."',
-    "updated: 2026-07-25",
-    "review_status: approved",
-    `source_file: "${sourceFile}"`,
+    "status: stable",
+    "verified:",
+    '  - by: "human:e2e-adaptive-retrieval"',
+    '    at: "2026-07-25T12:00:00.000Z"',
+    "sources:",
+    `  - resource: "/references/sources/${sourceFile.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.md"`,
+    `    title: "${sourceFile}"`,
     "source_pages:",
     "  - 99",
     "---",

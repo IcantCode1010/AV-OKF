@@ -92,24 +92,31 @@ relations:
     target: /aircraft/737ng/manuals/mel/elt.md
 ```
 
-Typed relations may point to source-manifest external references only when the relation entry explicitly uses a future `target_scope: external_manifest` field. Until that field exists, relation targets are internal OKF bundle links.
+Typed relation targets are internal OKF bundle links. Portable source
+provenance uses `sources[].resource` and does not broaden the typed-relation
+target scope.
 
 The relation linter must also read the resolved target file and compare its frontmatter `type` against the relation entry's declared `target_type`. A mismatch is a validation failure.
 
-## Source References Are Not Links
+## Source References Are Not Typed Relations
 
 Source files, source pages, RAG chunk IDs, and document IDs are structured references, not Markdown graph links.
 
 Examples:
 
 ```yaml
-source_file: B737NG-AMM-24.pdf
+sources:
+  - id: source-a1b2c3d4e5f6
+    resource: /references/sources/source-document-a1b2c3d4e5f6.md
+    title: B737NG-AMM-24
 source_pages: [241, 242]
 covered_rag_chunk_ids:
   - rag_737ng_amm_24_p241_c03
 ```
 
-The resolver should not treat those fields as Markdown links.
+The relation resolver must not treat those fields as typed relation edges.
+The source resolver handles `sources[].resource` separately as portable
+provenance and applies its own bundle-boundary checks.
 
 ## Validation Rules
 

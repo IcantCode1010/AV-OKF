@@ -1,5 +1,5 @@
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
-import { getKnowledgeBundleDeletionStatusSnapshot } from "@/lib/knowledge-bundle-deletion";
+import { buildKnowledgeBundleDeletionProgressSnapshot, getKnowledgeBundleDeletionStatusSnapshot } from "@/lib/knowledge-bundle-deletion";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export async function GET(): Promise<Response> {
     await requireAuthWorkspaceContext(),
   );
   return Response.json(
-    { active: snapshot.active, fingerprint: snapshot.fingerprint },
+    buildKnowledgeBundleDeletionProgressSnapshot(snapshot),
     { headers: { "Cache-Control": "private, no-store, max-age=0" } },
   );
 }

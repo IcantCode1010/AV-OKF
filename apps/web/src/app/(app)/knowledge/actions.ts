@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
+import { ACTIVE_KNOWLEDGE_BUNDLE_COOKIE } from "@/lib/active-knowledge-bundle";
 import { markOkfConceptLifecycle } from "@/lib/okf-lifecycle";
 import { isProductionBackend } from "@/lib/production-document-service";
 import {
@@ -25,26 +27,12 @@ import {
 } from "@/lib/knowledge-bundle-deletion";
 import { discoverOkfRelationCandidates } from "@/lib/okf-relation-discovery";
 import { retryOkfRelationVerification } from "@/lib/okf-relation-verification";
-import {
-  buildRelationVerifierConcept,
-  formatVerifiedRelationReason,
-  validateRelationVerifierDecision,
-} from "@/lib/okf-relation-verifier";
-import {
-  getDocumentById,
-  getTopicRecordsByDocumentId,
-  updateTopicExportedFilePath,
-  updateTopicRelations,
-} from "@/lib/document-backend";
 import { getPrisma } from "@/lib/prisma";
-import { readOkfBundleFile } from "@/lib/okf-bundle";
-import { getFrontmatterScalar, parseOkfMarkdown } from "@/lib/okf-frontmatter";
-import { validateTopicRelations } from "@/lib/okf-relations";
-import { normalizeTopicRelations } from "@/lib/okf-relation-types";
 import {
-  loadOkfRelationPreflightContext,
-  preflightOkfRelationCandidate,
-} from "@/lib/okf-relation-preflight";
+  approveVerifiedRelationCandidate,
+  reviewPublishedRelationCandidate,
+} from "@/lib/okf-relation-approval";
+import { scheduleFullEntityExpansion } from "@/lib/entity-graph";
 
 export async function createKnowledgeBundleAction(formData: FormData) {
   const context = await requireAuthWorkspaceContext();
@@ -55,8 +43,15 @@ export async function createKnowledgeBundleAction(formData: FormData) {
     name: getFormString(formData, "name"),
     templateId: template === "aviation" ? "aviation" : "generic",
   });
+  (await cookies()).set(ACTIVE_KNOWLEDGE_BUNDLE_COOKIE, bundle.id, {
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 365,
+    path: "/",
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
   revalidatePath("/knowledge");
-  redirect(`/knowledge/${bundle.id}`);
+  redirect(`/documents?scope=bundle&knowledgeBundleId=${encodeURIComponent(bundle.id)}`);
 }
 
 export async function createKnowledgeProfileDraftAction(formData: FormData) {
@@ -72,6 +67,18 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
     getFormString(formData, "boundedAdaptiveRetryEnabled") === "true";
   profile.automation.autoApproveEnrichedTopics =
     getFormString(formData, "autoApproveEnrichedTopics") === "true";
+  profile.automation.autoApproveVerifiedRelations =
+    getFormString(formData, "autoApproveVerifiedRelations") === "true";
+  profile.media.topicFiguresEnabled =
+    getFormString(formData, "topicFiguresEnabled") === "true";
+  profile.media.autoApproveHighConfidenceEnabled =
+    getFormString(formData, "autoApproveHighConfidenceEnabled") === "true";
+  const mediaThreshold = Number.parseFloat(
+    getFormString(formData, "autoApproveThreshold"),
+  );
+  profile.media.autoApproveThreshold = Number.isFinite(mediaThreshold)
+    ? Math.max(0.95, Math.min(1, mediaThreshold))
+    : 0.95;
   profile.clarificationFields = getFormString(formData, "clarificationFields")
     .split(",")
     .map((value) => normalizeProfileIdentifier(value))
@@ -100,8 +107,8 @@ export async function createKnowledgeProfileDraftAction(formData: FormData) {
   if (relations.length > 0) profile.relations = [...new Set(relations)];
 
   const version = await createKnowledgeProfileDraft({ bundleId, context, profile });
-  revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?profileDraft=${version}`);
+  revalidatePath(`/knowledge/${bundleId}/settings`);
+  redirect(`/knowledge/${bundleId}/settings?profileDraft=${version}`);
 }
 
 export async function activateKnowledgeProfileAction(formData: FormData) {
@@ -111,8 +118,8 @@ export async function activateKnowledgeProfileAction(formData: FormData) {
   const version = Number.parseInt(getFormString(formData, "version"), 10);
   if (!Number.isInteger(version)) throw new Error("knowledge_profile_version_invalid");
   await activateKnowledgeProfileVersion({ bundleId, context, version });
-  revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?profileActivated=${version}`);
+  revalidatePath(`/knowledge/${bundleId}/settings`);
+  redirect(`/knowledge/${bundleId}/settings?profileActivated=${version}`);
 }
 
 export async function deleteKnowledgeBundleAction(formData: FormData) {
@@ -145,8 +152,22 @@ export async function discoverRelationsAction(formData: FormData) {
     requestedBy: context.userId,
     workspaceId: context.workspaceId,
   });
-  revalidatePath(`/knowledge/${bundleId}`);
-  redirect(`/knowledge/${bundleId}?section=relations&relationsDiscovered=${result.discovered}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}#relation-discovery`);
+  revalidatePath(`/knowledge/${bundleId}/relations`);
+  redirect(`/knowledge/${bundleId}/relations?relationsDiscovered=${result.discovered}&relationsProposed=${result.proposed}&relationsSkipped=${result.skippedExisting}&relationsSuppressed=${result.suppressed}&relationWarnings=${result.warnings}`);
+}
+
+export async function expandEntityGraphAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const bundleId = getFormString(formData, "knowledgeBundleId");
+  const bundle = await getKnowledgeBundle({ bundleId, context });
+  if (!bundle) throw new Error("knowledge_bundle_not_found");
+  await scheduleFullEntityExpansion({
+    knowledgeBundleId: bundle.id,
+    workspaceId: context.workspaceId,
+  });
+  revalidatePath(`/knowledge/${bundle.id}/relations`);
+  revalidatePath(`/knowledge/${bundle.id}/graph`);
+  redirect(`/knowledge/${bundle.id}/relations?entityExpansion=queued`);
 }
 
 export async function reviewRelationCandidateAction(formData: FormData) {
@@ -159,104 +180,29 @@ export async function reviewRelationCandidateAction(formData: FormData) {
   if (!candidate) throw new Error("relation_candidate_not_found");
   if (decision === "reject") {
     await getPrisma().okfRelationCandidate.update({ data: { reviewedAt: new Date(), reviewedBy: context.userId, status: "rejected" }, where: { id: candidate.id } });
-    revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
+    await getPrisma().entityRelationCandidate.updateMany({
+      data: { status: "rejected" },
+      where: { projectedCandidateId: candidate.id },
+    });
+    revalidatePath(`/knowledge/${candidate.knowledgeBundleId}/relations`);
     return;
   }
-  const bundle = await getKnowledgeBundle({ bundleId: candidate.knowledgeBundleId, context });
-  if (!bundle) throw new Error("knowledge_bundle_not_found");
-  if (!candidate.verificationRelation || !candidate.verificationDirection || !candidate.verificationEvidenceQuote || !candidate.verificationRationale) {
-    throw new Error("relation_verification_required");
+  let result: Awaited<ReturnType<typeof approveVerifiedRelationCandidate>>;
+  try {
+    result = await approveVerifiedRelationCandidate({
+      actorId: context.userId,
+      candidateId: candidate.id,
+      mode: "human",
+      workspaceId: context.workspaceId,
+    });
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "relation_approval_failed";
+    redirect(`/knowledge/${candidate.knowledgeBundleId}/relations?relationError=${encodeURIComponent(code)}`);
   }
-  if (!bundle.profile.relations.includes(candidate.verificationRelation)) throw new Error("relation_type_not_allowed");
-  const root = resolveKnowledgeBundleRoot({ bundleId: bundle.id, workspaceId: context.workspaceId });
-  const reverseDirection = candidate.verificationDirection === "reverse";
-  const sourceFile = reverseDirection ? candidate.targetFile : candidate.sourceFile;
-  const targetFile = reverseDirection ? candidate.sourceFile : candidate.targetFile;
-  const [originalSourceFile, originalTargetFile] = await Promise.all([
-    readOkfBundleFile(root, candidate.sourceFile),
-    readOkfBundleFile(root, candidate.targetFile),
-  ]);
-  const originalSourceParsed = parseOkfMarkdown(originalSourceFile.content);
-  const originalTargetParsed = parseOkfMarkdown(originalTargetFile.content);
-  const originalSource = buildRelationVerifierConcept({
-    body: originalSourceParsed.body,
-    description: getFrontmatterScalar(originalSourceParsed.frontmatter, "description"),
-    filePath: candidate.sourceFile,
-    title: getFrontmatterScalar(originalSourceParsed.frontmatter, "title"),
-  });
-  const originalTarget = buildRelationVerifierConcept({
-    body: originalTargetParsed.body,
-    description: getFrontmatterScalar(originalTargetParsed.frontmatter, "description"),
-    filePath: candidate.targetFile,
-    title: getFrontmatterScalar(originalTargetParsed.frontmatter, "title"),
-  });
-  if (originalSource.contentHash !== candidate.sourceContentHash || originalTarget.contentHash !== candidate.targetContentHash) {
-    await retryOkfRelationVerification({ candidateId: candidate.id, workspaceId: context.workspaceId });
-    revalidatePath(`/knowledge/${bundle.id}`);
-    redirect(`/knowledge/${bundle.id}?section=relations&relationError=relation_verification_stale_content#relation-discovery`);
+  revalidatePath(`/knowledge/${result.bundleId}/relations`);
+  if (result.status === "reverification_queued") {
+    redirect(`/knowledge/${result.bundleId}/relations?relationReverification=queued`);
   }
-  validateRelationVerifierDecision({
-    allowedRelations: bundle.profile.relations,
-    decision: {
-      confidence: candidate.verificationConfidence,
-      direction: candidate.verificationDirection,
-      evidenceQuote: candidate.verificationEvidenceQuote,
-      rationale: candidate.verificationRationale,
-      related: true,
-      relation: candidate.verificationRelation,
-    },
-    proposedSource: originalSource,
-    proposedTarget: originalTarget,
-  });
-  const verifiedReason = formatVerifiedRelationReason({
-    evidenceQuote: candidate.verificationEvidenceQuote,
-    rationale: candidate.verificationRationale,
-  });
-  const graphContext = await loadOkfRelationPreflightContext({
-    excludeCandidateId: candidate.id,
-    knowledgeBundleId: bundle.id,
-    workspaceId: context.workspaceId,
-  });
-  const targetDefinition = graphContext.activeFiles.find((file) => file.filePath === targetFile);
-  const preflight = preflightOkfRelationCandidate({
-    ...graphContext,
-    candidate: {
-      reason: verifiedReason,
-      relation: candidate.verificationRelation,
-      sourceFile,
-      targetFile,
-      targetType: targetDefinition?.type ?? null,
-    },
-  });
-  if (!preflight.accepted) {
-    const code = preflight.issues.find((issue) => issue.severity === "error")?.code ?? "relation_preflight_failed";
-    redirect(`/knowledge/${bundle.id}?section=relations&relationError=${encodeURIComponent(code)}#relation-discovery`);
-  }
-  const sourceTopic = await getPrisma().topicRecord.findFirst({ where: { exportedFilePath: sourceFile, knowledgeBundleId: bundle.id, workspaceId: context.workspaceId } });
-  if (!sourceTopic) throw new Error("relation_source_topic_not_found");
-  const target = await readOkfBundleFile(root, targetFile);
-  const targetType = getFrontmatterScalar(parseOkfMarkdown(target.content).frontmatter, "type");
-  if (!targetType) throw new Error("relation_target_type_mismatch");
-  const relations = [...normalizeTopicRelations(sourceTopic.relations), {
-    reason: verifiedReason,
-    relation: candidate.verificationRelation,
-    target: targetFile,
-    targetType,
-  }];
-  await validateTopicRelations(relations, root);
-  await updateTopicRelations(sourceTopic.id, relations);
-  const document = await getDocumentById(sourceTopic.documentId);
-  if (!document) throw new Error("document_not_found");
-  const topics = await getTopicRecordsByDocumentId(document.id);
-  const { exportApprovedTopicForDocument } = await import("@/lib/okf-export-service");
-  const exported = await exportApprovedTopicForDocument({ document, topicId: sourceTopic.id, topics });
-  await updateTopicExportedFilePath(sourceTopic.id, exported.filename);
-  const reviewedAt = new Date();
-  await getPrisma().okfRelationCandidate.update({
-    data: { reason: verifiedReason, reviewedAt, reviewedBy: context.userId, status: "approved" },
-    where: { id: candidate.id },
-  });
-  revalidatePath(`/knowledge/${bundle.id}`);
 }
 
 export async function retryRelationCandidateVerificationAction(formData: FormData) {
@@ -264,7 +210,14 @@ export async function retryRelationCandidateVerificationAction(formData: FormDat
   const candidateId = getFormString(formData, "candidateId");
   const direction = getFormString(formData, "direction");
   const candidate = await getPrisma().okfRelationCandidate.findFirst({
-    where: { id: candidateId, status: "pending", workspaceId: context.workspaceId },
+    where: {
+      id: candidateId,
+      OR: [
+        { status: "pending" },
+        { publishedReviewStatus: { not: null }, status: "approved" },
+      ],
+      workspaceId: context.workspaceId,
+    },
   });
   if (!candidate) throw new Error("relation_candidate_not_found");
   await retryOkfRelationVerification({
@@ -272,7 +225,25 @@ export async function retryRelationCandidateVerificationAction(formData: FormDat
     requestedDirection: direction === "reverse" || direction === "proposed" ? direction : null,
     workspaceId: context.workspaceId,
   });
-  revalidatePath(`/knowledge/${candidate.knowledgeBundleId}`);
+  revalidatePath(`/knowledge/${candidate.knowledgeBundleId}/relations`);
+}
+
+export async function reviewPublishedRelationCandidateAction(formData: FormData) {
+  const context = await requireAuthWorkspaceContext();
+  const candidateId = getFormString(formData, "candidateId");
+  const decision = getFormString(formData, "decision");
+  if (decision !== "reapprove" && decision !== "reject") {
+    throw new Error("published_relation_review_decision_invalid");
+  }
+  const result = await reviewPublishedRelationCandidate({
+    actorId: context.userId,
+    candidateId,
+    decision,
+    workspaceId: context.workspaceId,
+  });
+  revalidatePath(`/knowledge/${result.bundleId}/relations`);
+  revalidatePath(`/knowledge/${result.bundleId}/graph`);
+  revalidatePath(`/knowledge/${result.bundleId}/browse`);
 }
 
 export async function deleteOkfBundleFilesAction(formData: FormData) {
@@ -293,7 +264,7 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
 
   if (!isProductionBackend()) {
     redirect(
-      `/knowledge/${bundle.id}?deleteError=${encodeURIComponent(
+      `/knowledge/${bundle.id}/settings?deleteError=${encodeURIComponent(
         "lifecycle_requires_production_backend",
       )}`,
     );
@@ -301,7 +272,7 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
 
   if (filenames.length === 0) {
     redirect(
-      `/knowledge/${bundle.id}?deleteError=${encodeURIComponent(
+      `/knowledge/${bundle.id}/settings?deleteError=${encodeURIComponent(
         "okf_bundle_delete_requires_selection",
       )}`,
     );
@@ -325,7 +296,7 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
       error.message === "okf_lifecycle_reason_required"
     ) {
       redirect(
-        `/knowledge/${bundle.id}?deleteError=${encodeURIComponent(error.message)}`,
+        `/knowledge/${bundle.id}/settings?deleteError=${encodeURIComponent(error.message)}`,
       );
     }
 
@@ -334,8 +305,9 @@ export async function deleteOkfBundleFilesAction(formData: FormData) {
 
   revalidatePath("/knowledge");
   revalidatePath("/knowledge/bundle");
-  revalidatePath(`/knowledge/${bundle.id}`);
-  redirect(`/knowledge/${bundle.id}?deleted=${filenames.length}`);
+  revalidatePath(`/knowledge/${bundle.id}/settings`);
+  revalidatePath(`/knowledge/${bundle.id}/browse`);
+  redirect(`/knowledge/${bundle.id}/settings?deleted=${filenames.length}`);
 }
 
 function getFormString(formData: FormData, key: string) {
@@ -355,7 +327,7 @@ function normalizeFolderCategory(value: string): KnowledgeFolderCategory {
 }
 
 function normalizeFieldType(value: string): KnowledgeFieldType {
-  return ["date", "number", "number_array", "relations", "string", "string_array"].includes(value)
+  return ["date", "number", "number_array", "object", "object_array", "relations", "string", "string_array"].includes(value)
     ? value as KnowledgeFieldType
     : "string";
 }

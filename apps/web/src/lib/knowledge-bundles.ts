@@ -21,6 +21,7 @@ export type KnowledgeBundleRecord = {
   documentCount: number;
   id: string;
   name: string;
+  okfVersion: string;
   profile: KnowledgeProfileSchema;
   slug: string;
   status: string;
@@ -123,6 +124,7 @@ export async function createKnowledgeBundle(input: {
         createdBy: input.context.userId,
         description: input.description?.trim() ?? "",
         name,
+        okfVersion: "0.2",
         slug,
         workspaceId: input.context.workspaceId,
       },
@@ -181,14 +183,20 @@ export async function scaffoldKnowledgeBundle(input: {
   await mkdir(root, { recursive: true });
   await Promise.all([
     atomicWrite(path.join(root, "okf-base.yaml"), buildBundleManifest(input.profile)),
-    writeIfMissing(path.join(root, "index.md"), "# Knowledge Bundle\n"),
-    writeIfMissing(path.join(root, "log.md"), "# Change Log\n"),
     writeIfMissing(
-      path.join(root, "source_manifest.md"),
-      `---\ntype: source_manifest\ntitle: Source Manifest\nupdated: ${toIsoDate(new Date())}\n---\n\n# Source Manifest\n`,
+      path.join(root, "index.md"),
+      [
+        "---",
+        'okf_version: "0.2"',
+        "---",
+        "",
+        "# Knowledge Bundle",
+        "",
+      ].join("\n"),
     ),
+    writeIfMissing(path.join(root, "log.md"), "# Change Log\n"),
+    mkdir(path.join(root, "references", "sources"), { recursive: true }),
   ]);
-  await ensureSourceManifestReviewStatus(path.join(root, "source_manifest.md"));
 }
 
 export async function writeWorkspaceVault(workspaceId: string): Promise<void> {
@@ -285,7 +293,7 @@ async function validateExistingTypeFolders(
 ): Promise<string[]> {
   const errors: string[] = [];
   for (const file of await collectMarkdownFiles(root, root)) {
-    if (["index.md", "log.md", "source_manifest.md"].includes(file)) continue;
+    if (["index.md", "log.md"].includes(file)) continue;
     const parsed = parseOkfMarkdown(await readFile(path.join(root, file), "utf8"));
     const type = typeof parsed.frontmatter.type === "string" ? parsed.frontmatter.type : "";
     if (!type || !current.types[type] || !next.types[type]) continue;
@@ -298,10 +306,7 @@ async function validateExistingTypeFolders(
 
 export function buildBundleManifest(profile: KnowledgeProfileSchema): string {
   const fields = { ...BASE_FIELDS, ...profile.fields };
-  const types = {
-    source_manifest: { category: "indexes" as const, label: "Source manifest" },
-    ...profile.types,
-  };
+  const types = profile.types;
   const requiredFields = Object.entries(fields)
     .filter(([, definition]) => definition.required)
     .map(([field]) => field);
@@ -315,15 +320,12 @@ export function buildBundleManifest(profile: KnowledgeProfileSchema): string {
     "      optional:",
     ...optionalFields.map((field) => `      - ${field}`),
     "      status_values:",
-    "      - raw_extracted",
-    "      - needs_ai_cleanup",
-    "      - needs_human_review",
-    "      - approved",
-    "      - rejected",
-    "      - deprecated",
+      "      - draft",
+      "      - stable",
+      "      - deprecated",
   ]);
   return [
-    "okf_version: '0.1'",
+    "okf_version: '0.2'",
     "base:",
     `  name: ${yamlQuote(profile.name)}`,
     "  roots:",
@@ -334,39 +336,22 @@ export function buildBundleManifest(profile: KnowledgeProfileSchema): string {
     "  reserved_files:",
     "    index: index.md",
     "    log: log.md",
-    "  status_field: review_status",
-    "  link_resolution:",
-    "    external_refs:",
-    "    - source_manifest.md",
+    "  status_field: status",
     "relations:",
     "  allowed:",
     ...profile.relations.map((relation) => `  - ${relation}`),
     "profile:",
     "  date_fields:",
-    "  - updated",
-    "  - approved_at",
-    "  - deprecated_at",
+    "  - stale_after",
     "  types:",
     ...typeLines,
     "hygiene:",
     "  broken_links: error",
     "  split_candidates: warn",
     "  reserved_files: error",
-    "  unknown_fields: error",
+    "  unknown_fields: warn",
     "",
   ].join("\n");
-}
-
-async function ensureSourceManifestReviewStatus(filePath: string): Promise<void> {
-  const content = await readFile(filePath, "utf8");
-  const parsed = parseOkfMarkdown(content);
-  if (parsed.frontmatter.review_status !== undefined) return;
-  const updated = content.replace(
-    /^(---\r?\n(?:.|\r?\n)*?type:\s*[^\r\n]+\r?\n)/,
-    "$1review_status: approved\n",
-  );
-  if (updated === content) throw new Error("source_manifest_frontmatter_invalid");
-  await atomicWrite(filePath, updated);
 }
 
 async function validateBundleFilesAgainstProfile(
@@ -408,6 +393,7 @@ function mapBundleRecord(record: {
   description: string;
   id: string;
   name: string;
+  okfVersion: string;
   slug: string;
   status: string;
   updatedAt: Date;
@@ -421,6 +407,7 @@ function mapBundleRecord(record: {
     documentCount: record._count?.documents ?? 0,
     id: record.id,
     name: record.name,
+    okfVersion: record.okfVersion,
     profile: normalizeKnowledgeProfile(
       record.activeProfileVersion.schema as unknown as KnowledgeProfileSchema,
     ),
@@ -439,6 +426,7 @@ function localGeneralBundle(workspaceId: string): KnowledgeBundleRecord {
     documentCount: 0,
     id: LOCAL_GENERAL_BUNDLE_ID,
     name: "General Knowledge",
+    okfVersion: "0.2",
     profile: getKnowledgeProfileTemplate("generic"),
     slug: "general",
     status: "active",
@@ -468,8 +456,4 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
 
 function yamlQuote(value: string): string {
   return JSON.stringify(value);
-}
-
-function toIsoDate(value: Date): string {
-  return value.toISOString().slice(0, 10);
 }

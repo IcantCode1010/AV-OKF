@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 
 const statusLabels: Record<DocumentStatus, string> = {
   ready: "Ready",
+  pending: "Pending",
   processing: "Processing",
   needs_review: "Needs review",
   indexed: "Indexed",
@@ -11,6 +12,7 @@ const statusLabels: Record<DocumentStatus, string> = {
 
 const statusClasses: Record<DocumentStatus, string> = {
   ready: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  pending: "border-amber-400/30 bg-amber-400/10 text-amber-300",
   processing: "border-sky-400/30 bg-sky-400/10 text-sky-300",
   needs_review: "border-amber-400/30 bg-amber-400/10 text-amber-300",
   indexed: "border-violet-400/30 bg-violet-400/10 text-violet-300",

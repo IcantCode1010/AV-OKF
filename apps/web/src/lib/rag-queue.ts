@@ -33,10 +33,16 @@ export function createBullMqRagIndexQueue(
 
   return {
     async enqueueIndexJob(payload) {
+      const jobId = buildRagIndexJobId(payload);
+      const existing = await queue.getJob(jobId);
+      if (existing) {
+        const state = await existing.getState();
+        if (state === "completed" || state === "failed") await existing.remove();
+      }
       await queue.add("index", payload, {
         attempts: 3,
         backoff: { delay: 5_000, type: "exponential" },
-        jobId: buildRagIndexJobId(payload),
+        jobId,
         removeOnComplete: 500,
         removeOnFail: 1_000,
       });

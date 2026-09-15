@@ -6,12 +6,13 @@ export type RagIndexStatus =
   | "deleting_old_chunks"
   | "chunking"
   | "embedding"
+  | "awaiting_budget"
   | "running"
   | "indexed"
   | "index_failed"
   | "failed";
 
-export type RagIndexJobStatus = "queued" | "running" | "completed" | "failed";
+export type RagIndexJobStatus = "queued" | "running" | "awaiting_budget" | "completed" | "failed";
 
 export type RagChunkSourceType = "raw_extraction" | "okf_topic";
 
@@ -44,6 +45,7 @@ export type RagChunkRecord = {
 };
 
 export type RagChunkInput = {
+  chunkingStrategyId?: string;
   documentTitle?: string;
   documentId: string;
   indexJobId: string;

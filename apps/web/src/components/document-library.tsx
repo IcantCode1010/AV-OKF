@@ -25,6 +25,7 @@ import {
 const filters: Array<"all" | DocumentStatus> = [
   "all",
   "ready",
+  "pending",
   "processing",
   "needs_review",
   "indexed",

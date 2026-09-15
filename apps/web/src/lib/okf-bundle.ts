@@ -1,7 +1,11 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
-import { getFrontmatterScalar, parseOkfMarkdown } from "./okf-frontmatter.ts";
+import {
+  deriveOkfTrustTier,
+  getFrontmatterScalar,
+  parseOkfMarkdown,
+} from "./okf-frontmatter.ts";
 import { resolveKnowledgePath } from "./knowledge-root.ts";
 import type { OkfConceptLifecycleRecord } from "./okf-bundle-retriever.ts";
 
@@ -221,14 +225,14 @@ function isMissingDirectoryError(error: unknown) {
 }
 
 function isReservedBundleFile(filename: string) {
-  return ["index.md", "log.md", "source_manifest.md"].includes(filename);
+  return ["index.md", "log.md"].includes(filename);
 }
 
 function parseOkfFrontmatter(content: string, filename: string) {
   const { frontmatter } = parseOkfMarkdown(content);
 
   return {
-    reviewStatus: getFrontmatterScalar(frontmatter, "review_status") ?? "unknown",
+    reviewStatus: deriveOkfTrustTier(frontmatter),
     title:
       getFrontmatterScalar(frontmatter, "title") ??
       getReservedFileTitle(filename) ??
@@ -241,7 +245,6 @@ function getReservedFileTitle(filename: string) {
   const titles: Record<string, string> = {
     "index.md": "Bundle Index",
     "log.md": "Activity Log",
-    "source_manifest.md": "Source Manifest",
   };
 
   return titles[filename];

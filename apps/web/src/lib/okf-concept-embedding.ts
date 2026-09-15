@@ -41,6 +41,12 @@ export type OkfSemanticMatch = {
   score: number;
 };
 
+export type OkfSemanticNeighbor = {
+  score: number;
+  sourceFile: string;
+  targetFile: string;
+};
+
 export function createOkfConceptEmbeddingRepository(db: PrismaLike = getPrisma()) {
   return {
     async createOrReuseJob(input: {
@@ -172,6 +178,64 @@ export function createOkfConceptEmbeddingRepository(db: PrismaLike = getPrisma()
           e."filePath" ASC
         LIMIT ${input.topK}
       `);
+    },
+
+    async findNeighbors(input: {
+      candidates: OkfSemanticCandidate[];
+      knowledgeBundleId: string;
+      maxPairs: number;
+      minSimilarity: number;
+      topKPerConcept: number;
+      workspaceId: string;
+    }): Promise<OkfSemanticNeighbor[]> {
+      if (input.candidates.length < 2) return [];
+      const eligible = Prisma.join(
+        input.candidates.map((candidate) => Prisma.sql`(e."filePath" = ${candidate.filePath} AND e."contentHash" = ${candidate.contentHash})`),
+        " OR ",
+      );
+      const rows = await db.$queryRaw<OkfSemanticNeighbor[]>(Prisma.sql`
+        WITH eligible AS (
+          SELECT e."filePath", e."embedding"
+          FROM "OkfConceptEmbedding" e
+          WHERE e."workspaceId" = ${input.workspaceId}
+            AND e."knowledgeBundleId" = ${input.knowledgeBundleId}
+            AND (${eligible})
+        ), ranked AS (
+          SELECT source."filePath" AS "sourceFile",
+            target."filePath" AS "targetFile",
+            1 - (source."embedding" <=> target."embedding") AS "score",
+            ROW_NUMBER() OVER (
+              PARTITION BY source."filePath"
+              ORDER BY source."embedding" <=> target."embedding" ASC,
+                target."filePath" ASC
+            ) AS "neighborRank"
+          FROM eligible source
+          JOIN eligible target ON source."filePath" <> target."filePath"
+        )
+        SELECT "sourceFile", "targetFile", "score"
+        FROM ranked
+        WHERE "neighborRank" <= ${input.topKPerConcept}
+          AND "score" >= ${input.minSimilarity}
+        ORDER BY "score" DESC, "sourceFile" ASC, "targetFile" ASC
+        LIMIT ${input.maxPairs * 2}
+      `);
+      const unique = new Map<string, OkfSemanticNeighbor>();
+      for (const row of rows) {
+        const [sourceFile, targetFile] = [row.sourceFile, row.targetFile]
+          .sort((left, right) => left.localeCompare(right));
+        const key = `${sourceFile}\u0000${targetFile}`;
+        const current = unique.get(key);
+        if (!current || row.score > current.score) {
+          unique.set(key, { score: row.score, sourceFile, targetFile });
+        }
+      }
+      return [...unique.values()]
+        .sort((left, right) =>
+          right.score - left.score ||
+          left.sourceFile.localeCompare(right.sourceFile) ||
+          left.targetFile.localeCompare(right.targetFile),
+        )
+        .slice(0, input.maxPairs);
     },
 
     async storeCompleted(input: {

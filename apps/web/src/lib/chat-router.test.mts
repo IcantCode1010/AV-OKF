@@ -111,6 +111,14 @@ test("routes plain interrogative questions to OKF at medium confidence", () => {
   }
 });
 
+test("routes tell-me knowledge questions to OKF without an unnecessary clarification", () => {
+  const decision = routeChatQuestion("Tell me the purpose of the flight controls");
+
+  assert.equal(decision.route, "okf_only");
+  assert.equal(decision.confidence, "medium");
+  assert.deepEqual(decision.requiredContext, []);
+});
+
 test("accepts the structured router input object and routes on its question", () => {
   const decision = routeChatQuestion({
     conversationContext: ["user: hi", "assistant: hello"],

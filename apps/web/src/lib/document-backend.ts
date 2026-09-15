@@ -21,6 +21,7 @@ import {
   parseTags,
   startExtraction,
   markTopicEnrichmentPending as markLocalTopicEnrichmentPending,
+  resolveTopicEnrichmentCandidate as resolveLocalTopicEnrichmentCandidate,
   updateDocumentMetadata as updateLocalDocumentMetadata,
   updateTopicContent as updateLocalTopicContent,
   updateTopicOkfMetadata as updateLocalTopicOkfMetadata,
@@ -285,6 +286,19 @@ export async function failTopicEnrichment(
   }
 
   return failLocalTopicEnrichment(topicId, input);
+}
+
+export async function resolveTopicEnrichmentCandidate(
+  topicId: string,
+  input: Parameters<typeof resolveLocalTopicEnrichmentCandidate>[1],
+): Promise<TopicRecord> {
+  if (isProductionBackend()) {
+    return getProductionDocumentService().resolveTopicEnrichmentCandidate(
+      topicId,
+      input,
+    );
+  }
+  return resolveLocalTopicEnrichmentCandidate(topicId, input);
 }
 
 export async function approveTopicContent(

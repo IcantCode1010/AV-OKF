@@ -1,4 +1,6 @@
 import type { Document, TopicRecord } from "./document-vault.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 export { getDefaultKnowledgeRoot } from "./knowledge-root.ts";
 import {
   resolveOkfCoverage,
@@ -12,6 +14,9 @@ import {
   resolveKnowledgeBundleRoot,
 } from "./knowledge-bundles.ts";
 import { getKnowledgeProfileTemplate, getTypeDirectory } from "./knowledge-profile.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
+import { getPrisma } from "./prisma.ts";
+import { getObjectStorage } from "./production-storage.ts";
 
 type ExportApprovedTopicInput = {
   coverageRepository?: OkfCoverageRepository;
@@ -47,6 +52,13 @@ export async function exportApprovedTopicForDocument(
         workspaceId,
       });
   if (!bundle) throw new Error("knowledge_bundle_not_found");
+  const knowledgeRoot =
+    input.knowledgeRoot ??
+    resolveKnowledgeBundleRoot({ bundleId: knowledgeBundleId, workspaceId });
+  await assertOkfV02Bundle({
+    knowledgeRoot,
+    okfVersion: "okfVersion" in bundle ? bundle.okfVersion : "0.2",
+  });
   const conceptType =
     typeof topic.okfMetadata?.type === "string"
       ? topic.okfMetadata.type
@@ -64,25 +76,40 @@ export async function exportApprovedTopicForDocument(
           workspaceId: input.document.workspaceId,
         })
       : null;
+  const portableCitations = coverage && input.document.workspaceId && input.document.contentSha256
+    ? buildPortableCitations({
+        chunks: coverage.chunks,
+        sourceDigest: input.document.contentSha256,
+        sourcePages: topic.sourcePageNumbers,
+      })
+    : [];
+  const media = isProductionBackend() && !input.knowledgeRoot && input.document.workspaceId
+    ? await exportApprovedTopicMedia({
+        contentSha256: input.document.contentSha256 ?? null,
+        knowledgeRoot,
+        topicId: topic.id,
+        workspaceId: input.document.workspaceId,
+      })
+    : [];
 
   const exported = await exportTopicToKnowledge({
     directory,
-    document: input.document,
+    document: {
+      ...input.document,
+      contentSha256: input.document.contentSha256 ?? null,
+    },
     exportedAt: input.exportedAt,
-    knowledgeRoot:
-      input.knowledgeRoot ??
-      resolveKnowledgeBundleRoot({
-        bundleId: knowledgeBundleId,
-        workspaceId,
-      }),
+    knowledgeRoot,
     knowledgeVersion: input.knowledgeVersion ?? getKnowledgeVersion(),
     topic: coverage
       ? {
           ...topic,
           coverageType: coverage.coverageType,
           coveredRagChunkIds: coverage.chunkIds,
+          portableCitations,
+          media,
         }
-      : topic,
+      : { ...topic, media },
   });
 
   if (coverage && input.document.workspaceId) {
@@ -127,6 +154,60 @@ export async function exportApprovedTopicForDocument(
   return exported;
 }
 
+async function exportApprovedTopicMedia(input: {
+  contentSha256: string | null;
+  knowledgeRoot: string;
+  topicId: string;
+  workspaceId: string;
+}) {
+  const db = getPrisma();
+  const references = await db.topicMediaReference.findMany({
+    include: { mediaAsset: true },
+    orderBy: [{ confidence: "desc" }, { createdAt: "asc" }],
+    where: {
+      status: { in: ["approved", "auto_approved"] },
+      topicId: input.topicId,
+      workspaceId: input.workspaceId,
+    },
+  });
+  const storage = getObjectStorage();
+  const media = [];
+  for (const reference of references) {
+    if (!input.contentSha256 || reference.mediaAsset.sourceDocumentSha256 !== input.contentSha256) {
+      await db.topicMediaReference.update({ data: { status: "stale" }, where: { id: reference.id } });
+      continue;
+    }
+    const filename = `${reference.mediaAsset.id}-${reference.mediaAsset.contentSha256.slice(0, 12)}.png`;
+    const resourcePath = path.posix.join("resources", "media", filename);
+    const destination = path.join(input.knowledgeRoot, ...resourcePath.split("/"));
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(destination, await storage.getObject(reference.mediaAsset.objectKey));
+    media.push({
+      altText: reference.mediaAsset.altText,
+      kind: reference.mediaAsset.kind === "diagram" ? "diagram" as const : "figure" as const,
+      pageNumber: reference.mediaAsset.pageNumber,
+      resourcePath,
+      sourceCaption: reference.mediaAsset.sourceCaption,
+      visualContext: reference.mediaAsset.visualContext,
+    });
+  }
+  return media;
+}
+
+function buildPortableCitations(input: { chunks: Array<{ contentHash: string; sourcePageNumbers: number[] }>; sourceDigest: string; sourcePages: number[] }) {
+  const digest = input.sourceDigest.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error("okf_export_requires_source_hash");
+  const allowedPages = new Set(input.sourcePages);
+  const portableChunks = input.chunks.map((chunk) => ({
+      id: `avchunk:${digest}:${chunk.contentHash}`,
+      pages: chunk.sourcePageNumbers.filter((page) => allowedPages.has(page)),
+    })).filter((chunk) => chunk.pages.length > 0);
+  return portableChunks.length ? [{
+    chunks: portableChunks,
+    source: `source-${digest.slice(0, 12)}`,
+  }] : [];
+}
+
 function getKnowledgeVersion() {
-  return process.env.AV_OKF_KNOWLEDGE_VERSION || "0.1.0";
+  return process.env.AV_OKF_KNOWLEDGE_VERSION || "0.2.0";
 }

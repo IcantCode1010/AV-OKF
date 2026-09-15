@@ -252,7 +252,7 @@ try {
 
   const conceptPath = path.join(deletedBundleRoot, ...exportedFilePath.split("/"));
   await mkdir(path.dirname(conceptPath), { recursive: true });
-  await writeFile(conceptPath, "---\ntype: procedure\ntitle: Disposable Bundle Concept\nreview_status: approved\n---\n\nDisposable.\n", "utf8");
+  await writeFile(conceptPath, "---\ntype: procedure\ntitle: Disposable Bundle Concept\nstatus: stable\nverified:\n  - by: human:e2e-reviewer\n    at: 2026-07-20T12:00:00.000Z\nsources:\n  - resource: /references/sources/disposable.md\nsource_pages: [1]\n---\n\nDisposable.\n", "utf8");
 
   const queuedPayloads: string[] = [];
   const [job, duplicate] = await Promise.all([

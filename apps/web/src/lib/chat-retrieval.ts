@@ -7,6 +7,7 @@ import {
 import type { ChatCitation } from "./chat-types.ts";
 import {
   retrieveOkfBundleEvidenceWithDiagnostics,
+  tokenizeOkfRetrievalQuery,
   type MetadataClarification,
   type OkfBundleEvidence,
   type OkfBundleRetrievalDiagnostics,
@@ -15,6 +16,7 @@ import {
   traverseOkfRelations,
   type OkfGraphTraversalResult,
 } from "./okf-graph-retriever.ts";
+import { selectGraphEvidence, selectGraphEvidencePairs, pruneGraphEvidenceContext, GRAPH_EVIDENCE_LIMIT, type GraphEvidenceContext } from "./okf-graph-evidence.ts";
 import { createPostgresOkfConceptLifecycleLookup } from "./okf-lifecycle.ts";
 import { retrieveDocuments, retrieveDocumentsByChunkIds } from "./rag-backend.ts";
 import type { RetrievalResult } from "./rag-types.ts";
@@ -22,6 +24,7 @@ import {
   getKnowledgeBundleByIdentity,
   resolveKnowledgeBundleRoot,
 } from "./knowledge-bundles.ts";
+import { assertOkfV02Bundle } from "./okf-version.ts";
 import { readOkfBundleFile } from "./okf-bundle.ts";
 import { rerankRawRagCandidates, type RagRerankTrace } from "./rag-reranker.ts";
 import { getPrisma } from "./prisma.ts";
@@ -29,6 +32,10 @@ import {
   createAgentToolExecutor,
   type AgentExecutionTrace,
 } from "./agent-tools.ts";
+import {
+  deriveRetrievalTriggerCandidates,
+  type RetrievalTriggerCandidate,
+} from "./retrieval-trigger-proposals.ts";
 
 const OKF_TOP_K = 4;
 const RAG_TOP_K = 6;
@@ -39,7 +46,7 @@ const EVIDENCE_EXCERPT_MAX_CHARS = 1500;
 
 // Fuller-text counterpart to a ChatCitation, keyed by the same index. Used
 // only to prompt the answer builder; never persisted or rendered.
-export type ChatRetrievalEvidence = {
+export type ChatRetrievalEvidence = GraphEvidenceContext & {
   approvalProvenance?: "automated" | "human" | "legacy";
   knowledgeBundleId?: string;
   knowledgeBundleName?: string;
@@ -68,6 +75,7 @@ export type ChatRetrievalResult = {
   okfEvidenceMode?: "direct" | "graph";
   okfMatchMode?: "lexical" | "vector";
   metadataClarification?: MetadataClarification;
+  retrievalTriggerCandidates?: RetrievalTriggerCandidate[];
   rerank: RagRerankTrace;
   retrievalError: boolean;
   retrievalToolsCalled: string[];
@@ -144,17 +152,52 @@ async function retrieveOkfBundleDiagnosticsWithLifecycle(input: {
     return { nearMissCandidates: [], qualifiedEvidence: [] };
   }
 
+  const knowledgeRoot = resolveKnowledgeBundleRoot({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  await assertOkfV02Bundle({ knowledgeRoot, okfVersion: bundle.okfVersion });
+  const retrievalTriggers = await loadApprovedRetrievalTriggers({
+    knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+
   return retrieveOkfBundleEvidenceWithDiagnostics({
     ...input,
     bundleName: bundle.name,
     clarificationFields: bundle.profile.clarificationFields,
     knowledgeBundleId,
-    knowledgeRoot: resolveKnowledgeBundleRoot({
-      bundleId: knowledgeBundleId,
-      workspaceId: input.workspaceId,
-    }),
+    knowledgeRoot,
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
+    retrievalTriggers: retrievalTriggers.map((trigger) => ({
+      contentHash: trigger.targetContentHash,
+      filePath: trigger.targetFilePath,
+      terms: trigger.approvedTerms,
+    })),
   });
+}
+
+async function loadApprovedRetrievalTriggers(input: {
+  knowledgeBundleId: string;
+  workspaceId: string;
+}) {
+  try {
+    return await getPrisma().okfRetrievalTriggerProposal.findMany({
+      select: {
+        approvedTerms: true,
+        targetContentHash: true,
+        targetFilePath: true,
+      },
+      where: {
+        knowledgeBundleId: input.knowledgeBundleId,
+        status: "approved",
+        workspaceId: input.workspaceId,
+      },
+    });
+  } catch (error) {
+    console.error("okf_retrieval_trigger_lookup_failed", error);
+    return [];
+  }
 }
 
 async function traverseOkfRelationsWithLifecycle(input: {
@@ -164,14 +207,24 @@ async function traverseOkfRelationsWithLifecycle(input: {
   maxHops?: number;
 }): Promise<OkfGraphTraversalResult> {
   const knowledgeBundleId = input.knowledgeBundleId ?? "kb_general_local";
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  if (!bundle) {
+    return { concepts: [], paths: [], warnings: ["knowledge_bundle_not_found"] };
+  }
+  const knowledgeRoot = resolveKnowledgeBundleRoot({
+    bundleId: knowledgeBundleId,
+    workspaceId: input.workspaceId,
+  });
+  await assertOkfV02Bundle({ knowledgeRoot, okfVersion: bundle.okfVersion });
 
   return traverseOkfRelations({
     ...input,
+    direction: "both",
     knowledgeBundleId,
-    knowledgeRoot: resolveKnowledgeBundleRoot({
-      bundleId: knowledgeBundleId,
-      workspaceId: input.workspaceId,
-    }),
+    knowledgeRoot,
     lifecycleLookup: createPostgresOkfConceptLifecycleLookup(),
   });
 }
@@ -427,6 +480,11 @@ async function runSingleBundleChatRetrievalCore(
         workspaceId,
       }));
       const okfResults = okfDiagnostics.qualifiedEvidence;
+      const retrievalTriggerCandidates = deriveRetrievalTriggerCandidates({
+        knowledgeBundleId: effectiveKnowledgeBundleId,
+        nearMissCandidates: okfDiagnostics.nearMissCandidates,
+        queryTerms: tokenizeOkfRetrievalQuery(query),
+      });
 
       if (okfResults.length > 0) {
         if (decision.requiresGraphTraversal) {
@@ -441,9 +499,9 @@ async function runSingleBundleChatRetrievalCore(
           );
 
           if (graphResults.length > 0) {
-            const graphOkfResults = [...okfResults, ...graphResults].slice(0, OKF_TOP_K);
-            return buildOkfBundleRetrievalResult(
-              graphOkfResults,
+            const selection = selectGraphEvidence({ direct: okfResults, graph, query });
+            const result = buildOkfBundleRetrievalResult(
+              selection.concepts,
               [...toolsForRoute, "okf_relation_traversal"],
               {
                 approvedOkfAvailable: true,
@@ -453,6 +511,23 @@ async function runSingleBundleChatRetrievalCore(
               "graph",
               effectiveKnowledgeBundleId,
             );
+            const byFile = new Map(selection.concepts.map((node) => [node.filePath, node]));
+            for (const evidence of result.evidence) {
+              evidence.graphDerived = !okfResults.some((node) => node.filePath === evidence.okfFilePath);
+              evidence.graphPaths = selection.paths.filter((entry) => entry.files.includes(evidence.okfFilePath!));
+              const connections = selection.paths.flatMap((entry) => entry.relationTypes.map((relation, index) => ({
+                sourceFile: entry.files[entry.directions?.[index] === "incoming" ? index + 1 : index],
+                targetFile: entry.files[entry.directions?.[index] === "incoming" ? index : index + 1], relation,
+              }))).filter((edge) => edge.sourceFile === evidence.okfFilePath || edge.targetFile === evidence.okfFilePath);
+              evidence.graphConnections = [...new Map(connections.map((edge) => [JSON.stringify(edge), {
+                source: byFile.get(edge.sourceFile!)!.title,
+                relation: edge.relation,
+                target: byFile.get(edge.targetFile!)!.title,
+                sourceFile: edge.sourceFile,
+                targetFile: edge.targetFile,
+              }])).values()];
+            }
+            return result;
           }
 
           const discovery = await fetchBySourceType(retrieve, rerank, {
@@ -498,7 +573,7 @@ async function runSingleBundleChatRetrievalCore(
       }
 
       if (input.deferRawRagFallback) {
-        return attachSearchSummary(
+        return withRetrievalTriggerCandidates(await attachSearchSummary(
           buildOkfBundleRetrievalResult(
             [],
             toolsForRoute,
@@ -510,7 +585,7 @@ async function runSingleBundleChatRetrievalCore(
             effectiveKnowledgeBundleId,
           ),
           input,
-        );
+        ), retrievalTriggerCandidates);
       }
 
       // query-router.md fallback rule: okf_only with no approved OKF object
@@ -523,7 +598,7 @@ async function runSingleBundleChatRetrievalCore(
         topK: RAG_TOP_K,
         workspaceId,
       });
-      return attachSearchSummary(
+      return withRetrievalTriggerCandidates(await attachSearchSummary(
         buildRetrievalResult(
           discovery.results,
           ["okf_retrieval", "rag_retrieval"],
@@ -534,7 +609,7 @@ async function runSingleBundleChatRetrievalCore(
           discovery.trace,
         ),
         input,
-      );
+      ), retrievalTriggerCandidates);
     }
 
     if (decision.route === "rag_only") {
@@ -565,6 +640,11 @@ async function runSingleBundleChatRetrievalCore(
       workspaceId,
     }));
     const okfResults = okfDiagnostics.qualifiedEvidence;
+    const retrievalTriggerCandidates = deriveRetrievalTriggerCandidates({
+      knowledgeBundleId: effectiveKnowledgeBundleId,
+      nearMissCandidates: okfDiagnostics.nearMissCandidates,
+      queryTerms: tokenizeOkfRetrievalQuery(query),
+    });
     if (!clarificationAlreadyAsked && okfDiagnostics.metadataClarification) {
       return buildMetadataClarificationResult(
         okfDiagnostics.metadataClarification,
@@ -580,7 +660,7 @@ async function runSingleBundleChatRetrievalCore(
       workspaceId,
     });
 
-    return attachSearchSummary(
+    return withRetrievalTriggerCandidates(await attachSearchSummary(
       buildCombinedRetrievalResult(
         okfResults,
         rag.results,
@@ -594,7 +674,7 @@ async function runSingleBundleChatRetrievalCore(
         effectiveKnowledgeBundleId,
       ),
       input,
-    );
+    ), retrievalTriggerCandidates);
   } catch {
     // A retrieval failure (missing/invalid embedding credentials, budget
     // exceeded, transient provider/db error) must never crash the chat
@@ -683,9 +763,8 @@ export function mergeBundleRetrievalResults(
         )
       : pairs;
   eligiblePairs.sort(compareBundleEvidence);
-  const okfPairs = eligiblePairs
-    .filter((pair) => pair.citation.sourceType === "okf")
-    .slice(0, OKF_TOP_K);
+  const okfPairs = selectGraphEvidencePairs(eligiblePairs
+    .filter((pair) => pair.citation.sourceType === "okf"), request.decision.requiresGraphTraversal ? GRAPH_EVIDENCE_LIMIT : OKF_TOP_K);
   const ragPairs = eligiblePairs
     .filter((pair) => pair.citation.sourceType === "rag")
     .slice(0, RAG_TOP_K);
@@ -695,10 +774,10 @@ export function mergeBundleRetrievalResults(
     ...pair.citation,
     index: index + 1,
   }));
-  const evidence = selectedPairs.map((pair, index) => ({
+  const evidence = pruneGraphEvidenceContext(selectedPairs.map((pair, index) => ({
     ...pair.evidence,
     index: index + 1,
-  }));
+  })));
   const crossBundleConflict = detectCrossBundleConflict(citations);
   const executions = aggregateAgentCalls(
     annotated.flatMap((result) => result.agentExecution?.calls ?? []),
@@ -718,7 +797,7 @@ export function mergeBundleRetrievalResults(
       citations.length === 0
         ? annotated.find((result) => result.metadataClarification)?.metadataClarification
         : undefined,
-    okfEvidenceMode: annotated.some((result) => result.okfEvidenceMode === "graph")
+    okfEvidenceMode: evidence.some((item) => item.graphDerived ?? item.okfEvidenceMode === "graph")
       ? "graph"
       : annotated.some((result) => result.okfEvidenceMode)
         ? "direct"
@@ -738,6 +817,9 @@ export function mergeBundleRetrievalResults(
         status: "not_applicable",
       },
     retrievalError: annotated.every((result) => result.retrievalError),
+    retrievalTriggerCandidates: dedupeRetrievalTriggerCandidates(
+      annotated.flatMap((result) => result.retrievalTriggerCandidates ?? []),
+    ),
     retrievalToolsCalled: [...new Set(annotated.flatMap((result) => result.retrievalToolsCalled))],
     searchSummary: {
       approvedKnowledgeMatches: annotated.reduce(
@@ -771,17 +853,29 @@ export function mergeAdaptiveRetrievalResults(
   evidenceDelta: { approvedOkf: number; citations: number; rawRag: number };
   result: ChatRetrievalResult;
 } {
-  const seen = new Set<string>();
-  const pairs = [...pairCitationsWithEvidence(original), ...pairCitationsWithEvidence(retry)]
-    .filter((pair) => {
-      const key = citationIdentity(pair.citation);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  const okfPairs = pairs
-    .filter((pair) => pair.citation.sourceType === "okf")
-    .slice(0, OKF_TOP_K);
+  const originalPairs = pairCitationsWithEvidence(original);
+  const retryPairs = pairCitationsWithEvidence(retry);
+  const latest = new Map(originalPairs.map((pair) => [citationIdentity(pair.citation), pair]));
+  const changed = new Set<string>();
+  for (const pair of retryPairs) {
+    const key = citationIdentity(pair.citation);
+    const previous = latest.get(key);
+    if (previous && previous.evidence.text !== pair.evidence.text && pair.evidence.okfFilePath) {
+      changed.add(JSON.stringify([pair.evidence.knowledgeBundleId ?? "", pair.evidence.okfFilePath]));
+    }
+    // Keep rank position, but retain the most recently inspected evidence and
+    // newly discovered graph paths rather than discarding the entire retry hit.
+    latest.set(key, pair);
+  }
+  const retried = new Set(retryPairs.map((pair) => citationIdentity(pair.citation)));
+  const pairs = [...latest.values()].map((pair) => {
+    if (retried.has(citationIdentity(pair.citation)) || !pair.evidence.graphPaths?.length) return pair;
+    return { ...pair, evidence: { ...pair.evidence, graphPaths: pair.evidence.graphPaths.filter((path) =>
+      !path.files.some((file) => changed.has(JSON.stringify([pair.evidence.knowledgeBundleId ?? "", file]))),
+    ) } };
+  });
+  const okfPairs = selectGraphEvidencePairs(pairs
+    .filter((pair) => pair.citation.sourceType === "okf"), decision.requiresGraphTraversal ? GRAPH_EVIDENCE_LIMIT : OKF_TOP_K);
   const ragPairs = pairs
     .filter((pair) => pair.citation.sourceType === "rag")
     .slice(0, RAG_TOP_K);
@@ -790,10 +884,10 @@ export function mergeAdaptiveRetrievalResults(
     ...pair.citation,
     index: index + 1,
   }));
-  const evidence = selected.map((pair, index) => ({
+  const evidence = pruneGraphEvidenceContext(selected.map((pair, index) => ({
     ...pair.evidence,
     index: index + 1,
-  }));
+  })));
   const originalKeys = new Set(original.citations.map(citationIdentity));
   const added = citations.filter((citation) => !originalKeys.has(citationIdentity(citation)));
   const approvedOkfAvailable = citations.some(
@@ -821,9 +915,9 @@ export function mergeAdaptiveRetrievalResults(
       crossBundleConflict: detectCrossBundleConflict(citations),
       evidence,
       okfEvidenceMode:
-        retry.okfEvidenceMode === "graph" || original.okfEvidenceMode === "graph"
+        evidence.some((item) => item.graphDerived ?? item.okfEvidenceMode === "graph")
           ? "graph"
-          : retry.okfEvidenceMode ?? original.okfEvidenceMode,
+          : approvedOkfAvailable ? "direct" : undefined,
       okfMatchMode:
         retry.okfMatchMode === "lexical" || original.okfMatchMode === "lexical"
           ? "lexical"
@@ -841,6 +935,10 @@ export function mergeAdaptiveRetrievalResults(
           ...retry.retrievalToolsCalled,
         ]),
       ],
+      retrievalTriggerCandidates: dedupeRetrievalTriggerCandidates([
+        ...(original.retrievalTriggerCandidates ?? []),
+        ...(retry.retrievalTriggerCandidates ?? []),
+      ]),
       searchSummary: retry.searchSummary ?? original.searchSummary,
       sourcesRead: [...new Set([...original.sourcesRead, ...retry.sourcesRead])],
     },
@@ -1078,6 +1176,25 @@ function normalizeOkfDiagnostics(
   return Array.isArray(result)
     ? { nearMissCandidates: [], qualifiedEvidence: result }
     : result;
+}
+
+function withRetrievalTriggerCandidates(
+  result: ChatRetrievalResult,
+  candidates: RetrievalTriggerCandidate[],
+): ChatRetrievalResult {
+  return candidates.length > 0
+    ? { ...result, retrievalTriggerCandidates: candidates }
+    : result;
+}
+
+function dedupeRetrievalTriggerCandidates(candidates: RetrievalTriggerCandidate[]) {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = `${candidate.knowledgeBundleId}:${candidate.filePath}:${candidate.contentHash}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function buildMetadataClarificationResult(

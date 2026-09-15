@@ -1,13 +1,19 @@
 import { Output, generateText } from "ai";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { ExtractedPageRecord } from "./document-vault.ts";
 import { getSdkModel, type LlmProviderId } from "./llm-providers.ts";
 
 const DEFAULT_WINDOW_TOKEN_TARGET = 18_000;
-const DEFAULT_WINDOW_PAGE_LIMIT = 20;
+const DEFAULT_WINDOW_PAGE_LIMIT = 12;
+const DEFAULT_WINDOW_OVERLAP_PAGES = 2;
 const WINDOW_MAX_OUTPUT_TOKENS = 4_000;
 const CONSOLIDATION_MAX_OUTPUT_TOKENS = 16_000;
+export const CONSOLIDATION_INPUT_TOKEN_BUDGET = 80_000;
+export const CONSOLIDATION_SAFE_OUTPUT_TOKEN_BUDGET = 12_000;
+const CONSOLIDATION_REDUCTION_TOKEN_TARGET = 60_000;
+const MAX_CONSOLIDATION_REDUCTION_ROUNDS = 4;
 const CONTINUATION_BOUNDARY_LINE_LIMIT = 8;
 export const TOPIC_CONTINUATION_RESOLVER_VERSION = "explicit-continuation-v1";
 
@@ -68,6 +74,8 @@ export type TopicDiscoveryProvider = {
 
 export type TopicDiscoveryAuditEntry = {
   errorMessage: string | null;
+  inputTokens: number;
+  outputTokens: number;
   promptSent: string;
   rawResponse: string;
   stage: TopicDiscoveryStage;
@@ -90,8 +98,19 @@ export function getTopicDiscoveryMaxOutputTokens(stage: TopicDiscoveryStage) {
 }
 
 export async function discoverDocumentTopics(input: {
+  allowedTopicTypes?: string[];
   documentTitle: string;
   onWindowComplete?: (completed: number, total: number) => Promise<void> | void;
+  loadWindowResult?: (input: { contentHash: string; ordinal: number }) => Promise<unknown | null>;
+  loadConsolidationResult?: (input: { contentHash: string; prompt: string }) => Promise<unknown | null>;
+  saveWindowResult?: (input: {
+    candidates: DiscoveredTopic[];
+    contentHash: string;
+    inputTokens: number;
+    ordinal: number;
+    pageEnd: number;
+    pageStart: number;
+  }) => Promise<void>;
   pages: ExtractedPageRecord[];
   provider: TopicDiscoveryProvider;
   tokenTarget?: number;
@@ -104,13 +123,29 @@ export async function discoverDocumentTopics(input: {
   const proposals: DiscoveredTopic[] = [];
 
   for (const [index, window] of windows.entries()) {
-    const prompt = buildWindowPrompt(input.documentTitle, window, index, windows.length);
+    const contentHash = createHash("sha256").update(window.map((page) => `${page.pageNumber}:${page.text}`).join("\n")).digest("hex");
+    const prompt = buildWindowPrompt(input.documentTitle, window, index, windows.length, input.allowedTopicTypes);
     try {
-      const result = await input.provider.discover({ prompt, stage: "window" });
+      const cached = await input.loadWindowResult?.({ contentHash, ordinal: index });
+      const result = cached
+        ? { output: cached, rawResponse: "durable_window_cache" }
+        : await input.provider.discover({ prompt, stage: "window" });
       const parsed = candidateListSchema.parse(result.output);
       proposals.push(...parsed.topics);
+      if (!cached) {
+        await input.saveWindowResult?.({
+          candidates: parsed.topics,
+          contentHash,
+          inputTokens: estimateTokens(window.map((page) => page.text).join("\n")),
+          ordinal: index,
+          pageEnd: window.at(-1)!.pageNumber,
+          pageStart: window[0]!.pageNumber,
+        });
+      }
       audits.push({
         errorMessage: null,
+        inputTokens: estimateTokens(prompt),
+        outputTokens: cached ? 0 : estimateTokens(result.rawResponse),
         promptSent: prompt,
         rawResponse: result.rawResponse,
         stage: "window",
@@ -121,6 +156,8 @@ export async function discoverDocumentTopics(input: {
     } catch (error) {
       audits.push({
         errorMessage: normalizeError(error),
+        inputTokens: estimateTokens(prompt),
+        outputTokens: 0,
         promptSent: prompt,
         rawResponse: error instanceof Error ? error.message : String(error),
         stage: "window",
@@ -131,30 +168,24 @@ export async function discoverDocumentTopics(input: {
     }
   }
 
-  const consolidationPrompt = buildConsolidationPrompt(
-    input.documentTitle,
-    pages,
-    proposals,
-  );
   try {
-    const result = await input.provider.discover({
-      prompt: consolidationPrompt,
-      stage: "consolidation",
+    const parsed = await consolidateTopicProposals({
+      audits,
+      documentTitle: input.documentTitle,
+      loadConsolidationResult: input.loadConsolidationResult,
+      pages,
+      proposals,
+      provider: input.provider,
     });
-    const parsed = candidateListSchema.parse(result.output);
     const continuationResult = resolveExplicitTopicContinuations({
       pages,
       topics: parsed.topics,
     });
-    const topics = validateDiscoveredTopics(continuationResult.topics, pages);
-    audits.push({
-      errorMessage: null,
-      promptSent: consolidationPrompt,
-      rawResponse: result.rawResponse,
-      stage: "consolidation",
-      succeeded: true,
-      windowOrdinal: null,
-    });
+    const topics = validateDiscoveredTopics(
+      continuationResult.topics,
+      pages,
+      input.allowedTopicTypes,
+    );
     return {
       audits,
       continuationAmbiguities: continuationResult.ambiguities,
@@ -163,15 +194,11 @@ export async function discoverDocumentTopics(input: {
       totalWindows: windows.length,
     };
   } catch (error) {
-    audits.push({
-      errorMessage: normalizeError(error),
-      promptSent: consolidationPrompt,
-      rawResponse: error instanceof Error ? error.message : String(error),
-      stage: "consolidation",
-      succeeded: false,
-      windowOrdinal: null,
-    });
-    throw new TopicDiscoveryError("topic_discovery_consolidation_failed", audits);
+    throw new TopicDiscoveryError(
+      "topic_discovery_consolidation_failed",
+      audits,
+      normalizeError(error),
+    );
   }
 }
 
@@ -213,7 +240,7 @@ export function buildPageWindows(
       (tokens + pageTokens > tokenTarget || current.length >= DEFAULT_WINDOW_PAGE_LIMIT)
     ) {
       windows.push(current);
-      current = [current.at(-1)!, page];
+      current = [...current.slice(-DEFAULT_WINDOW_OVERLAP_PAGES), page];
       tokens = estimateTokens(current.map((item) => item.text).join("\n"));
     } else {
       current.push(page);
@@ -227,6 +254,7 @@ export function buildPageWindows(
 export function validateDiscoveredTopics<Topic extends DiscoveredTopic>(
   topics: Topic[],
   pages: ExtractedPageRecord[],
+  allowedTopicTypes?: string[],
 ): Topic[] {
   const validPages = new Set(pages.map((page) => page.pageNumber));
   const titles = new Set<string>();
@@ -250,7 +278,7 @@ export function validateDiscoveredTopics<Topic extends DiscoveredTopic>(
       rationale: topic.rationale.trim(),
       summary,
       title,
-      topicType: normalizeTopicType(topic.topicType),
+      topicType: normalizeDiscoveredTopicType(topic.topicType, allowedTopicTypes),
     });
   }
   if (accepted.length === 0) throw new Error("topic_discovery_no_valid_topics");
@@ -348,10 +376,12 @@ export function resolveExplicitTopicContinuations<Topic extends DiscoveredTopic>
 
 export class TopicDiscoveryError extends Error {
   readonly audits: TopicDiscoveryAuditEntry[];
+  readonly causeMessage: string;
 
-  constructor(message: string, audits: TopicDiscoveryAuditEntry[]) {
+  constructor(message: string, audits: TopicDiscoveryAuditEntry[], causeMessage = message) {
     super(message);
     this.audits = audits;
+    this.causeMessage = causeMessage;
   }
 }
 
@@ -378,14 +408,18 @@ function preparePages(pages: ExtractedPageRecord[]) {
     .filter((page) => page.text.length > 0);
 }
 
-function buildWindowPrompt(title: string, pages: ExtractedPageRecord[], index: number, total: number) {
+function buildWindowPrompt(title: string, pages: ExtractedPageRecord[], index: number, total: number, allowedTopicTypes?: string[]) {
   return [
     `Document: ${title}`,
     `Window ${index + 1} of ${total}.`,
     "Identify meaningful section-level topics. Merge continuation pages within this window.",
     "Create concise noun-phrase or procedure titles and brief factual summaries.",
+    "Exclude document-administration material such as tables of contents, effective-page lists, and revision histories.",
     "Never use page numbers, fractions, bullets, warnings, sentence fragments, or isolated codes as titles.",
     "Return source page numbers, evidence headings, rationale, topic type, and low/medium/high confidence.",
+    ...(allowedTopicTypes?.length
+      ? [`Choose topic type from this vocabulary only: ${[...allowedTopicTypes].sort().join(", ")}.`]
+      : []),
     "Use only the supplied text.",
     ...pages.map((page) => `\n--- PAGE ${page.pageNumber} ---\n${page.text}`),
   ].join("\n");
@@ -400,6 +434,7 @@ function buildConsolidationPrompt(title: string, pages: ExtractedPageRecord[], p
     `Document: ${title}`,
     "Consolidate the candidate topics into the final document-wide section-level topic list.",
     "Merge duplicates and sections continued across pages. Keep genuinely distinct subjects separate.",
+    "Remove document-administration material such as tables of contents, effective-page lists, and revision histories.",
     "Correct fragmented titles. Preserve exact identifiers only when they are part of a meaningful title.",
     "Every fact and source page must be supported by the supplied outline/candidates.",
     "Document outline:",
@@ -407,6 +442,213 @@ function buildConsolidationPrompt(title: string, pages: ExtractedPageRecord[], p
     "\nWindow candidates:",
     JSON.stringify(proposals),
   ].join("\n");
+}
+
+function buildReducedConsolidationPrompt(
+  title: string,
+  proposals: DiscoveredTopic[],
+  context: { batch?: number; batches?: number; round?: number } = {},
+) {
+  const isIntermediate = context.batch !== undefined && context.batches !== undefined;
+  return [
+    `Document: ${title}`,
+    isIntermediate
+      ? `Intermediate consolidation round ${context.round ?? 1}, batch ${context.batch! + 1} of ${context.batches}.`
+      : "Final consolidation of grounded intermediate candidates.",
+    "Consolidate the supplied candidate topics into a flat section-level topic list.",
+    "Merge duplicates and continued sections while keeping genuinely distinct subjects separate.",
+    "Preserve supported source page numbers and evidence headings. Do not add facts, pages, or identifiers.",
+    "Remove document-administration material such as tables of contents, effective-page lists, and revision histories.",
+    "Correct fragmented titles and retain concise factual summaries.",
+    "Grounded candidates:",
+    JSON.stringify(proposals),
+  ].join("\n");
+}
+
+async function consolidateTopicProposals(input: {
+  audits: TopicDiscoveryAuditEntry[];
+  documentTitle: string;
+  loadConsolidationResult?: (input: { contentHash: string; prompt: string }) => Promise<unknown | null>;
+  pages: ExtractedPageRecord[];
+  proposals: DiscoveredTopic[];
+  provider: TopicDiscoveryProvider;
+}) {
+  const directPrompt = buildConsolidationPrompt(
+    input.documentTitle,
+    input.pages,
+    input.proposals,
+  );
+  if (
+    estimateTokens(directPrompt) <= CONSOLIDATION_INPUT_TOKEN_BUDGET &&
+    estimateSerializedTopics(input.proposals) <= CONSOLIDATION_SAFE_OUTPUT_TOKEN_BUDGET
+  ) {
+    return callTopicConsolidation(
+      input.provider,
+      directPrompt,
+      input.audits,
+      input.loadConsolidationResult,
+    );
+  }
+
+  let reduced = sortTopicsByEvidence(input.proposals);
+  for (let round = 1; round <= MAX_CONSOLIDATION_REDUCTION_ROUNDS; round += 1) {
+    const batches = partitionConsolidationCandidates(
+      input.documentTitle,
+      reduced,
+      round,
+    );
+    const next: DiscoveredTopic[] = [];
+    for (const [batch, candidates] of batches.entries()) {
+      const prompt = buildReducedConsolidationPrompt(
+        input.documentTitle,
+        candidates,
+        { batch, batches: batches.length, round },
+      );
+      next.push(...(await callTopicConsolidation(
+        input.provider,
+        prompt,
+        input.audits,
+        input.loadConsolidationResult,
+      )).topics);
+    }
+    reduced = mergeExactDuplicateTopics(next);
+    const finalPrompt = buildReducedConsolidationPrompt(input.documentTitle, reduced);
+    if (estimateSerializedTopics(reduced) > CONSOLIDATION_SAFE_OUTPUT_TOKEN_BUDGET) {
+      return { topics: reduced };
+    }
+    if (estimateTokens(finalPrompt) <= CONSOLIDATION_INPUT_TOKEN_BUDGET) {
+      return callTopicConsolidation(
+        input.provider,
+        finalPrompt,
+        input.audits,
+        input.loadConsolidationResult,
+      );
+    }
+  }
+
+  throw new Error("topic_discovery_consolidation_budget_exceeded");
+}
+
+async function callTopicConsolidation(
+  provider: TopicDiscoveryProvider,
+  prompt: string,
+  audits: TopicDiscoveryAuditEntry[],
+  loadConsolidationResult?: (input: { contentHash: string; prompt: string }) => Promise<unknown | null>,
+) {
+  const inputTokens = estimateTokens(prompt);
+  if (inputTokens > CONSOLIDATION_INPUT_TOKEN_BUDGET) {
+    throw new Error("topic_discovery_consolidation_budget_exceeded");
+  }
+  try {
+    const contentHash = createHash("sha256").update(prompt).digest("hex");
+    const cached = await loadConsolidationResult?.({ contentHash, prompt });
+    if (cached) {
+      const parsed = candidateListSchema.parse(cached);
+      const rawResponse = JSON.stringify(parsed);
+      audits.push({
+        errorMessage: null,
+        inputTokens,
+        outputTokens: estimateTokens(rawResponse),
+        promptSent: prompt,
+        rawResponse,
+        stage: "consolidation",
+        succeeded: true,
+        windowOrdinal: null,
+      });
+      return parsed;
+    }
+    const result = await provider.discover({ prompt, stage: "consolidation" });
+    const parsed = candidateListSchema.parse(result.output);
+    audits.push({
+      errorMessage: null,
+      inputTokens,
+      outputTokens: estimateTokens(result.rawResponse),
+      promptSent: prompt,
+      rawResponse: result.rawResponse,
+      stage: "consolidation",
+      succeeded: true,
+      windowOrdinal: null,
+    });
+    return parsed;
+  } catch (error) {
+    audits.push({
+      errorMessage: normalizeError(error),
+      inputTokens,
+      outputTokens: 0,
+      promptSent: prompt,
+      rawResponse: error instanceof Error ? error.message : String(error),
+      stage: "consolidation",
+      succeeded: false,
+      windowOrdinal: null,
+    });
+    throw error;
+  }
+}
+
+function partitionConsolidationCandidates(
+  title: string,
+  proposals: DiscoveredTopic[],
+  round: number,
+) {
+  const batches: DiscoveredTopic[][] = [];
+  let current: DiscoveredTopic[] = [];
+  for (const proposal of proposals) {
+    const candidate = [...current, proposal];
+    const prompt = buildReducedConsolidationPrompt(title, candidate, {
+      batch: batches.length,
+      batches: 1,
+      round,
+    });
+    if (
+      current.length > 0 &&
+      estimateTokens(prompt) > CONSOLIDATION_REDUCTION_TOKEN_TARGET
+    ) {
+      batches.push(current);
+      current = [proposal];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) batches.push(current);
+  if (batches.length === 0) throw new Error("topic_discovery_no_candidates");
+  return batches;
+}
+
+function sortTopicsByEvidence(topics: DiscoveredTopic[]) {
+  return [...topics].sort((left, right) =>
+    (left.pageNumbers[0] ?? Number.MAX_SAFE_INTEGER) -
+      (right.pageNumbers[0] ?? Number.MAX_SAFE_INTEGER) ||
+    left.title.localeCompare(right.title)
+  );
+}
+
+function mergeExactDuplicateTopics(topics: DiscoveredTopic[]) {
+  const merged = new Map<string, DiscoveredTopic>();
+  for (const topic of sortTopicsByEvidence(topics)) {
+    const key = normalizeTitle(topic.title).toLocaleLowerCase();
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, topic);
+      continue;
+    }
+    merged.set(key, {
+      ...current,
+      confidence: confidenceRank(topic.confidence) > confidenceRank(current.confidence)
+        ? topic.confidence
+        : current.confidence,
+      evidenceHeadings: [...new Set([...current.evidenceHeadings, ...topic.evidenceHeadings])],
+      pageNumbers: uniqueSortedNumbers([...current.pageNumbers, ...topic.pageNumbers]),
+    });
+  }
+  return sortTopicsByEvidence([...merged.values()]);
+}
+
+function estimateSerializedTopics(topics: DiscoveredTopic[]) {
+  return estimateTokens(JSON.stringify({ topics }));
+}
+
+function confidenceRank(value: DiscoveredTopic["confidence"]) {
+  return value === "high" ? 3 : value === "medium" ? 2 : 1;
 }
 
 function findForwardContinuationMarker(text: string): {
@@ -541,12 +783,45 @@ function isJunkTitle(value: string) {
   if (/^\d+(?:[./-]\d+)*$/.test(value)) return true;
   if (/^(?:page|figure|table)\s+\d+/i.test(value)) return true;
   if (/^(?:warning|caution|note)\s*:/i.test(value)) return true;
+  if (isAdministrativeTopicTitle(value)) return true;
   if (/^[a-z]/.test(value) || /[.!?]$/.test(value)) return true;
   return value.split(/\s+/).length > 18;
 }
 
-function normalizeTopicType(value: string) {
+export function isAdministrativeTopicTitle(value: string) {
+  const normalized = value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return /^(?:table of contents|contents|list of effective pages|effective pages list|record of revisions|revision record|(?:manual |document )?revision history)$/.test(normalized);
+}
+
+const TOPIC_TYPE_ALIASES: Record<string, string> = {
+  adjustment_procedure: "procedure",
+  emergency: "condition",
+  emergency_procedure: "procedure",
+  emergency_procedures: "procedure",
+  flight_control_emergency: "condition",
+  installation_procedure: "procedure",
+  landing_procedure: "procedure",
+  maintenance_procedure: "procedure",
+  non_normal_checklist: "procedure",
+  non_normal_procedures: "procedure",
+  normal_procedures: "procedure",
+  operating_instructions: "procedure",
+  operational_procedure: "procedure",
+  procedural: "procedure",
+  procedures: "procedure",
+  system_overview: "system",
+  troubleshooting_procedure: "procedure",
+};
+
+export function normalizeDiscoveredTopicType(value: string, allowedTopicTypes?: string[]) {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_");
+  const allowed = new Set(allowedTopicTypes ?? []);
+  if (normalized && (allowed.size === 0 || allowed.has(normalized))) return normalized;
+  const alias = TOPIC_TYPE_ALIASES[normalized];
+  if (alias && (allowed.size === 0 || allowed.has(alias))) return alias;
+  if (allowed.has("concept")) return "concept";
+  if (allowed.has("system_topic")) return "system_topic";
+  if (allowed.size > 0) return [...allowed].sort()[0]!;
   return normalized || "system_topic";
 }
 

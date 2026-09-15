@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { requireAuthWorkspaceContext } from "@/lib/auth-workspace";
-import { getDefaultKnowledgeBundle } from "@/lib/knowledge-bundles";
+import { resolveActiveKnowledgeBundle } from "@/lib/active-knowledge-bundle";
 
 export const dynamic = "force-dynamic";
 
-export default async function LegacyKnowledgeBundlePage() {
+export default async function LegacyKnowledgeBundlePage({ searchParams }: { searchParams: Promise<{ file?: string }> }) {
   const context = await requireAuthWorkspaceContext();
-  const bundle = await getDefaultKnowledgeBundle(context);
-  if (!bundle) redirect("/knowledge");
-  redirect(`/knowledge/${bundle.id}`);
+  const [{ activeBundle }, query] = await Promise.all([resolveActiveKnowledgeBundle(context), searchParams]);
+  if (!activeBundle) redirect("/knowledge");
+  const file = query.file ? `?file=${encodeURIComponent(query.file)}` : "";
+  redirect(`/knowledge/${activeBundle.id}/browse${file}`);
 }

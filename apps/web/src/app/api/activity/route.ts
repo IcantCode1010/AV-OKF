@@ -1,0 +1,2 @@
+import {requireAuthWorkspaceContext} from "@/lib/auth-workspace";import {getActivity} from "@/lib/activity";
+export async function GET(request:Request){try{const context=await requireAuthWorkspaceContext();return Response.json(await getActivity(context,new URL(request.url).searchParams.get("documentId")??undefined),{headers:{"Cache-Control":"private, no-store"}});}catch{return Response.json({error:"Activity temporarily unavailable"},{status:503});}}

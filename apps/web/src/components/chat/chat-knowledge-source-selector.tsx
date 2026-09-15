@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import { BookOpenCheck, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { updateChatKnowledgeSourcesAction } from "@/app/(app)/chat/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +33,7 @@ export function ChatKnowledgeSourceSelector({
 }) {
   const router = useRouter();
   const [isSaving, startSaving] = useTransition();
+  const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [draftIds, setDraftIds] = useState<string[] | null>(null);
   const effectiveIds = draftIds ?? selectedBundleIds;
@@ -52,7 +52,7 @@ export function ChatKnowledgeSourceSelector({
 
   function toggleBundle(bundleId: string, checked: boolean) {
     if (checked) {
-      if (effectiveIds.length >= 10 || effectiveIds.includes(bundleId)) return;
+      if (effectiveIds.includes(bundleId)) return;
       setDraftIds((current) => [...(current ?? selectedBundleIds), bundleId]);
       return;
     }
@@ -63,19 +63,28 @@ export function ChatKnowledgeSourceSelector({
   }
 
   function save() {
-    if (effectiveIds.length < 1 || effectiveIds.length > 10 || !hasChanges) return;
-    const formData = new FormData();
-    formData.set("sessionId", sessionId);
-    formData.set("knowledgeBundleIds", JSON.stringify(effectiveIds));
+    if (effectiveIds.length < 1 || !hasChanges) return;
     startSaving(async () => {
-      await updateChatKnowledgeSourcesAction(formData);
+      setError("");
+      try {
+      const response = await fetch(`/api/chat/${sessionId}/scope`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collectionIds: effectiveIds }),
+      });
+      if (!response.ok) {
+        setError("Unable to update the source scope. Try again.");
+        return;
+      }
       setDraftIds(null);
       router.refresh();
+      } catch { setError("Unable to update the source scope. Check your connection and try again."); }
     });
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border bg-background/60 px-4 py-2">
+      {error && <p role="alert">{error}</p>}
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <BookOpenCheck className="h-3.5 w-3.5" />
         Knowledge sources
@@ -109,7 +118,7 @@ export function ChatKnowledgeSourceSelector({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuLabel>Search up to 10 bundles</DropdownMenuLabel>
+          <DropdownMenuLabel>Search accessible collections</DropdownMenuLabel>
           <div className="px-2 pb-2">
             <input
               aria-label="Search knowledge bundles"
@@ -127,9 +136,11 @@ export function ChatKnowledgeSourceSelector({
               return (
                 <DropdownMenuCheckboxItem
                   checked={checked}
-                  disabled={!checked && effectiveIds.length >= 10}
+                  disabled={locked}
                   key={bundle.id}
-                  onCheckedChange={(next) => toggleBundle(bundle.id, next === true)}
+                  onCheckedChange={(next) =>
+                    toggleBundle(bundle.id, next === true)
+                  }
                   onSelect={(event) => event.preventDefault()}
                 >
                   {bundle.name}
@@ -146,7 +157,11 @@ export function ChatKnowledgeSourceSelector({
       </DropdownMenu>
       {hasChanges ? (
         <>
-        <Button disabled={locked || effectiveIds.length === 0} onClick={save} size="sm">
+          <Button
+            disabled={locked || effectiveIds.length === 0}
+            onClick={save}
+            size="sm"
+          >
             {isSaving ? "Saving..." : "Apply"}
           </Button>
           <Button
@@ -160,7 +175,7 @@ export function ChatKnowledgeSourceSelector({
         </>
       ) : null}
       <span className="ml-auto text-xs text-muted-foreground">
-        {effectiveIds.length}/10 selected
+        {effectiveIds.length} selected
       </span>
     </div>
   );

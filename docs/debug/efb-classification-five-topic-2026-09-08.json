@@ -1,0 +1,37 @@
+[
+  {
+    "id": "bleed-trip-off",
+    "reviewedBy": "codex-evidence-review",
+    "expected": {"audiences":["pilot"],"aircraftFamily":"737-ng","aircraftTypeIds":["b738"],"ataChapter":null,"qrhTargetId":"air-systems"},
+    "predicted": {"audiences":["pilot"],"aircraftFamily":"737-ng","aircraftTypeIds":["b738"],"ataChapter":null,"qrhTargetId":"air-systems"},
+    "status": "ready"
+  },
+  {
+    "id": "trailing-edge-flap-disagree",
+    "reviewedBy": "codex-evidence-review",
+    "expected": {"audiences":["pilot"],"aircraftFamily":"737-ng","aircraftTypeIds":["b738"],"ataChapter":null,"qrhTargetId":"flight-controls"},
+    "predicted": {"audiences":["pilot"],"aircraftFamily":"737-ng","aircraftTypeIds":["b738"],"ataChapter":null,"qrhTargetId":"flight-controls"},
+    "status": "ready"
+  },
+  {
+    "id": "leading-edge-autoslat-system",
+    "reviewedBy": "codex-evidence-review",
+    "expected": {"audiences":["maintenance"],"aircraftFamily":"737-ng","aircraftTypeIds":[],"ataChapter":"27","qrhTargetId":null},
+    "predicted": {"audiences":["maintenance"],"aircraftFamily":"737-ng","aircraftTypeIds":[],"ataChapter":"27","qrhTargetId":null},
+    "status": "needs_review"
+  },
+  {
+    "id": "leading-edge-flaps-and-slats",
+    "reviewedBy": "codex-evidence-review",
+    "expected": {"audiences":["maintenance"],"aircraftFamily":"737-ng","aircraftTypeIds":[],"ataChapter":"27","qrhTargetId":null},
+    "predicted": {"audiences":["pilot","maintenance"],"aircraftFamily":"737-ng","aircraftTypeIds":[],"ataChapter":"27","qrhTargetId":"flight-controls"},
+    "status": "blocked"
+  },
+  {
+    "id": "leading-edge-flap-and-slat-control-system",
+    "reviewedBy": "codex-evidence-review",
+    "expected": {"audiences":["maintenance"],"aircraftFamily":"737-ng","aircraftTypeIds":[],"ataChapter":"27","qrhTargetId":null},
+    "predicted": {"audiences":["pilot","maintenance"],"aircraftFamily":"737-ng","aircraftTypeIds":[],"ataChapter":"27","qrhTargetId":"flight-controls"},
+    "status": "blocked"
+  }
+]

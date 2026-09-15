@@ -10,6 +10,7 @@ export function ChatSidePanelContent({
 }) {
   const citations = latestAssistantMessage?.citations ?? [];
   const trace = latestAssistantMessage?.trace;
+  const relatedEvidence = trace?.relatedEvidence ?? [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -20,7 +21,7 @@ export function ChatSidePanelContent({
         <CardContent className="flex flex-col gap-2">
           {citations.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              No sources for this reply.
+              No cited sources for this reply.
             </p>
           ) : (
             citations.map((citation) => {
@@ -67,13 +68,29 @@ export function ChatSidePanelContent({
               );
             })
           )}
+          {relatedEvidence.length > 0 ? (
+            <details className="mt-3 border-t border-border pt-3">
+              <summary className="mb-2 cursor-pointer text-xs font-medium text-muted-foreground">Related, not used</summary>
+              <div className="space-y-2">
+                {relatedEvidence.map((evidence) => (
+                  <div
+                    className="rounded-lg border border-border/70 p-2 text-xs"
+                    key={`${evidence.rank}-${evidence.documentTitle}`}
+                  >
+                    <div className="font-medium">{evidence.documentTitle}</div>
+                    <div className="mt-1 text-muted-foreground">
+                      Retrieved as a related result, not cited by the answer.
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Trace</CardTitle>
-        </CardHeader>
+      <details className="rounded-lg border border-border p-4">
+        <summary className="cursor-pointer text-sm font-medium">How this answer was produced</summary>
         <CardContent className="space-y-3">
           {trace ? (
             <>
@@ -215,7 +232,7 @@ export function ChatSidePanelContent({
             </p>
           )}
         </CardContent>
-      </Card>
+      </details>
     </div>
   );
 }

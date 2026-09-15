@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { parseDocument } from "yaml";
 
 export async function getAllowedRelations(
   manifestPath = getDefaultManifestPath(),
@@ -7,26 +8,24 @@ export async function getAllowedRelations(
     /*turbopackIgnore: true*/ manifestPath,
     "utf8",
   );
-  const lines = manifest.split(/\r?\n/);
-  const relationsIndex = lines.findIndex((line) => line.trim() === "relations:");
-  const allowedIndex = lines.findIndex(
-    (line, index) => index > relationsIndex && line.trim() === "allowed:",
-  );
-  const allowed: string[] = [];
-
-  for (const line of lines.slice(allowedIndex + 1)) {
-    if (!line.startsWith("  - ")) {
-      break;
-    }
-
-    allowed.push(line.trim().slice(2).trim());
-  }
-
-  if (relationsIndex === -1 || allowedIndex === -1 || allowed.length === 0) {
+  const document = parseDocument(manifest, {
+    strict: true,
+    uniqueKeys: true,
+  });
+  if (document.errors.length > 0) throw new Error("invalid_okf_manifest");
+  const value = document.toJS({ maxAliasCount: 0 }) as {
+    relations?: { allowed?: unknown };
+  };
+  const allowed = value.relations?.allowed;
+  if (
+    !Array.isArray(allowed) ||
+    allowed.length === 0 ||
+    allowed.some((relation) => typeof relation !== "string" || relation.trim() === "")
+  ) {
     throw new Error("missing_allowed_relations");
   }
 
-  return allowed;
+  return allowed.map((relation) => relation.trim());
 }
 
 function getDefaultManifestPath(): string {

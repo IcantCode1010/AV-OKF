@@ -107,13 +107,13 @@ Pass criteria:
 3. Open `/knowledge`.
 4. Open the bundle explorer.
 5. Confirm the exported topic appears under System topics.
-6. Open `index.md`, `source_manifest.md`, and `log.md`.
+6. Open `index.md`, the generated concept under `references/sources/`, and `log.md`.
 
 Pass criteria:
 
 - Export fails clearly when required metadata is missing.
 - Exported file appears in the bundle.
-- `index.md`, `source_manifest.md`, and `log.md` are updated.
+- `index.md`, the source-reference concept, and `log.md` are updated.
 - The exported topic uses the actual persisted `exportedFilePath` for later lifecycle actions.
 
 ### Flow 5: RAG Indexing And Search
@@ -182,7 +182,7 @@ During testing, record whether each event occurs:
 - Topic edits persisted.
 - Enrichment audit row written.
 - OKF export file written.
-- `index.md`, `source_manifest.md`, and `log.md` updated.
+- `index.md`, the source-reference concept, and `log.md` updated.
 - RAG indexing job completed or failed.
 - Chat message trace stores route, retrieval tools, answer mode, and evidence profile.
 - Document soft-delete records metadata and deactivates raw RAG.
@@ -224,4 +224,3 @@ The end-to-end profile passes when:
 - Source-document soft-delete disables raw RAG while preserving OKF bundle files.
 - OKF bundle lifecycle deletion removes selected OKF files from trusted chat retrieval.
 - No page shows `Something went wrong` during the happy path.
-

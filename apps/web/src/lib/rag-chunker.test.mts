@@ -23,11 +23,74 @@ test("RAG chunk strategy registry names the contextual paragraph chunker", () =>
   assert.deepEqual(RAG_CHUNK_STRATEGIES, [
     {
       description:
+        "Keeps detected section headings as hard chunk boundaries and embeds deterministic document, section, and page context while preserving clean source citations.",
+      id: "section-context-v3",
+      label: "Section-aware + context (v3)",
+    },
+    {
+      description:
         "Splits extracted page text into paragraph units and embeds deterministic document, section, and page context while preserving clean source citations.",
       id: "paragraph-context-v2",
       label: "Paragraph + context (v2)",
     },
   ]);
+});
+
+test("section-aware chunking never packs two detected sections together", () => {
+  const chunks = chunkExtractedPages({
+    documentId: "doc_sections",
+    documentTitle: "Operations Manual",
+    indexJobId: "job_sections",
+    indexVersion: 1,
+    maxTokens: 120,
+    overlapTokens: 10,
+    pages: [{
+      charCount: 300,
+      imageCount: 0,
+      pageNumber: 1,
+      tables: [],
+      text: "FLIGHT CONTROLS\n\nThe control system moves the primary surfaces.\n\nHYDRAULIC POWER\n\nThe hydraulic system supplies operating pressure.",
+    }],
+    targetTokens: 100,
+    tokenCounter: whitespaceTokenCounter,
+    workspaceId: "wrk_1",
+  });
+
+  assert.equal(chunks.length, 2);
+  assert.deepEqual(chunks.map((chunk) => chunk.headingPath), [
+    ["FLIGHT CONTROLS"],
+    ["HYDRAULIC POWER"],
+  ]);
+  assert.equal(chunks[0]?.text.includes("hydraulic system"), false);
+  assert.equal(chunks[1]?.embeddingText.includes("Section: HYDRAULIC POWER"), true);
+});
+
+test("paragraph-context-v2 remains distinct from section-aware chunking", () => {
+  const base = {
+    documentId: "doc_strategy",
+    documentTitle: "Strategy Manual",
+    indexJobId: "job_strategy",
+    indexVersion: 1,
+    maxTokens: 200,
+    overlapTokens: 0,
+    pages: [{
+      charCount: 80,
+      imageCount: 0,
+      pageNumber: 1,
+      tables: [],
+      text: "FIRST SECTION\n\nA short first section.\n\nSECOND SECTION\n\nA short second section.",
+    }],
+    targetTokens: 180,
+    tokenCounter: whitespaceTokenCounter,
+    workspaceId: "wrk_strategy",
+  };
+
+  const sectionChunks = chunkExtractedPages({ ...base, chunkingStrategyId: "section-context-v3" });
+  const paragraphChunks = chunkExtractedPages({ ...base, chunkingStrategyId: "paragraph-context-v2" });
+
+  assert.ok(sectionChunks.length > paragraphChunks.length);
+  assert.ok(sectionChunks.every((chunk) => chunk.chunkingStrategyId === "section-context-v3"));
+  assert.ok(paragraphChunks.every((chunk) => chunk.chunkingStrategyId === "paragraph-context-v2"));
 });
 
 test("chunkExtractedPages preserves source page coverage", () => {

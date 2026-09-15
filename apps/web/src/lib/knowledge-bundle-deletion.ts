@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 
 import { Prisma } from "@prisma/client";
 import { Queue } from "bullmq";
+import type { OperationProgressSnapshot } from "./operation-progress.ts";
 
 import type { AuthWorkspaceContext } from "./auth-workspace.ts";
 import {
@@ -41,6 +42,10 @@ export type KnowledgeBundleDeletionStatusSnapshot = {
   jobs: KnowledgeBundleDeletionStatus[];
 };
 
+export function buildKnowledgeBundleDeletionProgressSnapshot(snapshot: KnowledgeBundleDeletionStatusSnapshot): OperationProgressSnapshot<KnowledgeBundleDeletionStatusSnapshot> {
+  return { active: snapshot.active, data: snapshot, fingerprint: snapshot.fingerprint, generatedAt: new Date().toISOString(), operations: snapshot.jobs.filter((job) => job.status !== "completed").map((job) => ({ detail: job.errorMessage ?? `${job.documentCount} source documents will remain unassigned.`, id: job.id, kind: "knowledge_bundle_deletion", label: job.bundleName, stage: job.status, status: job.status === "failed" ? "failed" : job.status === "queued" ? "queued" : job.status === "completed" ? "completed" : "running", updatedAt: new Date().toISOString() })) };
+}
+
 type EnqueueDeletion = (payload: KnowledgeBundleDeletionJobPayload) => Promise<void>;
 
 let cachedQueue: Queue<KnowledgeBundleDeletionJobPayload> | null = null;
@@ -59,13 +64,47 @@ export function getKnowledgeBundleDeletionQueue() {
 export async function enqueueKnowledgeBundleDeletionJob(
   payload: KnowledgeBundleDeletionJobPayload,
 ) {
-  await getKnowledgeBundleDeletionQueue().add("delete-bundle", payload, {
-    attempts: 5,
-    backoff: { delay: 2_000, type: "exponential" },
-    jobId: `delete-bundle-${payload.jobId}`,
-    removeOnComplete: true,
-    removeOnFail: false,
+  const queue = getKnowledgeBundleDeletionQueue();
+  const queueJobId = `delete-bundle-${payload.jobId}`;
+  await ensureKnowledgeBundleDeletionQueued({
+    add: async () => {
+      await queue.add("delete-bundle", payload, {
+        attempts: 5,
+        backoff: { delay: 2_000, type: "exponential" },
+        jobId: queueJobId,
+        removeOnComplete: true,
+        removeOnFail: false,
+      });
+    },
+    getExisting: async () => {
+      const existing = await queue.getJob(queueJobId);
+      return existing
+        ? {
+            getState: () => existing.getState(),
+            retry: async () => { await existing.retry("failed"); },
+          }
+        : null;
+    },
   });
+}
+
+export async function ensureKnowledgeBundleDeletionQueued(input: {
+  add: () => Promise<void>;
+  getExisting: () => Promise<{
+    getState: () => Promise<string>;
+    retry: () => Promise<void>;
+  } | null>;
+}) {
+  const existing = await input.getExisting();
+  if (!existing) {
+    await input.add();
+    return "added" as const;
+  }
+  if (await existing.getState() === "failed") {
+    await existing.retry();
+    return "retried" as const;
+  }
+  return "existing" as const;
 }
 
 export async function requestKnowledgeBundleDeletion(input: {

@@ -72,8 +72,9 @@ Body content remains unchanged.
   const updated = replaceRelationsBlock(markdown, [relations[1]!], "2026-07-21T01:00:00.000Z");
   const parsed = parseOkfMarkdown(updated);
 
-  assert.equal(parsed.body, "# Surviving concept\n\nBody content remains unchanged.\n");
-  assert.equal(parsed.frontmatter.updated, "2026-07-21");
+  assert.match(parsed.body, /^# Surviving concept\n\nBody content remains unchanged\./);
+  assert.match(parsed.body, /\[supports\]\(kept\.md\)/);
+  assert.equal(parsed.frontmatter.av_okf_relation_updated_at, "2026-07-21T01:00:00.000Z");
   assert.deepEqual(getFrontmatterRelations(parsed.frontmatter), [relations[1]]);
   assert.doesNotMatch(updated, /deleted\.md/);
 });

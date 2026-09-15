@@ -1,6 +1,9 @@
+import { Prisma } from "@prisma/client";
+
 import { getWorkspaceLlmApiKeyForEnrichment } from "./llm-provider-settings.ts";
 import { getLlmProvider } from "./llm-providers.ts";
 import { getPrisma } from "./prisma.ts";
+import { getKnowledgeBundleByIdentity } from "./knowledge-bundles.ts";
 import {
   createSdkTopicDiscoveryProvider,
   discoverDocumentTopics,
@@ -11,6 +14,7 @@ import {
   estimateTokens,
 } from "./topic-discovery.ts";
 import type { TopicDiscoveryJobPayload } from "./topic-discovery-queue.ts";
+import { buildInheritedAviationOkfMetadata } from "./aviation-document-metadata.ts";
 
 export async function runTopicDiscoveryJob(
   payload: TopicDiscoveryJobPayload,
@@ -28,6 +32,9 @@ export async function runTopicDiscoveryJob(
     },
   });
   if (!job) throw new Error("topic_discovery_job_not_found");
+  if (!["queued", "analyzing", "consolidating"].includes(job.status)) {
+    return { status: job.status as "completed" | "failed", topicsCreated: 0 };
+  }
 
   const document = await db.document.findFirst({
     include: { extractedPages: { orderBy: { pageNumber: "asc" } } },
@@ -42,7 +49,10 @@ export async function runTopicDiscoveryJob(
     return { status: "failed" as const, topicsCreated: 0 };
   }
   const knowledgeBundleId = document.knowledgeBundleId;
-  const bundle = await db.knowledgeBundle.findFirst({ where: { id: knowledgeBundleId, status: "active", workspaceId: payload.workspaceId } });
+  const bundle = await getKnowledgeBundleByIdentity({
+    bundleId: knowledgeBundleId,
+    workspaceId: payload.workspaceId,
+  });
   if (!bundle) {
     await db.topicDiscoveryJob.update({ data: { errorCode: "knowledge_bundle_unavailable", status: "failed" }, where: { id: job.id } });
     return { status: "failed" as const, topicsCreated: 0 };
@@ -88,7 +98,75 @@ export async function runTopicDiscoveryJob(
 
   try {
     const result = await discoverDocumentTopics({
+      allowedTopicTypes: Object.keys(bundle.profile.types),
       documentTitle: document.title,
+      loadConsolidationResult: async ({ prompt }) => {
+        const cached = await db.topicDiscoveryAudit.findFirst({
+          orderBy: { createdAt: "desc" },
+          select: { rawResponse: true },
+          where: {
+            job: { documentId: document.id },
+            promptSent: prompt,
+            stage: "consolidation",
+            succeeded: true,
+          },
+        });
+        if (!cached) return null;
+        try {
+          return JSON.parse(cached.rawResponse) as unknown;
+        } catch {
+          return null;
+        }
+      },
+      loadWindowResult: async ({ contentHash, ordinal }) => {
+        const currentWindow = await db.topicDiscoveryWindow.findUnique({
+          where: { jobId_ordinal: { jobId: job.id, ordinal } },
+        });
+        if (
+          currentWindow?.status === "completed" &&
+          currentWindow.contentHash === contentHash
+        ) {
+          return { topics: currentWindow.candidates };
+        }
+
+        const reusableWindow = await db.topicDiscoveryWindow.findFirst({
+          orderBy: { updatedAt: "desc" },
+          where: {
+            contentHash,
+            documentId: document.id,
+            jobId: { not: job.id },
+            ordinal,
+            status: "completed",
+          },
+        });
+        if (!reusableWindow) return null;
+
+        await db.topicDiscoveryWindow.upsert({
+          create: {
+            attempts: 0,
+            candidates: reusableWindow.candidates as Prisma.InputJsonValue,
+            contentHash,
+            documentId: document.id,
+            inputTokens: reusableWindow.inputTokens,
+            jobId: job.id,
+            ordinal,
+            pageEnd: reusableWindow.pageEnd,
+            pageStart: reusableWindow.pageStart,
+            status: "completed",
+          },
+          update: {
+            candidates: reusableWindow.candidates as Prisma.InputJsonValue,
+            contentHash,
+            errorCode: null,
+            inputTokens: reusableWindow.inputTokens,
+            pageEnd: reusableWindow.pageEnd,
+            pageStart: reusableWindow.pageStart,
+            status: "completed",
+          },
+          where: { jobId_ordinal: { jobId: job.id, ordinal } },
+        });
+        return { topics: reusableWindow.candidates };
+      },
       onWindowComplete: async (completed, total) => {
         await db.topicDiscoveryJob.update({
           data: {
@@ -107,6 +185,33 @@ export async function runTopicDiscoveryJob(
         text: page.text,
       })),
       provider,
+      saveWindowResult: async (window) => {
+        await db.topicDiscoveryWindow.upsert({
+          create: {
+            attempts: 1,
+            candidates: window.candidates,
+            contentHash: window.contentHash,
+            documentId: document.id,
+            inputTokens: window.inputTokens,
+            jobId: job.id,
+            ordinal: window.ordinal,
+            pageEnd: window.pageEnd,
+            pageStart: window.pageStart,
+            status: "completed",
+          },
+          update: {
+            attempts: { increment: 1 },
+            candidates: window.candidates,
+            contentHash: window.contentHash,
+            errorCode: null,
+            inputTokens: window.inputTokens,
+            pageEnd: window.pageEnd,
+            pageStart: window.pageStart,
+            status: "completed",
+          },
+          where: { jobId_ordinal: { jobId: job.id, ordinal: window.ordinal } },
+        });
+      },
     });
     const preserved = await db.topicRecord.findMany({
       select: { sourcePageNumbers: true },
@@ -146,6 +251,7 @@ export async function runTopicDiscoveryJob(
           knowledgeBundleId,
           originalSummary: topic.summary,
           originalTitle: topic.title,
+          okfMetadata: buildInheritedAviationOkfMetadata(document) as Prisma.InputJsonValue,
           pageEnd: Math.max(...topic.pageNumbers),
           pageStart: Math.min(...topic.pageNumbers),
           reviewStatus: topic.confidence === "low" ? "needs_cleanup" : "needs_review",
@@ -192,7 +298,9 @@ export async function runTopicDiscoveryJob(
       await tx.topicDiscoveryJob.update({
         data: {
           errorCode: error instanceof Error ? error.message : "topic_discovery_failed",
-          errorMessage: error instanceof Error ? error.message : String(error),
+          errorMessage: error instanceof TopicDiscoveryError
+            ? error.causeMessage
+            : error instanceof Error ? error.message : String(error),
           status: "failed",
         },
         where: { id: job.id },
@@ -205,8 +313,10 @@ export async function runTopicDiscoveryJob(
 function auditData(jobId: string, provider: TopicDiscoveryProvider, audit: TopicDiscoveryAuditEntry) {
   return {
     errorMessage: audit.errorMessage,
+    inputTokens: audit.inputTokens,
     jobId,
     model: provider.model,
+    outputTokens: audit.outputTokens,
     promptSent: audit.promptSent,
     provider: provider.provider,
     rawResponse: audit.rawResponse,

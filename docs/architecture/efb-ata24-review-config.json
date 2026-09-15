@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0",
+  "documentId": "doc-fb7e292b-d96b-49cd-9cb9-d3f7f62e91ce",
+  "candidates": [
+    {
+      "topicId": "topic-5fe635c6-c893-4510-a6bf-b68f5cecb05d",
+      "entryId": "b738-ata24-electrical-power-overview",
+      "proposedTitle": "Electrical Power System Overview",
+      "displayOrder": 10
+    },
+    {
+      "topicId": "topic-f41cd1ef-be94-4189-88a9-cb0a81995466",
+      "entryId": "b738-ata24-ac-generation-overview",
+      "proposedTitle": "AC Generation Overview",
+      "displayOrder": 20
+    }
+  ]
+}

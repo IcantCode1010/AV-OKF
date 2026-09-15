@@ -9,9 +9,9 @@ test("reranker orders scores, preserves stable ties, and drops relevance zero", 
   const reranked = await rerankRawRagCandidates(
     { candidates, query: "question", workspaceId: "w1" },
     dependencies([
-      { chunkId: "a", relevance: 2, reason: "useful" },
-      { chunkId: "b", relevance: 3, reason: "direct" },
-      { chunkId: "c", relevance: 0, reason: "irrelevant" },
+      { alias: "c1", relevance: 2, reason: "useful" },
+      { alias: "c2", relevance: 3, reason: "direct" },
+      { alias: "c3", relevance: 0, reason: "irrelevant" },
     ]),
   );
   assert.deepEqual(reranked.results.map((row) => row.chunkId), ["b", "a"]);
@@ -22,9 +22,9 @@ test("reranker orders scores, preserves stable ties, and drops relevance zero", 
 test("reranker fails open for unknown, duplicate, or incomplete ids", async () => {
   const candidates = [result("a"), result("b")];
   for (const scores of [
-    [{ chunkId: "a", relevance: 3, reason: "only one" }],
-    [{ chunkId: "a", relevance: 3, reason: "one" }, { chunkId: "a", relevance: 2, reason: "duplicate" }],
-    [{ chunkId: "a", relevance: 3, reason: "one" }, { chunkId: "unknown", relevance: 2, reason: "made up" }],
+    [{ alias: "c1", relevance: 3, reason: "only one" }],
+    [{ alias: "c1", relevance: 3, reason: "one" }, { alias: "c1", relevance: 2, reason: "duplicate" }],
+    [{ alias: "c1", relevance: 3, reason: "one" }, { alias: "unknown", relevance: 2, reason: "made up" }],
   ]) {
     const reranked = await rerankRawRagCandidates(
       { candidates, query: "question", workspaceId: "w1" },
