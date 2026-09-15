@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 type Source = {id:string;title:string;collection:string;pages:number;ready:boolean};
 export function TopicSourcePicker({documents,collections,initialDocuments=[],initialCollections=[]}:{documents:Source[];collections:{id:string;name:string}[];initialDocuments?:string[];initialCollections?:string[]}) {
- const [mode,setMode]=useState(initialCollections.length?"collections":"documents");
+ const [mode,setMode]=useState(initialDocuments.length?"documents":initialCollections.length?"collections":"documents");
  const [query,setQuery]=useState("");
  const [selected,setSelected]=useState<string[]>(initialDocuments);
  const visible=documents.filter(d=>`${d.title} ${d.collection}`.toLowerCase().includes(query.toLowerCase()));

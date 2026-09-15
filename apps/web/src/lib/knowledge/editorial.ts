@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { AuthWorkspaceContext } from "../auth-workspace.ts";
 import { getPrisma } from "../prisma.ts";
-import { fingerprint, type BuilderResult } from "../topic-builder-core.ts";
+import { coherentReferencedEvidenceIds, fingerprint, isCoherentBuilderResult, type BuilderResult } from "../topic-builder-core.ts";
 import { EDITORIAL_POLICY_VERSION } from "./contracts.ts";
 const json = (v: unknown) =>
   JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
@@ -70,19 +70,21 @@ export async function importBuilderRevision(runId: string) {
           id: revisionId,
           articleId: id,
           workspaceId: run.workspaceId,
-          body: json({ ...body, maxWords: run.recipe.maxWords }),
+          body: json(isCoherentBuilderResult(result)
+            ? { ...body, maxWords: run.recipe.maxWords, formatVersion: result.formatVersion, sections: result.sections, evidenceNotes: result.evidenceNotes, applicabilityAudit: result.applicabilityAudit, differences: result.sections.differences, excludedEvidence: result.excludedEvidence }
+            : { ...body, maxWords: run.recipe.maxWords }),
           evidence: json(
-            result.evidence.filter((e) =>
-              new Set([
+            result.evidence.filter((e) => isCoherentBuilderResult(result)
+              ? new Set(coherentReferencedEvidenceIds(result)).has(e.id)
+              : new Set([
                 ...body.evidenceIds,
                 ...body.keyPoints.flatMap((p) => p.evidenceIds),
                 ...body.details.flatMap((p) => p.evidenceIds),
                 ...body.relationships.flatMap((p) => p.evidenceIds),
-              ]).has(e.id),
-            ),
+              ]).has(e.id)),
           ),
           sourceFingerprint: run.fingerprint,
-          policyVersion: EDITORIAL_POLICY_VERSION,
+          policyVersion: isCoherentBuilderResult(result) ? result.formatVersion : EDITORIAL_POLICY_VERSION,
           ...(approval ? { approval: json(approval) } : {}),
         },
         update: approval ? { approval: json(approval) } : {},

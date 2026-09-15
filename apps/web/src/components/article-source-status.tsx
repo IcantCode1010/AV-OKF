@@ -1,6 +1,7 @@
 import type { AuthWorkspaceContext } from "@/lib/auth-workspace";
 import { assertArticleSourcesCurrent } from "@/lib/knowledge/editorial";
 import { getBuilderCorpus } from "@/lib/topic-builder";
+import { getPrisma } from "@/lib/prisma";
 export async function ArticleSourceStatus({
   context,
   revisionId,
@@ -24,11 +25,13 @@ export async function ArticleSourceStatus({
 }
 export async function RecipeSourceStatus({
   workspaceId,
+  recipeId,
   collectionIds,
   documentIds,
   fingerprint,
 }: {
   workspaceId: string;
+  recipeId: string;
   collectionIds: string[];
   documentIds: string[];
   fingerprint?: string;
@@ -42,6 +45,9 @@ export async function RecipeSourceStatus({
       documentIds,
     );
     if (corpus.fingerprint !== fingerprint) status = "changed";
+    const latest=await getPrisma().topicBuilderRun.findFirst({where:{workspaceId,recipeId},orderBy:{createdAt:"desc"},select:{result:true}});
+    const applicabilityFingerprint=(latest?.result as {applicabilityAudit?:{metadataFingerprint?:string}}|null)?.applicabilityAudit?.metadataFingerprint;
+    if(applicabilityFingerprint&&applicabilityFingerprint!==corpus.applicabilityFingerprint)status="changed";
   } catch {
     status = "unavailable";
   }

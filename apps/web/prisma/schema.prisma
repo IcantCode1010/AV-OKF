@@ -18,8 +18,8 @@ model TopicBuilderRecipe {
   instructions   String @db.Text
   collectionIds  String[]
   documentIds    String[] @default([])
-  maxWords       Int @default(180)
-  researchMode   String @default("exhaustive")
+  maxWords       Int @default(1000)
+  researchMode   String @default("agentic")
   approvedRunId  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

@@ -12,6 +12,99 @@ The [aircraft article pipeline review and delivery plan](efb-content-platform-pl
 
 ## Current Implementation Status
 
+### Pinned follow-up: canonical entity alias matching — 2026-09-15
+
+- Before creating a canonical entity, look up exact normalized canonical names
+  and accepted aliases within the correct workspace and entity type.
+- When a match exists, reuse that canonical entity and attach the new
+  source-backed occurrence. Do not merge solely on approximate text similarity.
+- Queue unmatched synonyms or abbreviations as proposed aliases for human
+  review. Preserve aircraft/manual context and source evidence; ambiguous
+  identities remain separate until confirmed.
+- Add a bounded alias-review job that rescans pending candidates when new
+  source-backed entity evidence arrives. Combine deterministic similarity and
+  context checks with an LLM review grounded in the candidate and canonical
+  entity's evidence; the LLM returns a structured recommendation and rationale,
+  not a database mutation.
+- Automatically accept only alias additions that pass calibrated high-
+  precision score and evidence gates. Keep uncertain, contradictory, or
+  context-mismatched candidates in a human review queue; leave weak candidates
+  separate. Automatic acceptance must never merge canonical entities.
+- Make review idempotent and auditable: persist the evidence and model/prompt
+  version, component scores, recommendation, threshold decision, and accepted
+  alias. Re-evaluate pending candidates as new evidence accumulates, without
+  repeatedly processing unchanged evidence. Provide a kill switch and a
+  reversible way to remove an incorrectly accepted alias.
+- Enable automatic acceptance only after evaluation on representative,
+  manually labeled aviation and non-aviation examples demonstrates the target
+  precision, including abbreviation, negative, and same-name/different-part
+  controls. Until then, run in recommendation-only mode.
+- Define a reviewed merge path for duplicate canonical entries that already
+  exist, preserving occurrences, provenance, relations, and a durable redirect
+  or audit trail.
+- Acceptance: confirmed variants such as “hydraulic pump” and “HYD PMP” resolve
+  to one canonical entity after review, while same-name distinct components and
+  unconfirmed variants remain separate. High-confidence aliases become
+  automatic only after the evaluation gate passes; lower-confidence or
+  conflicting cases remain reviewable. Status: planned, not implemented.
+
+### Pinned follow-up: coherent cross-document topics — 2026-09-15
+
+Goal: add a user-triggered workflow that uses RAG over already-ingested,
+already-indexed documents to draft one coherent OKF topic from multiple sources.
+Reuse extracted entities and existing RAG chunks; do not re-upload documents,
+rerun extraction, or rerun entity extraction as part of this workflow. Preserve
+the source documents and their PDF provenance as the authoritative evidence.
+
+1. **Prove the workflow against existing data.** Select a subject or seed
+   entity type and two already-ingested manuals in one workspace/bundle (start
+   with hydraulic-system coverage). Use canonical entities and their existing
+   occurrences to guide hybrid/vector and lexical retrieval over the current
+   RAG index. Produce a draft report with retrieved passages, topic titles,
+   document/revision/page links, and exact evidence. Have an aviation reviewer
+   score coherence and usefulness versus ordinary search, and classify
+   apparent differences by audience, effectivity, revision, or genuine
+   discrepancy. Entity type alone is never proof of a match.
+2. **Define retrieval coverage before claiming completeness.** RAG retrieves
+   relevant indexed chunks; it does not inherently reread every PDF page. For
+   broad topic creation, record which in-scope documents and page ranges were
+   searched, use entity names/accepted aliases/relations to broaden queries,
+   and run bounded follow-up retrieval until coverage criteria are met. Surface
+   missing or stale indexes as blockers; this workflow does not silently
+   re-ingest or re-extract the source PDFs.
+3. **Create a versioned multi-source topic draft only if the pilot succeeds.**
+   Keep existing document-backed TopicRecords unchanged. Store the cross-doc
+   draft's scope, retrieval/index snapshot, and version alongside each
+   claim/passage's exact chunk, topic, document revision, page, and content
+   hash. The LLM may organize and summarize retrieved evidence, but every
+   technical statement must be evidence-linked; preserve source differences
+   and do not invent a resolution. Mark any curator framing separately.
+4. **Review and approve with preserved boundaries.** Show the draft beside
+   source excerpts, page links, manual/audience, revision, and applicability.
+   Human review approves the multi-source topic separately; it cannot upgrade
+   an unapproved source topic or passage. Keep conflicting source claims
+   visible and require a human to classify a discrepancy.
+5. **Refresh safely and measure value.** New document revisions update the
+   existing ingestion/index pipeline. A changed source or index snapshot marks
+   the cross-document draft stale and requests a new RAG run and review; never
+   silently overwrite an approved version. Agent answers cite the original
+   source PDFs/pages. Compare coverage, answer quality, model cost, and review
+   effort with ordinary search before expanding beyond the pilot.
+
+Implementation landed in Topic Builder. New runs default to agentic RAG over
+the selected source scope, with full document scan retained as a fallback. The
+result is one sectioned OKF system topic with per-question evidence notes,
+explicit applicability exclusions, source-tag citations and a source table,
+verbatim limits rows, typed differences, excluded-evidence review, and a
+bounded procedure-purpose note requiring human confirmation. Source hashes and
+applicability metadata are checked before approval and export. Legacy multi-
+article runs still render and export through their original format. No
+re-ingestion or entity re-extraction is performed. Known limitation: existing
+records provide document-level applicability, not a separate chapter-level
+applicability model; unresolved or conflicting document applicability is
+reported and excluded when a recognized aircraft family was requested.
+Status: implemented; live-provider acceptance remains environment-dependent.
+
 ### Chat delivery reliability - 2026-09-13
 
 - Existing conversations no longer force a reload after ten seconds or depend

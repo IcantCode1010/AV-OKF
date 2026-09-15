@@ -1,10 +1,38 @@
 # Changelog
 
+## Topic Builder bundle isolation
+
+- Limit source selection and recipe visibility to the authenticated active bundle.
+- Reject out-of-bundle sources and recipe actions server-side, including unassigned documents.
+- Pin new and edited recipes to one source bundle; worker corpus reads reject mixed-bundle sources and revalidate membership.
+- Preserve existing revisions without rewriting their evidence.
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
+
+- Topic Builder now drafts one sectioned, multi-document OKF system topic from
+  already-indexed evidence, using RAG by default with full document scan as an
+  explicit fallback. It records question-lens evidence notes, applicability
+  decisions and exclusions, one-source-per-paragraph citations, exact-value
+  limits tables, typed source differences, and source hashes. Reviewers confirm
+  every difference and any procedure-purpose note before approval; stale source
+  evidence blocks approval and export. New recipes default to a 1,000-word
+  narrative target with a 1,500-word maximum; legacy approved runs and exports
+  remain supported.
+- Pinned a roadmap follow-up for source-backed synonym and abbreviation
+  matching, review-first canonical entity reuse, and safe merging of existing
+  duplicates while preserving provenance. The plan now includes evidence-
+  grounded LLM review, rescoring as new evidence arrives, audited automatic
+  acceptance for calibrated high-confidence aliases, and a recommendation-only
+  rollout until precision gates pass.
+- Pinned a phased plan for coherent cross-document OKF topics: first validate
+  usefulness with RAG over existing indexed documents and extracted entities,
+  without repeating ingestion or extraction, then consider reviewed,
+  versioned multi-source topics with retrieval coverage, citations, approval
+  boundaries, and stale-state handling.
 
 - Reworked chat into a centered, research-style answer layout with question
   headings, compact per-answer source cards, expandable source lists, and a

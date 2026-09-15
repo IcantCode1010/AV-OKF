@@ -307,7 +307,7 @@ export async function runKnowledgeResearch(input: {
             quote,
             sourceHash: fingerprint(p.text),
             revision: d.revision ?? "unknown",
-            applicability: d.effectivity ?? "unknown",
+            applicability: d.effectivity ?? d.applicabilityScope ?? (d.aircraftFamilyIds.join(", ") || "unknown"),
             authority: d.sourceAuthority ?? d.sourceClassification ?? "unknown",
             trust: "raw-source",
           };

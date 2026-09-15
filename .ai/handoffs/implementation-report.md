@@ -1,3 +1,63 @@
+# Implementation report: Coherent multi-source OKF Topic Builder
+
+## Outcome
+
+Topic Builder can now produce one structured, source-grounded OKF topic from already-indexed documents using RAG by default, with full scan as an explicit option. It keeps evidence gaps, applicability exclusions, source/page/hash provenance, cross-source differences, and reviewer decisions visible. Existing legacy runs and exports remain supported.
+
+## Acceptance criteria
+
+- [x] Use indexed evidence without re-ingestion or entity re-extraction; RAG is the default and full scan remains selectable.
+- [x] Produce a single coherent topic with fixed sections, per-lens evidence notes, persisted excluded evidence, narrative word cap, traceable source table, and verbatim cited numeric limits.
+- [x] Preserve source differences and require reviewer-confirmed typed reasons before approval; require explicit review of procedure-purpose notes.
+- [x] Reject missing required evidence, invalid/stale citations, excessive prose, unsupported values, and unreviewed differences instead of silently truncating or dropping claims.
+- [x] Keep native OKF single-topic export and legacy multi-article run/export compatibility.
+- [x] Update roadmap and changelog as the implementation landed.
+- [ ] Multi-document live/model integration run through approval, export, and refresh was not run; it requires configured model/infrastructure and real indexed evidence. Unit and repository suites pass.
+
+## Changes
+
+- `apps/web/src/lib/topic-builder-core.ts`: coherent result schema, evidence validation, applicability classification, evidence-lens status, stale-source checks, review state, and native single-topic export; legacy renderer remains available.
+- `apps/web/src/lib/topic-builder.ts`: RAG-first generation, lens-guided retrieval, selected-scope applicability audit, source fingerprint/hash checks, bounded regeneration, and approval gates.
+- `apps/web/src/components/coherent-topic-review.tsx` and `apps/web/src/app/(app)/topic-builder/`: structured review UI, visible evidence gaps and excluded evidence, mandatory difference-reason confirmation, and procedure-purpose review.
+- `apps/web/src/lib/knowledge/editorial.ts` and `research.ts`: coherent revision import and inherited document/page applicability.
+- `apps/web/prisma/schema.prisma` and `apps/web/prisma/migrations/20260915120000_coherent_topic_builder_defaults/migration.sql`: new recipe defaults use RAG and a 1,000-word narrative target; migration changes defaults only and does not alter existing rows.
+- `apps/web/src/lib/topic-builder-core.test.mts`: focused tests for citations, numeric values, procedure limits, differences, applicability, evidence states, stale hashes, and explicit review.
+- `CHANGELOG.md` and `docs/roadmap/mvp-stages.md`: record shipped behavior and remaining applicability limitations.
+
+## Deviations from proposal
+
+The repository's `.ai/handoffs/change-proposal.md` describes the unrelated Unified OKF Release Pipeline. The implementation followed the separate coherent-topic plan explicitly approved in the conversation; the existing proposal and earlier implementation report were preserved. The repository currently has document-level applicability but no chapter-level applicability field, so chapter inheritance could not be implemented without broadening the data model beyond this plan. The requested live multi-document model run remains unverified in this environment.
+
+## Verification
+
+| Command or check | Result | Evidence or notes |
+|---|---|---|
+| `pnpm --dir apps/web lint` | PASS | ESLint completed without errors. |
+| `pnpm --dir apps/web test` | PASS | Full web suite; 902 tests, 897 passed, 5 skipped, 0 failed. |
+| `$env:AV_OKF_TEST_AUTH_ENABLED='false'; pnpm --dir apps/web build` | PASS | Production build and TypeScript checks completed. |
+| `pnpm --dir apps/web db:generate` | PASS | Prisma Client generated from updated schema. |
+| `python -m unittest discover -s tests -p test_okf_relation_lint.py` | PASS | 5 tests passed. |
+| `python tools/okf_relation_lint.py --manifest okf-base.yaml` | PASS | 0 violations. |
+
+## Baseline comparison
+
+No new test, lint, type-check, build, or relation-lint failures observed. The Python unittest command specified in `AGENTS.md` does not import as written in this Windows checkout; the equivalent discovery command above passes.
+
+## Known limitations and remaining risks
+
+- Applicability inheritance can use indexed page and document metadata, but chapter-level applicability is not represented in the current data model.
+- Automated generation and approval were not exercised against a live multi-document corpus or paid model; perform that controlled integration review before enabling the workflow for production use.
+- Procedure-purpose content is intentionally a reviewer responsibility; automated checks only enforce length and structure and do not claim to detect all operational instructions.
+
+## Manual review instructions
+
+1. Create a recipe over multiple already-indexed documents, leave research mode on RAG, and generate the topic. Confirm lens evidence states and excluded evidence are visible.
+2. Review the Scope, System overview, limits, differences, and Sources. Confirm each narrative paragraph has one source tag, and numeric values appear in cited table rows.
+3. For multiple contributing documents, select and confirm a reason for every difference. Confirm procedure-purpose text if present, then approve.
+4. Change/reindex a cited source and refresh the page; the run should become non-approvable with the stale citation identified. Export the approved run and verify the native OKF topic and source records.
+
+---
+
 > Latest chat-cleanup implementation: [report](chat-cleanup-implementation-report.md). The earlier pipeline report below is preserved.
 
 # Implementation report: Unified OKF Release Pipeline (PoC)
